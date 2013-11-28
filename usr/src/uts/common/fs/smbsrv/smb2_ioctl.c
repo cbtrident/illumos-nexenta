@@ -22,7 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -43,15 +43,16 @@ smb2_ioctl(smb_request_t *sr)
 	uint32_t MaxInputResp;
 	uint32_t OutputOffset;
 	uint32_t Flags;
-	uint32_t status;
 	uint16_t StructSize;
 	uint16_t DeviceType;
+	uint32_t status = 0;
 	int rc = 0;
 
+	/* Todo: put fsctl in sr->arg.ioctl (visible in dtrace probes) */
 	bzero(&in_mbc, sizeof (in_mbc));
 
 	/*
-	 * SMB2 Ioctl request
+	 * Decode SMB2 Ioctl request
 	 */
 	rc = smb_mbc_decodef(
 	    &sr->smb_data, "w..lqqlllllll4.",
@@ -72,6 +73,30 @@ smb2_ioctl(smb_request_t *sr)
 		return (SDRC_ERROR);
 
 	/*
+	 * If there's an input buffer, setup a shadow.
+	 */
+	if (fsctl.InputCount) {
+		if (InputOffset < (SMB2_HDR_SIZE + 56))
+			return (SDRC_ERROR);
+		if (fsctl.InputCount > smb2_max_trans)
+			return (SDRC_ERROR);
+		rc = MBC_SHADOW_CHAIN(&in_mbc, &sr->smb_data,
+		    sr->smb2_cmd_hdr + InputOffset, fsctl.InputCount);
+		if (rc) {
+			return (SDRC_ERROR);
+		}
+	}
+	fsctl.in_mbc = &in_mbc;
+
+	/*
+	 * If output is possible, setup the output mbuf_chain
+	 */
+	if (fsctl.MaxOutputResp > smb2_max_trans)
+		fsctl.MaxOutputResp = smb2_max_trans;
+	sr->raw_data.max_bytes = fsctl.MaxOutputResp;
+	fsctl.out_mbc = &sr->raw_data;
+
+	/*
 	 * [MS-SMB2] 3.3.5.15
 	 *
 	 * If the Flags field of the request is not SMB2_0_IOCTL_IS_FSCTL
@@ -84,9 +109,7 @@ smb2_ioctl(smb_request_t *sr)
 	 */
 	if (Flags != SMB2_0_IOCTL_IS_FSCTL) {
 		status = NT_STATUS_NOT_SUPPORTED;
-		goto errout;
-	}
-	switch (fsctl.CtlCode) {
+	} else switch (fsctl.CtlCode) {
 	case FSCTL_DFS_GET_REFERRALS:
 	case FSCTL_DFS_GET_REFERRALS_EX:
 	case FSCTL_QUERY_NETWORK_INTERFACE_INFO:
@@ -95,42 +118,23 @@ smb2_ioctl(smb_request_t *sr)
 		if (smb2fid.temporal != ~0LL ||
 		    smb2fid.persistent != ~0LL) {
 			status = NT_STATUS_INVALID_PARAMETER;
-			goto errout;
 		}
 		break;
 	default:
 		status = smb2sr_lookup_fid(sr, &smb2fid);
 		if (status) {
 			status = NT_STATUS_FILE_CLOSED;
-			goto errout;
 		}
 		break;
 	}
 
 	/*
-	 * If there's an input buffer, setup a shadow.
+	 * Keep FID lookup before the start probe.
 	 */
-	if (fsctl.InputCount) {
-		if (InputOffset < (SMB2_HDR_SIZE + 56)) {
-			status = NT_STATUS_INVALID_PARAMETER;
-			goto errout;
-		}
-		rc = MBC_SHADOW_CHAIN(&in_mbc, &sr->smb_data,
-		    sr->smb2_cmd_hdr + InputOffset, fsctl.InputCount);
-		if (rc) {
-			status = NT_STATUS_INVALID_PARAMETER;
-			goto errout;
-		}
-	}
-	fsctl.in_mbc = &in_mbc;
+	DTRACE_SMB2_START(op__Ioctl, smb_request_t *, sr);
 
-	/*
-	 * If output is possible, setup the output mbuf_chain
-	 */
-	if (fsctl.MaxOutputResp > smb2_max_trans)
-		fsctl.MaxOutputResp = smb2_max_trans;
-	sr->raw_data.max_bytes = fsctl.MaxOutputResp;
-	fsctl.out_mbc = &sr->raw_data;
+	if (status)
+		goto errout;
 
 	/*
 	 * Dispatch to the handler for CtlCode
@@ -154,6 +158,11 @@ smb2_ioctl(smb_request_t *sr)
 		status = NT_STATUS_NOT_SUPPORTED;
 		break;
 	}
+
+errout:
+	sr->smb2_status = status;
+	DTRACE_SMB2_DONE(op__Ioctl, smb_request_t *, sr);
+
 	if (status != 0) {
 		/*
 		 * NT status codes with severity "error" normally cause
@@ -163,11 +172,12 @@ smb2_ioctl(smb_request_t *sr)
 		 */
 		if ((NT_SC_SEVERITY(status) == NT_STATUS_SEVERITY_ERROR) &&
 		    (fsctl.CtlCode != FSCTL_SRV_COPYCHUNK) &&
-		    (fsctl.CtlCode != FSCTL_SRV_COPYCHUNK_WRITE))
-			goto errout; /* no data */
-
-		/* Error response _with_ data. */
-		sr->smb2_status = status;
+		    (fsctl.CtlCode != FSCTL_SRV_COPYCHUNK_WRITE)) {
+			/* no error data */
+			smb2sr_put_error(sr, status);
+			return (SDRC_SUCCESS);
+		}
+		/* Else, error response _with_ data. */
 	}
 
 	fsctl.InputCount = 0;
@@ -177,7 +187,7 @@ smb2_ioctl(smb_request_t *sr)
 	OutputOffset = (fsctl.OutputCount) ? InputOffset : 0;
 
 	/*
-	 * SMB2 Ioctl reply
+	 * Encode SMB2 Ioctl reply
 	 */
 	StructSize = 49;
 	rc = smb_mbc_encodef(
@@ -195,9 +205,8 @@ smb2_ioctl(smb_request_t *sr)
 	    /* reserved2		  4. */
 	    fsctl.OutputCount,		/* # */
 	    &sr->raw_data);		/* C */
-	return ((rc) ? SDRC_ERROR : SDRC_SUCCESS);
+	if (rc)
+		sr->smb2_status = NT_STATUS_INTERNAL_ERROR;
 
-errout:
-	smb2sr_put_error(sr, status);
 	return (SDRC_SUCCESS);
 }

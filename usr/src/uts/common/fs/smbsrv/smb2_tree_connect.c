@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -66,6 +66,8 @@ smb2_tree_connect(smb_request_t *sr)
 	if (rc)
 		return (SDRC_ERROR);
 
+	DTRACE_SMB2_START(op__TreeConnect, smb_request_t *, sr);
+
 	/*
 	 * [MS-SMB2] 3.3.5.7 Receiving an SMB2 TREE_CONNECT Request
 	 *
@@ -77,6 +79,10 @@ smb2_tree_connect(smb_request_t *sr)
 	 * This also applies to SMB1, so do it in smb_tree_connect_core.
 	 */
 	status = smb_tree_connect(sr);
+
+	sr->smb2_status = status;
+	DTRACE_SMB2_DONE(op__TreeConnect, smb_request_t *, sr);
+
 	if (status) {
 		(void) smb2sr_put_error(sr, status);
 		return (SDRC_SUCCESS);
@@ -112,7 +118,7 @@ smb2_tree_connect(smb_request_t *sr)
 	/*
 	 * SMB2 Tree Connect reply
 	 */
-	rc = smb_mbc_encodef(
+	(void) smb_mbc_encodef(
 	    &sr->reply,
 	    "wb.lll",
 	    16,	/* StructSize */	/* w */
@@ -120,8 +126,6 @@ smb2_tree_connect(smb_request_t *sr)
 	    ShareFlags,			/* l */
 	    Capabilities,		/* l */
 	    tree->t_access);		/* l */
-	if (rc)
-		return (SDRC_ERROR);
 
 	return (SDRC_SUCCESS);
 }

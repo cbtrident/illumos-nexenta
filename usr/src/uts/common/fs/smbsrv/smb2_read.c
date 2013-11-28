@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -63,16 +63,20 @@ smb2_read(smb_request_t *sr)
 	if (StructSize != 49)
 		return (SDRC_ERROR);
 
+	/*
+	 * Want FID lookup before the start probe.
+	 */
 	status = smb2sr_lookup_fid(sr, &smb2fid);
-	if (status) {
-		smb2sr_put_error(sr, status);
-		return (SDRC_SUCCESS);
-	}
 	of = sr->fid_ofile;
 
+	DTRACE_SMB2_START(op__Read, smb_request_t *, sr); /* arg.rw */
+
+	if (status)
+		goto errout; /* Bad FID */
+
 	if (Length > smb2_max_rwsize) {
-		smb2sr_put_error(sr, NT_STATUS_INVALID_PARAMETER);
-		return (SDRC_SUCCESS);
+		status = NT_STATUS_INVALID_PARAMETER;
+		goto errout;
 	}
 	if (MinCount > Length)
 		MinCount = Length;
@@ -112,6 +116,7 @@ smb2_read(smb_request_t *sr)
 		rc = EACCES;
 		break;
 	}
+	status = smb_errno2status(rc);
 
 	/* How much data we moved. */
 	XferCount = Length - vdb->vdb_uio.uio_resid;
@@ -125,8 +130,11 @@ smb2_read(smb_request_t *sr)
 	 * the returned data so that if m was allocated,
 	 * it will be free'd via sr->raw_data cleanup.
 	 */
-	if (rc) {
-		smb2sr_put_errno(sr, rc);
+errout:
+	sr->smb2_status = status;
+	DTRACE_SMB2_DONE(op__Read, smb_request_t *, sr); /* arg.rw */
+	if (status) {
+		smb2sr_put_error(sr, status);
 		return (SDRC_SUCCESS);
 	}
 
@@ -143,8 +151,10 @@ smb2_read(smb_request_t *sr)
 	    0, /* DataRemaining */	/* l */
 	    0, /* reserved */		/* l */
 	    &sr->raw_data);		/* C */
-	if (rc)
+	if (rc) {
+		sr->smb2_status = NT_STATUS_INTERNAL_ERROR;
 		return (SDRC_ERROR);
+	}
 
 	mutex_enter(&of->f_mutex);
 	of->f_seek_pos = Offset + XferCount;

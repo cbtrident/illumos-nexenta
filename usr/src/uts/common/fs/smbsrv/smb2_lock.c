@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -58,7 +58,7 @@ smb2_lock(smb_request_t *sr)
 	int rc;
 
 	/*
-	 * SMB2 Lock request
+	 * Decode SMB2 Lock request
 	 */
 	rc = smb_mbc_decodef(
 	    &sr->smb_data, "wwlqq",
@@ -70,9 +70,14 @@ smb2_lock(smb_request_t *sr)
 	if (rc || StructSize != 48)
 		return (SDRC_ERROR);
 
+	/*
+	 * Want FID lookup before the start probe.
+	 */
 	status = smb2sr_lookup_fid(sr, &smb2fid);
+	DTRACE_SMB2_START(op__Lock, smb_request_t *, sr);
+
 	if (status)
-		goto errout;
+		goto errout; /* Bad FID */
 	if (sr->fid_ofile->f_node == NULL || LockCount == 0) {
 		status = NT_STATUS_INVALID_PARAMETER;
 		goto errout;
@@ -99,7 +104,7 @@ smb2_lock(smb_request_t *sr)
 	if (LockSequence != 0 &&
 	    smb2_lock_chk_lockseq(sr->fid_ofile, LockSequence)) {
 		status = NT_STATUS_SUCCESS;
-		goto done;
+		goto errout;
 	}
 
 	/*
@@ -136,21 +141,23 @@ smb2_lock(smb_request_t *sr)
 	} else {
 		status = smb2__lock(sr);
 	}
-	if (status)
-		goto errout;
+
+errout:
+	sr->smb2_status = status;
+	DTRACE_SMB2_DONE(op__Lock, smb_request_t *, sr);
+
+	if (status) {
+		smb2sr_put_error(sr, status);
+		return (SDRC_SUCCESS);
+	}
 
 	/*
-	 * SMB2 Lock reply (sync)
+	 * Encode SMB2 Lock reply (sync)
 	 */
-done:
 	(void) smb_mbc_encodef(
 	    &sr->reply, "w..",
 	    4); /* StructSize	w */
 	    /* reserved		.. */
-	return (SDRC_SUCCESS);
-
-errout:
-	smb2sr_put_error(sr, status);
 	return (SDRC_SUCCESS);
 }
 
@@ -306,6 +313,15 @@ smb2_lock_async(smb_request_t *sr)
 	if (LockSequence != 0)
 		smb2_lock_set_lockseq(sr->fid_ofile, LockSequence);
 
+errout:
+	sr->smb2_status = status;
+	DTRACE_SMB2_DONE2(op__Lock, smb_request_t *, sr);
+
+	if (status) {
+		smb2sr_put_error(sr, status);
+		return (SDRC_SUCCESS);
+	}
+
 	/*
 	 * SMB2 Lock reply (async)
 	 */
@@ -313,10 +329,6 @@ smb2_lock_async(smb_request_t *sr)
 	    &sr->reply, "w..",
 	    4); /* StructSize	w */
 	    /* reserved		.. */
-	return (SDRC_SUCCESS);
-
-errout:
-	smb2sr_put_error(sr, status);
 	return (SDRC_SUCCESS);
 }
 

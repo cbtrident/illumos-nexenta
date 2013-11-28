@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -61,6 +61,33 @@ smb2_session_setup(smb_request_t *sr)
 		return (SDRC_ERROR);
 
 	/*
+	 * We're normally positioned at the security buffer now,
+	 * but there could be some padding before it.
+	 */
+	skip = (SecBufOffset + sr->smb2_cmd_hdr) -
+	    sr->smb_data.chain_offset;
+	if (skip < 0)
+		return (SDRC_ERROR);
+	if (skip > 0)
+		(void) smb_mbc_decodef(&sr->smb_data, "#.", skip);
+
+	/*
+	 * Get the security buffer
+	 */
+	sinfo->ssi_iseclen = SecBufLength;
+	sinfo->ssi_isecblob = smb_srm_zalloc(sr, sinfo->ssi_iseclen);
+	rc = smb_mbc_decodef(&sr->smb_data, "#c",
+	    sinfo->ssi_iseclen, sinfo->ssi_isecblob);
+	if (rc)
+		return (SDRC_ERROR);
+
+	/*
+	 * Decoded everything.  Dtrace probe,
+	 * then no more early returns.
+	 */
+	DTRACE_SMB2_START(op__SessionSetup, smb_request_t *, sr);
+
+	/*
 	 * [MS-SMB2] 3.3.5.5 Receiving an SMB2 SESSION_SETUP Request
 	 *
 	 * If we support 3.x, RejectUnencryptedAccess is TRUE,
@@ -90,27 +117,6 @@ smb2_session_setup(smb_request_t *sr)
 		status = NT_STATUS_REQUEST_NOT_ACCEPTED;
 		goto errout;
 	}
-
-	/*
-	 * We're normally positioned at the security buffer now,
-	 * but there could be some padding before it.
-	 */
-	skip = (SecBufOffset + sr->smb2_cmd_hdr) -
-	    sr->smb_data.chain_offset;
-	if (skip < 0)
-		return (SDRC_ERROR);
-	if (skip > 0)
-		(void) smb_mbc_decodef(&sr->smb_data, "#.", skip);
-
-	/*
-	 * Get the security buffer
-	 */
-	sinfo->ssi_iseclen = SecBufLength;
-	sinfo->ssi_isecblob = smb_srm_zalloc(sr, sinfo->ssi_iseclen);
-	rc = smb_mbc_decodef(&sr->smb_data, "#c",
-	    sinfo->ssi_iseclen, sinfo->ssi_isecblob);
-	if (rc)
-		return (SDRC_ERROR);
 
 	/*
 	 * The real auth. work happens in here.
@@ -170,6 +176,9 @@ errout:
 		break;
 	}
 
+	/* sr->smb2_status set above */
+	DTRACE_SMB2_DONE(op__SessionSetup, smb_request_t *, sr);
+
 	/*
 	 * SMB2 Session Setup reply
 	 */
@@ -184,7 +193,7 @@ errout:
 	    SecBufLength,		/* # */
 	    sinfo->ssi_osecblob);	/* c */
 	if (rc)
-		return (SDRC_ERROR);
+		sr->smb2_status = NT_STATUS_INTERNAL_ERROR;
 
 	return (SDRC_SUCCESS);
 }

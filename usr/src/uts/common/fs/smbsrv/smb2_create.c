@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -103,6 +103,7 @@ smb2_create(smb_request_t *sr)
 	int rc = 0;
 	boolean_t dh_reconnect = B_FALSE;
 
+	/* XXX Should put cctx in arg.open */
 	bzero(&cctx, sizeof (cctx));
 	bzero(&cc_mbc, sizeof (cc_mbc));
 
@@ -117,7 +118,14 @@ smb2_create(smb_request_t *sr)
 	}
 
 	/*
-	 * SMB2 Create request
+	 * Decode the SMB2 Create request
+	 *
+	 * Most decode errors return SDRC_ERROR, but
+	 * for some we give a more specific error.
+	 *
+	 * In the "decode section" (starts here) any
+	 * errors should either return SDRC_ERROR, or
+	 * if any cleanup is needed, goto errout.
 	 */
 	rc = smb_mbc_decodef(
 	    &sr->smb_data, "wbblqqlllllwwll",
@@ -145,15 +153,17 @@ smb2_create(smb_request_t *sr)
 	 */
 	skip = (NameOffset + sr->smb2_cmd_hdr) -
 	    sr->smb_data.chain_offset;
-	if (skip < 0) {
-		status = NT_STATUS_OBJECT_PATH_INVALID;
-		goto errout;
-	}
+	if (skip < 0)
+		return (SDRC_ERROR);
 	if (skip > 0)
 		(void) smb_mbc_decodef(&sr->smb_data, "#.", skip);
 
 	/*
 	 * Get the path name
+	 *
+	 * Name too long is not technically a decode error,
+	 * but it's very rare, so we'll just skip the
+	 * dtrace probes for this error case.
 	 */
 	if (NameLength >= SMB_MAXPATHLEN) {
 		status = NT_STATUS_OBJECT_PATH_INVALID;
@@ -171,6 +181,10 @@ smb2_create(smb_request_t *sr)
 	}
 	op->fqi.fq_dnode = sr->tid_tree->t_snode;
 
+	/*
+	 * Convert the SMB2 oplock level into SMB1 form.
+	 * Considering this as part of decode.
+	 */
 	switch (OplockLevel) {
 	case SMB2_OPLOCK_LEVEL_NONE:
 		op->op_oplock_level = SMB_OPLOCK_NONE;
@@ -185,6 +199,7 @@ smb2_create(smb_request_t *sr)
 		op->op_oplock_level = SMB_OPLOCK_BATCH;
 		break;
 	case SMB2_OPLOCK_LEVEL_LEASE:
+	default:
 		status = NT_STATUS_INVALID_PARAMETER;
 		goto errout;
 	}
@@ -221,10 +236,13 @@ smb2_create(smb_request_t *sr)
 	/*
 	 * Everything is decoded into some internal form, so
 	 * in this probe one can look at sr->arg.open etc.
-	 * When the SMB2 dtrace provider is complete, this
-	 * probably becomes the "start" probe.
+	 *
+	 * This marks the end of the "decode" section and the
+	 * beginning of the "body" section.  Any errors in
+	 * this section should use: goto cmd_done (which is
+	 * just before the dtrace "done" probe).
 	 */
-	DTRACE_PROBE1(smb2__create__start, smb_request_t, sr);
+	DTRACE_SMB2_START(op__Create, smb_request_t *, sr); /* arg.open */
 
 	/*
 	 * Process the incoming create contexts (already decoded),
@@ -257,7 +275,7 @@ smb2_create(smb_request_t *sr)
 	if ((dh_flags & (dh_flags - 1)) != 0 &&
 	    dh_flags != (CCTX_DH_REQUEST|CCTX_DH_RECONNECT)) {
 		status = NT_STATUS_INVALID_PARAMETER;
-		goto errout;
+		goto cmd_done;
 	}
 
 	if ((cctx.cc_in_flags &
@@ -316,7 +334,7 @@ smb2_create(smb_request_t *sr)
 
 	if (cctx.cc_in_flags & CCTX_EA_BUFFER) {
 		status = NT_STATUS_EAS_NOT_SUPPORTED;
-		goto errout;
+		goto cmd_done;
 	}
 
 	/* Don't do open execution during Durable_Reconnect */
@@ -329,7 +347,7 @@ smb2_create(smb_request_t *sr)
 		if ((op->create_options & FILE_DELETE_ON_CLOSE) &&
 		    !(op->desired_access & DELETE)) {
 			status = NT_STATUS_INVALID_PARAMETER;
-			goto errout;
+			goto cmd_done;
 		}
 
 		if (op->dattr & FILE_FLAG_WRITE_THROUGH)
@@ -342,7 +360,7 @@ smb2_create(smb_request_t *sr)
 			sr->user_cr = smb_user_getprivcred(sr->uid_user);
 		if (op->create_disposition > FILE_MAXIMUM_DISPOSITION) {
 			status = NT_STATUS_INVALID_PARAMETER;
-			goto errout;
+			goto cmd_done;
 		}
 
 		/*
@@ -354,28 +372,7 @@ smb2_create(smb_request_t *sr)
 		status = smb2_open_reconnect(sr);
 	}
 	if (status != NT_STATUS_SUCCESS)
-		goto errout;
-	attr = &op->fqi.fq_fattr;
-
-	/*
-	 * Convert the negotiated Oplock level back into
-	 * SMB2 encoding form.
-	 */
-	switch (op->op_oplock_level) {
-	default:
-	case SMB_OPLOCK_NONE:
-		OplockLevel = SMB2_OPLOCK_LEVEL_NONE;
-		break;
-	case SMB_OPLOCK_LEVEL_II:
-		OplockLevel = SMB2_OPLOCK_LEVEL_II;
-		break;
-	case SMB_OPLOCK_EXCLUSIVE:
-		OplockLevel = SMB2_OPLOCK_LEVEL_EXCLUSIVE;
-		break;
-	case SMB_OPLOCK_BATCH:
-		OplockLevel = SMB2_OPLOCK_LEVEL_BATCH;
-		break;
-	}
+		goto cmd_done;
 
 	/*
 	 * NB: after the above smb_common_open() success,
@@ -449,6 +446,18 @@ smb2_create(smb_request_t *sr)
 	}
 
 	/*
+	 * This marks the end of the "body" section and the
+	 * beginning of the "encode" section.  Any errors
+	 * encoding the response should use: goto errout
+	 */
+cmd_done:
+	/* Want status visible in the done probe. */
+	sr->smb2_status = status;
+	DTRACE_SMB2_DONE(op__Create, smb_request_t *, sr);
+	if (status != NT_STATUS_SUCCESS)
+		goto errout;
+
+	/*
 	 * Encode all the create contexts to return.
 	 */
 	if (cctx.cc_out_flags) {
@@ -459,8 +468,29 @@ smb2_create(smb_request_t *sr)
 	}
 
 	/*
-	 * SMB2 Create reply
+	 * Convert the negotiated Oplock level back into
+	 * SMB2 encoding form.
 	 */
+	switch (op->op_oplock_level) {
+	default:
+	case SMB_OPLOCK_NONE:
+		OplockLevel = SMB2_OPLOCK_LEVEL_NONE;
+		break;
+	case SMB_OPLOCK_LEVEL_II:
+		OplockLevel = SMB2_OPLOCK_LEVEL_II;
+		break;
+	case SMB_OPLOCK_EXCLUSIVE:
+		OplockLevel = SMB2_OPLOCK_LEVEL_EXCLUSIVE;
+		break;
+	case SMB_OPLOCK_BATCH:
+		OplockLevel = SMB2_OPLOCK_LEVEL_BATCH;
+		break;
+	}
+
+	/*
+	 * Encode the SMB2 Create reply
+	 */
+	attr = &op->fqi.fq_fattr;
 	rc = smb_mbc_encodef(
 	    &sr->reply,
 	    "wb.lTTTTqqllqqll",

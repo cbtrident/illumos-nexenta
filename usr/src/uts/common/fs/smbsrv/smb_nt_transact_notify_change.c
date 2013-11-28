@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -226,6 +226,8 @@ smb_nt_transact_notify_finish(void *arg)
 	    &xa->rep_data_mb);
 
 sendit:
+	DTRACE_SMB_DONE2(op__NtTransactNotify, smb_request_t *, sr);
+
 	sds = &sr->sr_server->sv_disp_stats1[sr->smb_com];
 	atomic_add_64(&sds->sdt_txb, (int64_t)sr->reply.chain_offset);
 
