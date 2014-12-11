@@ -1,3 +1,10 @@
+sunwckr (5.11.134-31-12274-2939) nexenta; urgency=low
+
+  * Issue NEX-2939: Backport illumos 5421 devzvol_readdir() needs to be more
+    careful with strchr
+
+ -- Nexenta Systems <support@nexenta.com>  Thu, 11 Dec 2014 10:00:00 -0400
+
 sunwckr (5.11.134-31-12273-1943) nexenta; urgency=low
 
   * Issue NEX-1943: Backport OS-253 We should not free mdi_pathinfo
