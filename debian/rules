@@ -18,12 +18,12 @@ PATCHDIR=$(CURDIR)/patches
 export GATEROOT=$(CURDIR)
 
 CLOSEDBIN_NAME=on-closed-bins-nd.i386.tar.bz2 
-CLOSEDBIN_URL=http://dlc.sun.com/osol/on/downloads/b134/$(CLOSEDBIN_NAME)
+CLOSEDBIN_URL=http://napalm.nexenta.com/internal/closed/b134/$(CLOSEDBIN_NAME)
 
 CRYPTO_D=on-crypto.i386.tar.bz2
 CRYPTO_ND=on-crypto-nd.i386.tar.bz2
- CRYPTO_D_URL=http://dlc.sun.com/osol/on/downloads/b134/$(CRYPTO_D)
-CRYPTO_ND_URL=http://dlc.sun.com/osol/on/downloads/b134/$(CRYPTO_ND)
+ CRYPTO_D_URL=http://napalm.nexenta.com/internal/closed/b134/$(CRYPTO_D)
+CRYPTO_ND_URL=http://napalm.nexenta.com/internal/closed/b134/$(CRYPTO_ND)
 
 OS_REL := $(shell cat debian/packages/RELEASE|egrep "^OS_REL="|sed -e 's/^OS_REL=\(.*\)/\1/')
 BUILD  := $(shell cat debian/packages/RELEASE|egrep "^BUILD="|sed -e 's/^BUILD=\(.*\)/\1/')
