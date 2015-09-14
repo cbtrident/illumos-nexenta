@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -207,9 +207,12 @@
 
 #define	ADMINISTRATORS_SID	"S-1-5-32-544"
 
+/* Don't leak object addresses */
+#define	SMB_USER_SSNID(u) \
+	((uintptr_t)&smb_cache_user ^ (uintptr_t)(u))
+
 static int smb_user_enum_private(smb_user_t *, smb_svcenum_t *);
 static void smb_user_auth_logoff(smb_user_t *);
-
 
 /*
  * Create a new user.
@@ -232,6 +235,7 @@ smb_user_new(smb_session_t *session)
 
 	if (smb_idpool_alloc(&session->s_uid_pool, &user->u_uid))
 		goto errout;
+	user->u_ssnid = SMB_USER_SSNID(user);
 
 	smb_session_hold(session); /* for user->u_session */
 
@@ -675,7 +679,6 @@ smb_user_netinfo_init(smb_user_t *user, smb_netuserinfo_t *info)
 	info->ui_native_os = session->native_os;
 	info->ui_ipaddr = session->ipaddr;
 	info->ui_numopens = session->s_file_cnt;
-	info->ui_smb_uid = user->u_uid;
 	info->ui_logon_time = user->u_logon_time;
 	info->ui_flags = user->u_flags;
 	info->ui_posix_uid = crgetuid(user->u_cred);

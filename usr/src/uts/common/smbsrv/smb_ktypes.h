@@ -826,6 +826,14 @@ struct smb_key {
  */
 
 /*
+ * The "session" object.
+ *
+ * Note that the smb_session_t object here corresponds to what MS-SMB2
+ * calls a "connection".  Adding to the confusion, what MS calls a
+ * "session" corresponds to our smb_user_t (below).
+ */
+
+/*
  * Session State Machine
  * ---------------------
  *
@@ -971,6 +979,13 @@ typedef struct smb_session {
 	char 			workstation[SMB_PI_MAX_HOST];
 } smb_session_t;
 
+/*
+ * The "user" object.
+ *
+ * Note that smb_user_t object here corresponds to what MS-SMB2 calls
+ * a "session".  (Our smb_session_t is something else -- see above).
+ */
+
 #define	SMB_USER_MAGIC 0x55534552	/* 'USER' */
 #define	SMB_USER_VALID(u)	\
     ASSERT(((u) != NULL) && ((u)->u_magic == SMB_USER_MAGIC))
@@ -1015,10 +1030,11 @@ typedef struct smb_user {
 	cred_t			*u_cred;
 	cred_t			*u_privcred;
 
+	uint64_t		u_ssnid;	/* server-wide scope */
 	uint32_t		u_refcnt;
 	uint32_t		u_flags;
 	uint32_t		u_privileges;
-	uint16_t		u_uid;
+	uint16_t		u_uid;		/* connection scope */
 	uint32_t		u_audit_sid;
 
 	uint32_t		u_sign_flags;
@@ -1716,7 +1732,7 @@ typedef struct smb_request {
 	unsigned char		smb_sig[8];	/* signiture */
 	uint16_t		smb_tid;	/* tree id #  */
 	uint32_t		smb_pid;	/* caller's process id # */
-	uint16_t		smb_uid;	/* user id # */
+	uint16_t		smb_uid;	/* local (smb1) user id # */
 	uint16_t		smb_mid;	/* mutiplex id #  */
 	unsigned char		smb_wct;	/* count of parameter words */
 	uint16_t		smb_bcc;	/* data byte count */
@@ -1744,7 +1760,7 @@ typedef struct smb_request {
 	uint64_t		smb2_messageid;
 	/* uint32_t		smb2_pid; use smb_pid */
 	/* uint32_t		smb2_tid; use smb_tid */
-	/* uint64_t		smb2_ssnid; use smb_uid */
+	uint64_t		smb2_ssnid;	/* See u_ssnid */
 	unsigned char		smb2_sig[16];	/* signiture */
 
 	uint64_t		smb2_async_id;

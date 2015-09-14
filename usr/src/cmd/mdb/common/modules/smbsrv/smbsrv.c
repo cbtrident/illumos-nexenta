@@ -965,14 +965,16 @@ typedef struct mdb_smb_request {
 
 	unsigned char		first_smb_com;
 	unsigned char		smb_com;
-	uint16_t		smb2_cmd_code;
-	uint64_t		smb2_messageid;
 
 	uint16_t		smb_tid;
 	uint32_t		smb_pid;
 	uint16_t		smb_uid;
 	uint16_t		smb_mid;
 	uint16_t		smb_fid;
+
+	uint16_t		smb2_cmd_code;
+	uint64_t		smb2_messageid;
+	uint64_t		smb2_ssnid;
 
 	struct smb_tree		*tid_tree;
 	struct smb_ofile	*fid_ofile;
@@ -1063,13 +1065,19 @@ smbreq_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 			    "state: %u (%s)\n",
 			    sr->sr_state, state);
 
+			if (sr->smb2_ssnid != 0) {
+				mdb_printf(
+				    "SSNID(user): 0x%llx (%p)\n",
+				    sr->smb2_ssnid, sr->uid_user);
+			} else {
+				mdb_printf(
+				    "UID(user): %u (%p)\n",
+				    sr->smb_uid, sr->uid_user);
+			}
+
 			mdb_printf(
 			    "TID(tree): %u (%p)\n",
 			    sr->smb_tid, sr->tid_tree);
-
-			mdb_printf(
-			    "UID(user): %u (%p)\n",
-			    sr->smb_uid, sr->uid_user);
 
 			mdb_printf(
 			    "FID(file): %u (%p)\n",
@@ -1355,6 +1363,7 @@ typedef struct mdb_smb_user {
 	cred_t			*u_cred;
 	cred_t			*u_privcred;
 
+	uint64_t		u_ssnid;
 	uint32_t		u_refcnt;
 	uint32_t		u_flags;
 	uint32_t		u_privileges;
@@ -1458,6 +1467,7 @@ smbuser_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 			mdb_printf("%<b>%<u>SMB user information (%p):"
 			    "%</u>%</b>\n", addr);
 			mdb_printf("UID: %u\n", user->u_uid);
+			mdb_printf("SSNID: %llx\n", user->u_ssnid);
 			mdb_printf("State: %d (%s)\n", user->u_state, state);
 			mdb_printf("Flags: 0x%08x <%b>\n", user->u_flags,
 			    user->u_flags, user_flag_bits);
@@ -1472,11 +1482,12 @@ smbuser_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 				mdb_printf(
 				    "%<b>%<u>%?-s "
 				    "%-5s "
+				    "%-16s "
 				    "%-32s%</u>%</b>\n",
-				    "USER", "UID", "ACCOUNT");
+				    "USER", "UID", "SSNID", "ACCOUNT");
 
-			mdb_printf("%-?p %-5u %-32s\n", addr, user->u_uid,
-			    account);
+			mdb_printf("%-?p %-5u %-16llx %-32s\n",
+			    addr, user->u_uid, user->u_ssnid, account);
 		}
 	}
 	return (DCMD_OK);

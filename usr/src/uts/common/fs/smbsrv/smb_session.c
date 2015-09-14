@@ -1006,13 +1006,23 @@ smb_session_cancel_requests(
 smb_user_t *
 smb_session_lookup_uid(smb_session_t *session, uint16_t uid)
 {
-	return (smb_session_lookup_uid_st(session, uid,
+	return (smb_session_lookup_uid_st(session, 0, uid,
+	    SMB_USER_STATE_LOGGED_ON));
+}
+
+/*
+ * Find a user on the specified session by SMB2 SSNID.
+ */
+smb_user_t *
+smb_session_lookup_ssnid(smb_session_t *session, uint64_t ssnid)
+{
+	return (smb_session_lookup_uid_st(session, ssnid, 0,
 	    SMB_USER_STATE_LOGGED_ON));
 }
 
 smb_user_t *
-smb_session_lookup_uid_st(smb_session_t *session, uint16_t uid,
-    smb_user_state_t st)
+smb_session_lookup_uid_st(smb_session_t *session, uint64_t ssnid,
+    uint16_t uid, smb_user_state_t st)
 {
 	smb_user_t	*user;
 	smb_llist_t	*user_list;
@@ -1027,7 +1037,8 @@ smb_session_lookup_uid_st(smb_session_t *session, uint16_t uid,
 		SMB_USER_VALID(user);
 		ASSERT(user->u_session == session);
 
-		if (user->u_uid == uid && user->u_state == st) {
+		if ((user->u_ssnid == ssnid || user->u_uid == uid) &&
+		    user->u_state == st) {
 			smb_user_hold_internal(user);
 			break;
 		}
@@ -1057,7 +1068,6 @@ smb_tree_t *
 smb_session_lookup_tree(
     smb_session_t	*session,
     uint16_t		tid)
-
 {
 	smb_tree_t	*tree;
 

@@ -643,9 +643,10 @@ void smb_session_cancel_requests(smb_session_t *, smb_tree_t *,
 void smb_session_config(smb_session_t *session);
 void smb_session_disconnect_from_share(smb_llist_t *, char *);
 smb_user_t *smb_session_dup_user(smb_session_t *, char *, char *);
+smb_user_t *smb_session_lookup_ssnid(smb_session_t *, uint64_t);
 smb_user_t *smb_session_lookup_uid(smb_session_t *, uint16_t);
-smb_user_t *smb_session_lookup_uid_st(smb_session_t *session,
-    uint16_t uid, smb_user_state_t st);
+smb_user_t *smb_session_lookup_uid_st(smb_session_t *,
+    uint64_t, uint16_t, smb_user_state_t);
 void smb_session_post_user(smb_session_t *, smb_user_t *);
 void smb_session_post_tree(smb_session_t *, smb_tree_t *);
 smb_tree_t *smb_session_lookup_tree(smb_session_t *, uint16_t);

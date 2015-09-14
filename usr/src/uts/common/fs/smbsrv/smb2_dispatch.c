@@ -56,12 +56,12 @@ typedef struct smb2_async_req {
 	/*
 	 * SMB2 header fields.
 	 */
+	uint64_t		ar_messageid;
+	uint64_t		ar_ssnid;
 	uint16_t		ar_cmd_code;
-	uint16_t		ar_uid;
 	uint16_t		ar_tid;
 	uint32_t		ar_pid;
 	uint32_t		ar_hdr_flags;
-	uint64_t		ar_messageid;
 } smb2_async_req_t;
 
 void smb2sr_do_async(smb_request_t *);
@@ -478,15 +478,15 @@ cmd_start:
 				    NT_STATUS_INVALID_PARAMETER);
 				goto cmd_done;
 			}
-			sr->smb_uid = sr->uid_user->u_uid;
+			sr->smb2_ssnid = sr->uid_user->u_ssnid;
 		} else {
 			/*
 			 * Lookup the UID
 			 * [MS-SMB2] 3.3.5.2 Verifying the Session
 			 */
 			ASSERT(sr->uid_user == NULL);
-			sr->uid_user = smb_session_lookup_uid(session,
-			    sr->smb_uid);
+			sr->uid_user = smb_session_lookup_ssnid(session,
+			    sr->smb2_ssnid);
 			if (sr->uid_user == NULL) {
 				smb2sr_put_error(sr,
 				    NT_STATUS_USER_SESSION_DELETED);
@@ -868,7 +868,7 @@ smb2sr_do_async(smb_request_t *sr)
 	sr->smb2_messageid = ar->ar_messageid;
 	sr->smb_pid = ar->ar_pid;
 	sr->smb_tid = ar->ar_tid;
-	sr->smb_uid = ar->ar_uid;
+	sr->smb2_ssnid = ar->ar_ssnid;
 	sr->smb2_status = 0;
 
 	/*
@@ -1045,7 +1045,7 @@ smb2sr_go_async(smb_request_t *sr,
 	ar->ar_messageid = sr->smb2_messageid;
 	ar->ar_pid = sr->smb_pid;
 	ar->ar_tid = sr->smb_tid;
-	ar->ar_uid = sr->smb_uid;
+	ar->ar_ssnid = sr->smb2_ssnid;
 
 	sr->sr_async_req = ar;
 
@@ -1084,7 +1084,7 @@ smb2_decode_header(smb_request_t *sr)
 	if (hdr_len != SMB2_HDR_SIZE)
 		return (-1);
 
-	sr->smb_uid = (uint16_t)ssnid;	/* XXX wide UIDs */
+	sr->smb2_ssnid = ssnid;
 
 	if (sr->smb2_hdr_flags & SMB2_FLAGS_ASYNC_COMMAND) {
 		sr->smb2_async_id = pid |
@@ -1100,7 +1100,6 @@ smb2_decode_header(smb_request_t *sr)
 int
 smb2_encode_header(smb_request_t *sr, boolean_t overwrite)
 {
-	uint64_t ssnid = sr->smb_uid;
 	uint64_t pid_tid_aid; /* pid+tid, or async id */
 	uint32_t reply_hdr_flags;
 	int rc;
@@ -1126,7 +1125,7 @@ smb2_encode_header(smb_request_t *sr, boolean_t overwrite)
 		    sr->smb2_next_reply,	/* l */
 		    sr->smb2_messageid,		/* q */
 		    pid_tid_aid,		/* q */
-		    ssnid,			/* q */
+		    sr->smb2_ssnid,		/* q */
 		    sr->smb2_sig);		/* 16c */
 	} else {
 		rc = smb_mbc_encodef(&sr->reply,
@@ -1140,7 +1139,7 @@ smb2_encode_header(smb_request_t *sr, boolean_t overwrite)
 		    sr->smb2_next_reply,	/* l */
 		    sr->smb2_messageid,		/* q */
 		    pid_tid_aid,		/* q */
-		    ssnid,			/* q */
+		    sr->smb2_ssnid,		/* q */
 		    sr->smb2_sig);		/* 16c */
 	}
 
