@@ -1332,6 +1332,7 @@ typedef struct smb_ofile {
 	smb_odir_t		*f_odir;
 	smb_opipe_t		*f_pipe;
 
+	uint64_t		f_persistid;
 	uint32_t		f_uniqid;
 	uint32_t		f_refcnt;
 	uint64_t		f_seek_pos;

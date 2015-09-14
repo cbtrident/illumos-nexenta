@@ -308,7 +308,7 @@ smb2_create(smb_request_t *sr)
 	 * (16 bytes) similar to an NFSv4 open handle.
 	 */
 	of = sr->fid_ofile;
-	smb2fid.persistent = 0;
+	smb2fid.persistent = of->f_persistid;
 	smb2fid.temporal = sr->smb_fid;
 
 	switch (sr->tid_tree->t_res_type & STYPE_MASK) {

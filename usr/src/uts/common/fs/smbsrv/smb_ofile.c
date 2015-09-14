@@ -163,6 +163,10 @@
 #include <smbsrv/smb_kproto.h>
 #include <smbsrv/smb_fsops.h>
 
+/* Don't leak object addresses */
+#define	SMB_OFILE_PERSISTID(of) \
+	((uintptr_t)&smb_cache_ofile ^ (uintptr_t)(of))
+
 static boolean_t smb_ofile_is_open_locked(smb_ofile_t *);
 static smb_ofile_t *smb_ofile_close_and_next(smb_ofile_t *);
 static int smb_ofile_netinfo_encode(smb_ofile_t *, uint8_t *, size_t,
@@ -206,6 +210,7 @@ smb_ofile_open(
 	of->f_state = SMB_OFILE_STATE_OPEN;
 	of->f_refcnt = 1;
 	of->f_fid = fid;
+	of->f_persistid = SMB_OFILE_PERSISTID(of);
 	of->f_uniqid = uniqid;
 	of->f_opened_by_pid = sr->smb_pid;
 	of->f_granted_access = op->desired_access;

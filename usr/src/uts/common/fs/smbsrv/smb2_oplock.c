@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -130,7 +130,7 @@ smb2_oplock_break_notification(smb_request_t *sr, uint8_t brk)
 	 */
 	sr->smb2_cmd_code = SMB2_OPLOCK_BREAK;
 	sr->smb2_hdr_flags = SMB2_FLAGS_SERVER_TO_REDIR;
-	sr->smb_tid = ofile->f_tree->t_tid;
+	sr->smb_tid = 0;
 	sr->smb_pid = 0;
 	sr->smb2_ssnid = 0;
 	sr->smb2_messageid = UINT64_MAX;
@@ -140,7 +140,7 @@ smb2_oplock_break_notification(smb_request_t *sr, uint8_t brk)
 	 * SMB2 Oplock Break, variable part
 	 */
 	StructSize = 24;
-	smb2fid.persistent = 0;
+	smb2fid.persistent = ofile->f_persistid;
 	smb2fid.temporal = ofile->f_fid;
 	(void) smb_mbc_encodef(
 	    &sr->reply, "wb5.qq",

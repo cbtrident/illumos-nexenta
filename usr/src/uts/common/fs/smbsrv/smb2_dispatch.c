@@ -1259,7 +1259,8 @@ smb2sr_lookup_fid(smb_request_t *sr, smb2fid_t *fid)
 		sr->smb_fid = (uint16_t)fid->temporal;
 		sr->fid_ofile = smb_ofile_lookup_by_fid(sr, sr->smb_fid);
 	}
-	if (sr->fid_ofile == NULL)
+	if (sr->fid_ofile == NULL ||
+	    sr->fid_ofile->f_persistid != fid->persistent)
 		return (NT_STATUS_FILE_CLOSED);
 
 	return (0);
