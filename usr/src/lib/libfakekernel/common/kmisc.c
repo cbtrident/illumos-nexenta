@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -24,6 +24,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 
 #include <fakekernel.h>
 
@@ -67,6 +68,12 @@ delay(clock_t ticks)
 {
 	int msec = ticks;  /* NB: hz==1000 */
 	(void) poll(0, 0, msec);
+}
+
+int
+highbit(ulong_t i)
+{
+	return (fls(i));
 }
 
 /*

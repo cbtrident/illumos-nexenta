@@ -970,6 +970,13 @@ int smb_threshold_enter(smb_cmd_threshold_t *);
 void smb_threshold_exit(smb_cmd_threshold_t *);
 void smb_threshold_wake_all(smb_cmd_threshold_t *);
 
+/* SMB hash function prototypes */
+smb_hash_t *smb_hash_create(size_t, size_t, uint32_t num_buckets);
+void smb_hash_destroy(smb_hash_t *);
+void smb_ptrhash_insert(smb_hash_t *, void *);
+void smb_ptrhash_remove(smb_hash_t *, void *);
+void *smb_ptrhash_find(smb_hash_t *, void *, void *(*)(void *));
+
 #ifdef	__cplusplus
 }
 #endif

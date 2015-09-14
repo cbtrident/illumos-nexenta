@@ -134,7 +134,7 @@ extern "C" {
 #define	BIT_ONLYONESET(u) \
 	((((u) == 0) ? 0 : ((u) & ((u) - 1)) == 0))
 
-#if defined(_KERNEL) && !defined(_ASM)
+#if (defined(_KERNEL) || defined(_FAKE_KERNEL)) && !defined(_ASM)
 #include <sys/atomic.h>
 
 /*

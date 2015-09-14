@@ -74,6 +74,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	gethrestime_sec;
 	gethrtime_unscaled;
 
+	highbit;
 	hz;
 
 	kcred;

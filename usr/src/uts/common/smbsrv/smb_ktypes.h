@@ -391,6 +391,19 @@ typedef struct smb_llist {
 	boolean_t	ll_flushing;
 } smb_llist_t;
 
+typedef struct smb_bucket {
+	smb_llist_t	b_list;
+	uint32_t	b_max_seen;
+} smb_bucket_t;
+
+#define	b_cnt	b_list.ll_count
+
+typedef struct smb_hash {
+	uint32_t	rshift;
+	uint32_t	num_buckets;
+	smb_bucket_t	*buckets;
+} smb_hash_t;
+
 typedef struct smb_slist {
 	kmutex_t	sl_mutex;
 	kcondvar_t	sl_cv;

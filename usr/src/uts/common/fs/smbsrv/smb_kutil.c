@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/param.h>
@@ -40,6 +40,7 @@
 
 #include <sys/sid.h>
 #include <sys/priv_names.h>
+#include <sys/bitmap.h>
 
 static kmem_cache_t	*smb_dtor_cache = NULL;
 
@@ -1736,4 +1737,112 @@ smb_threshold_wake_all(smb_cmd_threshold_t *ct)
 	ct->ct_threshold = 0;
 	cv_broadcast(&ct->ct_cond);
 	mutex_exit(&ct->ct_mutex);
+}
+
+/* taken from mod_hash_byptr */
+size_t
+smb_ptr_hash(uint32_t rshift, void *key)
+{
+	uintptr_t k = (uintptr_t)key;
+	k >>= (int)rshift;
+
+	return ((size_t)k);
+}
+
+boolean_t
+smb_is_pow2(size_t n)
+{
+	return ((n & (n - 1)) == 0);
+}
+
+smb_hash_t *
+smb_hash_create(size_t elemsz, size_t link_offset,
+    uint32_t num_buckets)
+{
+	smb_hash_t *hash = kmem_alloc(sizeof (*hash), KM_SLEEP);
+	int i;
+
+	if (!smb_is_pow2(num_buckets))
+		num_buckets = 1 << highbit(num_buckets);
+
+	hash->rshift = highbit(elemsz);
+	hash->num_buckets = num_buckets;
+	hash->buckets = kmem_zalloc(num_buckets * sizeof (smb_bucket_t),
+	    KM_SLEEP);
+	for (i = 0; i < num_buckets; i++)
+		smb_llist_constructor(&hash->buckets[i].b_list, elemsz,
+		    link_offset);
+	return (hash);
+}
+
+void
+smb_hash_destroy(smb_hash_t *hash)
+{
+	int i;
+
+	for (i = 0; i < hash->num_buckets; i++)
+		smb_llist_destructor(&hash->buckets[i].b_list);
+
+	kmem_free(hash->buckets, hash->num_buckets * sizeof (smb_bucket_t));
+	kmem_free(hash, sizeof (*hash));
+}
+
+size_t
+smb_hash_get_key(smb_hash_t *hash, void *elem)
+{
+	return (smb_ptr_hash(hash->rshift, elem) &
+	    (hash->num_buckets - 1));
+}
+
+void
+smb_ptrhash_insert(smb_hash_t *hash, void *elem)
+{
+	size_t hashkey = smb_hash_get_key(hash, elem);
+	smb_bucket_t *bucket;
+	smb_llist_t *ll;
+
+	bucket = &hash->buckets[hashkey];
+	ll = &bucket->b_list;
+
+	smb_llist_enter(ll, RW_WRITER);
+	smb_llist_insert_head(ll, elem);
+	if (bucket->b_cnt > bucket->b_max_seen)
+		bucket->b_max_seen = bucket->b_cnt;
+	smb_llist_exit(ll);
+}
+
+void
+smb_ptrhash_remove(smb_hash_t *hash, void *elem)
+{
+	size_t hashkey = smb_hash_get_key(hash, elem);
+	smb_llist_t *bucket;
+
+	bucket = &hash->buckets[hashkey].b_list;
+
+	smb_llist_enter(bucket, RW_WRITER);
+	smb_llist_remove(bucket, elem);
+	smb_llist_exit(bucket);
+}
+
+void *
+smb_ptrhash_find(smb_hash_t *hash, void *elem, void *(cb)(void *))
+{
+	size_t hashkey = smb_hash_get_key(hash, elem);
+	smb_llist_t *bucket;
+	void *obj;
+
+	bucket = &hash->buckets[hashkey].b_list;
+
+	smb_llist_enter(bucket, RW_READER);
+	obj = smb_llist_head(bucket);
+	while (obj != NULL) {
+		if (obj == elem)
+			break;
+		obj = smb_llist_next(bucket, obj);
+	}
+	if (cb != NULL)
+		obj = cb(obj);
+	smb_llist_exit(bucket);
+
+	return (obj);
 }
