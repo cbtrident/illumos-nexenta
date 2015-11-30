@@ -212,6 +212,20 @@ smb2_fsctl_notsup(smb_request_t *sr, smb_fsctl_t *fsctl)
 	return (NT_STATUS_NOT_SUPPORTED);
 }
 
+static uint32_t
+smb2_set_compression(smb_request_t *sr, smb_fsctl_t *fsctl)
+{
+	_NOTE(ARGUNUSED(sr))
+	uint16_t compress_state;
+	(void) smb_mbc_decodef(fsctl->in_mbc, "w",
+	    &compress_state);
+
+	if (compress_state > 0)
+		return (NT_STATUS_COMPRESSION_DISABLED);
+
+	return (NT_STATUS_SUCCESS);
+}
+
 static struct smb2_ioctbl_ent
 smb2_ioc_tbl[] = {
 
@@ -226,9 +240,13 @@ smb2_ioc_tbl[] = {
 	/*
 	 * FILE_DEVICE_FILE_SYSTEM (9)
 	 */
+	{ FSCTL_GET_REPARSE_POINT,	0,	smb2_fsctl_notsup },
 	{ FSCTL_SET_REPARSE_POINT,	0,	smb2_fsctl_notsup },
 	{ FSCTL_CREATE_OR_GET_OBJECT_ID, 0,	smb2_fsctl_notsup },
 	{ FSCTL_FILE_LEVEL_TRIM,	0,	smb2_fsctl_notsup },
+	{ FSCTL_SET_COMPRESSION,	0,	smb2_set_compression },
+	{ FSCTL_QUERY_FILE_REGIONS, 0, smb2_fsctl_notsup },
+	{ FSCTL_SET_INTEGRITY_INFORMATION, 0, smb2_fsctl_notsup },
 
 	/*
 	 * FILE_DEVICE_NAMED_PIPE (17)

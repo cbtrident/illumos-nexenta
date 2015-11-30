@@ -21,6 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMBSRV_NTIFS_H
@@ -267,7 +269,9 @@ typedef enum _FILE_FS_INFORMATION_CLASS {
 	FileFsControlInformation,	/* 6 */
 	FileFsFullSizeInformation,	/* 7 */
 	FileFsObjectIdInformation,	/* 8 */
-	FileFsDriverPathInformation	/* 9 */
+	FileFsDriverPathInformation,	/* 9 */
+	FileFsVolumeFlagsInformation,	/* A */
+	FileFsSectorSizeInformation	/* B */
 } FILE_FS_INFORMATION_CLASS;
 
 /*

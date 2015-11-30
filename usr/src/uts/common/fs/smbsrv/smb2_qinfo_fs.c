@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -71,9 +71,15 @@ smb2_qinfo_fs(smb_request_t *sr, smb_queryinfo_t *qi)
 	case FileFsObjectIdInformation:	/* 8 */
 		status = smb2_qfs_obj_id(sr);
 		break;
-
-	default:
+	case FileFsVolumeFlagsInformation:	/* A */
+	case FileFsSectorSizeInformation:	/* B */
 		status = NT_STATUS_INVALID_INFO_CLASS;
+		break;
+	default: /* there are some infoclasses we don't yet handle */
+		status = NT_STATUS_INVALID_INFO_CLASS;
+#ifdef	DEBUG
+		cmn_err(CE_NOTE, "unknown InfoClass 0x%x", qi->qi_InfoClass);
+#endif
 		break;
 	}
 

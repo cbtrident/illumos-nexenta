@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMB_NTSTATUS_H
@@ -928,6 +928,7 @@ extern "C" {
 #define	NT_STATUS_PKINIT_CLIENT_FAILURE			0xC000038C
 #define	NT_STATUS_SMARTCARD_CERT_EXPIRED		0xC000038D
 #define	NT_STATUS_DRIVER_FAILED_PRIOR_UNLOAD		0xC000038E
+#define	NT_STATUS_COMPRESSION_DISABLED			0xC0000426
 #define	NT_STATUS_WOW_ASSERTION				0xC0009898
 
 /* Facility Debugger (0x..01....) not used */

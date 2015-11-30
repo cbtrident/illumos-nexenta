@@ -22,7 +22,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 #ifndef _SMBSRV_WINIOCTL_H
 #define	_SMBSRV_WINIOCTL_H
@@ -480,6 +480,8 @@ extern "C" {
 #define	FSCTL_SET_INTEGRITY_INFORMATION \
 	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 160, METHOD_BUFFERED, \
 		FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+#define	FSCTL_QUERY_FILE_REGIONS \
+	CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 161, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 /* FILE_DEVICE_NETWORK_FILE_SYSTEM */
 /* Read the snapshot info for Volume Shadow Copy Services */
