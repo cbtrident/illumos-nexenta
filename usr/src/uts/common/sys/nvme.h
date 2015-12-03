@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #ifndef _SYS_NVME_H
@@ -45,6 +45,7 @@ extern "C" {
 #define	NVME_IOC_GET_LOGPAGE		(NVME_IOC | 4)
 #define	NVME_IOC_GET_FEATURES		(NVME_IOC | 5)
 #define	NVME_IOC_INTR_CNT		(NVME_IOC | 6)
+#define	NVME_IOC_VERSION		(NVME_IOC | 7)
 
 typedef struct {
 	size_t		n_len;
@@ -69,6 +70,22 @@ typedef struct {
 } nvme_capabilities_t;
 
 /*
+ * NVMe version
+ */
+typedef struct {
+	uint16_t v_minor;
+	uint16_t v_major;
+} nvme_version_t;
+
+#define	NVME_VERSION_ATLEAST(v, maj, min) \
+	(((v)->v_major) > (maj) || \
+	((v)->v_major == (maj) && (v)->v_minor >= (min)))
+
+#define	NVME_VERSION_HIGHER(v, maj, min) \
+	(((v)->v_major) > (maj) || \
+	((v)->v_major == (maj) && (v)->v_minor > (min)))
+
+/*
  * NVMe Identify data structures
  */
 
@@ -83,18 +100,21 @@ typedef struct {
 /* NVMe Power State Descriptor */
 typedef struct {
 	uint16_t psd_mp;		/* Maximum Power */
-	uint16_t psd_rsvd1;
+	uint8_t psd_rsvd1;
+	uint8_t psd_mps:1;		/* Max Power Scale (1.1) */
+	uint8_t psd_nops:1;		/* Non-Operational State (1.1) */
+	uint8_t psd_rsvd2:6;
 	uint32_t psd_enlat;		/* Entry Latency */
 	uint32_t psd_exlat;		/* Exit Latency */
 	uint8_t psd_rrt:5;		/* Relative Read Throughput */
-	uint8_t psd_rsvd2:3;
-	uint8_t psd_rrl:5;		/* Relative Read Latency */
 	uint8_t psd_rsvd3:3;
+	uint8_t psd_rrl:5;		/* Relative Read Latency */
+	uint8_t psd_rsvd4:3;
 	uint8_t psd_rwt:5;		/* Relative Write Throughput */
-	uint8_t	psd_rsvd4:3;
+	uint8_t	psd_rsvd5:3;
 	uint8_t psd_rwl:5;		/* Relative Write Latency */
-	uint8_t psd_rsvd5:3;
-	uint8_t psd_rsvd6[16];
+	uint8_t psd_rsvd6:3;
+	uint8_t psd_rsvd7[16];
 } nvme_idctl_psd_t;
 
 /* NVMe Identify Controller Data Structure */
@@ -108,11 +128,14 @@ typedef struct {
 	uint8_t id_rab;			/* Recommended Arbitration Burst */
 	uint8_t id_oui[3];		/* vendor IEEE OUI */
 	struct {			/* Multi-Interface Capabilities */
-		uint8_t m_multi:1;	/* HW has multiple PCIe interfaces */
-		uint8_t m_rsvd:7;
+		uint8_t m_multi_pci:1;	/* HW has multiple PCIe interfaces */
+		uint8_t m_multi_ctrl:1; /* HW has multiple controllers (1.1) */
+		uint8_t m_sr_iov:1;	/* controller is SR-IOV virt fn (1.1) */
+		uint8_t m_rsvd:5;
 	} id_mic;
 	uint8_t	id_mdts;		/* Maximum Data Transfer Size */
-	uint8_t id_rsvd_cc[256 - 78];
+	uint16_t id_cntlid;		/* Unique Controller Identifier (1.1) */
+	uint8_t id_rsvd_cc[256 - 80];
 
 	/* Admin Command Set Attributes */
 	struct {			/* Optional Admin Command Support */
@@ -138,7 +161,11 @@ typedef struct {
 		uint8_t av_spec:1;	/* use format from spec */
 		uint8_t av_rsvd:7;
 	} id_avscc;
-	uint8_t id_rsvd_ac[256 - 9];
+	struct {			/* Autonomous Power State Trans (1.1) */
+		uint8_t ap_sup:1;	/* APST supported (1.1) */
+		uint8_t ap_rsvd:7;
+	} id_apsta;
+	uint8_t id_rsvd_ac[256 - 10];
 
 	/* NVM Command Set Attributes */
 	nvme_idctl_qes_t id_sqes;	/* Submission Queue Entry Size */
@@ -149,7 +176,10 @@ typedef struct {
 		uint16_t on_compare:1;	/* Compare */
 		uint16_t on_wr_unc:1;	/* Write Uncorrectable */
 		uint16_t on_dset_mgmt:1; /* Dataset Management */
-		uint16_t on_rsvd:13;
+		uint16_t on_wr_zero:1;	/* Write Zeros (1.1) */
+		uint16_t on_save:1;	/* Save/Select in Get/Set Feat (1.1) */
+		uint16_t on_reserve:1;	/* Reservations (1.1) */
+		uint16_t on_rsvd:10;
 	} id_oncs;
 	struct {			/* Fused Operation Support */
 		uint16_t f_cmp_wr:1;	/* Compare and Write */
@@ -171,7 +201,16 @@ typedef struct {
 		uint8_t nv_spec:1;	/* use format from spec */
 		uint8_t nv_rsvd:7;
 	} id_nvscc;
-	uint8_t id_rsvd_nc_2[192 - 19];
+	uint8_t id_rsvd_nc_2;
+	uint16_t id_acwu;		/* Atomic Compare & Write Unit (1.1) */
+	uint16_t id_rsvd_nc_3;
+	struct {			/* SGL Support (1.1) */
+		uint16_t sgl_sup:1;	/* SGL Supported in NVM cmds (1.1) */
+		uint16_t sgl_rsvd1:15;
+		uint16_t sgl_bucket:1;	/* SGL Bit Bucket supported (1.1) */
+		uint16_t sgl_rsvd2:15;
+	} id_sgls;
+	uint8_t id_rsvd_nc_4[192 - 28];
 
 	/* I/O Command Set Attributes */
 	uint8_t id_rsvd_ioc[1344];
@@ -217,12 +256,29 @@ typedef struct {
 		uint8_t dp_type3:1;	/* Protection Information Type 3 */
 		uint8_t dp_first:1;	/* first 8 bytes of metadata */
 		uint8_t dp_last:1;	/* last 8 bytes of metadata */
+		uint8_t dp_rsvd:3;
 	} id_dpc;
 	struct {			/* Data Protection Settings */
 		uint8_t dp_pinfo:3;	/* Protection Information enabled */
 		uint8_t dp_first:1;	/* first 8 bytes of metadata */
+		uint8_t dp_rsvd:4;
 	} id_dps;
-	uint8_t id_rsvd1[128 - 30];
+	struct {			/* NS Multi-Path/Sharing Cap (1.1) */
+		uint8_t nm_shared:1;	/* NS is shared (1.1) */
+		uint8_t nm_rsvd:7;
+	} id_nmic;
+	struct {			/* Reservation Capabilities (1.1) */
+		uint8_t rc_persist:1;	/* Persist Through Power Loss (1.1) */
+		uint8_t rc_wr_excl:1;	/* Write Exclusive (1.1) */
+		uint8_t rc_excl:1;	/* Exclusive Access (1.1) */
+		uint8_t rc_wr_excl_r:1;	/* Wr Excl - Registrants Only (1.1) */
+		uint8_t rc_excl_r:1;	/* Excl Acc - Registrants Only (1.1) */
+		uint8_t rc_wr_excl_a:1;	/* Wr Excl - All Registrants (1.1) */
+		uint8_t rc_excl_a:1;	/* Excl Acc - All Registrants (1.1) */
+		uint8_t rc_rsvd:1;
+	} id_rescap;
+	uint8_t id_rsvd1[120 - 32];
+	uint8_t	id_eui64[8];		/* IEEE Extended Unique Id (1.1) */
 	nvme_idns_lbaf_t id_lbaf[16];	/* LBA Formats */
 
 	uint8_t id_rsvd2[192];
@@ -305,7 +361,6 @@ typedef struct {
 	uint8_t fw_rsvd3[512 - 64];
 } nvme_fwslot_log_t;
 
-
 /*
  * NVMe Get / Set Features
  */
@@ -320,6 +375,8 @@ typedef struct {
 #define	NVME_FEAT_INTR_VECT	0x9	/* Interrupt Vector Configuration */
 #define	NVME_FEAT_WRITE_ATOM	0xa	/* Write Atomicity */
 #define	NVME_FEAT_ASYNC_EVENT	0xb	/* Asynchronous Event Configuration */
+#define	NVME_FEAT_AUTO_PST	0xc	/* Autonomous Power State Transition */
+					/* (1.1) */
 
 #define	NVME_FEAT_PROGRESS	0x80	/* Software Progress Marker */
 
@@ -448,6 +505,24 @@ typedef union {
 	uint32_t r;
 } nvme_async_event_conf_t;
 
+/* Autonomous Power State Transition Feature (1.1) */
+typedef union {
+	struct {
+		uint8_t	apst_apste:1;	/* APST enabled */
+		uint8_t apst_rsvd:7;
+	} b;
+	uint8_t r;
+} nvme_auto_power_state_trans_t;
+
+typedef struct {
+	uint32_t apst_rsvd1:3;
+	uint32_t apst_itps:5;	/* Idle Transition Power State */
+	uint32_t apst_itpt:24;	/* Idle Time Prior to Transition */
+	uint32_t apst_rsvd2;
+} nvme_auto_power_state_t;
+
+#define	NVME_AUTO_PST_BUFSIZE	256
+
 /* Software Progress Marker Feature */
 typedef union {
 	struct {
@@ -456,6 +531,8 @@ typedef union {
 	} b;
 	uint32_t r;
 } nvme_software_progress_marker_t;
+
+
 #ifdef __cplusplus
 }
 #endif

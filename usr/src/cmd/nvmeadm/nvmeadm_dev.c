@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #include <sys/types.h>
@@ -75,6 +75,17 @@ nvme_capabilities(int fd)
 	    sizeof (nvme_capabilities_t), &cap, 0, NULL);
 
 	return (cap);
+}
+
+nvme_version_t *
+nvme_version(int fd)
+{
+	void *vs = NULL;
+
+	(void) nvme_ioctl(fd, NVME_IOC_VERSION,
+	    sizeof (nvme_version_t), &vs, 0, NULL);
+
+	return (vs);
 }
 
 nvme_identify_ctrl_t *

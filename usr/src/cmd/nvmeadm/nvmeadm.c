@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 /*
@@ -61,6 +61,7 @@ struct nvme_process_arg {
 	di_minor_t npa_minor;
 	nvme_identify_ctrl_t *npa_idctl;
 	nvme_identify_nsid_t *npa_idns;
+	nvme_version_t *npa_version;
 };
 
 struct nvme_feature {
@@ -93,8 +94,9 @@ static int do_get_feat_common(int, const nvme_feature_t *,
     nvme_identify_ctrl_t *);
 static int do_get_feat_lba_range(int, const nvme_feature_t *);
 static int do_get_feat_intr_vect(int, const nvme_feature_t *);
+static int do_get_feat_auto_pst(int, const nvme_feature_t *);
 static int do_get_feature_helper(int, const nvme_feature_t *,
-    nvme_identify_ctrl_t *);
+    const nvme_process_arg_t *);
 static int do_get_feature(int, const nvme_process_arg_t *);
 static int do_get_features(int, const nvme_process_arg_t *);
 
@@ -130,6 +132,8 @@ static const nvme_feature_t features[] = {
 	    B_FALSE },
 	{ "Write Atomicity", "atomicity", NVME_FEAT_WRITE_ATOM, B_FALSE },
 	{ "Asynchronous Event Configuration", "event", NVME_FEAT_ASYNC_EVENT,
+	    B_FALSE },
+	{ "Autonomous Power State Transition", NULL, NVME_FEAT_AUTO_PST,
 	    B_FALSE },
 	{ "Software Progress Marker", "progress", NVME_FEAT_PROGRESS, B_FALSE },
 	{ NULL, NULL, 0, B_FALSE }
@@ -225,11 +229,17 @@ main(int argc, char **argv)
 
 	nvme_walk(&npa);
 
-	if (found == 0)
-		errx(-1, "%s%.*s%.*d: no such controller or namespace",
-		    npa.npa_name, npa.npa_nsid > 0 ? 1 : 0, "/",
-		    npa.npa_nsid > 0 ? snprintf(NULL, 0, "%d", npa.npa_nsid)
-		    : 0, npa.npa_nsid);
+	if (found == 0) {
+		if (npa.npa_name != NULL) {
+			errx(-1, "%s%.*s%.*d: no such controller or namespace",
+			    npa.npa_name, npa.npa_nsid > 0 ? 1 : 0, "/",
+			    npa.npa_nsid > 0 ?
+			    snprintf(NULL, 0, "%d", npa.npa_nsid) :
+			    0, npa.npa_nsid);
+		} else {
+			errx(-1, "no controllers found");
+		}
+	}
 
 	exit(exitcode);
 }
@@ -311,6 +321,7 @@ nvme_process(di_node_t node, di_minor_t minor, void *arg)
 	found++;
 
 	npa->npa_idctl = nvme_identify_ctrl(fd);
+	npa->npa_version = nvme_version(fd);
 
 	if (npa->npa_idctl == NULL)
 		return (DI_WALK_TERMINATE);
@@ -324,6 +335,7 @@ nvme_process(di_node_t node, di_minor_t minor, void *arg)
 
 	exitcode += npa->npa_cmd->c_func(fd, npa);
 
+	free(npa->npa_version);
 	free(npa->npa_idctl);
 	if (npa->npa_nsid)
 		free(npa->npa_idns);
@@ -384,7 +396,7 @@ do_list(int fd, const nvme_process_arg_t *npa)
 		err(-1, "do_list()");
 
 	(void) printf("%s: ", name);
-	nvme_print_ctrl_summary(npa->npa_idctl);
+	nvme_print_ctrl_summary(npa->npa_idctl, npa->npa_version);
 
 	ns_npa.npa_name = name;
 	ns_npa.npa_isns = B_TRUE;
@@ -415,11 +427,11 @@ do_identify(int fd, const nvme_process_arg_t *npa)
 		if (cap == NULL)
 			return (-1);
 
-		nvme_print_identify_ctrl(npa->npa_idctl, cap);
+		nvme_print_identify_ctrl(npa->npa_idctl, cap, npa->npa_version);
 
 		free(cap);
 	} else {
-		nvme_print_identify_nsid(npa->npa_idns);
+		nvme_print_identify_nsid(npa->npa_idns, npa->npa_version);
 	}
 
 	return (0);
@@ -585,8 +597,28 @@ do_get_feat_intr_vect(int fd, const nvme_feature_t *feat)
 }
 
 static int
+do_get_feat_auto_pst(int fd, const nvme_feature_t *feat)
+{
+	uint64_t res;
+	nvme_auto_power_state_trans_t apst;
+	nvme_auto_power_state_t *aps;
+
+	if (nvme_get_feature(fd, feat->f_feature, 0, &res,
+	    NVME_AUTO_PST_BUFSIZE, (void **)&aps) == B_FALSE)
+		return (EINVAL);
+
+	apst.r = res;
+
+	nvme_print(0, feat->f_name, 0, NULL);
+	nvme_print_feat_auto_pst(apst, aps);
+	free(aps);
+
+	return (0);
+}
+
+static int
 do_get_feature_helper(int fd, const nvme_feature_t *feat,
-    nvme_identify_ctrl_t *idctl)
+    const nvme_process_arg_t *npa)
 {
 	int ret;
 
@@ -594,15 +626,26 @@ do_get_feature_helper(int fd, const nvme_feature_t *feat,
 	case NVME_FEAT_LBA_RANGE:
 		ret = do_get_feat_lba_range(fd, feat);
 		break;
+
+	case NVME_FEAT_WRITE_CACHE:
+		if (npa->npa_idctl->id_vwc.vwc_present == 0)
+			return (EINVAL);
+		ret = do_get_feat_common(fd, feat, npa->npa_idctl);
+		break;
+
 	case NVME_FEAT_INTR_VECT:
 		ret = do_get_feat_intr_vect(fd, feat);
 		break;
-	case NVME_FEAT_WRITE_CACHE:
-		if (idctl->id_vwc.vwc_present == 0)
+
+	case NVME_FEAT_AUTO_PST:
+		if (!NVME_VERSION_ATLEAST(npa->npa_version, 1, 1) ||
+		    npa->npa_idctl->id_apsta.ap_sup == 0)
 			return (EINVAL);
-		/*FALLTHRU*/
+		ret = do_get_feat_auto_pst(fd, feat);
+		break;
+
 	default:
-		ret = do_get_feat_common(fd, feat, idctl);
+		ret = do_get_feat_common(fd, feat, npa->npa_idctl);
 		break;
 	}
 
@@ -654,7 +697,7 @@ do_get_feature(int fd, const nvme_process_arg_t *npa)
 		    "namespaces", feat->f_name,
 		    feat->f_neednsid ? "only" : "not");
 
-	if (do_get_feature_helper(fd, feat, npa->npa_idctl) != 0)
+	if (do_get_feature_helper(fd, feat, npa) != 0)
 		errx(-1, "unsupported feature: %s", feat->f_name);
 
 	return (0);
@@ -681,7 +724,7 @@ do_get_features(int fd, const nvme_process_arg_t *npa)
 		    (npa->npa_nsid == 0 && feat->f_neednsid == B_TRUE))
 			continue;
 
-		(void) do_get_feature_helper(fd, feat, npa->npa_idctl);
+		(void) do_get_feature_helper(fd, feat, npa);
 	}
 
 	return (0);

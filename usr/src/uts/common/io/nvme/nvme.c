@@ -233,7 +233,7 @@ static void *nvme_identify(nvme_t *, uint32_t);
 static boolean_t nvme_set_features(nvme_t *, uint32_t, uint8_t, uint32_t,
     uint32_t *);
 static boolean_t nvme_get_features(nvme_t *, uint32_t, uint8_t, uint32_t *,
-    void **);
+    void **, size_t *);
 static boolean_t nvme_write_cache_set(nvme_t *, boolean_t *);
 static int nvme_set_nqueues(nvme_t *, uint16_t);
 
@@ -1653,13 +1653,14 @@ fail:
 
 static boolean_t
 nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
-    void **buf)
+    void **buf, size_t *bufsize)
 {
 	nvme_cmd_t *cmd = nvme_alloc_cmd(nvme, KM_SLEEP);
-	size_t bufsize = 0;
 	boolean_t ret = B_FALSE;
 
 	ASSERT(res != NULL);
+	ASSERT(buf != NULL);
+	ASSERT(bufsize != NULL);
 
 	cmd->nc_sqid = 0;
 	cmd->nc_callback = nvme_wakeup_cmd;
@@ -1686,7 +1687,7 @@ nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
 		break;
 
 	case NVME_FEAT_LBA_RANGE:
-		if (nvme->n_lba_range_supported == B_FALSE)
+		if (!nvme->n_lba_range_supported)
 			goto fail;
 
 		/*
@@ -1698,9 +1699,23 @@ nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
 		 */
 		cmd->nc_dontpanic = B_TRUE;
 		cmd->nc_sqe.sqe_nsid = nsid;
-		bufsize = NVME_LBA_RANGE_BUFSIZE;
+		*bufsize = NVME_LBA_RANGE_BUFSIZE;
 
-		if (nvme_zalloc_dma(nvme, bufsize, DDI_DMA_READ,
+		break;
+
+	case NVME_FEAT_AUTO_PST:
+		if (!nvme->n_auto_pst_supported)
+			goto fail;
+
+		*bufsize = NVME_AUTO_PST_BUFSIZE;
+		break;
+
+	default:
+		goto fail;
+	}
+
+	if (*bufsize != 0) {
+		if (nvme_zalloc_dma(nvme, *bufsize, DDI_DMA_READ,
 		    &nvme->n_prp_dma_attr, &cmd->nc_dma) != DDI_SUCCESS) {
 			dev_err(nvme->n_dip, CE_WARN,
 			    "!nvme_zalloc_dma failed for GET FEATURES");
@@ -1722,10 +1737,6 @@ nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
 			cmd->nc_sqe.sqe_dptr.d_prp[1] =
 			    cmd->nc_dma->nd_cookie.dmac_laddress;
 		}
-		break;
-
-	default:
-		goto fail;
 	}
 
 	if (nvme_admin_cmd(cmd, NVME_ADMIN_CMD_TIMEOUT) != DDI_SUCCESS) {
@@ -1747,9 +1758,9 @@ nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
 		goto fail;
 	}
 
-	if (bufsize != 0) {
-		*buf = kmem_alloc(bufsize, KM_SLEEP);
-		bcopy(cmd->nc_dma->nd_memp, *buf, bufsize);
+	if (*bufsize != 0) {
+		*buf = kmem_alloc(*bufsize, KM_SLEEP);
+		bcopy(cmd->nc_dma->nd_memp, *buf, *bufsize);
 	}
 
 	*res = cmd->nc_cqe.cqe_dw0;
@@ -1966,12 +1977,13 @@ nvme_init(nvme_t *nvme)
 
 	/* Check controller version */
 	vs.r = nvme_get32(nvme, NVME_REG_VS);
+	nvme->n_version.v_major = vs.b.vs_mjr;
+	nvme->n_version.v_minor = vs.b.vs_mnr;
 	dev_err(nvme->n_dip, CE_CONT, "?NVMe spec version %d.%d",
-	    vs.b.vs_mjr, vs.b.vs_mnr);
+	    nvme->n_version.v_major, nvme->n_version.v_minor);
 
-	if (nvme_version_major < vs.b.vs_mjr ||
-	    (nvme_version_major == vs.b.vs_mjr &&
-	    nvme_version_minor < vs.b.vs_mnr)) {
+	if (!NVME_VERSION_HIGHER(&nvme->n_version,
+	    nvme_version_major, nvme_version_minor)) {
 		dev_err(nvme->n_dip, CE_WARN, "!no support for version > %d.%d",
 		    nvme_version_major, nvme_version_minor);
 		if (nvme->n_strict_version)
@@ -2225,6 +2237,13 @@ nvme_init(nvme_t *nvme)
 	 * will be set to B_FALSE by nvme_get_features().
 	 */
 	nvme->n_lba_range_supported = B_TRUE;
+
+	/*
+	 * Check support for Autonomous Power State Transition.
+	 */
+	if (NVME_VERSION_ATLEAST(&nvme->n_version, 1, 1))
+		nvme->n_auto_pst_supported =
+		    nvme->n_idctl->id_apsta.ap_sup == 0 ? B_FALSE : B_TRUE;
 
 	/*
 	 * Identify Namespaces
@@ -3268,6 +3287,15 @@ nvme_devctl_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p,
 		kmem_free(idctl, NVME_IDENTIFY_BUFSIZE);
 		break;
 	}
+	case NVME_IOC_VERSION: {
+		if (nioc.n_len < sizeof (nvme->n_version))
+			return (ENOMEM);
+
+		if (ddi_copyout(&nvme->n_version, (void *)nioc.n_buf,
+		    sizeof (nvme->n_version), mode) != 0)
+			rv = EFAULT;
+		break;
+	}
 	case NVME_IOC_CAPABILITIES: {
 		nvme_reg_cap_t cap = { 0 };
 		nvme_capabilities_t nc;
@@ -3375,9 +3403,6 @@ nvme_devctl_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p,
 			    nsid > nvme->n_namespace_count)
 				return (EINVAL);
 
-			bufsize = NVME_LBA_RANGE_BUFSIZE;
-			if (nioc.n_len < NVME_LBA_RANGE_BUFSIZE)
-				return (ENOMEM);
 			break;
 
 		case NVME_FEAT_WRITE_CACHE:
@@ -3388,19 +3413,34 @@ nvme_devctl_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p,
 				return (EINVAL);
 
 			break;
+
+		case NVME_FEAT_AUTO_PST:
+			if (nsid != 0)
+				return (EINVAL);
+
+			if (!nvme->n_auto_pst_supported)
+				return (EINVAL);
+
+			break;
+
 		default:
 			return (EINVAL);
 		}
 
-		if (nvme_get_features(nvme, nsid, feature, &res, &buf)
+		if (nvme_get_features(nvme, nsid, feature, &res, &buf, &bufsize)
 		    == B_FALSE)
 			return (EIO);
 
-		if (buf)
-			if (ddi_copyout(buf, (void*)nioc.n_buf, bufsize, mode)
-			    != 0)
-				rv = EFAULT;
+		if (nioc.n_len < bufsize) {
+			kmem_free(buf, bufsize);
+			return (ENOMEM);
+		}
 
+		if (buf && ddi_copyout(buf, (void*)nioc.n_buf, bufsize, mode)
+		    != 0)
+			rv = EFAULT;
+
+		kmem_free(buf, bufsize);
 		nioc.n_arg = res;
 
 		break;

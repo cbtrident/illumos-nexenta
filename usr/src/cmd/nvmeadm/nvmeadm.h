@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #ifndef _NVMEADM_H
@@ -29,21 +29,24 @@ extern int debug;
 
 /* printing functions */
 extern void nvme_print(int, char *, int, const char *, ...);
-extern void nvme_print_ctrl_summary(nvme_identify_ctrl_t *);
+extern void nvme_print_ctrl_summary(nvme_identify_ctrl_t *, nvme_version_t *);
 extern void nvme_print_nsid_summary(nvme_identify_nsid_t *);
 extern void nvme_print_identify_ctrl(nvme_identify_ctrl_t *,
-    nvme_capabilities_t *);
-extern void nvme_print_identify_nsid(nvme_identify_nsid_t *);
+    nvme_capabilities_t *, nvme_version_t *);
+extern void nvme_print_identify_nsid(nvme_identify_nsid_t *, nvme_version_t *);
 extern void nvme_print_error_log(int, nvme_error_log_entry_t *);
 extern void nvme_print_health_log(nvme_health_log_t *, nvme_identify_ctrl_t *);
 extern void nvme_print_fwslot_log(nvme_fwslot_log_t *);
 extern void nvme_print_feat_common(int, uint64_t, nvme_identify_ctrl_t *);
 extern void nvme_print_feat_lba_range(nvme_lba_range_type_t,
     nvme_lba_range_t *);
+extern void nvme_print_feat_auto_pst(nvme_auto_power_state_trans_t,
+    nvme_auto_power_state_t *);
 
 /* device node functions */
 extern int nvme_open(di_minor_t);
 extern void nvme_close(int);
+extern nvme_version_t *nvme_version(int);
 extern nvme_capabilities_t *nvme_capabilities(int);
 extern nvme_identify_ctrl_t *nvme_identify_ctrl(int);
 extern nvme_identify_nsid_t *nvme_identify_nsid(int);

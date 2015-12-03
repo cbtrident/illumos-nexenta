@@ -129,6 +129,7 @@ struct nvme {
 	char *n_product;
 	char *n_vendor;
 
+	nvme_version_t n_version;
 	boolean_t n_dead;
 	boolean_t n_strict_version;
 	boolean_t n_ignore_unknown_vendor_status;
@@ -141,6 +142,7 @@ struct nvme {
 	boolean_t n_write_cache_enabled;
 	int n_error_log_len;
 	boolean_t n_lba_range_supported;
+	boolean_t n_auto_pst_supported;
 
 	int n_nssr_supported;
 	int n_doorbell_stride;
