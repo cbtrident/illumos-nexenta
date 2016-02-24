@@ -656,7 +656,6 @@ void smb_session_disconnect_share(smb_session_t *, const char *);
 void smb_session_getclient(smb_session_t *, char *, size_t);
 boolean_t smb_session_isclient(smb_session_t *, const char *);
 void smb_session_correct_keep_alive_values(smb_llist_t *, uint32_t);
-void smb_session_oplock_break(smb_request_t *, uint8_t);
 int smb_session_send(smb_session_t *, uint8_t type, mbuf_chain_t *);
 int smb_session_xprt_gethdr(smb_session_t *, smb_xprt_t *);
 boolean_t smb_session_oplocks_enable(smb_session_t *);

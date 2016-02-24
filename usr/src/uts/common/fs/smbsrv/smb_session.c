@@ -1531,34 +1531,6 @@ smb_session_levelII_oplocks(smb_session_t *session)
 	return (B_FALSE);
 }
 
-/*
- * smb_session_oplock_break
- *
- * Send an oplock break request to the client,
- * recalling some cache delegation.
- */
-void
-smb_session_oplock_break(smb_request_t *sr, uint8_t brk)
-{
-	smb_session_t	*session = sr->session;
-	mbuf_chain_t	*mbc = &sr->reply;
-
-	SMB_SESSION_VALID(session);
-
-	/*
-	 * Build the break message in sr->reply and then send it.
-	 * The mbc is free'd later, in smb_request_free().
-	 */
-	mbc->max_bytes = MLEN;
-	if (session->dialect <= NT_LM_0_12) {
-		smb1_oplock_break_notification(sr, brk);
-	} else {
-		smb2_oplock_break_notification(sr, brk);
-	}
-
-	(void) smb_session_send(session, 0, mbc);
-}
-
 static void
 smb_session_genkey(smb_session_t *session)
 {

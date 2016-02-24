@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -62,6 +62,7 @@ static smb_oplock_grant_t *smb_oplock_get_grant(smb_oplock_t *, smb_ofile_t *);
 
 static void smb_oplock_sched_async_break(smb_oplock_grant_t *, uint8_t);
 static void smb_oplock_exec_async_break(void *);
+static int smb_oplock_send_break(smb_request_t *, uint8_t);
 static void smb_oplock_break_levelII_locked(smb_node_t *);
 
 /*
@@ -395,8 +396,10 @@ smb_oplock_break_levelII_locked(smb_node_t *node)
 }
 
 /*
- * Schedule a call to smb_session_oplock_break
- * using an smb_request on the owning session.
+ * Schedule an asynchronous call to smb_oplock_send_break.
+ * Try hard to avoid waiting for any oplock work here, or
+ * callers coming in from FEM etc. may suffer delays.
+ * Caller may hold the oplock mutex.
  */
 static void
 smb_oplock_sched_async_break(smb_oplock_grant_t *og, uint8_t brk)
@@ -407,7 +410,9 @@ smb_oplock_sched_async_break(smb_oplock_grant_t *og, uint8_t brk)
 	/*
 	 * Make sure we can get a hold on the ofile.  If we can't,
 	 * the file is closing, and there's no point scheduling an
-	 * oplock break on it.  (Also hold the tree and user.)
+	 * oplock break on it because the close will release the
+	 * oplock very soon. Same for the tree & user holds.
+	 *
 	 * These holds account for the pointers we copy into the
 	 * smb_request fields: fid_ofile, tid_tree, uid_user.
 	 * These holds are released via smb_request_free after
@@ -444,35 +449,69 @@ static void
 smb_oplock_exec_async_break(void *arg)
 {
 	smb_request_t *sr = arg;
+	smb_ofile_t *of = sr->fid_ofile;
 	smb_oplock_grant_t *og = &sr->arg.olbrk;
+	int rc = 0;
 
 	SMB_REQ_VALID(sr);
 	SMB_OPLOCK_GRANT_VALID(og);
 
 	mutex_enter(&sr->sr_mutex);
 	sr->sr_worker = curthread;
-	sr->sr_time_active = gethrtime();
+	sr->sr_state = SMB_REQ_STATE_ACTIVE;
+	mutex_exit(&sr->sr_mutex);
 
-	switch (sr->sr_state) {
-	case SMB_REQ_STATE_SUBMITTED:
-		sr->sr_state = SMB_REQ_STATE_ACTIVE;
-		mutex_exit(&sr->sr_mutex);
+	/*
+	 * This is where we actually do the deferred work
+	 * requested by smb_oplock_sched_async_break().
+	 */
+	rc = smb_oplock_send_break(sr, og->og_breaking);
 
-		/*
-		 * This is where we actually do the deferred work
-		 * requested by smb_oplock_sched_async_break().
-		 */
-		smb_session_oplock_break(sr, og->og_breaking);
-
-		mutex_enter(&sr->sr_mutex);
-		/* FALLTHROUGH */
-
-	default: /* typically cancelled */
-		sr->sr_state = SMB_REQ_STATE_COMPLETED;
-		mutex_exit(&sr->sr_mutex);
+	/*
+	 * If we were unable to send the break request, the
+	 * session must be closing.  Break the oplock here by
+	 * simulating a break response.
+	 */
+	if (rc != 0) {
+		smb_oplock_ack(of->f_node, of,
+		    SMB_OPLOCK_BREAK_TO_NONE);
 	}
 
+	sr->sr_state = SMB_REQ_STATE_COMPLETED;
 	smb_request_free(sr);
+}
+
+/*
+ * smb_oplock_send_break
+ *
+ * Send an oplock break request to the client,
+ * recalling some cache delegation.
+ *
+ * Note: sr->session != ofile->f_session
+ */
+static int
+smb_oplock_send_break(smb_request_t *sr, uint8_t brk)
+{
+	smb_ofile_t	*ofile = sr->fid_ofile;
+	smb_session_t	*session = ofile->f_session;
+	mbuf_chain_t	*mbc = &sr->reply;
+	int rc;
+
+	SMB_SESSION_VALID(session);
+
+	/*
+	 * Build the break message in sr->reply and then send it.
+	 * The mbc is free'd later, in smb_request_free().
+	 */
+	mbc->max_bytes = MLEN;
+	if (session->dialect >= SMB_VERS_2_BASE) {
+		smb2_oplock_break_notification(sr, brk);
+	} else {
+		smb1_oplock_break_notification(sr, brk);
+	}
+
+	rc = smb_session_send(session, 0, mbc);
+	return (rc);
 }
 
 /*
