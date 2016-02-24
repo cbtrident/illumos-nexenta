@@ -386,13 +386,13 @@ smb_tree_release(
 {
 	SMB_TREE_VALID(tree);
 
-	mutex_enter(&tree->t_mutex);
-	ASSERT(tree->t_refcnt);
-	tree->t_refcnt--;
-
 	/* flush the ofile and odir lists' delete queues */
 	smb_llist_flush(&tree->t_ofile_list);
 	smb_llist_flush(&tree->t_odir_list);
+
+	mutex_enter(&tree->t_mutex);
+	ASSERT(tree->t_refcnt);
+	tree->t_refcnt--;
 
 	if (smb_tree_is_disconnected(tree) && (tree->t_refcnt == 0))
 		smb_session_post_tree(tree->t_session, tree);

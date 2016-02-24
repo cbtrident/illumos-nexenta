@@ -819,6 +819,17 @@ struct smb_key {
 #define	SMB_SIGNING_CHECK	2
 
 /*
+ * Locking notes:
+ * If you hold the mutex/lock on an object, don't flush the deleteq
+ * of the objects directly below it in the logical hierarchy
+ * (i.e. via smb_llist_exit()). I.e. don't drop s_tree_list when
+ * you hold u_mutex, because deleted trees need u_mutex to
+ * lower the refcnt.
+ *
+ * Note that this also applies to u_mutex and t_ofile_list.
+ */
+
+/*
  * Session State Machine
  * ---------------------
  *
@@ -877,6 +888,7 @@ typedef enum {
 	SMB_SESSION_STATE_ESTABLISHED,
 	SMB_SESSION_STATE_NEGOTIATED,
 	SMB_SESSION_STATE_TERMINATED,
+	SMB_SESSION_STATE_SHUTDOWN,
 	SMB_SESSION_STATE_SENTINEL
 } smb_session_state_t;
 
@@ -890,6 +902,7 @@ typedef struct smb_session {
 	smb_rwx_t		s_lock;
 	uint64_t		s_kid;
 	smb_session_state_t	s_state;
+	uint32_t		s_refcnt;
 	uint32_t		s_flags;
 	taskqid_t		s_receiver_tqid;
 	kthread_t		*s_thread;

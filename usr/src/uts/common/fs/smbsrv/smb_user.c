@@ -233,6 +233,8 @@ smb_user_new(smb_session_t *session)
 	if (smb_idpool_alloc(&session->s_uid_pool, &user->u_uid))
 		goto errout;
 
+	smb_session_hold(session); /* for user->u_session */
+
 	mutex_init(&user->u_mutex, NULL, MUTEX_DEFAULT, NULL);
 	user->u_state = SMB_USER_STATE_LOGGING_ON;
 	user->u_magic = SMB_USER_MAGIC;
@@ -538,6 +540,7 @@ smb_user_delete(void *arg)
 	smb_llist_remove(&session->s_user_list, user);
 	smb_idpool_free(&session->s_uid_pool, user->u_uid);
 	smb_llist_exit(&session->s_user_list);
+	smb_session_release(session);
 
 	mutex_enter(&user->u_mutex);
 	mutex_exit(&user->u_mutex);

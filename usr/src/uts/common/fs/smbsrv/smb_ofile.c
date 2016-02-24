@@ -219,10 +219,11 @@ smb_ofile_open(
 	of->f_session = tree->t_session;
 
 	/*
-	 * grab a ref for of->f_user
+	 * grab a ref for of->f_user and of->f_tree
 	 * released in smb_ofile_delete()
 	 */
 	smb_user_hold_internal(sr->uid_user);
+	smb_tree_hold_internal(tree);
 	of->f_user = sr->uid_user;
 	of->f_tree = tree;
 	of->f_node = node;
@@ -301,6 +302,7 @@ smb_ofile_open(
 	return (of);
 
 errout:
+	smb_tree_release(of->f_tree);
 	smb_user_release(of->f_user);
 	crfree(of->f_cr);
 
@@ -663,6 +665,7 @@ smb_ofile_lookup_by_fid(
 		goto out;
 	}
 
+	/* inline smb_ofile_hold() */
 	mutex_enter(&of->f_mutex);
 	if (of->f_state != SMB_OFILE_STATE_OPEN) {
 		mutex_exit(&of->f_mutex);
@@ -897,6 +900,7 @@ smb_ofile_close_and_next(smb_ofile_t *of)
 	switch (of->f_state) {
 	case SMB_OFILE_STATE_OPEN:
 		/* The file is still open. */
+		/* inline smb_ofile_hold_internal() */
 		of->f_refcnt++;
 		ASSERT(of->f_refcnt);
 		tree = of->f_tree;
@@ -977,6 +981,7 @@ smb_ofile_delete(void *arg)
 	of->f_magic = (uint32_t)~SMB_OFILE_MAGIC;
 	list_destroy(&of->f_notify.nc_waiters);
 	mutex_destroy(&of->f_mutex);
+	smb_tree_release(of->f_tree);
 	smb_user_release(of->f_user);
 	crfree(of->f_cr);
 	kmem_cache_free(smb_cache_ofile, of);

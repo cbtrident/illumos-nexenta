@@ -421,10 +421,15 @@ smb_oplock_sched_async_break(smb_oplock_grant_t *og, uint8_t brk)
 	ofile = og->og_ofile;
 	if (!smb_ofile_hold(ofile))
 		return;
+
+	if ((sr = smb_request_alloc(og->og_session, 0)) == NULL) {
+		smb_ofile_release(ofile);
+		return;
+	}
+
 	smb_tree_hold_internal(ofile->f_tree);
 	smb_user_hold_internal(ofile->f_user);
 
-	sr = smb_request_alloc(og->og_session, 0);
 	sr->sr_state = SMB_REQ_STATE_SUBMITTED;
 	sr->user_cr = zone_kcred();
 	sr->fid_ofile = ofile;

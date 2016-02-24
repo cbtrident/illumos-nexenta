@@ -608,8 +608,11 @@ smb_session_reader(smb_session_t *session)
 
 		/*
 		 * Allocate a request context, read the whole message.
+		 * If the request alloc fails, we've disconnected
+		 * and won't be able to send the reply anyway, so bail now.
 		 */
-		sr = smb_request_alloc(session, hdr.xh_length);
+		if ((sr = smb_request_alloc(session, hdr.xh_length)) == NULL)
+			break;
 
 		req_buf = (uint8_t *)sr->sr_request_buf;
 		resid = hdr.xh_length;
@@ -715,7 +718,7 @@ smb_session_create(ksocket_t new_so, uint16_t port, smb_server_t *sv,
 	session->opentime = now;
 	session->keep_alive = smb_keep_alive;
 	session->activity_timestamp = now;
-
+	session->s_refcnt = 1;
 	smb_session_genkey(session);
 
 	mutex_init(&session->s_credits_mutex, NULL, MUTEX_DEFAULT, NULL);
@@ -955,9 +958,9 @@ smb_session_cancel(smb_session_t *session)
 	smb_slist_wait_for_empty(&session->s_req_list);
 
 	/*
-	 * At this point the reference count of the users, trees, files,
-	 * directories should be zero. It should be possible to destroy them
-	 * without any problem.
+	 * At this point the reference count of the files and directories
+	 * should be zero. It should be possible to destroy them without
+	 * any problem, which should trigger the destruction of other objects.
 	 */
 	xa = smb_llist_head(&session->s_xa_list);
 	while (xa) {
@@ -1428,7 +1431,8 @@ smb_session_isclient(smb_session_t *sn, const char *client)
  * Allocate an smb_request_t structure from the kmem_cache.  Partially
  * initialize the found/new request.
  *
- * Returns pointer to a request
+ * Returns pointer to a request, or NULL if the session state is
+ * one in which new requests are no longer allowed.
  */
 smb_request_t *
 smb_request_alloc(smb_session_t *session, int req_length)
@@ -1460,7 +1464,39 @@ smb_request_alloc(smb_session_t *session, int req_length)
 		sr->sr_request_buf = kmem_alloc(req_length, KM_SLEEP);
 	sr->sr_magic = SMB_REQ_MAGIC;
 	sr->sr_state = SMB_REQ_STATE_INITIALIZING;
-	smb_slist_insert_tail(&session->s_req_list, sr);
+
+	/*
+	 * Only allow new SMB requests in some states.
+	 */
+	smb_rwx_rwenter(&session->s_lock, RW_WRITER);
+	switch (session->s_state) {
+	case SMB_SESSION_STATE_CONNECTED:
+	case SMB_SESSION_STATE_INITIALIZED:
+	case SMB_SESSION_STATE_ESTABLISHED:
+	case SMB_SESSION_STATE_NEGOTIATED:
+		smb_slist_insert_tail(&session->s_req_list, sr);
+		/* Internal smb_session_hold, as we have s_lock */
+		session->s_refcnt++;
+		break;
+
+	default:
+		ASSERT(0);
+		/* FALLTHROUGH */
+	case SMB_SESSION_STATE_DISCONNECTED:
+	case SMB_SESSION_STATE_SHUTDOWN:
+	case SMB_SESSION_STATE_TERMINATED:
+		/* Disallow new requests in these states. */
+		if (sr->sr_request_buf)
+			kmem_free(sr->sr_request_buf, sr->sr_req_length);
+		sr->session = NULL;
+		sr->sr_magic = 0;
+		mutex_destroy(&sr->sr_mutex);
+		kmem_cache_free(smb_cache_request, sr);
+		sr = NULL;
+		break;
+	}
+	smb_rwx_rwexit(&session->s_lock);
+
 	return (sr);
 }
 
@@ -1488,7 +1524,7 @@ smb_request_free(smb_request_t *sr)
 		smb_user_release(sr->uid_user);
 
 	smb_slist_remove(&sr->session->s_req_list, sr);
-
+	smb_session_release(sr->session);
 	sr->session = NULL;
 
 	smb_srm_fini(sr);
@@ -1545,4 +1581,47 @@ smb_session_genkey(smb_session_t *session)
 	(void) random_get_pseudo_bytes(tmp_key, 4);
 	session->sesskey = tmp_key[0] | tmp_key[1] << 8 |
 	    tmp_key[2] << 16 | tmp_key[3] << 24;
+}
+
+void
+smb_session_hold(smb_session_t *sess)
+{
+	SMB_SESSION_VALID(sess);
+
+	smb_rwx_rwenter(&sess->s_lock, RW_WRITER);
+	ASSERT(sess->s_state != SMB_SESSION_STATE_SHUTDOWN);
+	sess->s_refcnt++;
+	smb_rwx_rwexit(&sess->s_lock);
+}
+
+void
+smb_session_release(smb_session_t *sess)
+{
+	ASSERT(sess->s_magic == SMB_SESSION_MAGIC);
+
+	smb_rwx_rwenter(&sess->s_lock, RW_WRITER);
+	ASSERT(sess->s_refcnt);
+	sess->s_refcnt--;
+
+	switch (sess->s_state) {
+	case SMB_SESSION_STATE_DISCONNECTED:
+		if (sess->s_refcnt == 0) {
+			sess->s_state = SMB_SESSION_STATE_SHUTDOWN;
+			smb_server_post_session(sess);
+		}
+		break;
+	case SMB_SESSION_STATE_SHUTDOWN:
+	case SMB_SESSION_STATE_TERMINATED:
+	case SMB_SESSION_STATE_CONNECTED:
+	case SMB_SESSION_STATE_INITIALIZED:
+	case SMB_SESSION_STATE_ESTABLISHED:
+	case SMB_SESSION_STATE_NEGOTIATED:
+		break;
+
+	default:
+		ASSERT(0);
+		break;
+	}
+
+	smb_rwx_rwexit(&sess->s_lock);
 }

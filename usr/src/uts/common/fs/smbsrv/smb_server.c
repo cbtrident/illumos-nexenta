@@ -948,7 +948,7 @@ smb_server_sharevp(smb_server_t *sv, const char *shr_path, vnode_t **vp)
 	mutex_exit(&sv->sv_mutex);
 
 	if ((sr = smb_request_alloc(sv->sv_session, 0)) == NULL) {
-		return (ENOMEM);
+		return (ENOTCONN);
 	}
 	sr->user_cr = zone_kcred();
 
@@ -1055,12 +1055,13 @@ smb_server_disconnect_share(smb_llist_t *ll, const char *sharename)
 		smb_rwx_rwenter(&session->s_lock, RW_READER);
 		switch (session->s_state) {
 		case SMB_SESSION_STATE_NEGOTIATED:
+			smb_rwx_rwexit(&session->s_lock);
 			smb_session_disconnect_share(session, sharename);
 			break;
 		default:
+			smb_rwx_rwexit(&session->s_lock);
 			break;
 		}
-		smb_rwx_rwexit(&session->s_lock);
 		session = smb_llist_next(ll, session);
 	}
 
@@ -1640,7 +1641,15 @@ smb_server_receiver(void *arg)
 
 	session = (smb_session_t *)arg;
 	smb_session_receiver(session);
-	smb_server_destroy_session(session->s_server, session);
+	/* inline smb_session_release */
+	smb_rwx_rwenter(&session->s_lock, RW_WRITER);
+	if (--session->s_refcnt == 0) {
+		session->s_state = SMB_SESSION_STATE_SHUTDOWN;
+		smb_rwx_rwexit(&session->s_lock);
+		smb_server_destroy_session(session->s_server, session);
+	} else {
+		smb_rwx_rwexit(&session->s_lock);
+	}
 }
 
 /*
@@ -2325,9 +2334,33 @@ static void
 smb_server_destroy_session(smb_server_t *sv, smb_session_t *session)
 {
 	smb_llist_t *sl = &sv->sv_session_list;
+	ASSERT3U(session->s_refcnt, ==, 0);
 
 	smb_llist_enter(sl, RW_WRITER);
 	smb_llist_remove(sl, session);
 	smb_llist_exit(sl);
 	smb_session_delete(session);
+}
+
+void
+smb_server_delete_session(void *arg)
+{
+	smb_session_t *sess = (smb_session_t *)arg;
+	smb_llist_t *sl = &sess->s_server->sv_session_list;
+
+	smb_llist_enter(sl, RW_WRITER);
+	smb_llist_remove(sl, sess);
+	smb_llist_exit(sl);
+	smb_llist_flush(&sess->s_user_list);
+	smb_session_delete(sess);
+}
+
+void
+smb_server_post_session(smb_session_t *sess)
+{
+	smb_llist_t *sl = &sess->s_server->sv_session_list;
+	SMB_SESSION_VALID(sess);
+
+	if (sess->s_local_port != 0)
+		smb_llist_post(sl, sess, smb_server_delete_session);
 }

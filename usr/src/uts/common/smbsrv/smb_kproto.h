@@ -500,6 +500,8 @@ void smb_server_add_rxb(smb_server_t *, int64_t);
 void smb_server_add_txb(smb_server_t *, int64_t);
 void smb_server_inc_req(smb_server_t *);
 
+void smb_server_post_session(smb_session_t *);
+
 smb_event_t *smb_event_create(smb_server_t *, int);
 void smb_event_destroy(smb_event_t *);
 uint32_t smb_event_txid(smb_event_t *);
@@ -630,6 +632,8 @@ void smb_authsock_close(smb_user_t *);
  * session functions (file smb_session.c)
  */
 smb_session_t *smb_session_create(ksocket_t, uint16_t, smb_server_t *, int);
+void smb_session_hold(smb_session_t *);
+void smb_session_release(smb_session_t *);
 void smb_session_receiver(smb_session_t *);
 void smb_session_disconnect(smb_session_t *);
 void smb_session_timers(smb_server_t *);
