@@ -22,7 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 Martin Matuska. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -491,6 +491,7 @@ dsl_prop_notify_all_cb(dsl_pool_t *dp, dsl_dataset_t *ds, void *arg)
 		for (cbr = list_head(&pr->pr_cbs); cbr;
 		    cbr = list_next(&pr->pr_cbs, cbr)) {
 			uint64_t value;
+			const char *propname;
 
 			/*
 			 * Callback entries do not have holds on their
@@ -518,10 +519,19 @@ dsl_prop_notify_all_cb(dsl_pool_t *dp, dsl_dataset_t *ds, void *arg)
 			    !dsl_dataset_try_add_ref(dp, cbr->cbr_ds, FTAG))
 				continue;
 
-			if (dsl_prop_get_ds(cbr->cbr_ds,
-			    cbr->cbr_pr->pr_propname, sizeof (value), 1,
-			    &value, NULL) == 0)
+			propname = cbr->cbr_pr->pr_propname;
+			if (zfs_name_to_prop(propname) == ZFS_PROP_WRC_MODE) {
+				wrc_mode_prop_val_t val;
+
+				if (dsl_prop_get_ds(cbr->cbr_ds, propname, 8,
+				    WRC_MODE_PROP_VAL_SZ, &val, NULL) == 0) {
+					value = (uintptr_t)((void *)&val);
+					cbr->cbr_func(cbr->cbr_arg, value);
+				}
+			} else if (dsl_prop_get_ds(cbr->cbr_ds, propname,
+			    sizeof (value), 1, &value, NULL) == 0) {
 				cbr->cbr_func(cbr->cbr_arg, value);
+			}
 
 			if (ds != cbr->cbr_ds)
 				dsl_dataset_rele(cbr->cbr_ds, FTAG);
