@@ -2923,9 +2923,11 @@ vdev_stat_update(zio_t *zio, uint64_t psize)
 	if ((vd->vdev_isspecial || vd->vdev_isspecial_child) &&
 	    (vs->vs_checksum_errors != 0 || vs->vs_read_errors != 0 ||
 	    vs->vs_write_errors != 0 || !vdev_readable(vd) ||
-	    !vdev_writeable(vd))) {
+	    !vdev_writeable(vd)) && !spa->spa_special_has_errors) {
 		/* all new writes will be placed on normal */
-		cmn_err(CE_WARN, "New writes to special will be stopped");
+		cmn_err(CE_WARN, "New writes to special vdev [%s] "
+		    "will be stopped", (vd->vdev_path != NULL) ?
+		    vd->vdev_path : "undefined");
 		spa->spa_special_has_errors = B_TRUE;
 	}
 

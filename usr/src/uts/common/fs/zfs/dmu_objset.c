@@ -245,17 +245,6 @@ secondary_cache_changed_cb(void *arg, uint64_t newval)
 }
 
 static void
-special_class_changed_cb(void *arg, uint64_t newval)
-{
-	objset_t *os = arg;
-
-	ASSERT(newval == SPA_SPECIALCLASS_ZIL ||
-	    newval == SPA_SPECIALCLASS_META);
-
-	spa_set_specialclass(os->os_spa, os, newval);
-}
-
-static void
 zpl_meta_placement_changed_cb(void *arg, uint64_t newval)
 {
 	objset_t *os = arg;
@@ -416,9 +405,6 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 			    zfs_prop_to_name(ZFS_PROP_SECONDARYCACHE),
 			    secondary_cache_changed_cb, os);
 		}
-		if (err == 0)
-			err = dsl_prop_register(ds, "specialclass",
-			    special_class_changed_cb, os);
 		if (err == 0) {
 			err = dsl_prop_register(ds,
 			    zfs_prop_to_name(ZFS_PROP_ZPL_META_TO_METADEV),
@@ -496,7 +482,6 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 		os->os_sync = ZFS_SYNC_STANDARD;
 		os->os_primary_cache = ZFS_CACHE_ALL;
 		os->os_secondary_cache = ZFS_CACHE_ALL;
-		spa_set_specialclass(os->os_spa, os, SPA_SPECIALCLASS_META);
 		os->os_zpl_meta_to_special = 0;
 	}
 

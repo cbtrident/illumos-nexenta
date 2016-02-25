@@ -103,7 +103,6 @@ struct objset {
 	zfs_sync_type_t os_sync;
 	zfs_redundant_metadata_type_t os_redundant_metadata;
 	int os_recordsize;
-	spa_specialclass_t os_special_class;
 	uint64_t os_zpl_meta_to_special;
 	zfs_wrc_mode_t os_wrc_mode;
 	uint64_t os_wrc_root_ds_obj;

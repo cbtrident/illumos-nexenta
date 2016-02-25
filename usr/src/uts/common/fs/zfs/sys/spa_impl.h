@@ -377,7 +377,6 @@ struct spa {
 
 	/* specialclass support */
 	boolean_t	spa_usesc;		/* enable special class */
-	spa_specialclass_t spa_specialclass;	/* class of special device */
 	uint64_t	spa_special_vdev_correction_rate;
 	uint64_t	spa_minwat;		/* min watermark percent */
 	uint64_t	spa_lowat;		/* low watermark percent */
@@ -387,7 +386,6 @@ struct spa {
 	uint64_t	spa_wrc_wm_range;	/* high wm - low wm */
 	uint8_t		spa_wrc_perc;		/* percent of writes to spec. */
 	spa_watermark_t	spa_watermark;
-	boolean_t	spa_enable_specialclass;
 	boolean_t	spa_special_has_errors;
 
 	/* wrcache thread. */

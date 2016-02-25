@@ -26,15 +26,6 @@
 extern "C" {
 #endif
 
-/*
- * Special Class descriptor
- */
-struct spa_specialclass {
-	spa_specialclass_id_t	sc_id;
-	uint64_t		sc_flags;
-	uint64_t		sc_mask;
-};
-
 typedef enum {
 	SPA_SPECIAL_SELECTION_MIN,
 	SPA_SPECIAL_SELECTION_LATENCY,

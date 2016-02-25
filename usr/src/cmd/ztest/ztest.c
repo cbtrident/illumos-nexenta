@@ -6305,7 +6305,7 @@ make_random_props()
 	nvlist_t *props;
 
 	VERIFY(nvlist_alloc(&props, NV_UNIQUE_NAME, 0) == 0);
-	switch (ztest_random(4)) {
+	switch (ztest_random(5)) {
 	case 0:
 		break;
 	case 1:
@@ -6313,10 +6313,17 @@ make_random_props()
 		break;
 	case 2:
 		VERIFY(nvlist_add_uint64(props, "enablespecial", 1) == 0);
+		VERIFY(nvlist_add_uint64(props, "small_data_to_metadev", 1) ==
+		    0);
 		break;
 	case 3:
 		VERIFY(nvlist_add_uint64(props, "enablespecial", 1) == 0);
 		VERIFY(nvlist_add_uint64(props, "autoreplace", 1) == 0);
+		break;
+	case 4:
+		VERIFY(nvlist_add_uint64(props, "enablespecial", 1) == 0);
+		VERIFY(nvlist_add_uint64(props, "meta_placement", 1) == 0);
+		VERIFY(nvlist_add_uint64(props, "zfs_meta_to_metadev", 1) == 0);
 		break;
 	}
 
@@ -6326,16 +6333,21 @@ make_random_props()
 static void
 set_random_ds_props(char *dsname)
 {
-	/*
-	 * Set special class randomly
-	 */
-	spa_specialclass_id_t special_class = SPA_SPECIALCLASS_META;
+	uint64_t value = META_PLACEMENT_OFF;
 
-	if (ztest_random(100) < 50)
-		special_class = SPA_SPECIALCLASS_ZIL;
+	switch (ztest_random(3)) {
+	case 0:
+		break;
+	case 1:
+		value = META_PLACEMENT_ON;
+		break;
+	case 2:
+		value = META_PLACEMENT_DUAL;
+		break;
+	}
 
-	VERIFY(ztest_dsl_prop_set_uint64(dsname, ZFS_PROP_SPECIALCLASS,
-		special_class, B_TRUE) == 0);
+	VERIFY(ztest_dsl_prop_set_uint64(dsname, ZFS_PROP_ZPL_META_TO_METADEV,
+	    value, B_TRUE) == 0);
 }
 
 /*

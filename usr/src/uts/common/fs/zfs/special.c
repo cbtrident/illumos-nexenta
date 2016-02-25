@@ -136,23 +136,6 @@ spa_special_fini(spa_t *spa)
 	mutex_destroy(&spa->spa_perfmon.perfmon_lock);
 }
 
-/* existing special class desriptors */
-spa_specialclass_t specialclass_desc[SPA_NUM_SPECIALCLASSES] = {
-	{ SPA_SPECIALCLASS_ZIL,	0 },
-	{ SPA_SPECIALCLASS_META,	SPECIAL_META_FLAGS },
-};
-
-void
-spa_set_specialclass(spa_t *spa, objset_t *os,
-    spa_specialclass_id_t specclassid)
-{
-	ASSERT(spa != NULL);
-	ASSERT(os != NULL);
-	ASSERT(specclassid < SPA_NUM_SPECIALCLASSES);
-
-	os->os_special_class = specialclass_desc[specclassid];
-}
-
 static void
 spa_enable_special(spa_t *spa, boolean_t usesc)
 {
@@ -183,27 +166,6 @@ spa_can_special_be_used(spa_t *spa)
 {
 	return (spa_has_special(spa) && spa->spa_usesc &&
 	    (spa->spa_watermark == SPA_WM_NONE));
-}
-
-spa_specialclass_id_t
-spa_specialclass_id(objset_t *os)
-{
-	ASSERT(os != NULL);
-	return (os->os_special_class.sc_id);
-}
-
-spa_specialclass_t *
-spa_get_specialclass(objset_t *os)
-{
-	ASSERT(os != NULL);
-	return (&os->os_special_class);
-}
-
-uint64_t
-spa_specialclass_flags(objset_t *os)
-{
-	ASSERT(os != NULL);
-	return (os->os_special_class.sc_flags);
 }
 
 static uint64_t
@@ -418,13 +380,8 @@ spa_meta_to_special(spa_t *spa, objset_t *os, dmu_object_type_t ot)
 	/* some duplication of the spa_select_class() here */
 
 	if (spa_has_special(spa) && spa->spa_usesc) {
-		uint64_t specflags = spa_specialclass_flags(os);
-		result = (!!(SPECIAL_FLAG_DATAMETA & specflags)) ||
-		    os->os_wrc_mode != ZFS_WRC_MODE_OFF;
-		if (result) {
-			result = spa_refine_meta_placement(spa,
-			    os->os_zpl_meta_to_special, ot);
-		}
+		result = spa_refine_meta_placement(spa,
+		    os->os_zpl_meta_to_special, ot);
 	}
 
 	return (result);
@@ -469,21 +426,15 @@ dbuf_ddt_is_l2cacheable(dmu_buf_impl_t *db)
 	dmu_object_type_t ot;
 	spa_t *spa = db->db_objset->os_spa;
 	spa_meta_placement_t *mp = &spa->spa_meta_policy;
-	uint64_t specflags;
-	boolean_t match;
 
 	if (!spa_has_special(spa))
 		return (B_TRUE);
-
-	specflags = spa_specialclass_flags(db->db_objset);
-	match = (!!(SPECIAL_FLAG_DATAMETA & specflags)) ||
-	    db->db_objset->os_wrc_mode != ZFS_WRC_MODE_OFF;
 
 	DB_DNODE_ENTER(db);
 	ot = DB_DNODE(db)->dn_type;
 	DB_DNODE_EXIT(db);
 
-	if ((!DMU_OT_IS_DDT_META(ot)) || (!match))
+	if (!DMU_OT_IS_DDT_META(ot))
 		return (B_TRUE);
 
 	return (mp->spa_ddt_meta_to_special != META_PLACEMENT_ON);
@@ -504,15 +455,10 @@ spa_select_class(spa_t *spa, zio_t *zio)
 	if (zp->zp_usesc && spa_has_special(spa) &&
 	    !spa->spa_special_has_errors) {
 		boolean_t match = B_FALSE;
-		uint64_t specflags = zp->zp_specflags;
-
 		if (zp->zp_metadata) {
-			match = (!!(SPECIAL_FLAG_DATAMETA & specflags));
-			if (match && mp->spa_enable_meta_placement_selection)
+			if (mp->spa_enable_meta_placement_selection)
 				match = spa_refine_meta_placement(spa,
 				    zp->zp_zpl_meta_to_special, zp->zp_type);
-			else
-				match = B_FALSE;
 		} else {
 			match = zp->zp_usewrc &&
 			    spa->spa_wrc.wrc_ready_to_use &&

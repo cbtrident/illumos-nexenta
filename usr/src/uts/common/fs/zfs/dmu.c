@@ -1630,11 +1630,6 @@ dmu_sync_late_arrival(zio_t *pio, objset_t *os, dmu_sync_cb_t *done, zgd_t *zgd,
  *		propagated to pio from zio_done().
  */
 
-/*
- * Tunable: when syncing to disk in wrcache mode, write to special class vdevs
- */
-boolean_t dmu_write_to_special = 1;
-
 int
 dmu_sync(zio_t *pio, uint64_t txg, dmu_sync_cb_t *done, zgd_t *zgd)
 {
@@ -1657,9 +1652,9 @@ dmu_sync(zio_t *pio, uint64_t txg, dmu_sync_cb_t *done, zgd_t *zgd)
 	    db->db.db_object, db->db_level, db->db_blkid);
 
 	/* write to special only if proper conditions hold */
-	if (dmu_write_to_special && spa_write_data_to_special(os->os_spa, os)) {
+	if (spa_write_data_to_special(os->os_spa, os))
 		WP_SET_SPECIALCLASS(flags, B_TRUE);
-	}
+
 	DB_DNODE_ENTER(db);
 	dn = DB_DNODE(db);
 	dmu_write_policy(os, dn, db->db_level, flags | WP_DMU_SYNC, &zp);
@@ -1946,7 +1941,6 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 	zp->zp_dedup_verify = dedup && dedup_verify;
 	zp->zp_metadata = ismd;
 	zp->zp_nopwrite = nopwrite;
-	zp->zp_specflags = spa_specialclass_flags(os);
 	zp->zp_zpl_meta_to_special = os->os_zpl_meta_to_special;
 	zp->zp_usewrc = (zp->zp_usesc &&
 	    os->os_wrc_mode == ZFS_WRC_MODE_ON);

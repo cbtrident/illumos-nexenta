@@ -332,7 +332,6 @@ typedef struct zio_prop {
 	boolean_t		zp_metadata;
 	boolean_t		zp_usesc;
 	boolean_t		zp_usewrc;
-	uint64_t		zp_specflags;
 	uint64_t		zp_zpl_meta_to_special;
 } zio_prop_t;
 

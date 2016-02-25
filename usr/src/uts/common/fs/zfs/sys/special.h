@@ -30,25 +30,12 @@
 extern "C" {
 #endif
 
-typedef struct spa_specialclass spa_specialclass_t;
-
-/* types of special class */
-typedef enum spa_specialclass_id {
-	SPA_SPECIALCLASS_ZIL,
-	SPA_SPECIALCLASS_META,
-	SPA_NUM_SPECIALCLASSES
-} spa_specialclass_id_t;
-
 #define	META_PLACEMENT_OFF	0
 #define	META_PLACEMENT_ON	1
 #define	META_PLACEMENT_DUAL	2
 
 void spa_special_init(spa_t *spa);
 void spa_special_fini(spa_t *spa);
-void spa_set_specialclass(spa_t *, objset_t *, spa_specialclass_id_t);
-spa_specialclass_id_t spa_specialclass_id(objset_t *);
-spa_specialclass_t *spa_get_specialclass(objset_t *);
-uint64_t spa_specialclass_flags(objset_t *);
 void spa_check_special(spa_t *);
 boolean_t spa_write_data_to_special(spa_t *, objset_t *);
 boolean_t spa_can_special_be_used(spa_t *spa);

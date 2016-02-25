@@ -2772,6 +2772,16 @@ zio_dva_allocate(zio_t *zio)
 	error = metaslab_alloc(spa, mc, zio->io_size, bp,
 	    zio->io_prop.zp_copies, zio->io_txg, NULL, flags);
 
+#ifdef _KERNEL
+	DTRACE_PROBE6(zio_dva_allocate,
+	    uint64_t, DVA_GET_VDEV(&bp->blk_dva[0]),
+	    uint64_t, DVA_GET_VDEV(&bp->blk_dva[1]),
+	    uint64_t, BP_GET_LEVEL(bp),
+	    boolean_t, BP_IS_SPECIAL(bp),
+	    boolean_t, BP_IS_METADATA(bp),
+	    int, error);
+#endif
+
 	if (error) {
 		spa_dbgmsg(spa, "%s: metaslab allocation failure: zio %p, "
 		    "size %llu, error %d", spa_name(spa), zio, zio->io_size,

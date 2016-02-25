@@ -239,12 +239,6 @@ zfs_prop_init(void)
 		{ NULL }
 	};
 
-	static zprop_index_t specialclass_table[] = {
-		{ "zil",	SPA_SPECIALCLASS_ZIL },
-		{ "meta",	SPA_SPECIALCLASS_META },
-		{ NULL }
-	};
-
 	/* inherit index properties */
 	zprop_register_index(ZFS_PROP_REDUNDANT_METADATA, "redundant_metadata",
 	    ZFS_REDUNDANT_METADATA_ALL,
@@ -300,23 +294,6 @@ zfs_prop_init(void)
 	zprop_register_index(ZFS_PROP_WRC_MODE, "wrc_mode", ZFS_WRC_MODE_OFF,
 	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
 	    "off | on", "WRC_MODE", wrc_modes_table);
-
-#if 0
-	/* temporarily disable wrcache */
-	/* special class */
-	zprop_register_index(ZFS_PROP_SPECIALCLASS, "specialclass",
-	    SPA_SPECIALCLASS_ZIL, PROP_INHERIT,
-	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_VOLUME,
-	    "zil | meta | wrcache", "SPECIALCLASS", specialclass_table);
-#else
-	/* special class */
-	zprop_register_index(ZFS_PROP_SPECIALCLASS, "specialclass",
-	    SPA_SPECIALCLASS_ZIL, PROP_INHERIT,
-	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_AUTOSNAP |
-	    ZFS_TYPE_VOLUME,
-	    "zil | meta", "SPECIALCLASS", specialclass_table);
-#endif
-
 	zprop_register_index(ZFS_PROP_ZPL_META_TO_METADEV,
 	    "zpl_meta_to_metadev", META_PLACEMENT_OFF, PROP_INHERIT,
 	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_AUTOSNAP |
