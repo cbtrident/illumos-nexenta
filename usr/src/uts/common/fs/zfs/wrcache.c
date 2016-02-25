@@ -1395,14 +1395,22 @@ wrc_instance_finalization(void *arg)
 
 	ASSERT(wrc_instance->fini_done);
 
+#ifdef _KERNEL
+	/*
+	 * NVL needs to be populated here, because after
+	 * calling dsl_prop_inherit() wrc_instance cannot
+	 * be used
+	 */
+	nvlist_t *event;
+	event = fnvlist_alloc();
+	fnvlist_add_string(event, "fsname", wrc_instance->ds_name);
+#endif
+
 	VERIFY3U(dsl_prop_inherit(wrc_instance->ds_name,
 	    zfs_prop_to_name(ZFS_PROP_WRC_MODE),
 	    ZPROP_SRC_INHERITED), ==, 0);
 
 #ifdef _KERNEL
-	nvlist_t *event;
-	event = fnvlist_alloc();
-	fnvlist_add_string(event, "fsname", wrc_instance->ds_name);
 	zfs_event_post(ZFS_EC_STATUS, "wrc_done", event);
 #endif
 }
