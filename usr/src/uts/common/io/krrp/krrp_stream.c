@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -445,23 +445,36 @@ krrp_stream_validate_run(krrp_stream_t *stream, krrp_error_t *error)
 {
 	int rc = -1;
 
+	/*
+	 * The SOURCE datasets must exist always
+	 *
+	 * The DESTINATION dataset may not exist, that is allowed,
+	 * but if incr_snap_name is defined therefore this replication
+	 * is incremental and destination dataset must exist, exclude
+	 * the cases if the destination dataset is a ZFS pool (the name
+	 * does not contain '/'). For all other cases the parent of
+	 * the destination dataset must exist.
+	 */
 	if (dsl_dataset_creation_txg(stream->dataset) == UINT64_MAX) {
 		if (stream->mode == KRRP_STRMM_READ) {
 			krrp_error_set(error, KRRP_ERRNO_SRCDS, ENOENT);
 			goto out;
 		} else {
-			/*
-			 * The destination dataset may not exist
-			 * and this is ok, but:
-			 *
-			 * if destination dataset is a pool ('/' is not
-			 * contained in the name), then it must be here
-			 *
-			 * incr_snap_name is defined
-			 * so this replication is not first and in this case
-			 * the destination dataset must be here
-			 */
-			if (strchr(stream->dataset, '/') == NULL ||
+			char *p;
+			boolean_t parent_exists = B_TRUE;
+			boolean_t dst_is_pool = B_TRUE;
+
+			p = strrchr(stream->dataset, '/');
+			if (p != NULL) {
+				*p = '\0';
+				parent_exists =
+				    dsl_dataset_creation_txg(stream->dataset) !=
+				    UINT64_MAX;
+				*p = '/';
+				dst_is_pool = B_FALSE;
+			}
+
+			if (dst_is_pool || !parent_exists ||
 			    strlen(stream->incr_snap_name) != 0) {
 				krrp_error_set(error, KRRP_ERRNO_DSTDS, ENOENT);
 				goto out;
