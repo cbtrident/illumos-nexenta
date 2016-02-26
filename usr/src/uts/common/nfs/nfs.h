@@ -1101,6 +1101,8 @@ struct nfssrv_zone_stats {
 	bool_t		ns_reaper_terminate;	/* should reapers terminate? */
 	int		ns_reaper_threads;	/* number of active reaper */
 						/* threads */
+
+	kstat_t		*ns_agg;		/* aggregated kstat */
 };
 
 /*
@@ -1136,6 +1138,8 @@ struct nfssrv_exp_stats {
 						/* exportinfo */
 	krwlock_t	nses_clnt_stats_lock;	/* protects nses_clnt_stats */
 						/* AVL tree */
+
+	kstat_t		*nses_agg;		/* aggregated kstat */
 };
 
 #define	nfssrv_exp_stats_hold(e)	atomic_inc_uint(&(e)->nses_count)
@@ -1174,6 +1178,8 @@ struct nfssrv_clnt_stats {
 						/* nscs_clnt_kstat */
 	kcondvar_t	nscs_cv;		/* used for synchronization */
 						/* during the structure setup */
+
+	kstat_t		*nscs_agg;		/* aggregated kstat */
 };
 
 #define	nfssrv_clnt_stats_hold(c)	atomic_inc_uint(&(c)->nscs_count)
@@ -1199,6 +1205,8 @@ struct nfssrv_clnt_exp_stats {
 						/* nsces_stats */
 	kcondvar_t	nsces_cv;		/* used for synchronization */
 						/* during the structure setup */
+
+	kstat_t		*nsces_agg;		/* aggregated kstat */
 };
 
 extern void nfssrv_clnt_exp_stats_hold(struct nfssrv_clnt_exp_stats *);

@@ -86,7 +86,17 @@ static struct kmem_cache *nsces_cache;
 #define	CLNT_STATS	(1 << 2)	/* Create per-client kstats */
 #define	CLNT_EXP_STATS	(1 << 3)	/* Create per-client/per-exportinfo */
 					/* kstats */
-#define	ALL_STATS	(SRV_STATS | EXP_STATS | CLNT_STATS | CLNT_EXP_STATS)
+#define	AGG_SRV_STATS	(1 << 4)	/* Create per-server aggregated */
+					/* kstats */
+#define	AGG_EXP_STATS	(1 << 5)	/* Create per-exportinfo aggregated */
+					/* kstats */
+#define	AGG_CLNT_STATS	(1 << 6)	/* Create per-client aggregated */
+					/* kstats */
+#define	AGG_CLNT_EXP_STATS	\
+			(1 << 7)	/* Create per-client/per-exportinfo */
+					/* aggregated kstats */
+#define	ALL_STATS	(SRV_STATS | EXP_STATS | CLNT_STATS | CLNT_EXP_STATS | \
+    AGG_SRV_STATS | AGG_EXP_STATS | AGG_CLNT_STATS | AGG_CLNT_EXP_STATS)
 
 volatile int nfssrv_stats_flags = ALL_STATS;
 
@@ -101,6 +111,12 @@ volatile int nfssrv_clnt_exp_stats_keeptime = 6 * 60 * 60;
  */
 volatile int nfssrv_clnt_stats_reclaimtime = 5 * 60;
 volatile int nfssrv_clnt_exp_stats_reclaimtime = 5 * 60;
+
+/*
+ * Aggregates
+ */
+static kstat_t *nfssrv_kstat_aggregates_create(struct nfssrv_stats *,
+    kmutex_t *, const char *, int, const char *, const char *, zoneid_t);
 
 /*
  * Implementation of the nscs_cache
@@ -763,6 +779,8 @@ nfssrv_exp_stats_rele(struct nfssrv_exp_stats *e)
 	cookie = NULL;
 	while ((ce = avl_destroy_nodes(&e->nses_clnt_stats, &cookie)) != NULL) {
 		nfssrv_stats_fini(&ce->nsces_stats);
+		if (ce->nsces_agg != NULL)
+			kstat_delete(ce->nsces_agg);
 		nfssrv_clnt_stats_rele_norefresh(ce->nsces_clnt_stats);
 		kmem_cache_free(nsces_cache, ce);
 	}
@@ -773,6 +791,9 @@ nfssrv_exp_stats_rele(struct nfssrv_exp_stats *e)
 		nfssrv_stats_fini(&e->nses_stats);
 		kstat_delete(e->nses_share_kstat);
 	}
+
+	if (e->nses_agg != NULL)
+		kstat_delete(e->nses_agg);
 
 	rw_enter(&nfsstatsp->ns_exp_stats_lock, RW_WRITER);
 	if (e->nses_count > 0) {
@@ -936,6 +957,19 @@ nfssrv_get_exp_stats(const char *path, size_t len, bool_t pseudo)
 			}
 		}
 
+		/*
+		 * Aggregated stats
+		 */
+		if (e->nses_share_kstat == NULL ||
+		    (nfssrv_stats_flags & AGG_EXP_STATS) == 0) {
+			e->nses_agg = NULL;
+		} else {
+			e->nses_agg =
+			    nfssrv_kstat_aggregates_create(&e->nses_stats,
+			    &e->nses_procio_lock, "nfs", e->nses_id,
+			    "share_aggregates", "misc", getzoneid());
+		}
+
 		mutex_enter(&e->nses_procio_lock);
 		atomic_write_uchar(&e->nses_state, NS_STATE_OK);
 		cv_broadcast(&e->nses_cv);
@@ -1012,6 +1046,9 @@ nfssrv_clnt_stats_rele_norefresh(struct nfssrv_clnt_stats *c)
 		nfssrv_stats_fini(&c->nscs_stats);
 		kstat_delete(c->nscs_clnt_kstat);
 	}
+
+	if (c->nscs_agg != NULL)
+		kstat_delete(c->nscs_agg);
 
 	strfree(c->nscs_clnt_addr_str);
 
@@ -1286,6 +1323,19 @@ nfssrv_get_clnt_stats(SVCXPRT *xprt)
 			}
 		}
 
+		/*
+		 * Aggregated stats
+		 */
+		if (c->nscs_clnt_kstat == NULL ||
+		    (nfssrv_stats_flags & AGG_CLNT_STATS) == 0) {
+			c->nscs_agg = NULL;
+		} else {
+			c->nscs_agg =
+			    nfssrv_kstat_aggregates_create(&c->nscs_stats,
+			    &c->nscs_procio_lock, "nfs", c->nscs_id,
+			    "client_aggregates", "misc", getzoneid());
+		}
+
 		mutex_enter(&c->nscs_procio_lock);
 		atomic_write_uchar(&c->nscs_state, NS_STATE_OK);
 		cv_broadcast(&c->nscs_cv);
@@ -1366,6 +1416,9 @@ nfssrv_clnt_exp_stats_rele_norefresh(struct nfssrv_clnt_exp_stats *ce)
 	rw_exit(&nses->nses_clnt_stats_lock);
 
 	nfssrv_stats_fini(&ce->nsces_stats);
+
+	if (ce->nsces_agg != NULL)
+		kstat_delete(ce->nsces_agg);
 
 	rw_enter(&nses->nses_clnt_stats_lock, RW_WRITER);
 	if (ce->nsces_count > 0) {
@@ -1486,6 +1539,8 @@ nfssrv_get_clnt_exp_stats(struct nfssrv_clnt_stats *c,
 		atomic_write_uchar(&ce->nsces_state, NS_STATE_SETUP);
 		mutex_exit(&ce->nsces_procio_lock);
 
+		ce->nsces_agg = NULL;
+
 		/*
 		 * If we do not have the generic share or client kstat or the
 		 * per-exportinfo/per-client kstats are disabled do not create
@@ -1506,6 +1561,17 @@ nfssrv_get_clnt_exp_stats(struct nfssrv_clnt_stats *c,
 				nfssrv_stats_init(&ce->nsces_stats, getzoneid(),
 				    ce->nsces_exp_stats->nses_id, NULL, class,
 				    &ce->nsces_procio_lock);
+
+				/*
+				 * Aggregated stats
+				 */
+				if ((nfssrv_stats_flags & AGG_CLNT_STATS) != 0)
+					ce->nsces_agg =
+					    nfssrv_kstat_aggregates_create(
+					    &ce->nsces_stats,
+					    &ce->nsces_procio_lock, "nfs",
+					    ce->nsces_exp_stats->nses_id,
+					    "aggregates", class, getzoneid());
 			}
 		}
 
@@ -1661,6 +1727,18 @@ nfssrv_stat_zone_init(zoneid_t zoneid)
 		    &nfsstatsp->ns_reaper_lock);
 	mutex_exit(&nfsstatsp->ns_reaper_lock);
 
+	/*
+	 * Aggregated stats
+	 */
+	if ((nfssrv_stats_flags & AGG_SRV_STATS) == 0) {
+		nfsstatsp->ns_agg = NULL;
+	} else {
+		nfsstatsp->ns_agg =
+		    nfssrv_kstat_aggregates_create(&nfsstatsp->ns_stats,
+		    &nfsstatsp->ns_procio_lock, "nfs", 0, "aggregates", "misc",
+		    zoneid);
+	}
+
 	return (nfsstatsp);
 }
 
@@ -1670,6 +1748,12 @@ nfssrv_stat_zone_fini(zoneid_t zoneid, void *data)
 	_NOTE(ARGUNUSED(zoneid))
 
 	struct nfssrv_zone_stats *nfsstatsp = data;
+
+	/*
+	 * Aggregated stats
+	 */
+	if (nfsstatsp->ns_agg != NULL)
+		kstat_delete(nfsstatsp->ns_agg);
 
 	/*
 	 * Stop the reapers
@@ -1761,4 +1845,158 @@ nfssrv_stat_fini(void)
 
 	kmem_cache_destroy(nsces_cache);
 	kmem_cache_destroy(nscs_cache);
+}
+
+/*
+ * NFS server aggreated statistics
+ *
+ * read.rnum	Number of received read operations
+ * read.tnum	Number of sent replies to read operations
+ * read.rx	Number of bytes received in the read operations
+ * read.tx	Number of bytes sent in the replies to read operations
+ * read.time	Accumulated processing time for reads
+ * write.rnum	Number of received write operations
+ * write.tnum	Number of sent replies to write operations
+ * write.rx	Number of bytes received in the write operations
+ * write.tx	Number of bytes sent in the replies to write operations
+ * write.time	Accumulated processing time for writes
+ * other.rnum	Number of received other operations
+ * other.tnum	Number of sent replies to other operations
+ * other.rx	Number of bytes received in the other operations
+ * other.tx	Number of bytes sent in the replies to other operations
+ * other.time	Accumulated processing time for other operations
+ *
+ * The 'other' operations are neither reads (the NFS READ operations), nor
+ * writes (the NFS WRITE operations).
+ */
+
+static const kstat_named_t nfssrv_kstat_aggregates_tmpl[] = {
+	{ "read.rnum",	KSTAT_DATA_UINT64 },
+	{ "read.tnum",	KSTAT_DATA_UINT64 },
+	{ "read.rx",	KSTAT_DATA_UINT64 },
+	{ "read.tx",	KSTAT_DATA_UINT64 },
+	{ "read.time",	KSTAT_DATA_UINT64 },
+	{ "write.rnum",	KSTAT_DATA_UINT64 },
+	{ "write.tnum",	KSTAT_DATA_UINT64 },
+	{ "write.rx",	KSTAT_DATA_UINT64 },
+	{ "write.tx",	KSTAT_DATA_UINT64 },
+	{ "write.time",	KSTAT_DATA_UINT64 },
+	{ "other.rnum",	KSTAT_DATA_UINT64 },
+	{ "other.tnum",	KSTAT_DATA_UINT64 },
+	{ "other.rx",	KSTAT_DATA_UINT64 },
+	{ "other.tx",	KSTAT_DATA_UINT64 },
+	{ "other.time",	KSTAT_DATA_UINT64 }
+};
+
+#define	NFSSRV_KSTAT_AGGREGATES_COUNT			\
+	(sizeof (nfssrv_kstat_aggregates_tmpl) /	\
+	sizeof (nfssrv_kstat_aggregates_tmpl[0]))
+
+/*
+ * The following defines are offsets to the nfssrv_kstat_aggregates_tmpl array.
+ * The first set of defines are relative indexes, the second set are base
+ * indexes.  By combining them we can get the actual offset in the
+ * nfssrv_kstat_aggregates_tmpl array.  For example, the offset of the
+ * other.tnum field in the nfssrv_kstat_aggregates_tmpl array could be
+ * calculated as AGG_OTHER + AGG_TNUM.
+ */
+#define	AGG_RNUM	0
+#define	AGG_TNUM	1
+#define	AGG_RX		2
+#define	AGG_TX		3
+#define	AGG_TIME	4
+
+#define	AGG_READ	0
+#define	AGG_WRITE	5
+#define	AGG_OTHER	10
+
+/*
+ * Helper function for aggregates calculation
+ */
+static void
+nfssrv_kstat_aggregates_add_io(kstat_named_t *knp, kstat_io_t *kiop, int start,
+    int end, int read, int write)
+{
+	int i;
+
+	for (i = start; i <= end; i++) {
+		kstat_named_t *stat = &knp[AGG_OTHER];
+
+		if (i == read)
+			stat = &knp[AGG_READ];
+		else if (i == write)
+			stat = &knp[AGG_WRITE];
+
+		stat[AGG_RNUM].value.ui64 += kiop[i].writes;
+		stat[AGG_TNUM].value.ui64 += kiop[i].reads;
+		stat[AGG_RX].value.ui64 += kiop[i].nwritten;
+		stat[AGG_TX].value.ui64 += kiop[i].nread;
+		stat[AGG_TIME].value.ui64 += kiop[i].rlentime;
+	}
+}
+
+/*
+ * The ks_update(9E) function for aggregates
+ */
+static int
+nfssrv_kstat_aggregates_update(kstat_t *ksp, int rw)
+{
+	int i;
+	kstat_named_t *d = ksp->ks_data;
+	struct nfssrv_stats *s = ksp->ks_private;
+
+	if (rw == KSTAT_WRITE)
+		return (EACCES);
+
+	for (i = 0; i < NFSSRV_KSTAT_AGGREGATES_COUNT; i++)
+		d[i].value.ui64 = 0;
+
+	nfssrv_kstat_aggregates_add_io(d, s->aclprocio_v2_data, ACLPROC2_NULL,
+	    ACLPROC2_GETXATTRDIR, -1, -1);
+	nfssrv_kstat_aggregates_add_io(d, s->aclprocio_v3_data, ACLPROC3_NULL,
+	    ACLPROC3_GETXATTRDIR, -1, -1);
+	nfssrv_kstat_aggregates_add_io(d, s->rfsprocio_v2_data, RFS_NULL,
+	    RFS_STATFS, RFS_READ, RFS_WRITE);
+	nfssrv_kstat_aggregates_add_io(d, s->rfsprocio_v3_data, NFSPROC3_NULL,
+	    NFSPROC3_COMMIT, NFSPROC3_READ, NFSPROC3_WRITE);
+	nfssrv_kstat_aggregates_add_io(d, s->rfsprocio_v4_data, NFSPROC4_NULL,
+	    NFSPROC4_NULL, -1, -1);
+	nfssrv_kstat_aggregates_add_io(d, s->rfsprocio_v4_data, OP_ACCESS,
+	    OP_RELEASE_LOCKOWNER, OP_READ, OP_WRITE);
+
+	return (0);
+}
+
+/*
+ * Creates aggregated kstat for the particular detailed stats (nfssrv_stats)
+ */
+static kstat_t *
+nfssrv_kstat_aggregates_create(struct nfssrv_stats *s, kmutex_t *lock,
+    const char *module, int instance, const char *name, const char *class,
+    zoneid_t zoneid)
+{
+	int i;
+	kstat_t *ksp;
+	kstat_named_t *ks_data;
+
+	ksp = kstat_create_zone(module, instance, name, class, KSTAT_TYPE_NAMED,
+	    NFSSRV_KSTAT_AGGREGATES_COUNT, 0, zoneid);
+	if (ksp == NULL)
+		return (NULL);
+
+	ks_data = ksp->ks_data;
+
+	for (i = 0; i < NFSSRV_KSTAT_AGGREGATES_COUNT; i++) {
+		kstat_named_init(&ks_data[i],
+		    nfssrv_kstat_aggregates_tmpl[i].name,
+		    nfssrv_kstat_aggregates_tmpl[i].data_type);
+	}
+
+	ksp->ks_lock = lock;
+	ksp->ks_update = nfssrv_kstat_aggregates_update;
+	ksp->ks_private = s;
+
+	kstat_install(ksp);
+
+	return (ksp);
 }
