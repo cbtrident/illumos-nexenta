@@ -460,6 +460,16 @@ smb_llist_destructor(
 }
 
 /*
+ * smb_llist_enter
+ * Not a macro so dtrace smbsrv:* can see it.
+ */
+void
+smb_llist_enter(smb_llist_t *ll, krw_t mode)
+{
+	rw_enter(&ll->ll_lock, mode);
+}
+
+/*
  * Post an object to the delete queue.  The delete queue will be processed
  * during list exit or list destruction.  Objects are often posted for
  * deletion during list iteration (while the list is locked) but that is
@@ -482,12 +492,6 @@ smb_llist_post(smb_llist_t *ll, void *object, smb_dtorproc_t dtorproc)
 	list_insert_tail(&ll->ll_deleteq, dtor);
 	++ll->ll_deleteq_count;
 	mutex_exit(&ll->ll_mutex);
-}
-
-void
-smb_llist_enter(smb_llist_t *ll, krw_t mode)
-{
-	rw_enter(&ll->ll_lock, mode);
 }
 
 /*
@@ -657,6 +661,16 @@ smb_slist_destructor(
 }
 
 /*
+ * smb_slist_enter
+ * Not a macro so dtrace smbsrv:* can see it.
+ */
+void
+smb_slist_enter(smb_slist_t *sl)
+{
+	mutex_enter(&(sl)->sl_mutex);
+}
+
+/*
  * smb_slist_insert_head
  *
  * This function inserts the object passed a the beginning of the list.
@@ -820,7 +834,7 @@ smb_rwx_destroy(
 }
 
 /*
- * smb_rwx_rwexit
+ * smb_rwx_rwenter
  */
 void
 smb_rwx_rwenter(smb_rwx_t *rwx, krw_t mode)

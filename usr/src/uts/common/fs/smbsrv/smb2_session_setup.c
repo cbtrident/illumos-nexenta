@@ -30,7 +30,6 @@ smb_sdrc_t
 smb2_session_setup(smb_request_t *sr)
 {
 	smb_arg_sessionsetup_t	*sinfo;
-	smb_user_t *prev_user;
 	uint16_t StructureSize;
 	uint8_t  Flags;
 	uint8_t  SecurityMode;
@@ -141,24 +140,15 @@ smb2_session_setup(smb_request_t *sr)
 		/*
 		 * PrevSsnId is a session that the client is reporting as
 		 * having gone away, and for which we might not yet have seen
-		 * a disconnect. Find the session and log it off as if we had
-		 * received a disconnect.  Note that the client is allowed to
-		 * set PrevSsnID to the _current_ SessionID, so skip the lookup
-		 * in that case. Only allow this session logoff if we owned it.
+		 * a disconnect. We need to log off the previous session so
+		 * any durable handles in that session will become orphans
+		 * that can be reclaimed in this new session.  Note that
+		 * either zero or the _current_ session ID means there is
+		 * no previous session to logoff.
 		 */
-		if (PrevSsnId == 0 ||
-		    PrevSsnId == sr->smb2_ssnid)
-			break;
-		prev_user = smb_server_lookup_ssnid(sr->sr_server, PrevSsnId);
-		if (prev_user != NULL) {
-			if (smb_is_same_user(prev_user->u_cred, sr->user_cr)) {
-				/* Treat this as if we lost the connection */
-				prev_user->preserve_opens =
-				    SMB2_DH_PRESERVE_SOME;
-				smb_user_logoff(prev_user);
-			}
-			smb_user_release(prev_user); /* from lookup */
-		}
+		if (PrevSsnId != 0 &&
+		    PrevSsnId != sr->smb2_ssnid)
+			smb_server_logoff_ssnid(sr, PrevSsnId);
 		break;
 
 	/*

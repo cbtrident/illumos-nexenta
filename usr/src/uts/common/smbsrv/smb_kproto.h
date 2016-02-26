@@ -461,7 +461,7 @@ int smb_server_file_close(smb_ioc_fileid_t *);
 int smb_server_share_lookup(smb_server_t *, const char *, smb_node_t **);
 int smb_server_unshare(const char *);
 
-smb_user_t *smb_server_lookup_ssnid(smb_server_t *, uint64_t);
+void smb_server_logoff_ssnid(smb_request_t *, uint64_t);
 
 void smb_server_get_cfg(smb_server_t *, smb_kmod_cfg_t *);
 
@@ -484,8 +484,6 @@ void smb_server_dec_pipes(smb_server_t *);
 void smb_server_add_rxb(smb_server_t *, int64_t);
 void smb_server_add_txb(smb_server_t *, int64_t);
 void smb_server_inc_req(smb_server_t *);
-
-void smb_server_post_session(smb_session_t *);
 
 smb_event_t *smb_event_create(smb_server_t *, int);
 void smb_event_destroy(smb_event_t *);
@@ -614,8 +612,6 @@ void smb_authsock_close(smb_user_t *, ksocket_t);
 smb_session_t *smb_session_create(ksocket_t, uint16_t, smb_server_t *, int);
 smb_session_t *smb_server_find_session_byptr(smb_server_t *, void *);
 
-void smb_session_hold(smb_session_t *);
-void smb_session_release(smb_session_t *);
 void smb_session_receiver(smb_session_t *);
 void smb_session_disconnect(smb_session_t *);
 void smb_session_timers(smb_server_t *);
@@ -806,7 +802,7 @@ void	smb_llist_init(void);
 void	smb_llist_fini(void);
 void	smb_llist_constructor(smb_llist_t *, size_t, size_t);
 void	smb_llist_destructor(smb_llist_t *);
-void	smb_llist_enter(smb_llist_t *ll, krw_t);
+void	smb_llist_enter(smb_llist_t *, krw_t);
 void	smb_llist_exit(smb_llist_t *);
 void	smb_llist_post(smb_llist_t *, void *, smb_dtorproc_t);
 void	smb_llist_flush(smb_llist_t *);
@@ -828,10 +824,10 @@ void	smb_slist_insert_head(smb_slist_t *sl, void *obj);
 void	smb_slist_insert_tail(smb_slist_t *sl, void *obj);
 void	smb_slist_remove(smb_slist_t *sl, void *obj);
 void	smb_slist_wait_for_empty(smb_slist_t *sl);
+void	smb_slist_enter(smb_slist_t *sl);
 void	smb_slist_exit(smb_slist_t *sl);
 uint32_t smb_slist_move_tail(list_t *lst, smb_slist_t *sl);
 void    smb_slist_obj_move(smb_slist_t *dst, smb_slist_t *src, void *obj);
-#define	smb_slist_enter(sl)		mutex_enter(&(sl)->sl_mutex)
 #define	smb_slist_head(sl)		list_head(&(sl)->sl_list)
 #define	smb_slist_next(sl, obj)		list_next(&(sl)->sl_list, obj)
 

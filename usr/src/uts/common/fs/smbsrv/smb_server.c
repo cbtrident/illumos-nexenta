@@ -1998,61 +1998,60 @@ smb_server_fclose(smb_server_t *sv, uint32_t uniqid)
 }
 
 /*
- * This is used by SMB2 session setup to find a previous session,
+ * This is used by SMB2 session setup to logoff a previous session,
  * so it can force a logoff that we haven't noticed yet.
  * This is not called frequently, so we just walk the list of
  * connections searching for the user.
  */
-smb_user_t *
-smb_server_lookup_ssnid(smb_server_t *sv, uint64_t ssnid)
+void
+smb_server_logoff_ssnid(smb_request_t *sr, uint64_t ssnid)
 {
-	smb_llist_t *sl;
-	smb_session_t *sess;
-	smb_user_t *user = NULL;
+	smb_server_t	*sv = sr->sr_server;
+	smb_llist_t	*sess_list;
+	smb_session_t	*sess;
 
-	sl = &sv->sv_session_list;
-	smb_llist_enter(sl, RW_READER);
+	if (sv->sv_state != SMB_SERVER_STATE_RUNNING)
+		return;
 
-	for (sess = smb_llist_head(sl);
+	sess_list = &sv->sv_session_list;
+	smb_llist_enter(sess_list, RW_READER);
+
+	for (sess = smb_llist_head(sess_list);
 	    sess != NULL;
-	    sess = smb_llist_next(sl, sess)) {
+	    sess = smb_llist_next(sess_list, sess)) {
+
+		smb_user_t	*user;
 
 		SMB_SESSION_VALID(sess);
 
 		if (sess->dialect < SMB_VERS_2_BASE)
 			continue;
 
-		/*
-		 * Only look in sessions that are still active.
-		 * Avoid doing an smb_rwx_rwenter sess->s_lock
-		 * on every session here, but re-check below
-		 * with s_lock held.
-		 */
 		if (sess->s_state != SMB_SESSION_STATE_NEGOTIATED)
 			continue;
 
 		user = smb_session_lookup_ssnid(sess, ssnid);
-		if (user != NULL) {
-			break;
-		}
-	}
+		if (user == NULL)
+			continue;
 
-	smb_llist_exit(sl);
-
-	/* The sess check is warning avoidance. */
-	if (user != NULL && sess != NULL) {
-		/*
-		 * Re-check the state with s_lock held.
-		 */
-		smb_rwx_rwenter(&sess->s_lock, RW_READER);
-		if (sess->s_state != SMB_SESSION_STATE_NEGOTIATED) {
+		if (!smb_is_same_user(user->u_cred, sr->user_cr)) {
 			smb_user_release(user);
-			user = NULL;
+			continue;
 		}
-		smb_rwx_rwexit(&sess->s_lock);
+
+		/* Treat this as if we lost the connection */
+		user->preserve_opens = SMB2_DH_PRESERVE_SOME;
+		smb_user_logoff(user);
+		smb_user_release(user);
+
+		/*
+		 * The above may have left work on the delete queues
+		 */
+		smb_llist_flush(&sess->s_tree_list);
+		smb_llist_flush(&sess->s_user_list);
 	}
 
-	return (user);
+	smb_llist_exit(sess_list);
 }
 
 /* See also: libsmb smb_kmod_setcfg */
