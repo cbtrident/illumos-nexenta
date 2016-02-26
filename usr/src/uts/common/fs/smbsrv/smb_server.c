@@ -1888,6 +1888,44 @@ smb_server_fclose(smb_llist_t *ll, uint32_t uniqid)
 	return (rc);
 }
 
+/*
+ * This is used by SMB2 session setup to find a previous session,
+ * so it can force a logoff that we haven't noticed yet.
+ * This is not called frequently, so we just walk the list of
+ * connections searching for the user.
+ */
+smb_user_t *
+smb_server_lookup_ssnid(smb_server_t *sv, uint64_t ssnid)
+{
+	smb_llist_t *sl;
+	smb_session_t *sess;
+	smb_user_t *user;
+
+	sl = &sv->sv_session_list;
+	smb_llist_enter(sl, RW_READER);
+	sess = smb_llist_head(sl);
+
+	while (sess != NULL) {
+		SMB_SESSION_VALID(sess);
+
+		if (sess->dialect < SMB_VERS_2_BASE) {
+			sess = smb_llist_next(sl, sess);
+			continue;
+		}
+
+		user = smb_session_lookup_ssnid(sess, ssnid);
+		if (user != NULL) {
+			smb_llist_exit(sl);
+			return (user);
+		}
+
+		sess = smb_llist_next(sl, sess);
+	}
+
+	smb_llist_exit(sl);
+	return (NULL);
+}
+
 /* See also: libsmb smb_kmod_setcfg */
 static void
 smb_server_store_cfg(smb_server_t *sv, smb_ioc_cfg_t *ioc)

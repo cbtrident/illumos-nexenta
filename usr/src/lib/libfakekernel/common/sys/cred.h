@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  *
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
@@ -53,6 +53,7 @@ typedef struct cred cred_t;
 
 cred_t *_curcred(void);
 #define	CRED()		(_curcred())	/* current cred_t pointer */
+struct ksid;
 
 extern int ngroups_max;
 
@@ -75,6 +76,7 @@ extern gid_t crgetrgid(const cred_t *);
 extern gid_t crgetsgid(const cred_t *);
 extern zoneid_t crgetzoneid(const cred_t *);
 extern projid_t crgetprojid(const cred_t *);
+extern struct ksid *crgetsid(const cred_t *, int);
 
 #endif	/* _KERNEL */
 

@@ -720,3 +720,13 @@ smb_user_auth_logoff(smb_user_t *user)
 	(void) smb_kdoor_upcall(user->u_server, SMB_DR_USER_AUTH_LOGOFF,
 	    &audit_sid, xdr_uint32_t, NULL, NULL);
 }
+
+boolean_t
+smb_is_same_user(smb_user_t *u1, smb_user_t *u2)
+{
+	ksid_t *ks1 = crgetsid(u1->u_cred, KSID_USER);
+	ksid_t *ks2 = crgetsid(u2->u_cred, KSID_USER);
+
+	return (ks1->ks_rid == ks2->ks_rid &&
+	    strcmp(ks1->ks_domain->kd_name, ks2->ks_domain->kd_name) == 0);
+}

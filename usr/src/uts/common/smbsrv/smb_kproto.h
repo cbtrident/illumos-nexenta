@@ -478,6 +478,8 @@ int smb_server_file_close(smb_ioc_fileid_t *);
 int smb_server_sharevp(smb_server_t *, const char *, vnode_t **);
 int smb_server_unshare(const char *);
 
+smb_user_t *smb_server_lookup_ssnid(smb_server_t *, uint64_t);
+
 void smb_server_get_cfg(smb_server_t *, smb_kmod_cfg_t *);
 
 int smb_server_spooldoc(smb_ioc_spooldoc_t *);
@@ -757,6 +759,7 @@ int smb_user_netinfo_encode(smb_user_t *, uint8_t *, size_t, uint32_t *);
 smb_token_t *smb_get_token(smb_session_t *, smb_logon_t *);
 cred_t *smb_cred_create(smb_token_t *);
 void smb_user_setcred(smb_user_t *, cred_t *, uint32_t);
+boolean_t smb_is_same_user(smb_user_t *, smb_user_t *);
 
 /*
  * SMB tree functions (file smb_tree.c)

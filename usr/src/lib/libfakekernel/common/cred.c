@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 
@@ -18,6 +18,8 @@
 #include <sys/time.h>
 #include <sys/thread.h>
 #include <sys/cred.h>
+#include <sys/sid.h>
+#include <strings.h>
 
 struct cred {
 	uint32_t	pad[100];
@@ -25,6 +27,8 @@ struct cred {
 
 cred_t cred0;
 cred_t *kcred = &cred0;
+ksiddomain_t ksdom0 = {0, 0, "public", {0}};
+ksid_t ksid0 = {0, 0, 0, &ksdom0};
 
 cred_t *
 _curcred(void)
@@ -56,4 +60,11 @@ cred_t *
 zone_kcred(void)
 {
 	return (kcred);
+}
+
+/*ARGSUSED*/
+ksid_t *
+crgetsid(const cred_t *cr, int i)
+{
+	return (&ksid0);
 }

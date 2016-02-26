@@ -44,6 +44,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	copystr;
 
 	crfree;
+	crgetsid;
 	crgetuid;
 	crhold;
 

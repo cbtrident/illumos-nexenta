@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -30,6 +30,7 @@ smb_sdrc_t
 smb2_session_setup(smb_request_t *sr)
 {
 	smb_arg_sessionsetup_t	*sinfo;
+	smb_user_t *prev_user;
 	uint16_t StructureSize;
 	uint8_t  Flags;
 	uint8_t  SecurityMode;
@@ -37,7 +38,7 @@ smb2_session_setup(smb_request_t *sr)
 	uint32_t Channel;
 	uint16_t SecBufOffset;
 	uint16_t SecBufLength;
-	uint64_t PrevSessionId;
+	uint64_t PrevSsnId;
 	uint16_t SessionFlags;
 	uint32_t status;
 	int skip;
@@ -55,7 +56,7 @@ smb2_session_setup(smb_request_t *sr)
 	    &Channel,		/* l */
 	    &SecBufOffset,	/* w */
 	    &SecBufLength,	/* w */
-	    &PrevSessionId);	/* q */
+	    &PrevSsnId);	/* q */
 	if (rc)
 		return (SDRC_ERROR);
 
@@ -110,6 +111,25 @@ smb2_session_setup(smb_request_t *sr)
 		if (sr->uid_user->u_flags & SMB_USER_FLAG_ANON)
 			SessionFlags |= SMB2_SESSION_FLAG_IS_NULL;
 		smb2_ss_adjust_credits(sr);
+
+		/*
+		 * PrevSsnId is a session that the client is reporting as
+		 * having gone away, and for which we might not yet have seen
+		 * a disconnect. Find the session and log it off as if we had
+		 * received a disconnect.  Note that the client is allowed to
+		 * set PrevSsnID to the _current_ SessionID, so skip the lookup 
+		 * in that case. Only allow this session logoff if we owned it.
+		 */
+		if (PrevSsnId == 0 ||
+		    PrevSsnId == sr->smb2_ssnid)
+			break;
+		prev_user = smb_server_lookup_ssnid(sr->sr_server, PrevSsnId);
+		if (prev_user != NULL) {
+			if (smb_is_same_user(prev_user, sr->uid_user)) {
+				smb_user_logoff(prev_user);
+			}
+			smb_user_release(prev_user); /* from lookup */
+		}
 		break;
 
 	/*
