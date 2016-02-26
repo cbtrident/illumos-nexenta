@@ -622,13 +622,34 @@ typedef struct mdb_smb_server {
 } mdb_smb_server_t;
 
 static int
+smb_server_exp_off_sv_list(void)
+{
+	int svl_off, ll_off;
+
+	/* OFFSETOF(smb_server_t, sv_session_list.ll_list); */
+	GET_OFFSET(svl_off, smb_server_t, sv_session_list);
+	GET_OFFSET(ll_off, smb_llist_t, ll_list);
+	return (svl_off + ll_off);
+}
+
+static int
 smb_server_exp_off_nbt_list(void)
 {
 	int svd_off, lds_off, ll_off;
 
 	/* OFFSETOF(smb_server_t, sv_nbt_daemon.ld_session_list.ll_list); */
 	GET_OFFSET(svd_off, smb_server_t, sv_nbt_daemon);
-	GET_OFFSET(lds_off, smb_listener_daemon_t, ld_session_list);
+	/*
+	 * We can't do OFFSETOF() because the member doesn't exist,
+	 * but we want backwards compatibility to old cores
+	 */
+	lds_off = mdb_ctf_offsetof_by_name("smb_listener_daemon_t",
+	    "ld_session_list");
+	if (lds_off < 0) {
+		mdb_warn("cannot lookup: "
+		    "smb_listener_daemon_t.ld_session_list");
+		return (-1);
+	}
 	GET_OFFSET(ll_off, smb_llist_t, ll_list);
 	return (svd_off + lds_off + ll_off);
 }
@@ -640,7 +661,17 @@ smb_server_exp_off_tcp_list(void)
 
 	/* OFFSETOF(smb_server_t, sv_tcp_daemon.ld_session_list.ll_list); */
 	GET_OFFSET(svd_off, smb_server_t, sv_tcp_daemon);
-	GET_OFFSET(lds_off, smb_listener_daemon_t, ld_session_list);
+	/*
+	 * We can't do OFFSETOF() because the member doesn't exist,
+	 * but we want backwards compatibility to old cores
+	 */
+	lds_off = mdb_ctf_offsetof_by_name("smb_listener_daemon_t",
+	    "ld_session_list");
+	if (lds_off < 0) {
+		mdb_warn("cannot lookup: "
+		    "smb_listener_daemon_t.ld_session_list");
+		return (-1);
+	}
 	GET_OFFSET(ll_off, smb_llist_t, ll_list);
 	return (svd_off + lds_off + ll_off);
 }
@@ -649,6 +680,15 @@ smb_server_exp_off_tcp_list(void)
  * List of objects that can be expanded under a server structure.
  */
 static const smb_exp_t smb_server_exp[] =
+{
+	{ SMB_OPT_ALL_OBJ,
+	    smb_server_exp_off_sv_list,
+	    "smbsess", "smb_session"},
+	{ 0, 0, NULL, NULL }
+};
+
+/* for backwards compatibility only */
+static const smb_exp_t smb_server_exp_old[] =
 {
 	{ SMB_OPT_ALL_OBJ,
 	    smb_server_exp_off_nbt_list,
@@ -670,6 +710,9 @@ smbsrv_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 {
 	uint_t		opts;
 	ulong_t		indent = 0;
+	const smb_exp_t	*sv_exp;
+	mdb_ctf_id_t id;
+	ulong_t off;
 
 	if (smb_dcmd_getopt(&opts, argc, argv))
 		return (DCMD_USAGE);
@@ -716,7 +759,18 @@ smbsrv_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 			    addr, sv->sv_zid, state);
 		}
 	}
-	if (smb_obj_expand(addr, opts, smb_server_exp, indent))
+
+	/* if we can't look up the type name, just error out */
+	if (mdb_ctf_lookup_by_name("smb_server_t", &id) == -1)
+		return (DCMD_ERR);
+
+	if (mdb_ctf_offsetof(id, "sv_session_list", &off) == -1)
+		/* sv_session_list doesn't exist; old core */
+		sv_exp = smb_server_exp_old;
+	else
+		sv_exp = smb_server_exp;
+
+	if (smb_obj_expand(addr, opts, sv_exp, indent))
 		return (DCMD_ERR);
 	return (DCMD_OK);
 }
@@ -3164,6 +3218,13 @@ smb_obj_expand(uintptr_t addr, uint_t opts, const smb_exp_t *x, ulong_t indent)
 	while (x->ex_dcmd) {
 		if (x->ex_mask & opts) {
 			ex_off = (x->ex_offset)();
+			if (ex_off < 0) {
+				mdb_warn("failed to get the list offset for %s",
+				    x->ex_name);
+				rc = ex_off;
+				break;
+			}
+
 			rc = mdb_pwalk_dcmd("list", x->ex_dcmd, argc, argv,
 			    addr + ex_off);
 

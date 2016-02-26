@@ -632,7 +632,7 @@ void smb_authsock_close(smb_user_t *);
 smb_session_t *smb_session_create(ksocket_t, uint16_t, smb_server_t *, int);
 void smb_session_receiver(smb_session_t *);
 void smb_session_disconnect(smb_session_t *);
-void smb_session_timers(smb_llist_t *);
+void smb_session_timers(smb_server_t *);
 void smb_session_delete(smb_session_t *session);
 void smb_session_cancel_requests(smb_session_t *, smb_tree_t *,
     smb_request_t *);

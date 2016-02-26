@@ -1910,7 +1910,6 @@ typedef struct {
 	int			ld_family;
 	struct sockaddr_in	ld_sin;
 	struct sockaddr_in6	ld_sin6;
-	smb_llist_t		ld_session_list;
 } smb_listener_daemon_t;
 
 #define	SMB_SSETUP_CMD			"authentication"
@@ -1971,6 +1970,7 @@ typedef struct smb_server {
 	krwlock_t		sv_cfg_lock;
 	smb_kmod_cfg_t		sv_cfg;
 	smb_session_t		*sv_session;
+	smb_llist_t		sv_session_list;
 
 	struct smb_export	sv_export;
 	struct __door_handle	*sv_lmshrd;

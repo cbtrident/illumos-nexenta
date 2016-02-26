@@ -62,10 +62,12 @@ void session_stats_init(smb_server_t *, smb_session_t *);
 void session_stats_fini(smb_session_t *);
 
 void
-smb_session_timers(smb_llist_t *ll)
+smb_session_timers(smb_server_t *sv)
 {
 	smb_session_t	*session;
+	smb_llist_t	*ll;
 
+	ll = &sv->sv_session_list;
 	smb_llist_enter(ll, RW_READER);
 	session = smb_llist_head(ll);
 	while (session != NULL) {
