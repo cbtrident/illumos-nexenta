@@ -5779,10 +5779,12 @@ extern int	sec_svc_getcred(struct svc_req *, cred_t *,  caddr_t *, int *);
 
 void
 rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
-    struct svc_req *req, cred_t *cr, int *rv)
+    struct svc_req *req, cred_t *cr, int *rv,
+    struct nfssrv_clnt_stats *clnt_stats)
 {
 	uint_t i;
 	struct compound_state cs;
+	bool_t compound_multi_exi = FALSE;
 
 	if (rv != NULL)
 		*rv = 0;
@@ -5800,6 +5802,7 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 	cs.req = req;
 	resp->array = NULL;
 	resp->array_len = 0;
+	resp->nses = NULL;
 
 	/*
 	 * XXX for now, minorversion should be zero
@@ -5881,8 +5884,44 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 		op = (uint_t)resop->resop;
 
 		if (op < rfsv4disp_cnt) {
-			kstat_t *ksp = rfsprocio_v4_ptr[op];
-			kstat_t *exi_ksp = NULL;
+			int exit_flag = NFSSRV_KST_WRITE;
+
+			kstat_io_t *kiop = &rfsprocio_v4_ptr[op];
+			kstat_io_t *clnt_kiop =
+			    &clnt_stats->nscs_stats.rfsprocio_v4_data[op];
+
+			struct nfssrv_exp_stats *exp_stats = NULL;
+			kstat_io_t *exp_kiop;
+
+			struct nfssrv_clnt_exp_stats *clnt_exp_stats = NULL;
+			kstat_io_t *clnt_exp_kiop;
+
+			/*
+			 * Initialize exp_stats, exp_kiop, clnt_exp_stats, and
+			 * clnt_exp_kiop for CFH and SFH operations
+			 */
+			switch (rfsv4disptab[op].op_type) {
+			case NFS4_OP_CFH:
+				exp_stats = cs.exi->exi_stats;
+				break;
+			case NFS4_OP_SFH:
+				exp_stats = cs.saved_exi->exi_stats;
+				break;
+			default:
+				break;
+			}
+			if (exp_stats != NULL) {
+				nfssrv_exp_stats_hold(exp_stats);
+				exp_kiop = &exp_stats->
+				    nses_stats.rfsprocio_v4_data[op];
+
+				clnt_exp_stats =
+				    nfssrv_get_clnt_exp_stats(clnt_stats,
+				    exp_stats);
+				ASSERT(clnt_exp_stats != NULL);
+				clnt_exp_kiop = &clnt_exp_stats->
+				    nsces_stats.rfsprocio_v4_data[op];
+			}
 
 			/*
 			 * Count the individual ops here; NULL and COMPOUND
@@ -5890,32 +5929,19 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			 */
 			rfsproccnt_v4_ptr[op].value.ui64++;
 
-			if (ksp != NULL) {
-				mutex_enter(ksp->ks_lock);
-				kstat_runq_enter(KSTAT_IO_PTR(ksp));
-				mutex_exit(ksp->ks_lock);
-			}
+			/*
+			 * Update all kstats (ENTER)
+			 */
+			NFSSRV_KSTAT_DO_IO_ENTER(kiop, nfssrv_stat_procio_lock);
+			NFSSRV_KSTAT_DO_IO_ENTER(clnt_kiop,
+			    &clnt_stats->nscs_procio_lock);
+			if (exp_stats != NULL) {
+				NFSSRV_KSTAT_DO_IO_ENTER(exp_kiop,
+				    &exp_stats->nses_procio_lock);
+				NFSSRV_KSTAT_DO_IO_ENTER(clnt_exp_kiop,
+				    &clnt_exp_stats->nsces_procio_lock);
 
-			switch (rfsv4disptab[op].op_type) {
-			case NFS4_OP_CFH:
-				resop->exi = cs.exi;
-				break;
-			case NFS4_OP_SFH:
-				resop->exi = cs.saved_exi;
-				break;
-			default:
-				ASSERT(resop->exi == NULL);
-				break;
-			}
-
-			if (resop->exi != NULL) {
-				exi_ksp = resop->exi->exi_kstats->
-				    rfsprocio_v4_ptr[op];
-				if (exi_ksp != NULL) {
-					mutex_enter(exi_ksp->ks_lock);
-					kstat_runq_enter(KSTAT_IO_PTR(exi_ksp));
-					mutex_exit(exi_ksp->ks_lock);
-				}
+				exit_flag |= NFSSRV_KST_EXIT;
 			}
 
 			NFS4_DEBUG(rfs4_debug > 1,
@@ -5926,32 +5952,66 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			if (*cs.statusp != NFS4_OK)
 				cs.cont = FALSE;
 
+			/*
+			 * Initialize exp_stats, exp_kiop, clnt_exp_stats, and
+			 * clnt_exp_kiop for POSTCFH operations
+			 */
 			if (rfsv4disptab[op].op_type == NFS4_OP_POSTCFH &&
-			    *cs.statusp == NFS4_OK &&
-			    (resop->exi = cs.exi) != NULL) {
-				exi_ksp = resop->exi->exi_kstats->
-				    rfsprocio_v4_ptr[op];
+			    *cs.statusp == NFS4_OK) {
+				ASSERT(cs.exi != NULL);
+				ASSERT(exp_stats == NULL);
+				exp_stats = cs.exi->exi_stats;
+				ASSERT(exp_stats != NULL);
+				nfssrv_exp_stats_hold(exp_stats);
+				exp_kiop = &exp_stats->
+				    nses_stats.rfsprocio_v4_data[op];
+
+				ASSERT(clnt_exp_stats == NULL);
+				clnt_exp_stats =
+				    nfssrv_get_clnt_exp_stats(clnt_stats,
+				    exp_stats);
+				ASSERT(clnt_exp_stats != NULL);
+				clnt_exp_kiop = &clnt_exp_stats->
+				    nsces_stats.rfsprocio_v4_data[op];
 			}
 
-			if (exi_ksp != NULL) {
-				mutex_enter(exi_ksp->ks_lock);
-				KSTAT_IO_PTR(exi_ksp)->nwritten +=
-				    argop->opsize;
-				KSTAT_IO_PTR(exi_ksp)->writes++;
-				if (rfsv4disptab[op].op_type != NFS4_OP_POSTCFH)
-					kstat_runq_exit(KSTAT_IO_PTR(exi_ksp));
-				mutex_exit(exi_ksp->ks_lock);
-
-				exi_hold(resop->exi);
-			} else {
-				resop->exi = NULL;
+			/*
+			 * Update all kstats (EXIT and WRITE)
+			 */
+			NFSSRV_KSTAT_DO_IO_EXIT(kiop, nfssrv_stat_procio_lock);
+			NFSSRV_KSTAT_DO_IO_EXIT(clnt_kiop,
+			    &clnt_stats->nscs_procio_lock);
+			if (exp_stats != NULL) {
+				NFSSRV_KSTAT_DO_IO(exp_kiop,
+				    &exp_stats->nses_procio_lock, exit_flag,
+				    argop->opsize, 0);
+				NFSSRV_KSTAT_DO_IO(clnt_exp_kiop,
+				    &clnt_exp_stats->nsces_procio_lock,
+				    exit_flag, argop->opsize, 0);
 			}
 
-			if (ksp != NULL) {
-				mutex_enter(ksp->ks_lock);
-				kstat_runq_exit(KSTAT_IO_PTR(ksp));
-				mutex_exit(ksp->ks_lock);
+			/*
+			 * Update the nses for the compound
+			 */
+			if (exp_stats != NULL && !compound_multi_exi) {
+				if (resp->nses == NULL) {
+					resp->nses = exp_stats;
+					nfssrv_exp_stats_hold(resp->nses);
+				} else if (resp->nses != exp_stats) {
+					nfssrv_exp_stats_rele(resp->nses);
+					resp->nses = NULL;
+					compound_multi_exi = TRUE;
+				}
 			}
+
+			/*
+			 * The exp_stats (if non-NULL) will be released in
+			 * rfs4_compound_free()
+			 */
+			resop->nses = exp_stats;
+
+			if (clnt_exp_stats != NULL)
+				nfssrv_clnt_exp_stats_rele(clnt_exp_stats);
 		} else {
 			/*
 			 * This is effectively dead code since XDR code
@@ -6032,10 +6092,16 @@ rfs4_compound_free(COMPOUND4res *resp)
 		if (op < rfsv4disp_cnt) {
 			(*rfsv4disptab[op].dis_resfree)(resop);
 		}
+
+		if (resop->nses != NULL)
+			nfssrv_exp_stats_rele(resop->nses);
 	}
 	if (resp->array != NULL) {
 		kmem_free(resp->array, resp->array_len * sizeof (nfs_resop4));
 	}
+
+	if (resp->nses != NULL)
+		nfssrv_exp_stats_rele(resp->nses);
 }
 
 /*
@@ -6062,66 +6128,70 @@ rfs4_compound_flagproc(COMPOUND4args *args, int *flagp)
 }
 
 void
-rfs4_compound_kstat_args(COMPOUND4args *args)
+rfs4_compound_kstat_args(COMPOUND4args *args,
+    struct nfssrv_clnt_stats *clnt_stats)
 {
 	int i;
 
 	for (i = 0; i < args->array_len; i++) {
 		uint_t op = (uint_t)args->array[i].argop;
 
-		if (op < rfsv4disp_cnt) {
-			kstat_t *ksp = rfsprocio_v4_ptr[op];
+		if (op >= rfsv4disp_cnt)
+			continue;
 
-			if (ksp != NULL) {
-				mutex_enter(ksp->ks_lock);
-				KSTAT_IO_PTR(ksp)->nwritten +=
-				    args->array[i].opsize;
-				KSTAT_IO_PTR(ksp)->writes++;
-				mutex_exit(ksp->ks_lock);
-			}
-		}
+		/*
+		 * Global and per-client stats
+		 */
+		NFSSRV_KSTAT_DO_IO_WRITE(&rfsprocio_v4_ptr[op],
+		    nfssrv_stat_procio_lock, args->array[i].opsize);
+		NFSSRV_KSTAT_DO_IO_WRITE(
+		    &clnt_stats->nscs_stats.rfsprocio_v4_data[op],
+		    &clnt_stats->nscs_procio_lock,
+		    args->array[i].opsize);
 	}
 }
 
 void
-rfs4_compound_kstat_res(COMPOUND4res *res)
+rfs4_compound_kstat_res(COMPOUND4res *res, struct nfssrv_clnt_stats *clnt_stats)
 {
 	int i;
 
 	for (i = 0; i < res->array_len; i++) {
+		struct nfssrv_exp_stats *exp_stats;
+		struct nfssrv_clnt_exp_stats *clnt_exp_stats;
+
 		uint_t op = (uint_t)res->array[i].resop;
 
-		if (op < rfsv4disp_cnt) {
-			kstat_t *ksp = rfsprocio_v4_ptr[op];
-			struct exportinfo *exi = res->array[i].exi;
+		if (op >= rfsv4disp_cnt)
+			continue;
 
-			if (ksp != NULL) {
-				mutex_enter(ksp->ks_lock);
-				KSTAT_IO_PTR(ksp)->nread +=
-				    res->array[i].opsize;
-				KSTAT_IO_PTR(ksp)->reads++;
-				mutex_exit(ksp->ks_lock);
-			}
+		/*
+		 * Global and per-client stats
+		 */
+		NFSSRV_KSTAT_DO_IO_READ(&rfsprocio_v4_ptr[op],
+		    nfssrv_stat_procio_lock, res->array[i].opsize);
+		NFSSRV_KSTAT_DO_IO_READ(
+		    &clnt_stats->nscs_stats.rfsprocio_v4_data[op],
+		    &clnt_stats->nscs_procio_lock,
+		    res->array[i].opsize);
 
-			if (exi != NULL) {
-				kstat_t *exi_ksp;
+		/*
+		 * Per-exportinfo and per-client/per-exportinfo stats
+		 */
+		exp_stats = res->array[i].nses;
+		if (exp_stats == NULL)
+			continue;
 
-				rw_enter(&exported_lock, RW_READER);
+		NFSSRV_KSTAT_DO_IO_READ(
+		    &exp_stats->nses_stats.rfsprocio_v4_data[op],
+		    &exp_stats->nses_procio_lock, res->array[i].opsize);
 
-				exi_ksp = exi->exi_kstats->rfsprocio_v4_ptr[op];
-				if (exi_ksp != NULL) {
-					mutex_enter(exi_ksp->ks_lock);
-					KSTAT_IO_PTR(exi_ksp)->nread +=
-					    res->array[i].opsize;
-					KSTAT_IO_PTR(exi_ksp)->reads++;
-					mutex_exit(exi_ksp->ks_lock);
-				}
-
-				rw_exit(&exported_lock);
-
-				exi_rele(exi);
-			}
-		}
+		clnt_exp_stats = nfssrv_get_clnt_exp_stats(clnt_stats,
+		    exp_stats);
+		NFSSRV_KSTAT_DO_IO_READ(
+		    &clnt_exp_stats->nsces_stats.rfsprocio_v4_data[op],
+		    &clnt_exp_stats->nsces_procio_lock, res->array[i].opsize);
+		nfssrv_clnt_exp_stats_rele(clnt_exp_stats);
 	}
 }
 

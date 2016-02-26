@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -75,7 +75,7 @@ typedef struct rpc_disptable {
 	int dis_nprocs;
 	char **dis_procnames;
 	kstat_named_t **dis_proccntp;
-	kstat_t ***dis_prociop;
+	kstat_io_t **dis_prociop;
 	struct rpcdisp *dis_table;
 } rpc_disptable_t;
 

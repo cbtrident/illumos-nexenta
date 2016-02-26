@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -365,6 +365,10 @@ rfs4_find_dr(struct svc_req *req, rfs4_drc_t *drc, rfs4_dupreq_t **dup)
  * 	xprt	The server transport handle
  * 	ap	A pointer to the arguments
  *	rlen	A pointer to the reply length (output)
+ *	nscs	A pointer to the per-client stats where the request/reply
+ *		    should be counted
+ *	nses	An output pointer to the per-exportinfo stats where the
+ *		    request/reply should be counted
  *
  *
  * When appropriate this function is responsible for inserting
@@ -379,9 +383,9 @@ rfs4_find_dr(struct svc_req *req, rfs4_drc_t *drc, rfs4_dupreq_t **dup)
  */
 int
 rfs4_dispatch(struct rpcdisp *disp, struct svc_req *req,
-    SVCXPRT *xprt, char *ap, size_t *rlen)
+    SVCXPRT *xprt, char *ap, size_t *rlen, struct nfssrv_clnt_stats *nscs,
+    struct nfssrv_exp_stats **nses)
 {
-
 	COMPOUND4res	 res_buf;
 	COMPOUND4res	*rbp;
 	COMPOUND4args	*cap;
@@ -415,9 +419,22 @@ rfs4_dispatch(struct rpcdisp *disp, struct svc_req *req,
 	cap = (COMPOUND4args *)ap;
 
 	/*
-	 * Update kstats
+	 * Update the global and per-client kstats with the incoming (write)
+	 * byte counts.  Both per-exportinfo and per-client/per-exportinfo
+	 * kstats are updated in rfs4_compound() where the information about
+	 * the exportinfo kstat assigned to the particular operation is
+	 * available.
+	 *
+	 * This means that in a case the replies are served from DRC we are not
+	 * able to update both per-exportinfo and per-client/per-exportinfo
+	 * kstats with the incoming (write) byte counts since we do not have
+	 * information about the assigned exportinfo kstats.  We cannot rely on
+	 * the exportinfo kstat assigned to the replies (and stored in DRC)
+	 * because this new request could be different than the original
+	 * request (the DRC matches on XID only, the request content is not
+	 * considered).
 	 */
-	rfs4_compound_kstat_args(cap);
+	rfs4_compound_kstat_args(cap, nscs);
 
 	/*
 	 * Figure out the disposition of the whole COMPOUND
@@ -455,7 +472,7 @@ rfs4_dispatch(struct rpcdisp *disp, struct svc_req *req,
 		case NFS4_DUP_NEW:
 			curthread->t_flag |= T_DONTPEND;
 			/* NON-IDEMPOTENT proc call */
-			rfs4_compound(cap, rbp, NULL, req, cr, &rv);
+			rfs4_compound(cap, rbp, NULL, req, cr, &rv, nscs);
 			curthread->t_flag &= ~T_DONTPEND;
 
 			if (rv)		/* short ckt sendreply on error */
@@ -488,7 +505,7 @@ rfs4_dispatch(struct rpcdisp *disp, struct svc_req *req,
 	} else {
 		curthread->t_flag |= T_DONTPEND;
 		/* IDEMPOTENT proc call */
-		rfs4_compound(cap, rbp, NULL, req, cr, &rv);
+		rfs4_compound(cap, rbp, NULL, req, cr, &rv, nscs);
 		curthread->t_flag &= ~T_DONTPEND;
 
 		if (rv)		/* short ckt sendreply on error */
@@ -513,8 +530,13 @@ rfs4_dispatch(struct rpcdisp *disp, struct svc_req *req,
 		/*
 		 * Update kstats
 		 */
-		rfs4_compound_kstat_res(rbp);
+		rfs4_compound_kstat_res(rbp, nscs);
 		*rlen = xdr_sizeof(xdr_COMPOUND4res_srv, rbp);
+	}
+
+	if (rbp->nses != NULL) {
+		*nses = rbp->nses;
+		nfssrv_exp_stats_hold(*nses);
 	}
 
 	/*
