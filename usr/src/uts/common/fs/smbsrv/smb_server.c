@@ -247,11 +247,13 @@ static void smb_server_listener(smb_thread_t *, void *);
 static void smb_server_receiver(void *);
 static void smb_server_create_session(smb_listener_daemon_t *, ksocket_t);
 static void smb_server_destroy_session(smb_server_t *, smb_session_t *);
+void smb_server_cleanup_sessions(smb_llist_t *);
 static uint16_t smb_spool_get_fid(smb_server_t *);
 static boolean_t smb_spool_lookup_doc_byfid(smb_server_t *, uint16_t,
     smb_kspooldoc_t *);
 
 int smb_event_debug = 0;
+uint32_t SMB_OFILE_HASH_NBUCKETS = 128; /* multiples of 2 */
 
 static smb_llist_t	smb_servers;
 
@@ -400,6 +402,9 @@ smb_server_create(void)
 	cv_init(&sv->sv_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&sv->sp_info.sp_cv, NULL, CV_DEFAULT, NULL);
 
+	sv->sv_persistid_ht = smb_hash_create(sizeof (smb_ofile_t),
+	    offsetof(smb_ofile_t, f_hnd), SMB_OFILE_HASH_NBUCKETS);
+
 	smb_llist_constructor(&sv->sv_session_list, sizeof (smb_session_t),
 	    offsetof(smb_session_t, s_lnd));
 
@@ -515,6 +520,7 @@ smb_server_delete(void)
 	smb_thread_destroy(&sv->si_thread_timers);
 
 	mutex_destroy(&sv->sv_mutex);
+	smb_hash_destroy(sv->sv_persistid_ht);
 	cv_destroy(&sv->sv_cv);
 	sv->sv_magic = 0;
 	kmem_free(sv, sizeof (smb_server_t));
@@ -1206,8 +1212,8 @@ smb_server_timers(smb_thread_t *thread, void *arg)
 	ASSERT(sv != NULL);
 
 	/*
-	 * This just kills old inactive sessions.  No urgency.
-	 * The session code expects one call per minute.
+	 * This kills old inactive sessions and expired durable
+	 * handles. The session code expects one call per minute.
 	 */
 	while (smb_thread_continue_timedwait(thread, 60 /* Seconds */)) {
 		smb_session_timers(sv);
@@ -1429,6 +1435,12 @@ smb_server_shutdown(smb_server_t *sv)
 		sv->sv_session = NULL;
 	}
 
+	/*
+	 * Until this taskq_destroy completes, there are receiver_pool threads
+	 * in smb_session_receiver() cleaning up any active objects.
+	 * This process can make objects durable, which we will clean up in
+	 * smb_server_cleanup_sessions().
+	 */
 	if (sv->sv_receiver_pool != NULL) {
 		taskq_destroy(sv->sv_receiver_pool);
 		sv->sv_receiver_pool = NULL;
@@ -1439,8 +1451,34 @@ smb_server_shutdown(smb_server_t *sv)
 		sv->sv_worker_pool = NULL;
 	}
 
+	smb_server_cleanup_sessions(&sv->sv_session_list);
+
 	smb_kshare_stop(sv);
 	smb_server_fsop_stop(sv);
+}
+
+void
+smb_server_cleanup_sessions(smb_llist_t *sl)
+{
+	smb_session_t *sess = smb_llist_head(sl);
+	smb_llist_t *tl;
+	smb_tree_t *tree;
+
+	while (sess) {
+		sess->conn_lost = B_FALSE;
+		tl = &sess->s_tree_list;
+		tree = smb_llist_head(tl);
+		while (tree) {
+			tree->t_owner->preserve_opens = SMB2_DONT_PRESERVE;
+			tree->t_state = SMB_TREE_STATE_DISCONNECTED;
+			smb_ofile_close_all(tree);
+			tree = smb_llist_next(tl, tree);
+		}
+		smb_llist_flush(tl);
+		smb_llist_flush(&sess->s_user_list);
+		sess = smb_llist_next(sl, sess);
+	}
+	smb_llist_flush(sl);
 }
 
 /*
@@ -1648,6 +1686,7 @@ smb_server_receiver(void *arg)
 		smb_rwx_rwexit(&session->s_lock);
 		smb_server_destroy_session(session->s_server, session);
 	} else {
+		session->s_state = SMB_SESSION_STATE_DURABLE;
 		smb_rwx_rwexit(&session->s_lock);
 	}
 }

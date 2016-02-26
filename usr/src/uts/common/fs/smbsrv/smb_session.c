@@ -61,11 +61,56 @@ static int smb_session_kstat_update(kstat_t *, int);
 void session_stats_init(smb_server_t *, smb_session_t *);
 void session_stats_fini(smb_session_t *);
 
+static void
+smb_durable_expire(void *arg)
+{
+	smb_ofile_t *of = (smb_ofile_t *)arg;
+
+	smb_ofile_close(of, 0);
+	smb_ofile_release(of);
+}
+
+static void
+smb_durable_timers(smb_server_t *sv)
+{
+	smb_hash_t *hash;
+	int i;
+	smb_llist_t *bucket;
+	smb_ofile_t *of;
+	hrtime_t expire_time;
+
+	hash = sv->sv_persistid_ht;
+	expire_time = gethrtime();
+
+	for (i = 0; i < hash->num_buckets; i++) {
+		bucket = &hash->buckets[i].b_list;
+		smb_llist_enter(bucket, RW_READER);
+		of = smb_llist_head(bucket);
+		while (of != NULL) {
+			SMB_OFILE_VALID(of);
+			mutex_enter(&of->f_mutex);
+			/* STATE_ORPHANED implies dh_expire_time != 0 */
+			if (of->f_state == SMB_OFILE_STATE_ORPHANED &&
+			    of->dh_expire_time <= expire_time) {
+				of->f_state = SMB_OFILE_STATE_EXPIRED;
+				/* inline smb_ofile_hold_internal() */
+				of->f_refcnt++;
+				smb_llist_post(bucket, of, smb_durable_expire);
+			}
+			mutex_exit(&of->f_mutex);
+			of = smb_llist_next(bucket, of);
+		}
+		smb_llist_exit(bucket);
+	}
+}
+
 void
 smb_session_timers(smb_server_t *sv)
 {
 	smb_session_t	*session;
 	smb_llist_t	*ll;
+
+	smb_durable_timers(sv);
 
 	ll = &sv->sv_session_list;
 	smb_llist_enter(ll, RW_READER);
@@ -79,6 +124,20 @@ smb_session_timers(smb_server_t *sv)
 		if (session->keep_alive &&
 		    (session->keep_alive != (uint32_t)-1))
 			session->keep_alive--;
+
+		if (atomic_swap_32(&session->s_expire_cnt, 0) != 0) {
+			smb_tree_t *tree;
+			smb_llist_t *tl = &session->s_tree_list;
+
+			smb_llist_enter(tl, RW_READER);
+			tree = smb_llist_head(tl);
+			while (tree != NULL) {
+				smb_llist_flush(&tree->t_ofile_list);
+				tree = smb_llist_next(tl, tree);
+			}
+			smb_llist_exit(tl);
+			smb_llist_flush(&session->s_user_list);
+		}
 		session = smb_llist_next(ll, session);
 	}
 	smb_llist_exit(ll);
@@ -505,6 +564,7 @@ smb_session_receiver(smb_session_t *session)
 
 	smb_rwx_rwenter(&session->s_lock, RW_WRITER);
 	session->s_state = SMB_SESSION_STATE_DISCONNECTED;
+	session->logoff_time = gethrtime();
 	smb_rwx_rwexit(&session->s_lock);
 
 	smb_soshutdown(session->sock);
@@ -969,6 +1029,16 @@ smb_session_cancel(smb_session_t *session)
 		xa = nextxa;
 	}
 
+	/*
+	 * do this here so that any request that causes handles
+	 * to be closed before the connection was lost don't
+	 * save durable handles accidentally
+	 */
+	if (session->s_server->sv_state == SMB_SERVER_STATE_RUNNING) {
+		session->conn_lost = B_TRUE;
+		session->logoff_time = gethrtime();
+	}
+
 	smb_session_logoff(session);
 }
 
@@ -1258,7 +1328,7 @@ void
 smb_session_disconnect_trees(
     smb_session_t	*session)
 {
-	smb_tree_t	*tree;
+	smb_tree_t	*tree, *next_tree;
 
 	SMB_SESSION_VALID(session);
 
@@ -1267,8 +1337,9 @@ smb_session_disconnect_trees(
 		ASSERT3U(tree->t_magic, ==, SMB_TREE_MAGIC);
 		ASSERT(tree->t_session == session);
 		smb_tree_disconnect(tree, B_TRUE);
+		next_tree = smb_session_get_tree(session, tree);
 		smb_tree_release(tree);
-		tree = smb_session_get_tree(session, NULL);
+		tree = next_tree;
 	}
 }
 
@@ -1492,6 +1563,7 @@ smb_request_alloc(smb_session_t *session, int req_length)
 	default:
 		ASSERT(0);
 		/* FALLTHROUGH */
+	case SMB_SESSION_STATE_DURABLE:
 	case SMB_SESSION_STATE_DISCONNECTED:
 	case SMB_SESSION_STATE_SHUTDOWN:
 	case SMB_SESSION_STATE_TERMINATED:
@@ -1615,6 +1687,7 @@ smb_session_release(smb_session_t *sess)
 
 	switch (sess->s_state) {
 	case SMB_SESSION_STATE_DISCONNECTED:
+	case SMB_SESSION_STATE_DURABLE:
 		if (sess->s_refcnt == 0) {
 			sess->s_state = SMB_SESSION_STATE_SHUTDOWN;
 			smb_server_post_session(sess);
@@ -1632,6 +1705,5 @@ smb_session_release(smb_session_t *sess)
 		ASSERT(0);
 		break;
 	}
-
 	smb_rwx_rwexit(&sess->s_lock);
 }

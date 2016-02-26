@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMB2_KPROTO_H_
@@ -28,6 +28,11 @@ extern uint32_t smb2_max_rwsize;
 extern uint32_t smb2_max_trans;
 
 extern int smb2_aapl_use_file_ids;
+extern uint32_t smb2_dh_default_timeout;
+extern int smb2_enable_dh;
+
+#define	DH_TIMEOUT_MS ((uint32_t)(smb2_dh_default_timeout * MILLISEC))
+#define	SMB2_PERSIST(flags) ((flags & SMB2_DHANDLE_FLAG_PERSISTENT) != 0)
 
 void	smb2_dispatch_stats_init(smb_server_t *);
 void	smb2_dispatch_stats_fini(smb_server_t *);
@@ -52,6 +57,7 @@ int smb2_sign_check_request(smb_request_t *);
 void smb2_sign_reply(smb_request_t *);
 
 uint32_t smb2_fsctl_vneginfo(smb_request_t *, smb_fsctl_t *);
+uint32_t smb2_fsctl_resiliency(smb_request_t *, smb_fsctl_t *);
 
 smb_sdrc_t smb2_negotiate(smb_request_t *);
 smb_sdrc_t smb2_session_setup(smb_request_t *);
@@ -77,6 +83,7 @@ int smb2_newrq_negotiate(smb_request_t *);
 
 uint32_t smb2_aapl_crctx(smb_request_t *,
 	mbuf_chain_t *, mbuf_chain_t *);
+uint32_t smb2_open_reconnect(smb_request_t *);
 
 uint32_t smb2_ofile_getattr(smb_request_t *, smb_ofile_t *, smb_attr_t *);
 uint32_t smb2_ofile_getstd(smb_ofile_t *, smb_queryinfo_t *);

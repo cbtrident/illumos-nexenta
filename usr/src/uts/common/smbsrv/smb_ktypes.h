@@ -850,12 +850,17 @@ struct smb_key {
  * Session State Machine
  * ---------------------
  *
- * +-----------------------------+	     +------------------------------+
- * | SMB_SESSION_STATE_CONNECTED |           | SMB_SESSION_STATE_TERMINATED |
- * +-----------------------------+           +------------------------------+
- *		T0|					     ^
- *		  +--------------------+		     |T5
- *		  v		       |T4                   |
+ *
+ * +-----------------------------+	    +----------------------------+
+ * | SMB_SESSION_STATE_CONNECTED |	    | SMB_SESSION_STATE_SHUTDOWN |
+ * +-----------------------------+	    +----------------------------+
+ *		  |					     ^
+ *		  |					     |T6
+ *		  |			    +------------------------------+
+ *		  |			    | SMB_SESSION_STATE_TERMINATED |
+ *		T0|			    +------------------------------+
+ *		  +--------------------+		     ^
+ *		  v		       |T4                   |T5
  * +-------------------------------+   |    +--------------------------------+
  * | SMB_SESSION_STATE_ESTABLISHED |---+--->| SMB_SESSION_STATE_DISCONNECTED |
  * +-------------------------------+        +--------------------------------+
@@ -891,6 +896,10 @@ struct smb_key {
  *
  *
  *
+ * Transition T6
+ *
+ *
+ *
  */
 #define	SMB_SESSION_MAGIC	0x53455353	/* 'SESS' */
 #define	SMB_SESSION_VALID(p)	\
@@ -905,6 +914,7 @@ typedef enum {
 	SMB_SESSION_STATE_ESTABLISHED,
 	SMB_SESSION_STATE_NEGOTIATED,
 	SMB_SESSION_STATE_TERMINATED,
+	SMB_SESSION_STATE_DURABLE,
 	SMB_SESSION_STATE_SHUTDOWN,
 	SMB_SESSION_STATE_SENTINEL
 } smb_session_state_t;
@@ -921,6 +931,7 @@ typedef struct smb_session {
 	smb_session_state_t	s_state;
 	uint32_t		s_refcnt;
 	uint32_t		s_flags;
+	boolean_t		conn_lost;
 	taskqid_t		s_receiver_tqid;
 	kthread_t		*s_thread;
 	kt_did_t		s_ktdid;
@@ -965,12 +976,16 @@ typedef struct smb_session {
 	volatile uint32_t	s_tree_cnt;
 	volatile uint32_t	s_file_cnt;
 	volatile uint32_t	s_dir_cnt;
+	volatile uint32_t	s_dh_cnt;
+	volatile uint32_t	s_expire_cnt;
 
 	uint16_t		secmode;
 	uint32_t		sesskey;
 	uint32_t		challenge_len;
 	unsigned char		challenge_key[SMB_CHALLENGE_SZ];
 	int64_t			activity_timestamp;
+	hrtime_t		logoff_time;
+
 	/*
 	 * Maximum negotiated buffer sizes between SMB client and server
 	 * in SMB_SESSION_SETUP_ANDX
@@ -1017,7 +1032,9 @@ typedef struct smb_session {
 #define	SMB_USER_PRIV_RESTORE		0x00000004
 #define	SMB_USER_PRIV_SECURITY		0x00000008
 
-
+/*
+ * See the long "User State Machine" comment in smb_user.c
+ */
 typedef enum {
 	SMB_USER_STATE_LOGGING_ON = 0,
 	SMB_USER_STATE_LOGGED_ON,
@@ -1025,6 +1042,12 @@ typedef enum {
 	SMB_USER_STATE_LOGGED_OFF,
 	SMB_USER_STATE_SENTINEL
 } smb_user_state_t;
+
+typedef enum {
+	SMB2_DONT_PRESERVE = 0,
+	SMB2_PRESERVE_ALL,
+	SMB2_PRESERVE_SOME
+} smb_preserve_type_t;
 
 typedef struct smb_user {
 	list_node_t		u_lnd;
@@ -1043,11 +1066,13 @@ typedef struct smb_user {
 	cred_t			*u_cred;
 	cred_t			*u_privcred;
 
-	uint64_t		u_ssnid;	/* server-wide scope */
+	uint64_t		u_ssnid;	/* unique server-wide */
 	uint32_t		u_refcnt;
 	uint32_t		u_flags;
+	smb_preserve_type_t	preserve_opens;
+	hrtime_t		logoff_time;
 	uint32_t		u_privileges;
-	uint16_t		u_uid;		/* connection scope */
+	uint16_t		u_uid;		/* unique per-session */
 	uint32_t		u_audit_sid;
 
 	uint32_t		u_sign_flags;
@@ -1082,10 +1107,14 @@ typedef struct smb_user {
 #define	SMB_TREE_SPARSE			0x00040000
 #define	SMB_TREE_TRAVERSE_MOUNTS	0x00080000
 
+/*
+ * See the long "Tree State Machine" comment in smb_tree.c
+ */
 typedef enum {
 	SMB_TREE_STATE_CONNECTED = 0,
 	SMB_TREE_STATE_DISCONNECTING,
 	SMB_TREE_STATE_DISCONNECTED,
+	SMB_TREE_STATE_DURABLE,
 	SMB_TREE_STATE_SENTINEL
 } smb_tree_state_t;
 
@@ -1112,6 +1141,7 @@ typedef struct smb_tree {
 	smb_idpool_t		t_odid_pool;
 
 	uint32_t		t_refcnt;
+	boolean_t		is_CA; /* Todo: Store with FsAttributes */
 	uint32_t		t_flags;
 	int32_t			t_res_type;
 	uint16_t		t_tid;
@@ -1323,16 +1353,31 @@ typedef struct smb_opipe {
 #define	SMB_OFILE_VALID(p)	\
     ASSERT((p != NULL) && ((p)->f_magic == SMB_OFILE_MAGIC))
 
+/* {arg_open,ofile}->dh_vers values */
+typedef enum {
+	SMB2_NOT_DURABLE = 0,
+	SMB2_DURABLE_V1,
+	SMB2_DURABLE_V2,
+	SMB2_RESILIENT,
+} smb_dh_vers_t;
+
+/*
+ * See the long "Ofile State Machine" comment in smb_ofile.c
+ */
 typedef enum {
 	SMB_OFILE_STATE_OPEN = 0,
 	SMB_OFILE_STATE_CLOSING,
 	SMB_OFILE_STATE_CLOSED,
+	SMB_OFILE_STATE_ORPHANED,
+	SMB_OFILE_STATE_RECONNECT,
+	SMB_OFILE_STATE_EXPIRED,
 	SMB_OFILE_STATE_SENTINEL
 } smb_ofile_state_t;
 
 typedef struct smb_ofile {
 	list_node_t		f_lnd;	/* t_ofile_list */
 	list_node_t		f_nnd;	/* n_ofile_list */
+	list_node_t		f_hnd;	/* sv_persistid_ht */
 	uint32_t		f_magic;
 	kmutex_t		f_mutex;
 	smb_ofile_state_t	f_state;
@@ -1345,6 +1390,7 @@ typedef struct smb_ofile {
 	smb_odir_t		*f_odir;
 	smb_opipe_t		*f_pipe;
 
+	kcondvar_t		f_cv;
 	uint64_t		f_persistid;
 	uint32_t		f_uniqid;
 	uint32_t		f_refcnt;
@@ -1365,6 +1411,14 @@ typedef struct smb_ofile {
 	char			f_quota_resume[SMB_SID_STRSZ];
 	smb_oplock_grant_t	f_oplock_grant;
 	smb_notify_t		f_notify;
+
+	smb_dh_vers_t		dh_vers;
+	char			dh_create_guid[16];
+	hrtime_t		dh_timeout_offset; /* time offset for timeout */
+	hrtime_t		dh_expire_time; /* time the handle expires */
+	boolean_t		dh_persist;
+	boolean_t		dh_expired;
+	struct smb_request	*dh_reclaimer;
 } smb_ofile_t;
 
 typedef struct smb_fileinfo {
@@ -1561,6 +1615,11 @@ typedef struct open_param {
 	struct smb_sd	*sd;	/* for NTTransactCreate */
 	uint8_t		op_oplock_level;	/* requested/granted level */
 	boolean_t	op_oplock_levelII;	/* TRUE if levelII supported */
+	smb_dh_vers_t	dh_vers;
+	smb2fid_t	dh_fileid;		/* for durable reconnect */
+	char		create_guid[16];
+	uint32_t	dh_v2_flags;
+	uint32_t	dh_timeout;
 } smb_arg_open_t;
 
 struct smb_async_req;
@@ -1775,7 +1834,7 @@ typedef struct smb_request {
 	/* uint32_t		smb2_pid; use smb_pid */
 	/* uint32_t		smb2_tid; use smb_tid */
 	uint64_t		smb2_ssnid;	/* See u_ssnid */
-	unsigned char		smb2_sig[16];	/* signiture */
+	unsigned char		smb2_sig[16];	/* signature */
 
 	uint64_t		smb2_async_id;
 	struct smb2_async_req	*sr_async_req;
@@ -2006,6 +2065,7 @@ typedef struct smb_server {
 	smb_kmod_cfg_t		sv_cfg;
 	smb_session_t		*sv_session;
 	smb_llist_t		sv_session_list;
+	smb_hash_t		*sv_persistid_ht;
 
 	struct smb_export	sv_export;
 	struct __door_handle	*sv_lmshrd;

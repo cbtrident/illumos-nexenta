@@ -180,7 +180,9 @@
  *    Rules of access to a user structure:
  *
  *    1) In order to avoid deadlocks, when both (mutex and lock of the session
- *       list) have to be entered, the lock must be entered first.
+ *       list) have to be entered, the lock must be entered first. Additionally,
+ *       one may NOT flush the deleteq of either the tree list or the ofile list
+ *       while the user mutex is held.
  *
  *    2) All actions applied to a user require a reference count.
  *
@@ -329,6 +331,8 @@ smb_user_logoff(
 		 * process has started.
 		 */
 		user->u_state = SMB_USER_STATE_LOGGING_OFF;
+		if (user->preserve_opens != SMB2_DONT_PRESERVE)
+			user->logoff_time = gethrtime();
 		mutex_exit(&user->u_mutex);
 		smb_session_disconnect_owned_trees(user->u_session, user);
 		smb_user_auth_logoff(user);

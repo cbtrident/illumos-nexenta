@@ -22,7 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -268,8 +268,7 @@ smb2_ioc_tbl[] = {
 	{ FSCTL_SRV_COPYCHUNK_WRITE,	0,	smb2_fsctl_notsup },
 	{ FSCTL_SRV_READ_HASH,		0,	smb2_fsctl_notsup },
 
-	{ FSCTL_LMR_REQUEST_RESILIENCY,
-	    ITF_NO_FID,		smb2_fsctl_notsup },
+	{ FSCTL_LMR_REQUEST_RESILIENCY,	0,	smb2_fsctl_resiliency },
 	{ FSCTL_QUERY_NETWORK_INTERFACE_INFO,
 	    ITF_NO_FID,		smb2_fsctl_notsup },
 	{ FSCTL_VALIDATE_NEGOTIATE_INFO,

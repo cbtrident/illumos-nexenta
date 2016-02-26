@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -37,6 +37,7 @@
 #include <smbsrv/smb_kproto.h>
 #include <smbsrv/smb_fsops.h>
 #include <smbsrv/smbinfo.h>
+#include <smbsrv/smb2_kproto.h>
 
 int smb_disable_streams_on_share_root = 0;
 
@@ -205,6 +206,256 @@ smb_common_open(smb_request_t *sr)
 
 	kmem_free(parg, sizeof (*parg));
 	return (status);
+}
+
+/*
+ * Requirements for ofile found during reconnect (MS-SMB2 3.3.5.9.7):
+ * - security descriptor must match provided descriptor
+ *
+ * If file is leased:
+ * - lease must be requested
+ * - client guid must match session guid
+ * - file name must match given name
+ * - lease key must match provided lease key
+ * If file is not leased:
+ * - Lease must not be requested
+ *
+ * dh_v2 only:
+ * - SMB2_DHANDLE_FLAG_PERSISTENT must be set if dh_persist is true
+ * - SMB2_DHANDLE_FLAG_PERSISTENT must not be set if dh_persist is false
+ * - desired access, share access, and create_options must be ignored
+ * - createguid must match
+ */
+static uint32_t
+smb_open_reconnect_checks(smb_request_t *sr, smb_ofile_t *of)
+{
+	smb_arg_open_t	*op = &sr->sr_open;
+
+	if (op->dh_vers == SMB2_DURABLE_V2) {
+		if (of->dh_persist && !SMB2_PERSIST(op->dh_v2_flags))
+			return (NT_STATUS_OBJECT_NAME_NOT_FOUND);
+		if (memcmp(op->create_guid, of->dh_create_guid, UUID_LEN))
+			return (NT_STATUS_OBJECT_NAME_NOT_FOUND);
+		if (!of->dh_persist && SMB2_PERSIST(op->dh_v2_flags))
+			return (NT_STATUS_INVALID_PARAMETER);
+	}
+
+	if (of->f_tree->t_snode != sr->tid_tree->t_snode) {
+#ifdef DEBUG
+		cmn_err(CE_WARN, "open_reconnect without matching snodes");
+#endif
+		return (NT_STATUS_OBJECT_NAME_NOT_FOUND);
+	}
+
+	if (!smb_is_same_user(sr->uid_user, of->f_user))
+		return (NT_STATUS_ACCESS_DENIED);
+
+	return (NT_STATUS_SUCCESS);
+}
+
+/*
+ * [MS-SMB2] 3.3.5.9.7 and 3.3.5.9.12 (durable reconnect v1/v2)
+ *
+ * Looks up an ofile on the server's sv_dh_list by the persistid.
+ * If found, it validates the request.
+ * (see smb_open_reconnect_checks() for details)
+ * If the checks are passed, we remove the ofile from the old list,
+ * update the related state to the new context (session, tree, user, etc),
+ * and add it onto the new tree's list.
+ *
+ * Moving an ofile from one context to another is inherently tricky.
+ * This codebase previously made the assumption that certain members are
+ * immutable, that new objects are only added to the collection when
+ * they are newly created, and such objects are always destroyed when
+ * a session is torn down.
+ *
+ * The following previously immutable members are modified by the below code:
+ *	f_cr, f_user, f_tree, f_fid, f_session
+ * Additionally, the ofile's list membership in t_ofile_list is changed.
+ *
+ * Clearly, changing these members out from under functions can cause serious
+ * problems. This function attempts to avoid this in the following ways:
+ *
+ * 1) Proceed with the reconnect only after all requests have gone away.
+ *    If there are no active requests, and no new requests can occur
+ *    (due to the session having gone away), then that drastically reduces
+ *    the number of code paths that can possibly interfere.
+ *
+ * 2) Take the node's ol_mutex in order to shut down the oplock path.
+ *    There are two paths to the ofile if you're not part of the durable handle
+ *    code: the tree list and the node/oplock lists. The node list is used to
+ *    notify directories of changes (directories can't be durable), in the
+ *    byte-range lock code (no changing ofile members are checked), when
+ *    detecting sharing violations (see below), and when handling oplocks
+ *    (via the oplock_grant member). By taking ol_mutex and ensuring ofile
+ *    member access only happens with this mutex held, we can keep out the
+ *    oplock code while switching contexts - and the context switch does not
+ *    modify the node.
+ *
+ * 3) Restrict access to ofiles in state ORPHANED or RECONNECT to those who are
+ *    only interested in immutable members (i.e. code checking for sharing
+ *    violations). We need only keep out people who need information about or
+ *    from the members we're modifying. Other access are fine, and in fact
+ *    should treat the ofile as STATE_OPEN.
+ */
+uint32_t
+smb2_open_reconnect(smb_request_t *sr)
+{
+	smb_arg_open_t	*op = &sr->sr_open;
+	smb_ofile_t *of;
+	smb_tree_t *tree;
+	smb_node_t *node;
+	smb_llist_t *dhlist;
+	cred_t *cr;
+	uint32_t rv;
+	uint16_t fid;
+
+	of = smb_ofile_lookup_by_persistid(sr, op->dh_fileid.persistent);
+	if (of == NULL)
+		return (NT_STATUS_OBJECT_NAME_NOT_FOUND);
+
+	mutex_enter(&of->f_mutex);
+	if ((rv = smb_open_reconnect_checks(sr, of)) != NT_STATUS_SUCCESS)
+		goto out1;
+
+	/*
+	 * Only the last person attempting reclaim should be allowed to reclaim
+	 * the ofile. The only *real* cause for multiple reclaimers would be
+	 * when an active reclaimer is logged off or disconnected, and we get a
+	 * new reconnect request before this one finishes. Clearly, in this
+	 * case, the last reclaimer should get the ofile.
+	 */
+	of->dh_reclaimer = sr;
+	cv_signal(&of->f_cv);
+
+	/*
+	 * Wait until all other references to this object have gone away
+	 * so that it's safe to proceed. If another reconnect comes in
+	 * for the same file, or if the state of the ofile changes, there's
+	 * no point in continuing.
+	 */
+	while (of->f_state == SMB_OFILE_STATE_ORPHANED &&
+	    of->f_refcnt > 1 && of->dh_reclaimer == sr)
+		cv_wait(&of->f_cv, &of->f_mutex);
+
+	if (of->f_state != SMB_OFILE_STATE_ORPHANED ||
+	    of->dh_reclaimer != sr) {
+		rv = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+		goto out1;
+	}
+
+	/*
+	 * We need to ensure that this reclaim completes prior to any
+	 * *final* attempt (user_logoff/tree_disconnect) to close all
+	 * ofiles on the tree, otherwise this ofile will remain open.
+	 */
+	tree = sr->tid_tree;
+	/* inline smb_tree_hold() */
+	mutex_enter(&tree->t_mutex);
+	if (!smb_tree_is_connected_locked(tree)) {
+		rv = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+		goto out2;
+	}
+
+	if (smb_idpool_alloc(&tree->t_fid_pool, &fid)) {
+		rv = NT_STATUS_TOO_MANY_OPENED_FILES;
+		goto out2;
+	}
+
+	tree->t_refcnt++;
+	smb_llist_enter(&tree->t_ofile_list, RW_WRITER);
+	mutex_exit(&tree->t_mutex);
+
+	node = of->f_node;
+	dhlist = &of->f_tree->t_ofile_list;
+
+	of->f_state = SMB_OFILE_STATE_RECONNECT;
+	mutex_exit(&of->f_mutex);
+
+	/*
+	 * We must take the ofile list lock before the mutex. Additionally,
+	 * because parts of the oplock code take the ofile mutex after
+	 * the oplock mutex, we must respect that order as well.
+	 *
+	 * At this point, we should be the only ones with a refcnt on the
+	 * ofile, and the RECONNECT state should prevent new refcnts from
+	 * being granted, or other durable threads from observing or
+	 * reclaiming it, so it should be safe to drop the lock long enough
+	 * to grab the others in the correct order.
+	 */
+
+	mutex_enter(&node->n_oplock.ol_mutex);
+	smb_llist_enter(dhlist, RW_WRITER);
+	ASSERT(of->f_state == SMB_OFILE_STATE_RECONNECT);
+
+	/*
+	 * While we're in STATE_RECONNECT, no one should be reading any of the
+	 * values we're changing here. If it's safe to drop the mutex above,
+	 * it should be safe to work without it until we need to modify state.
+	 */
+	smb_llist_remove(dhlist, of);
+	smb_idpool_free(&of->f_tree->t_fid_pool, of->f_fid);
+	atomic_dec_32(&of->f_tree->t_open_files);
+	atomic_dec_32(&of->f_session->s_file_cnt);
+	atomic_dec_32(&of->f_session->s_dh_cnt);
+	smb_llist_exit(dhlist);
+	smb_tree_release(of->f_tree); /* for ofile */
+
+	smb_ptrhash_remove(of->f_server->sv_persistid_ht, of);
+
+	/* From here, the ofile is only visible via the node lists */
+
+	cr = of->f_cr;
+	of->f_cr = (of->f_cr == of->f_user->u_cred) ?
+	    sr->uid_user->u_cred : smb_user_getprivcred(sr->uid_user);
+	crhold(of->f_cr);
+	crfree(cr);
+
+	smb_user_hold_internal(sr->uid_user);
+	smb_user_release(of->f_user);
+
+	of->f_user = sr->uid_user;
+	of->f_tree = sr->tid_tree;
+	of->f_fid = sr->smb_fid = fid;
+	of->f_session = sr->session;
+
+	op->op_oplock_level = of->f_oplock_grant.og_level;
+
+	mutex_enter(&of->f_mutex);
+	of->dh_expire_time = 0;
+	of->f_state = SMB_OFILE_STATE_OPEN;
+
+	/*
+	 * No one with access to this list can possibly wait on
+	 * the mutex on this ofile, so it should be safe
+	 * to take the list lock
+	 * Note: list lock is taken higher up
+	 */
+	smb_llist_insert_tail(&tree->t_ofile_list, of);
+	atomic_inc_32(&tree->t_open_files);
+	atomic_inc_32(&of->f_session->s_file_cnt);
+	smb_llist_exit(&tree->t_ofile_list);
+
+	mutex_exit(&of->f_mutex);
+	mutex_exit(&node->n_oplock.ol_mutex);
+
+	/* The ofile is now visible to the new session */
+
+	op->fqi.fq_fattr.sa_mask = SMB_AT_ALL;
+	(void) smb_node_getattr(sr, node, zone_kcred(), of,
+	    &op->fqi.fq_fattr);
+
+	sr->fid_ofile = of;
+	op->create_options = 0; /* no more modifications wanted */
+	op->action_taken = SMB_OACT_OPENED;
+	return (NT_STATUS_SUCCESS);
+
+out2:
+	mutex_exit(&tree->t_mutex);
+out1:
+	mutex_exit(&of->f_mutex);
+	smb_ofile_release(of);
+	return (rv);
 }
 
 /*

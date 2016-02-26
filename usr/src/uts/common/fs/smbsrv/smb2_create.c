@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -35,6 +35,10 @@
 #define	CCTX_QUERY_ON_DISK_ID		0x80
 #define	CCTX_REQUEST_LEASE		0x100
 #define	CCTX_AAPL_EXT			0x200
+#define	CCTX_DH_REQUEST_V2		0x400
+#define	CCTX_DH_RECONNECT_V2		0x800
+#define	CCTX_REQUEST_LEASE_V2		0X1000
+#define	CCTX_APPINSTANCE_ID		0x2000
 
 typedef struct smb2_create_ctx_elem {
 	uint32_t cce_len;
@@ -53,10 +57,14 @@ typedef struct smb2_create_ctx {
 	smb2_create_ctx_elem_t cc_in_time_warp;
 	smb2_create_ctx_elem_t cc_in_req_lease;
 	smb2_create_ctx_elem_t cc_in_aapl;
+	smb2_create_ctx_elem_t cc_in_dh_request_v2;
+	smb2_create_ctx_elem_t cc_in_dh_reconnect_v2;
 	/* Elements we my place in the response */
 	smb2_create_ctx_elem_t cc_out_max_access;
 	smb2_create_ctx_elem_t cc_out_file_id;
 	smb2_create_ctx_elem_t cc_out_aapl;
+	smb2_create_ctx_elem_t cc_out_dh_request;
+	smb2_create_ctx_elem_t cc_out_dh_request_v2;
 } smb2_create_ctx_t;
 
 static uint32_t smb2_decode_create_ctx(
@@ -66,6 +74,8 @@ static uint32_t smb2_encode_create_ctx(
 static int smb2_encode_create_ctx_elem(
 	mbuf_chain_t *, smb2_create_ctx_elem_t *, uint32_t);
 static void smb2_free_create_ctx(smb2_create_ctx_t *);
+
+int smb2_enable_dh = 1;
 
 smb_sdrc_t
 smb2_create(smb_request_t *sr)
@@ -88,8 +98,10 @@ smb2_create(smb_request_t *sr)
 	uint32_t CreateCtxLength;
 	smb2fid_t smb2fid;
 	uint32_t status;
+	int dh_flags;
 	int skip;
 	int rc = 0;
+	boolean_t dh_reconnect = B_FALSE;
 
 	bzero(&cctx, sizeof (cctx));
 	bzero(&cc_mbc, sizeof (cc_mbc));
@@ -179,30 +191,6 @@ smb2_create(smb_request_t *sr)
 	op->op_oplock_levelII = B_TRUE;
 
 	/*
-	 * ImpersonationLevel (spec. says ignore)
-	 * SmbCreateFlags (spec. says ignore)
-	 */
-
-	if ((op->create_options & FILE_DELETE_ON_CLOSE) &&
-	    !(op->desired_access & DELETE)) {
-		status = NT_STATUS_INVALID_PARAMETER;
-		goto errout;
-	}
-	if (op->create_disposition > FILE_MAXIMUM_DISPOSITION) {
-		status = NT_STATUS_INVALID_PARAMETER;
-		goto errout;
-	}
-
-	if (op->dattr & FILE_FLAG_WRITE_THROUGH)
-		op->create_options |= FILE_WRITE_THROUGH;
-	if (op->dattr & FILE_FLAG_DELETE_ON_CLOSE)
-		op->create_options |= FILE_DELETE_ON_CLOSE;
-	if (op->dattr & FILE_FLAG_BACKUP_SEMANTICS)
-		op->create_options |= FILE_OPEN_FOR_BACKUP_INTENT;
-	if (op->create_options & FILE_OPEN_FOR_BACKUP_INTENT)
-		sr->user_cr = smb_user_getprivcred(sr->uid_user);
-
-	/*
 	 * If there is a "Create Context" payload, decode it.
 	 * This may carry things like a security descriptor,
 	 * extended attributes, etc. to be used in create.
@@ -210,6 +198,7 @@ smb2_create(smb_request_t *sr)
 	 * The create ctx buffer must start after the headers
 	 * and file name, and must be 8-byte aligned.
 	 */
+	op->dh_vers = SMB2_NOT_DURABLE;
 	if (CreateCtxLength != 0) {
 		if ((CreateCtxOffset & 7) != 0 ||
 		    (CreateCtxOffset + sr->smb2_cmd_hdr) <
@@ -227,6 +216,20 @@ smb2_create(smb_request_t *sr)
 		status = smb2_decode_create_ctx(&cc_mbc, &cctx);
 		if (status)
 			goto errout;
+
+		if (smb2_enable_dh == 0) {
+			cctx.cc_in_flags &=
+			    ~(CCTX_DH_REQUEST_V2|CCTX_DH_RECONNECT_V2|
+			    CCTX_DH_REQUEST|CCTX_DH_RECONNECT);
+		} else if (sr->session->dialect < SMB_VERS_3_0) {
+			/*
+			 * DH v2 is only valid in SMB3.0 and later.
+			 * If we get them in earlier dialects,
+			 * pretend we didn't see them.
+			 */
+			cctx.cc_in_flags &=
+			    ~(CCTX_DH_REQUEST_V2|CCTX_DH_RECONNECT_V2);
+		}
 
 		if (cctx.cc_in_flags & CCTX_EA_BUFFER) {
 			status = NT_STATUS_EAS_NOT_SUPPORTED;
@@ -267,19 +270,142 @@ smb2_create(smb_request_t *sr)
 			smb_time_nt_to_unix(timewarp, &op->timewarp);
 			op->create_timewarp = B_TRUE;
 		}
+
+		dh_flags = cctx.cc_in_flags &
+		    (CCTX_DH_RECONNECT|CCTX_DH_RECONNECT_V2|
+		    CCTX_DH_REQUEST|CCTX_DH_REQUEST_V2);
+
+		/*
+		 * It is an error to specify more than one Durable Handle
+		 * operation in a single create, except when only the v1
+		 * REQUEST and RECONNECT operations are specified. In that
+		 * case, the v1 REQUEST is ignored.
+		 */
+		if ((dh_flags & (dh_flags - 1)) != 0 &&
+		    dh_flags != (CCTX_DH_REQUEST|CCTX_DH_RECONNECT)) {
+			status = NT_STATUS_INVALID_PARAMETER;
+			goto errout;
+		}
+
+		if ((cctx.cc_in_flags &
+		    (CCTX_DH_RECONNECT|CCTX_DH_RECONNECT_V2)) != 0) {
+			if ((cctx.cc_in_flags & CCTX_DH_RECONNECT_V2) != 0) {
+				uint32_t dh_v2_flags;
+				cce = &cctx.cc_in_dh_reconnect_v2;
+				rc = smb_mbc_decodef(&cce->cce_mbc, "qq#cl",
+				    &smb2fid.persistent, /* q */
+				    &smb2fid.temporal, /* q */
+				    UUID_LEN, /* # */
+				    op->create_guid, /* c */
+				    &dh_v2_flags); /* l */
+				op->dh_vers = SMB2_DURABLE_V2;
+				op->dh_v2_flags = dh_v2_flags;
+
+			} else {
+				cce = &cctx.cc_in_dh_reconnect;
+				rc = smb_mbc_decodef(&cce->cce_mbc, "qq",
+				    &smb2fid.persistent, /* q */
+				    &smb2fid.temporal); /* q */
+				op->dh_vers = SMB2_DURABLE_V1;
+			}
+
+			if (rc) {
+				status = NT_STATUS_INVALID_PARAMETER;
+				goto errout;
+			}
+			dh_reconnect = B_TRUE;
+
+		} else if ((cctx.cc_in_flags &
+		    (CCTX_DH_REQUEST|CCTX_DH_REQUEST_V2)) != 0 &&
+		    op->op_oplock_level == SMB_OPLOCK_BATCH) {
+			/*
+			 * We're supposed to process these create contexts
+			 * if any one of the following conditions is true:
+			 *
+			 * 1. op_oplock_level == SMB_OPLOCK_BATCH
+			 * 2. A lease is requested with handle caching
+			 *    - for v1, the lease must not be on a directory
+			 * 3. For v2, SMB2_PERSIST(dh_v2_flags) && tree->is_CA
+			 *
+			 * Otherwise, the requests are ignored.
+			 * However, because we don't support leases or CA,
+			 * cases 2 and 3 are not of concern to us yet.
+			 */
+			if ((cctx.cc_in_flags & CCTX_DH_REQUEST_V2) != 0) {
+				uint32_t timeout, dh_v2_flags;
+				cce = &cctx.cc_in_dh_request_v2;
+				rc = smb_mbc_decodef(&cce->cce_mbc,
+				    "ll8.#c",
+				    &timeout, /* l */
+				    &dh_v2_flags, /* l */
+				    /* reserved */ /* 8. */
+				    UUID_LEN, /* # */
+				    op->create_guid); /* c */
+				op->dh_vers = SMB2_DURABLE_V2;
+				op->dh_v2_flags = dh_v2_flags;
+
+				if (timeout == 0 ||
+				    timeout > DH_TIMEOUT_MS)
+					op->dh_timeout = DH_TIMEOUT_MS;
+				else
+					op->dh_timeout = timeout;
+
+			} else {
+				cce = &cctx.cc_in_dh_request;
+				rc = smb_mbc_decodef(&cce->cce_mbc,
+				    "16."); /* reserved */
+				op->dh_vers = SMB2_DURABLE_V1;
+				op->dh_timeout = DH_TIMEOUT_MS;
+			}
+
+			if (rc) {
+				status = NT_STATUS_INVALID_PARAMETER;
+				goto errout;
+			}
+			dh_reconnect = B_FALSE;
+		}
 	}
 
-	/*
-	 * The real open call.   Note: this gets attributes into
-	 * op->fqi.fq_fattr (SMB_AT_ALL).  We need those below.
-	 */
-	status = smb_common_open(sr);
+	/* Don't do open execution during Durable_Reconnect */
+	if (dh_reconnect == B_FALSE) {
+		/*
+		 * ImpersonationLevel (spec. says validate + ignore)
+		 * SmbCreateFlags (spec. says ignore)
+		 */
+
+		if ((op->create_options & FILE_DELETE_ON_CLOSE) &&
+		    !(op->desired_access & DELETE)) {
+			status = NT_STATUS_INVALID_PARAMETER;
+			goto errout;
+		}
+
+		if (op->dattr & FILE_FLAG_WRITE_THROUGH)
+			op->create_options |= FILE_WRITE_THROUGH;
+		if (op->dattr & FILE_FLAG_DELETE_ON_CLOSE)
+			op->create_options |= FILE_DELETE_ON_CLOSE;
+		if (op->dattr & FILE_FLAG_BACKUP_SEMANTICS)
+			op->create_options |= FILE_OPEN_FOR_BACKUP_INTENT;
+		if (op->create_options & FILE_OPEN_FOR_BACKUP_INTENT)
+			sr->user_cr = smb_user_getprivcred(sr->uid_user);
+		if (op->create_disposition > FILE_MAXIMUM_DISPOSITION) {
+			status = NT_STATUS_INVALID_PARAMETER;
+			goto errout;
+		}
+
+		/*
+		 * The real open call.   Note: this gets attributes into
+		 * op->fqi.fq_fattr (SMB_AT_ALL).  We need those below.
+		 */
+		status = smb_common_open(sr);
+	} else {
+		status = smb2_open_reconnect(sr);
+	}
 	if (status != NT_STATUS_SUCCESS)
 		goto errout;
 	attr = &op->fqi.fq_fattr;
 
 	/*
-	 * Convert the negotiate Oplock level back into
+	 * Convert the negotiated Oplock level back into
 	 * SMB2 encoding form.
 	 */
 	switch (op->op_oplock_level) {
@@ -330,9 +456,9 @@ smb2_create(smb_request_t *sr)
 	 *	CCTX_TIMEWARP_TOKEN
 	 *
 	 * We don't handle these yet.
-	 *	CCTX_DH_REQUEST
-	 *	CCTX_DH_RECONNECT
 	 *	CCTX_REQUEST_LEASE
+	 *	CCTX_REQUEST_LEASE_V2
+	 *	CCTX_APPINSTANCE_ID
 	 */
 	if (cctx.cc_in_flags & CCTX_QUERY_MAX_ACCESS) {
 		cce = &cctx.cc_out_max_access;
@@ -348,6 +474,7 @@ smb2_create(smb_request_t *sr)
 		cctx.cc_out_flags |= CCTX_QUERY_MAX_ACCESS;
 	}
 	if ((cctx.cc_in_flags & CCTX_QUERY_ON_DISK_ID) != 0 &&
+	    dh_reconnect == B_FALSE &&
 	    of->f_node != NULL) {
 		cce = &cctx.cc_out_file_id;
 		fsid_t fsid;
@@ -381,6 +508,27 @@ smb2_create(smb_request_t *sr)
 			cctx.cc_out_flags |= CCTX_AAPL_EXT;
 		}
 		status = 0;
+	}
+	/* Don't return a cctx for any reconnects */
+	if ((cctx.cc_in_flags & CCTX_DH_REQUEST) != 0 &&
+	    of->dh_vers == SMB2_DURABLE_V1) {
+		cce = &cctx.cc_out_dh_request;
+		cce->cce_len = 8;
+		cce->cce_mbc.max_bytes = 8;
+		(void) smb_mbc_encodef(&cce->cce_mbc, "q", 0);
+		cctx.cc_out_flags |= CCTX_DH_REQUEST;
+	}
+	if ((cctx.cc_in_flags & CCTX_DH_REQUEST_V2) != 0 &&
+	    of->dh_vers == SMB2_DURABLE_V2) {
+		cce = &cctx.cc_out_dh_request_v2;
+		cce->cce_len = 8;
+		cce->cce_mbc.max_bytes = 8;
+		if (of->dh_persist == B_FALSE)
+			op->dh_v2_flags &= ~SMB2_DHANDLE_FLAG_PERSISTENT;
+
+		(void) smb_mbc_encodef(&cce->cce_mbc, "ll",
+		    op->dh_timeout, op->dh_v2_flags);
+		cctx.cc_out_flags |= CCTX_DH_REQUEST_V2;
 	}
 	if (cctx.cc_out_flags) {
 		sr->raw_data.max_bytes = smb2_max_trans;
@@ -436,14 +584,20 @@ smb2_create(smb_request_t *sr)
 	} else {
 		(void) smb_mbc_encodef(&sr->reply, ".");
 	}
-	return (SDRC_SUCCESS);
 
-errout:
-	if (of != NULL)
-		smb_ofile_close(of, 0);
+	if (status != 0) {
+	errout:
+		if (of != NULL)
+			smb_ofile_close(of, 0);
+		smb2sr_put_error(sr, status);
+	}
+	if (op->sd != NULL) {
+		smb_sd_term(op->sd);
+		kmem_free(op->sd, sizeof (smb_sd_t));
+	}
 	if (cctx.cc_out_flags)
 		smb2_free_create_ctx(&cctx);
-	smb2sr_put_error(sr, status);
+
 	return (SDRC_SUCCESS);
 }
 
@@ -544,6 +698,14 @@ smb2_decode_create_ctx(mbuf_chain_t *in_mbc, smb2_create_ctx_t *cc)
 			cc->cc_in_flags |= CCTX_AAPL_EXT;
 			cce = &cc->cc_in_aapl;
 			break;
+		case SMB2_CREATE_DURABLE_HANDLE_REQUEST_V2: /* ("DH2Q") */
+			cc->cc_in_flags |= CCTX_DH_REQUEST_V2;
+			cce = &cc->cc_in_dh_request_v2;
+			break;
+		case SMB2_CREATE_DURABLE_HANDLE_RECONNECT_V2: /* ("DH2C") */
+			cc->cc_in_flags |= CCTX_DH_RECONNECT_V2;
+			cce = &cc->cc_in_dh_reconnect_v2;
+			break;
 		default:
 			/*
 			 * Unknown create context values are normal, and
@@ -592,7 +754,6 @@ smb2_decode_create_ctx(mbuf_chain_t *in_mbc, smb2_create_ctx_t *cc)
 /*
  * Encode an SMB2 Create Context buffer from our internal form.
  */
-/* ARGSUSED */
 static uint32_t
 smb2_encode_create_ctx(mbuf_chain_t *mbc, smb2_create_ctx_t *cc)
 {
@@ -627,6 +788,28 @@ smb2_encode_create_ctx(mbuf_chain_t *mbc, smb2_create_ctx_t *cc)
 		last_top = mbc->chain_offset;
 		rc = smb2_encode_create_ctx_elem(mbc, cce,
 		    SMB2_CREATE_CTX_AAPL);
+		if (rc)
+			return (NT_STATUS_INTERNAL_ERROR);
+		(void) smb_mbc_poke(mbc, last_top, "l",
+		    mbc->chain_offset - last_top);
+	}
+
+	if (cc->cc_out_flags & CCTX_DH_REQUEST) {
+		cce = &cc->cc_out_dh_request;
+		last_top = mbc->chain_offset;
+		rc = smb2_encode_create_ctx_elem(mbc, cce,
+		    SMB2_CREATE_DURABLE_HANDLE_REQUEST);
+		if (rc)
+			return (NT_STATUS_INTERNAL_ERROR);
+		(void) smb_mbc_poke(mbc, last_top, "l",
+		    mbc->chain_offset - last_top);
+	}
+
+	if (cc->cc_out_flags & CCTX_DH_REQUEST_V2) {
+		cce = &cc->cc_out_dh_request_v2;
+		last_top = mbc->chain_offset;
+		rc = smb2_encode_create_ctx_elem(mbc, cce,
+		    SMB2_CREATE_DURABLE_HANDLE_REQUEST_V2);
 		if (rc)
 			return (NT_STATUS_INTERNAL_ERROR);
 		(void) smb_mbc_poke(mbc, last_top, "l",
@@ -702,6 +885,14 @@ smb2_free_create_ctx(smb2_create_ctx_t *cc)
 	}
 	if (cc->cc_out_flags & CCTX_AAPL_EXT) {
 		cce = &cc->cc_out_aapl;
+		MBC_FLUSH(&cce->cce_mbc);
+	}
+	if (cc->cc_out_flags & CCTX_DH_REQUEST) {
+		cce = &cc->cc_out_dh_request;
+		MBC_FLUSH(&cce->cce_mbc);
+	}
+	if (cc->cc_out_flags & CCTX_DH_REQUEST_V2) {
+		cce = &cc->cc_out_dh_request_v2;
 		MBC_FLUSH(&cce->cce_mbc);
 	}
 }

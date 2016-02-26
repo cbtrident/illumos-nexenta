@@ -69,22 +69,28 @@
  * ------------------
  *
  *    +-------------------------+	 T0
- *    |  SMB_OFILE_STATE_OPEN   |<----------- Creation/Allocation
+ *    |  SMB_OFILE_STATE_OPEN   |<--+-------- Creation/Allocation
+ *    +-------------------------+   |
+ *	    |		|	    | T5
+ *	    |		|	+---------------------------+
+ *	    |		|	| SMB_OFILE_STATE_RECONNECT |
+ *	    |		|	+---------------------------+
+ *	    |		|	    ^
+ *	    |		|	    |
+ *	    |		|	    | T4
+ *	    | T1	| T3	+--------------------------+
+ *	    |		+------>| SMB_OFILE_STATE_ORPHANED |
+ *	    v			+--------------------------+
+ *    +-------------------------+   |		|
+ *    | SMB_OFILE_STATE_CLOSING |<--+ T6	| T7
+ *    +-------------------------+		|
+ *	    |		^			v
+ *	    | T2	| T8	+-------------------------+
+ *	    |		+-------| SMB_OFILE_STATE_EXPIRED |
+ *	    v			+-------------------------+
  *    +-------------------------+
- *		    |
- *		    | T1
- *		    |
- *		    v
- *    +-------------------------+
- *    | SMB_OFILE_STATE_CLOSING |
- *    +-------------------------+
- *		    |
- *		    | T2
- *		    |
- *		    v
- *    +-------------------------+    T3
  *    | SMB_OFILE_STATE_CLOSED  |----------> Deletion/Free
- *    +-------------------------+
+ *    +-------------------------+    T9
  *
  * SMB_OFILE_STATE_OPEN
  *
@@ -107,6 +113,36 @@
  *      - References will not be given out if the ofile is looked up.
  *      - The resources associated with the ofile remain.
  *
+ * SMB_OFILE_STATE_ORPHANED
+ *
+ *    While in this state:
+ *      - The ofile is queued in the list of ofiles of its tree.
+ *      - Can be reclaimed by the original owner
+ *      - References will not be given out if the ofile is looked up.
+ *      - The connection has been lost or the session logged off.
+ *      - The associated user/tree have been disconnected.
+ *      - The associated session may or may not be disconnected.
+ *      - Will eventually time out if not reclaimed
+ *      - Can be closed if its oplock is broken
+ *      - Still affects Sharing Violation rules
+ *
+ * SMB_OFILE_STATE_EXPIRED
+ *
+ *    While in this state:
+ *      - The ofile is queued in the list of ofiles of its tree.
+ *      - References will not be given out if the ofile is looked up.
+ *      - The ofile has not been reclaimed and will soon be closed,
+ *        due to, for example, the durable handle timer expiring, or its
+ *        oplock being broken.
+ *      - Cannot be reclaimed at this point
+ *
+ * SMB_OFILE_STATE_RECONNECT
+ *
+ *    While in this state:
+ *      - The ofile is being reclaimed; do not touch it.
+ *      - Still affects Sharing Violation rules
+ *	- see smb_open_reconnect() for which members need to be avoided
+ *
  * Transition T0
  *
  *    This transition occurs in smb_ofile_open(). A new ofile is created and
@@ -114,7 +150,9 @@
  *
  * Transition T1
  *
- *    This transition occurs in smb_ofile_close().
+ *    This transition occurs in smb_ofile_close(). Note that this only happens
+ *    when we determine that an ofile should be closed in spite of its durable
+ *    handle properties.
  *
  * Transition T2
  *
@@ -122,6 +160,50 @@
  *    with the ofile are freed as well as the ofile structure. For the
  *    transition to occur, the ofile must be in the SMB_OFILE_STATE_CLOSED
  *    state and the reference count be zero.
+ *
+ * Transition T3
+ *
+ *    This transition occurs in smb_ofile_orphan_dh(). It happens during an
+ *    smb2 logoff, or during a session disconnect when certain conditions are
+ *    met. The ofile and structures above it will be kept around until the ofile
+ *    either gets reclaimed, expires after f_timeout_offset nanoseconds, or its
+ *    oplock is broken.
+ *
+ * Transition T4
+ *
+ *    This transition occurs in smb_open_reconnect(). An smb2 create request
+ *    with a DURABLE_HANDLE_RECONNECT(_V2) create context has been
+ *    recieved from the original owner. If leases are supported or it's
+ *    RECONNECT_V2, reconnect is subject to additional conditions. The ofile
+ *    will be unwired from the old, disconnected session, tree, and user,
+ *    and wired up to its new context.
+ *
+ * Transition T5
+ *
+ *    This transition occurs in smb_open_reconnect(). The ofile has been
+ *    successfully reclaimed.
+ *
+ * Transition T6
+ *
+ *    This transition occurs in smb_ofile_close(). The ofile has been orphaned
+ *    while some thread was blocked, and that thread closes the ofile. Can only
+ *    happen when the ofile is orphaned due to an SMB2 LOGOFF request.
+ *
+ * Transition T7
+ *
+ *    This transition occurs in smb_session_durable_timers() and
+ *    smb_oplock_sched_async_break(). The ofile will soon be closed.
+ *    In the former case, f_timeout_offset nanoseconds have passed since
+ *    the ofile was orphaned. In the latter, an oplock break occured
+ *    on the ofile while it was orphaned.
+ *
+ * Transition T8
+ *
+ *    This transition occurs in smb_ofile_close().
+ *
+ * Transition T9
+ *
+ *    This transition occurs in smb_ofile_delete().
  *
  * Comments
  * --------
@@ -140,7 +222,8 @@
  *    Rules of access to a ofile structure:
  *
  *    1) In order to avoid deadlocks, when both (mutex and lock of the ofile
- *       list) have to be entered, the lock must be entered first.
+ *       list) have to be entered, the lock must be entered first. Additionally,
+ *       f_mutex must not be held when removing the ofile from sv_persistid_ht.
  *
  *    2) All actions applied to an ofile require a reference count.
  *
@@ -160,8 +243,33 @@
  *       being queued in that list is NOT registered by incrementing the
  *       reference count.
  */
-#include <smbsrv/smb_kproto.h>
+#include <smbsrv/smb2_kproto.h>
 #include <smbsrv/smb_fsops.h>
+#include <sys/time.h>
+
+/* Windows default values from [MS-SMB2] */
+/*
+ * (times in seconds)
+ * resilient:
+ * MaxTimeout = 300 (win7+)
+ * if timeout > MaxTimeout, ERROR
+ * if timeout != 0, timeout = req.timeout
+ * if timeout == 0, timeout = (infinity) (Win7/w2k8r2)
+ * if timeout == 0, timeout = 120 (Win8+)
+ * v2:
+ * if timeout != 0, timeout = MIN(timeout, 300) (spec)
+ * if timeout != 0, timeout = timeout (win8/2k12)
+ * if timeout == 0, timeout = Share.CATimeout. \
+ *	if Share.CATimeout == 0, timeout = 60 (win8/w2k12)
+ * if timeout == 0, timeout = 180 (win8.1/w2k12r2)
+ * open.timeout = 60 (win8/w2k12r2) (i.e. we ignore the request)
+ * v1:
+ * open.timeout = 16 minutes
+ */
+
+uint32_t smb2_dh_default_timeout = 60; /* seconds */
+uint32_t smb2_res_max_timeout = 300; /* seconds */
+uint32_t smb2_res_default_timeout = 120; /* seconds */
 
 /* Don't leak object addresses */
 #define	SMB_OFILE_PERSISTID(of) \
@@ -225,7 +333,7 @@ smb_ofile_open(
 
 	/*
 	 * grab a ref for of->f_user and of->f_tree
-	 * released in smb_ofile_delete()
+	 * released in smb_ofile_delete() or smb_open_reconnect()
 	 */
 	smb_user_hold_internal(sr->uid_user);
 	smb_tree_hold_internal(tree);
@@ -279,6 +387,30 @@ smb_ofile_open(
 				err->errcls = ERRDOS;
 				err->errcode = ERROR_ACCESS_DENIED;
 				goto errout;
+			}
+			/*
+			 * [MS-SMB2] 1.1
+			 * durable opens can't be "permissible to a
+			 * directory, named pipe, or printer".
+			 */
+			if (op->dh_vers == SMB2_DURABLE_V2) {
+				(void) memcpy(of->dh_create_guid,
+				    op->create_guid,
+				    UUID_LEN);
+
+				if ((of->f_session->capabilities &
+				    SMB2_CAP_PERSISTENT_HANDLES) != 0 &&
+				    of->f_tree->is_CA &&
+				    SMB2_PERSIST(op->dh_v2_flags))
+					of->dh_persist = B_TRUE;
+				else
+					of->dh_persist = B_FALSE;
+			}
+			if (op->dh_vers != SMB2_NOT_DURABLE) {
+				of->dh_expire_time = 0;
+				of->dh_vers = op->dh_vers;
+				of->dh_timeout_offset =
+				    MSEC2NSEC(op->dh_timeout);
 			}
 		}
 
@@ -336,12 +468,24 @@ smb_ofile_close(smb_ofile_t *of, int32_t mtime_sec)
 
 	mutex_enter(&of->f_mutex);
 	ASSERT(of->f_refcnt);
-	if (of->f_state != SMB_OFILE_STATE_OPEN) {
+	switch (of->f_state) {
+	case SMB_OFILE_STATE_EXPIRED:
+	case SMB_OFILE_STATE_ORPHANED:
+		of->f_state = SMB_OFILE_STATE_CLOSING;
+		of->dh_expired = B_TRUE;
+		cv_broadcast(&of->f_cv);
+		atomic_dec_32(&of->f_session->s_dh_cnt);
+		mutex_exit(&of->f_mutex);
+		smb_ptrhash_remove(of->f_server->sv_persistid_ht, of);
+		break;
+	case SMB_OFILE_STATE_OPEN:
+		of->f_state = SMB_OFILE_STATE_CLOSING;
+		mutex_exit(&of->f_mutex);
+		break;
+	default:
 		mutex_exit(&of->f_mutex);
 		return;
 	}
-	of->f_state = SMB_OFILE_STATE_CLOSING;
-	mutex_exit(&of->f_mutex);
 
 	switch (of->f_ftype) {
 	case SMB_FTYPE_BYTE_PIPE:
@@ -586,11 +730,20 @@ smb_ofile_release(smb_ofile_t *of)
 	switch (of->f_state) {
 	case SMB_OFILE_STATE_OPEN:
 	case SMB_OFILE_STATE_CLOSING:
+	case SMB_OFILE_STATE_RECONNECT:
+		break;
+	case SMB_OFILE_STATE_ORPHANED:
+	case SMB_OFILE_STATE_EXPIRED:
+		if (of->f_refcnt == 1)
+			cv_broadcast(&of->f_cv);
 		break;
 
 	case SMB_OFILE_STATE_CLOSED:
-		if (of->f_refcnt == 0)
+		if (of->f_refcnt == 0) {
 			smb_tree_post_ofile(of->f_tree, of);
+			if (of->dh_expired)
+				atomic_inc_32(&of->f_session->s_expire_cnt);
+		}
 		break;
 
 	default:
@@ -718,6 +871,33 @@ smb_ofile_lookup_by_uniqid(smb_tree_t *tree, uint32_t uniqid)
 
 	smb_llist_exit(of_list);
 	return (NULL);
+}
+
+static void *
+smb_ofile_hold_cb(void *arg)
+{
+	smb_ofile_t *of = arg;
+
+	if (of == NULL)
+		return (NULL);
+
+	mutex_enter(&of->f_mutex);
+	if (of->f_state == SMB_OFILE_STATE_ORPHANED)
+		/* inline smb_ofile_hold_internal() */
+		of->f_refcnt++;
+	else
+		arg = NULL;
+
+	mutex_exit(&of->f_mutex);
+	return (arg);
+}
+
+smb_ofile_t *
+smb_ofile_lookup_by_persistid(smb_request_t *sr, uint64_t persistid)
+{
+	smb_hash_t *hash = sr->sr_server->sv_persistid_ht;
+	smb_ofile_t *of = (smb_ofile_t *)SMB_OFILE_PERSISTID(persistid);
+	return (smb_ptrhash_find(hash, of, smb_ofile_hold_cb));
 }
 
 /*
@@ -872,18 +1052,90 @@ smb_ofile_is_open(smb_ofile_t *of)
 static boolean_t
 smb_ofile_is_open_locked(smb_ofile_t *of)
 {
+	ASSERT(MUTEX_HELD(&of->f_mutex));
+
 	switch (of->f_state) {
 	case SMB_OFILE_STATE_OPEN:
+	case SMB_OFILE_STATE_ORPHANED:
+	case SMB_OFILE_STATE_RECONNECT:
 		return (B_TRUE);
 
 	case SMB_OFILE_STATE_CLOSING:
 	case SMB_OFILE_STATE_CLOSED:
+	case SMB_OFILE_STATE_EXPIRED:
 		return (B_FALSE);
 
 	default:
 		ASSERT(0);
 		return (B_FALSE);
 	}
+}
+
+static boolean_t
+smb_ofile_should_save(smb_ofile_t *of)
+{
+	ASSERT(MUTEX_HELD(&of->f_mutex));
+
+	if (of->dh_vers == SMB2_NOT_DURABLE ||
+	    of->f_user->preserve_opens == SMB2_DONT_PRESERVE &&
+	    of->f_session->conn_lost == B_FALSE)
+		return (B_FALSE);
+
+	/*
+	 * There are two cases where we save durable handles:
+	 * 1. An SMB2 LOGOFF request was received
+	 * 2. An unexpected disconnect from the client
+	 *    Note: Specifying a PrevSessionID in session setup
+	 *    is considered a disconnect (we just haven't learned about it yet)
+	 * In every other case, we close durable handles.
+	 */
+
+	/* [MS-SMB2] 3.3.5.6 SMB2_LOGOFF */
+	if (of->f_user->preserve_opens == SMB2_PRESERVE_ALL)
+		return (B_TRUE);
+
+	/*
+	 * [MS-SMB2] 3.3.7.1 Handling Loss of a Connection
+	 *
+	 * If any of the following are true, preserve for reconnect:
+	 * - Server supports leasing and dh_vers == SMB2_RESILIENT
+	 * - open.is_durable and oplock_level == BATCH
+	 * - open.is_durable, oplock_level == LEASE with HANDLE_CACHING
+	 * - dh_persist == B_TRUE
+	 *
+	 * We don't yet support leasing or persistent ofiles,
+	 * so only case 1&2 matter.
+	 *
+	 * The spec says that we should only save resilient handles
+	 * if we support leasing. Note that the ofile does not have
+	 * to actually *have* a lease, or even request a lease. I see
+	 * nothing in the spec that justifies this requirement, and
+	 * HYPER-V benefits from saving resilient ofiles (and doesn't
+	 * seem to require they be leased), so we'll just save them for now.
+	 */
+
+	if (of->dh_vers == SMB2_RESILIENT)
+		return (B_TRUE);
+
+	if (!SMB_OFILE_OPLOCK_GRANTED(of))
+		return (B_FALSE);
+
+	if (of->f_oplock_grant.og_level == SMB_OPLOCK_BATCH)
+		return (B_TRUE);
+	return (B_FALSE);
+}
+
+static void
+smb_ofile_orphan_dh(smb_ofile_t *of)
+{
+	ASSERT(MUTEX_HELD(&of->f_mutex));
+	hrtime_t logoff = (of->f_session->conn_lost) ?
+	    of->f_session->logoff_time : of->f_user->logoff_time;
+
+	of->f_state = SMB_OFILE_STATE_ORPHANED;
+	of->dh_expire_time = logoff + of->dh_timeout_offset;
+	atomic_inc_32(&of->f_session->s_dh_cnt);
+	smb_ptrhash_insert(of->f_server->sv_persistid_ht, of);
 }
 
 /*
@@ -896,7 +1148,7 @@ static smb_ofile_t *
 smb_ofile_close_and_next(smb_ofile_t *of)
 {
 	smb_ofile_t	*next_of;
-	smb_tree_t	*tree;
+	smb_tree_t	*tree = of->f_tree;
 
 	ASSERT(of);
 	ASSERT(of->f_magic == SMB_OFILE_MAGIC);
@@ -905,17 +1157,26 @@ smb_ofile_close_and_next(smb_ofile_t *of)
 	switch (of->f_state) {
 	case SMB_OFILE_STATE_OPEN:
 		/* The file is still open. */
+
+		if (smb_ofile_should_save(of)) {
+			smb_ofile_orphan_dh(of);
+			mutex_exit(&of->f_mutex);
+			next_of = smb_llist_next(&tree->t_ofile_list, of);
+			break;
+		}
+		/* FALLTHROUGH */
+	case SMB_OFILE_STATE_ORPHANED:
 		/* inline smb_ofile_hold_internal() */
 		of->f_refcnt++;
 		ASSERT(of->f_refcnt);
-		tree = of->f_tree;
 		mutex_exit(&of->f_mutex);
-		smb_llist_exit(&of->f_tree->t_ofile_list);
+		smb_llist_exit(&tree->t_ofile_list);
 		smb_ofile_close(of, 0);
 		smb_ofile_release(of);
 		smb_llist_enter(&tree->t_ofile_list, RW_READER);
 		next_of = smb_llist_head(&tree->t_ofile_list);
 		break;
+	case SMB_OFILE_STATE_EXPIRED:
 	case SMB_OFILE_STATE_CLOSING:
 	case SMB_OFILE_STATE_CLOSED:
 		/*
@@ -923,12 +1184,12 @@ smb_ofile_close_and_next(smb_ofile_t *of)
 		 * in the process being closed.
 		 */
 		mutex_exit(&of->f_mutex);
-		next_of = smb_llist_next(&of->f_tree->t_ofile_list, of);
+		next_of = smb_llist_next(&tree->t_ofile_list, of);
 		break;
 	default:
 		ASSERT(0);
 		mutex_exit(&of->f_mutex);
-		next_of = smb_llist_next(&of->f_tree->t_ofile_list, of);
+		next_of = smb_llist_next(&tree->t_ofile_list, of);
 		break;
 	}
 	return (next_of);
@@ -1048,7 +1309,7 @@ smb_ofile_open_check(smb_ofile_t *of, uint32_t desired_access,
 
 	mutex_enter(&of->f_mutex);
 
-	if (of->f_state != SMB_OFILE_STATE_OPEN) {
+	if (smb_ofile_is_open_locked(of)) {
 		mutex_exit(&of->f_mutex);
 		return (NT_STATUS_INVALID_HANDLE);
 	}
@@ -1121,7 +1382,7 @@ smb_ofile_rename_check(smb_ofile_t *of)
 
 	mutex_enter(&of->f_mutex);
 
-	if (of->f_state != SMB_OFILE_STATE_OPEN) {
+	if (smb_ofile_is_open_locked(of)) {
 		mutex_exit(&of->f_mutex);
 		return (NT_STATUS_INVALID_HANDLE);
 	}
@@ -1169,7 +1430,7 @@ smb_ofile_delete_check(smb_ofile_t *of)
 
 	mutex_enter(&of->f_mutex);
 
-	if (of->f_state != SMB_OFILE_STATE_OPEN) {
+	if (smb_ofile_is_open_locked(of)) {
 		mutex_exit(&of->f_mutex);
 		return (NT_STATUS_INVALID_HANDLE);
 	}
@@ -1338,4 +1599,43 @@ smb_ofile_get_quota_resume(smb_ofile_t *ofile, char *buf, int bufsize)
 	mutex_enter(&ofile->f_mutex);
 	(void) strlcpy(buf, ofile->f_quota_resume, bufsize);
 	mutex_exit(&ofile->f_mutex);
+}
+
+uint32_t
+smb2_fsctl_resiliency(smb_request_t *sr, smb_fsctl_t *fsctl)
+{
+	uint32_t timeout;
+	smb_ofile_t *of = sr->fid_ofile;
+
+	/*
+	 * Note: The spec does not explicitly prohibit resilient directories
+	 * the same way it prohibits durable directories. We prohibit them
+	 * anyway as a simplifying assumption, as there doesn't seem to be
+	 * much use for it. (HYPER-V only seems to use it on files anyway)
+	 */
+	if (fsctl->InputCount < 8 || !smb_node_is_file(of->f_node))
+		return (NT_STATUS_INVALID_PARAMETER);
+
+	(void) smb_mbc_decodef(fsctl->in_mbc, "l4.",
+	    &timeout); /* milliseconds */
+
+	if (smb2_enable_dh == 0)
+		return (NT_STATUS_NOT_SUPPORTED);
+	/*
+	 * The spec wants us to return INVALID_PARAMETER if the timeout
+	 * is too large, but we have no way of informing the client
+	 * what an appropriate timeout is, so just set the timeout to
+	 * our max and return SUCCESS.
+	 */
+	if (timeout > smb2_res_max_timeout * MILLISEC)
+		timeout = smb2_res_max_timeout * MILLISEC;
+
+	mutex_enter(&of->f_mutex);
+	of->dh_vers = SMB2_RESILIENT;
+	of->dh_timeout_offset = (timeout) ?
+	    MSEC2NSEC(timeout) :
+	    (hrtime_t)smb2_res_default_timeout*NANOSEC;
+	mutex_exit(&of->f_mutex);
+
+	return (NT_STATUS_SUCCESS);
 }

@@ -61,7 +61,8 @@ static smb_oplock_grant_t *smb_oplock_exclusive_grant(list_t *);
 static smb_oplock_grant_t *smb_oplock_get_grant(smb_oplock_t *, smb_ofile_t *);
 
 static void smb_oplock_sched_async_break(smb_oplock_grant_t *, uint8_t);
-static void smb_oplock_exec_async_break(void *);
+static void smb_oplock_async_close(void *);
+static void smb_oplock_async_sendbreak(void *);
 static int smb_oplock_send_break(smb_request_t *, uint8_t);
 static void smb_oplock_break_levelII_locked(smb_node_t *);
 
@@ -149,8 +150,6 @@ smb_oplock_acquire(smb_request_t *sr, smb_node_t *node, smb_ofile_t *ofile)
 	ASSERT(RW_LOCK_HELD(&node->n_lock));
 
 	op = &sr->sr_open;
-	tree = SMB_OFILE_GET_TREE(ofile);
-	session = SMB_OFILE_GET_SESSION(ofile);
 
 	if (smb_oplocks_enabled == 0 ||
 	    (op->op_oplock_level == SMB_OPLOCK_NONE) ||
@@ -165,6 +164,8 @@ smb_oplock_acquire(smb_request_t *sr, smb_node_t *node, smb_ofile_t *ofile)
 
 	mutex_enter(&ol->ol_mutex);
 	smb_oplock_wait(node);
+	tree = SMB_OFILE_GET_TREE(ofile);
+	session = SMB_OFILE_GET_SESSION(ofile);
 
 	/*
 	 * Even if there are no other opens, we might want to
@@ -311,7 +312,7 @@ smb_oplock_break(smb_request_t *sr, smb_node_t *node, uint32_t flags)
 		return (EAGAIN);
 	}
 
-	if (sr && (sr->uid_user == ofile->f_user)) {
+	if (sr != NULL && sr->uid_user == ofile->f_user) {
 		timeout = smb_oplock_min_timeout;
 	} else {
 		timeout = smb_oplock_timeout;
@@ -391,8 +392,14 @@ smb_oplock_break_levelII_locked(smb_node_t *node)
 			break;
 
 		smb_oplock_sched_async_break(og, SMB_OPLOCK_BREAK_TO_NONE);
-		smb_oplock_remove_grant(node, og);
-		smb_oplock_clear_grant(og);
+		/*
+		 * If oplock break had to do a "local" ack, the
+		 * oplock grant will have been already removed.
+		 */
+		if (og->og_magic == SMB_OPLOCK_GRANT_MAGIC) {
+			smb_oplock_remove_grant(node, og);
+			smb_oplock_clear_grant(og);
+		}
 	}
 }
 
@@ -400,64 +407,180 @@ smb_oplock_break_levelII_locked(smb_node_t *node)
  * Schedule an asynchronous call to smb_oplock_send_break.
  * Try hard to avoid waiting for any oplock work here, or
  * callers coming in from FEM etc. may suffer delays.
- * Caller may hold the oplock mutex.
+ *
+ * The caller holds the oplock mutex, and will
+ * signal ol_cv after we return.
  */
 static void
 smb_oplock_sched_async_break(smb_oplock_grant_t *og, uint8_t brk)
 {
-	smb_request_t		*sr;
-	smb_ofile_t		*ofile;
+	smb_ofile_t	*ofile;
+	boolean_t	do_close = B_FALSE;
+	boolean_t	do_send = B_FALSE;
+	boolean_t	local_break = B_FALSE;
+
+	ofile = og->og_ofile;	/* containing struct */
+	SMB_OFILE_VALID(ofile);
 
 	/*
-	 * Make sure we can get a hold on the ofile.  If we can't,
-	 * the file is closing, and there's no point scheduling an
-	 * oplock break on it because the close will release the
-	 * oplock very soon. Same for the tree & user holds.
-	 *
-	 * These holds account for the pointers we copy into the
-	 * smb_request fields: fid_ofile, tid_tree, uid_user.
-	 * These holds are released via smb_request_free after
-	 * the oplock break has been sent.
+	 * Make sure we can get a hold on the ofile.  Do this
+	 * inline with special logic to transition from state
+	 * ORPHANED to state EXPIRED (when we'll close).
+	 * This hold is released at the completion of the
+	 * SMB request we schedule via taskq_dispatch.
 	 */
-	ofile = og->og_ofile;	/* containing struct */
-	if (!smb_ofile_hold(ofile))
-		return;
+	mutex_enter(&ofile->f_mutex);
 
-	if ((sr = smb_request_alloc(ofile->f_session, 0)) == NULL) {
-		smb_ofile_release(ofile);
-		return;
+	switch (ofile->f_state) {
+
+	case SMB_OFILE_STATE_OPEN:
+		/*
+		 * inline smb_ofile_hold(), released in
+		 * smb_oplock_async_sendbreak
+		 */
+		ofile->f_refcnt++;
+		do_send = B_TRUE;
+		break;
+
+	case SMB_OFILE_STATE_RECONNECT:
+		/*
+		 * The ofile is about to enter state OPEN by
+		 * means of a RECONNECT request; break the oplock
+		 * now so that the client will see the new level
+		 * in the response.
+		 */
+		local_break = B_TRUE;
+		break;
+
+	case SMB_OFILE_STATE_ORPHANED:
+		/*
+		 * There is no client connection right now so just
+		 * break the oplock or close the handle.  The client
+		 * will find out when they reconnect this handle.
+		 */
+		local_break = B_TRUE;
+		switch (ofile->dh_vers) {
+		case SMB2_RESILIENT:
+			break;
+		case SMB2_DURABLE_V2:
+			if (ofile->dh_persist == B_FALSE)
+				do_close = B_TRUE;
+			break;
+		case SMB2_DURABLE_V1:
+			do_close = B_TRUE;
+			break;
+		case SMB2_NOT_DURABLE:
+			break;
+		}
+		if (do_close) {
+			ofile->f_state = SMB_OFILE_STATE_EXPIRED;
+			/*
+			 * inline smb_ofile_hold(), release in
+			 * smb_oplock_async_close
+			 */
+			ofile->f_refcnt++;
+		}
+		break;
+
+	default:
+		/* Closing (etc).  No oplock work to do. */
+		break;
+	}
+	mutex_exit(&ofile->f_mutex);
+
+	if (do_send) {
+		smb_request_t *sr;
+
+		sr = smb_request_alloc(ofile->f_session, 0);
+		if (sr == NULL) {
+			/*
+			 * The session is in a state that disallows
+			 * new requests, which implies we can't send.
+			 * Handle the same as local_break.
+			 */
+			local_break = B_TRUE;
+			smb_ofile_release(ofile);
+		} else {
+			sr->sr_state = SMB_REQ_STATE_SUBMITTED;
+			sr->user_cr = zone_kcred();
+			sr->fid_ofile = ofile;
+			/* Leave tid_tree, uid_user NULL. */
+			sr->arg.olbrk = *og; /* struct copy */
+			sr->arg.olbrk.og_breaking = brk;
+
+			(void) taskq_dispatch(
+			    sr->sr_server->sv_worker_pool,
+			    smb_oplock_async_sendbreak, sr, TQ_SLEEP);
+		}
 	}
 
-	smb_tree_hold_internal(ofile->f_tree);
-	smb_user_hold_internal(ofile->f_user);
+	if (do_close) {
+		/*
+		 * The actual close may need to do some I/O,
+		 * so let's use a taskq job for the close.
+		 * (See "avoid waiting" above.)
+		 * Caller may wait in oplock_wait_ack until
+		 * close calls smb_oplock_release.
+		 */
+		(void) taskq_dispatch(
+		    ofile->f_server->sv_worker_pool,
+		    smb_oplock_async_close, ofile, TQ_SLEEP);
+	} else if (local_break) {
+		smb_node_t	*node = ofile->f_node;
+		smb_oplock_t	*ol = &node->n_oplock;
 
-	sr->sr_state = SMB_REQ_STATE_SUBMITTED;
-	sr->user_cr = zone_kcred();
-	sr->fid_ofile = ofile;
-	sr->tid_tree = ofile->f_tree;
-	sr->uid_user = ofile->f_user;
+		/*
+		 * The ofile was in state ORPHANED or RECONNECT.
+		 * We do the update locally that the client would have
+		 * done if they had received our oplock break message.
+		 * Similar to smb_oplock_ack.
+		 */
+		switch (brk) {
+		case SMB_OPLOCK_BREAK_TO_NONE:
+			og->og_level = SMB_OPLOCK_NONE;
+			break;
+		case SMB_OPLOCK_BREAK_TO_LEVEL_II:
+			og->og_level = SMB_OPLOCK_LEVEL_II;
+			break;
+		default:
+			SMB_PANIC();
+		}
 
-	sr->arg.olbrk = *og; /* struct copy */
-	sr->arg.olbrk.og_breaking = brk;
+		if (og->og_level == SMB_OPLOCK_NONE) {
+			smb_oplock_remove_grant(node, og);
+			smb_oplock_clear_grant(og);
+		}
 
-	(void) taskq_dispatch(
-	    sr->sr_server->sv_worker_pool,
-	    smb_oplock_exec_async_break, sr, TQ_SLEEP);
+		ol->ol_break = SMB_OPLOCK_NO_BREAK;
+	}
+}
+
+static void
+smb_oplock_async_close(void *arg)
+{
+	smb_ofile_t *ofile = arg;
+
+	smb_ofile_close(ofile, 0);
+	smb_ofile_release(ofile);
 }
 
 /*
- * smb_oplock_exec_async_break
+ * smb_oplock_async_sendbreak
  *
  * Called via the taskq to handle an asynchronous oplock break.
- * We have a hold on the ofile, which keeps the FID here valid.
+ * We have a hold on the ofile, which will be released in
+ * smb_request_free (via sr->fid_ofile)
+ *
+ * Note we have: sr->uid_user == NULL, sr->tid_tree == NULL.
+ * Nothing called here needs those.
  */
 static void
-smb_oplock_exec_async_break(void *arg)
+smb_oplock_async_sendbreak(void *arg)
 {
 	smb_request_t *sr = arg;
-	smb_ofile_t *of = sr->fid_ofile;
+	smb_ofile_t *ofile = sr->fid_ofile;
 	smb_oplock_grant_t *og = &sr->arg.olbrk;
-	int rc = 0;
+	int rc;
 
 	SMB_REQ_VALID(sr);
 	SMB_OPLOCK_GRANT_VALID(og);
@@ -468,20 +591,17 @@ smb_oplock_exec_async_break(void *arg)
 	mutex_exit(&sr->sr_mutex);
 
 	/*
-	 * This is where we actually do the deferred work
+	 * This is where we actually do the deferred send
 	 * requested by smb_oplock_sched_async_break().
 	 */
 	rc = smb_oplock_send_break(sr, og->og_breaking);
 
 	/*
-	 * If we were unable to send the break request, the
-	 * session must be closing.  Break the oplock here by
-	 * simulating a break response.
+	 * If we were unable to send the oplock break request,
+	 * we need to handle it locally (simultate the ACK).
 	 */
-	if (rc != 0) {
-		smb_oplock_ack(of->f_node, of,
-		    SMB_OPLOCK_BREAK_TO_NONE);
-	}
+	if (rc != 0)
+		smb_oplock_ack(ofile->f_node, ofile, og->og_breaking);
 
 	sr->sr_state = SMB_REQ_STATE_COMPLETED;
 	smb_request_free(sr);
@@ -492,14 +612,11 @@ smb_oplock_exec_async_break(void *arg)
  *
  * Send an oplock break request to the client,
  * recalling some cache delegation.
- *
- * Note: sr->session != ofile->f_session
  */
 static int
 smb_oplock_send_break(smb_request_t *sr, uint8_t brk)
 {
-	smb_ofile_t	*ofile = sr->fid_ofile;
-	smb_session_t	*session = ofile->f_session;
+	smb_session_t	*session = sr->session;
 	mbuf_chain_t	*mbc = &sr->reply;
 	int rc;
 

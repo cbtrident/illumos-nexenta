@@ -350,6 +350,7 @@ int	smb_search(smb_request_t *);
 
 uint32_t smb_common_create(smb_request_t *);
 uint32_t smb_common_open(smb_request_t *);
+
 int smb_common_write(smb_request_t *, smb_rw_param_t *);
 
 void smb_pathname_init(smb_request_t *, smb_pathname_t *, char *);
@@ -678,6 +679,7 @@ void smb_request_free(smb_request_t *);
  */
 smb_ofile_t *smb_ofile_lookup_by_fid(smb_request_t *, uint16_t);
 smb_ofile_t *smb_ofile_lookup_by_uniqid(smb_tree_t *, uint32_t);
+smb_ofile_t *smb_ofile_lookup_by_persistid(smb_request_t *, uint64_t);
 boolean_t smb_ofile_disallow_fclose(smb_ofile_t *);
 smb_ofile_t *smb_ofile_open(smb_request_t *, smb_node_t *,
     smb_arg_open_t *, uint16_t, uint32_t, smb_error_t *);
@@ -778,6 +780,7 @@ void smb_tree_hold_internal(smb_tree_t *);
 void smb_tree_release(smb_tree_t *);
 smb_odir_t *smb_tree_lookup_odir(smb_request_t *, uint16_t);
 boolean_t smb_tree_is_connected(smb_tree_t *);
+boolean_t smb_tree_is_connected_locked(smb_tree_t *);
 #define	SMB_TREE_GET_TID(tree)		((tree)->t_tid)
 
 smb_xa_t *smb_xa_create(smb_session_t *session, smb_request_t *sr,

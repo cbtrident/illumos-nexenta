@@ -619,6 +619,7 @@ smblist_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 typedef struct mdb_smb_server {
 	smb_server_state_t	sv_state;
 	zoneid_t		sv_zid;
+	smb_hash_t		*sv_persistid_ht;
 } mdb_smb_server_t;
 
 static int
@@ -1799,6 +1800,7 @@ typedef struct mdb_smb_ofile {
 	int			f_mode;
 	cred_t			*f_cr;
 	pid_t			f_pid;
+	smb_dh_vers_t		dh_vers;
 } mdb_smb_ofile_t;
 
 static const mdb_bitmask_t
@@ -1859,16 +1861,23 @@ smbofile_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		}
 		if (opts & SMB_OPT_VERBOSE) {
 			char		state[40];
+			char		durable[40];
 
 			get_enum(state, sizeof (state),
 			    "smb_ofile_state_t", of->f_state,
 			    "SMB_OFILE_STATE_");
+
+			get_enum(durable, sizeof (durable),
+			    "smb_dh_vers_t", of->dh_vers,
+			    "SMB2_");
 
 			mdb_printf(
 			    "%<b>%<u>SMB ofile information (%p):%</u>%</b>\n\n",
 			    addr);
 			mdb_printf("FID: %u\n", of->f_fid);
 			mdb_printf("State: %d (%s)\n", of->f_state, state);
+			mdb_printf("DH Type: %d (%s)\n", of->dh_vers,
+			    durable);
 			mdb_printf("SMB Node: %p\n", of->f_node);
 			mdb_printf("LLF Offset: 0x%llx (%s)\n",
 			    of->f_llf_pos,
@@ -1899,6 +1908,173 @@ smbofile_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		}
 	}
 	return (DCMD_OK);
+}
+
+static int
+smbdurable_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	mdb_smb_server_t *sv;
+
+	if (!(flags & DCMD_ADDRSPEC)) {
+		mdb_printf("require address of an smb_server_t\n");
+		return (WALK_ERR);
+	}
+
+	sv = mdb_zalloc(sizeof (*sv), UM_SLEEP | UM_GC);
+	if (mdb_ctf_vread(sv, SMBSRV_SCOPE "smb_server_t",
+	    "mdb_smb_server_t", addr, 0) < 0) {
+		mdb_warn("failed to read smb_server at %p", addr);
+		return (DCMD_ERR);
+	}
+
+	if (mdb_pwalk_dcmd("smb_hash_walker", "smbofile",
+	    argc, argv, (uintptr_t)sv->sv_persistid_ht) == -1) {
+		mdb_warn("failed to walk 'smb_ofile'");
+		return (DCMD_ERR);
+	}
+	return (DCMD_OK);
+}
+
+static int
+smb_hash_walk_init(mdb_walk_state_t *wsp)
+{
+	smb_hash_t hash;
+	int ll_off, sll_off, i;
+	uintptr_t addr = wsp->walk_addr;
+
+	if (addr == NULL) {
+		mdb_printf("require address of an smb_hash_t\n");
+		return (WALK_ERR);
+	}
+
+	GET_OFFSET(sll_off, smb_bucket_t, b_list);
+	GET_OFFSET(ll_off, smb_llist_t, ll_list);
+
+	if (mdb_vread(&hash, sizeof (hash), addr) == -1) {
+		mdb_warn("failed to read smb_hash_t at %p", addr);
+		return (WALK_ERR);
+	}
+
+	for (i = 0; i < hash.num_buckets; i++) {
+		wsp->walk_addr = (uintptr_t)hash.buckets +
+		    (i * sizeof (smb_bucket_t)) + sll_off + ll_off;
+		if (mdb_layered_walk("list", wsp) == -1) {
+			mdb_warn("failed to walk 'list'");
+			return (WALK_ERR);
+		}
+	}
+
+	return (WALK_NEXT);
+}
+
+static int
+smb_hash_walk_step(mdb_walk_state_t *wsp)
+{
+	return (wsp->walk_callback(wsp->walk_addr, wsp->walk_layer,
+	    wsp->walk_cbdata));
+}
+
+static int
+smbhashstat_cb(uintptr_t addr, const void *data, void *varg)
+{
+	_NOTE(ARGUNUSED(varg))
+	const smb_bucket_t *bucket = data;
+
+	mdb_printf("%-?p ", addr);	/* smb_bucket_t */
+	mdb_printf("%-6u ", bucket->b_cnt);
+	mdb_printf("%-16u", bucket->b_max_seen);
+	mdb_printf("%-u\n", (bucket->b_list.ll_wrop + bucket->b_cnt) / 2);
+	return (WALK_NEXT);
+}
+
+static int
+smbhashstat_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	_NOTE(ARGUNUSED(argc, argv))
+	if (!(flags & DCMD_ADDRSPEC)) {
+		mdb_printf("require address of an smb_hash_t\n");
+		return (DCMD_USAGE);
+	}
+
+	if (DCMD_HDRSPEC(flags)) {
+		mdb_printf(
+		    "%<b>%<u>"
+		    "%-?s "
+		    "%-6s "
+		    "%-16s"
+		    "%-s"
+		    "%</u>%</b>\n",
+		    "smb_bucket_t", "count", "largest seen", "inserts");
+	}
+
+	if (mdb_pwalk("smb_hashstat_walker", smbhashstat_cb,
+	    NULL, addr) == -1) {
+		mdb_warn("failed to walk 'smb_ofile'");
+		return (DCMD_ERR);
+	}
+	return (DCMD_OK);
+}
+
+typedef struct smb_hash_wd {
+	smb_bucket_t	*bucket;
+	smb_bucket_t	*end;
+} smb_hash_wd_t;
+
+static int
+smb_hashstat_walk_init(mdb_walk_state_t *wsp)
+{
+	int sll_off, ll_off;
+	smb_hash_t hash;
+	smb_bucket_t *buckets;
+	uintptr_t addr = wsp->walk_addr;
+	uint32_t arr_sz;
+	smb_hash_wd_t *wd;
+
+	if (addr == NULL) {
+		mdb_printf("require address of an smb_hash_t\n");
+		return (WALK_ERR);
+	}
+
+	GET_OFFSET(sll_off, smb_bucket_t, b_list);
+	GET_OFFSET(ll_off, smb_llist_t, ll_list);
+
+	if (mdb_vread(&hash, sizeof (hash), addr) == -1) {
+		mdb_warn("failed to read smb_hash_t at %p", addr);
+		return (WALK_ERR);
+	}
+
+	arr_sz = hash.num_buckets * sizeof (smb_bucket_t);
+	buckets = mdb_alloc(arr_sz, UM_SLEEP | UM_GC);
+	if (mdb_vread(buckets, arr_sz, (uintptr_t)hash.buckets) == -1) {
+		mdb_warn("failed to read smb_bucket_t array at %p",
+		    hash.buckets);
+		return (WALK_ERR);
+	}
+
+	wd = mdb_alloc(sizeof (*wd), UM_SLEEP | UM_GC);
+	wd->bucket = buckets;
+	wd->end = buckets + hash.num_buckets;
+
+	wsp->walk_addr = (uintptr_t)hash.buckets;
+	wsp->walk_data = wd;
+
+	return (WALK_NEXT);
+}
+
+static int
+smb_hashstat_walk_step(mdb_walk_state_t *wsp)
+{
+	int rc;
+	smb_hash_wd_t *wd = wsp->walk_data;
+
+	if (wd->bucket >= wd->end)
+		return (WALK_DONE);
+
+	rc = wsp->walk_callback(wsp->walk_addr, wd->bucket++,
+	    wsp->walk_cbdata);
+
+	wsp->walk_addr += sizeof (smb_bucket_t);
+	return (rc);
 }
 
 /*
@@ -3418,6 +3594,15 @@ static const mdb_dcmd_t dcmds[] = {
 	{   "smb_mbuf_dump", ":[max_len]",
 	    "print mbuf_t data",
 	    smb_mbuf_dump_dcmd },
+	{   "smbdurable",
+	    "[-v]",
+	    "list ofiles on sv->sv_persistid_ht",
+	    smbdurable_dcmd },
+	{   "smbhashstat",
+	    "[-v]",
+	    "list stats from an smb_hash_t structure",
+	    smbhashstat_dcmd },
+
 	{ NULL }
 };
 
@@ -3452,6 +3637,19 @@ static const mdb_walker_t walkers[] = {
 	    smb_mbuf_walk_step,
 	    NULL,
 	    NULL },
+	{   "smb_hash_walker",
+	    "walk an smb_hash_t structure",
+	    smb_hash_walk_init,
+	    smb_hash_walk_step,
+	    NULL,
+	    NULL },
+	{   "smb_hashstat_walker",
+	    "walk the buckets from an smb_hash_t structure",
+	    smb_hashstat_walk_init,
+	    smb_hashstat_walk_step,
+	    NULL,
+	    NULL },
+
 	{ NULL }
 };
 

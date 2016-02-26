@@ -117,7 +117,7 @@ smb2_session_setup(smb_request_t *sr)
 		 * having gone away, and for which we might not yet have seen
 		 * a disconnect. Find the session and log it off as if we had
 		 * received a disconnect.  Note that the client is allowed to
-		 * set PrevSsnID to the _current_ SessionID, so skip the lookup 
+		 * set PrevSsnID to the _current_ SessionID, so skip the lookup
 		 * in that case. Only allow this session logoff if we owned it.
 		 */
 		if (PrevSsnId == 0 ||
@@ -126,6 +126,8 @@ smb2_session_setup(smb_request_t *sr)
 		prev_user = smb_server_lookup_ssnid(sr->sr_server, PrevSsnId);
 		if (prev_user != NULL) {
 			if (smb_is_same_user(prev_user, sr->uid_user)) {
+				/* Treat this as if we lost the connection */
+				prev_user->preserve_opens = SMB2_PRESERVE_SOME;
 				smb_user_logoff(prev_user);
 			}
 			smb_user_release(prev_user); /* from lookup */
