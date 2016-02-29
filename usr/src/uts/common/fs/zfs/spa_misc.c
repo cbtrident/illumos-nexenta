@@ -227,10 +227,11 @@
  */
 
 struct spa_trimstats {
-	kstat_named_t	st_extents;
-	kstat_named_t	st_bytes;
-	kstat_named_t	st_extents_skipped;
-	kstat_named_t	st_bytes_skipped;
+	kstat_named_t	st_extents;		/* # of extents issued to zio */
+	kstat_named_t	st_bytes;		/* # of bytes issued to zio */
+	kstat_named_t	st_extents_skipped;	/* # of extents too small */
+	kstat_named_t	st_bytes_skipped;	/* bytes in extents_skipped */
+	kstat_named_t	st_auto_slow;		/* trim slow, exts dropped */
 };
 
 static avl_tree_t spa_namespace_avl;
@@ -585,16 +586,18 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 	mutex_init(&spa->spa_cos_props_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_vdev_props_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_perfmon.perfmon_lock, NULL, MUTEX_DEFAULT, NULL);
-	mutex_init(&spa->spa_trim_ondemand_lock, NULL, MUTEX_DEFAULT, NULL);
-	mutex_init(&spa->spa_trim_taskq_lock, NULL, MUTEX_DEFAULT, NULL);
+
+	mutex_init(&spa->spa_auto_trim_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa->spa_man_trim_lock, NULL, MUTEX_DEFAULT, NULL);
 
 	cv_init(&spa->spa_async_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_evicting_os_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_proc_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_scrub_io_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_suspend_cv, NULL, CV_DEFAULT, NULL);
-	cv_init(&spa->spa_trim_update_cv, NULL, CV_DEFAULT, NULL);
-	cv_init(&spa->spa_trim_done_cv, NULL, CV_DEFAULT, NULL);
+	cv_init(&spa->spa_auto_trim_done_cv, NULL, CV_DEFAULT, NULL);
+	cv_init(&spa->spa_man_trim_update_cv, NULL, CV_DEFAULT, NULL);
+	cv_init(&spa->spa_man_trim_done_cv, NULL, CV_DEFAULT, NULL);
 
 	for (int t = 0; t < TXG_SIZE; t++)
 		bplist_create(&spa->spa_free_bplist[t]);
@@ -771,8 +774,9 @@ spa_remove(spa_t *spa)
 	cv_destroy(&spa->spa_proc_cv);
 	cv_destroy(&spa->spa_scrub_io_cv);
 	cv_destroy(&spa->spa_suspend_cv);
-	cv_destroy(&spa->spa_trim_update_cv);
-	cv_destroy(&spa->spa_trim_done_cv);
+	cv_destroy(&spa->spa_auto_trim_done_cv);
+	cv_destroy(&spa->spa_man_trim_update_cv);
+	cv_destroy(&spa->spa_man_trim_done_cv);
 
 	mutex_destroy(&spa->spa_async_lock);
 	mutex_destroy(&spa->spa_errlist_lock);
@@ -788,8 +792,8 @@ spa_remove(spa_t *spa)
 	mutex_destroy(&spa->spa_iokstat_lock);
 	mutex_destroy(&spa->spa_cos_props_lock);
 	mutex_destroy(&spa->spa_vdev_props_lock);
-	mutex_destroy(&spa->spa_trim_ondemand_lock);
-	mutex_destroy(&spa->spa_trim_taskq_lock);
+	mutex_destroy(&spa->spa_auto_trim_lock);
+	mutex_destroy(&spa->spa_man_trim_lock);
 
 	kmem_free(spa, sizeof (spa_t));
 }
@@ -1113,6 +1117,9 @@ spa_vdev_enter(spa_t *spa)
 {
 	mutex_enter(&spa->spa_vdev_top_lock);
 	mutex_enter(&spa_namespace_lock);
+	mutex_enter(&spa->spa_auto_trim_lock);
+	mutex_enter(&spa->spa_man_trim_lock);
+	spa_trim_stop_wait(spa);
 	return (spa_vdev_config_enter(spa));
 }
 
@@ -1205,6 +1212,8 @@ int
 spa_vdev_exit(spa_t *spa, vdev_t *vd, uint64_t txg, int error)
 {
 	spa_vdev_config_exit(spa, vd, txg, error, FTAG);
+	mutex_exit(&spa->spa_man_trim_lock);
+	mutex_exit(&spa->spa_auto_trim_lock);
 	mutex_exit(&spa_namespace_lock);
 	mutex_exit(&spa->spa_vdev_top_lock);
 
@@ -2246,6 +2255,9 @@ spa_get_wbc_data(spa_t *spa)
 	return (&spa->spa_wbc);
 }
 
+/*
+ * Creates the trim kstats structure for a spa.
+ */
 static void
 spa_trimstats_create(spa_t *spa)
 {
@@ -2275,6 +2287,8 @@ spa_trimstats_create(spa_t *spa)
 		    "extents_skipped", KSTAT_DATA_UINT64);
 		kstat_named_init(&spa->spa_trimstats->st_bytes_skipped,
 		    "bytes_skipped", KSTAT_DATA_UINT64);
+		kstat_named_init(&spa->spa_trimstats->st_auto_slow,
+		    "auto_slow", KSTAT_DATA_UINT64);
 #endif	/* _KERNEL */
 
 		kstat_install(spa->spa_trimstats_ks);
@@ -2284,6 +2298,9 @@ spa_trimstats_create(spa_t *spa)
 	}
 }
 
+/*
+ * Destroys the trim kstats for a spa.
+ */
 static void
 spa_trimstats_destroy(spa_t *spa)
 {
@@ -2294,6 +2311,9 @@ spa_trimstats_destroy(spa_t *spa)
 	}
 }
 
+/*
+ * Updates the numerical trim kstats for a spa.
+ */
 void
 spa_trimstats_update(spa_t *spa, uint64_t extents, uint64_t bytes,
     uint64_t extents_skipped, uint64_t bytes_skipped)
@@ -2310,75 +2330,88 @@ spa_trimstats_update(spa_t *spa, uint64_t extents, uint64_t bytes,
 }
 
 /*
- * Creates the taskq's used for autotrim and on-demand trim. This is called
- * either when a user sets the autotrim pool property to on or when they
- * start an on-demand trim.
- *
- * There are two locks governing trim interactions on the pool,
- * spa_trim_ondemand_lock and spa_trim_taskq_lock. Whenever on-demand trim
- * manipulates its internal state (such as updating trim progress counters),
- * it must hold spa_trim_ondemand_lock. In addition, both autotrim and
- * on-demand trim need to use the spa_trim_taskq to launch trim tasks.
- *
- * When a user sets autotrim=on on the pool, we create the taskq by calling
- * this function (often from syncing context if done using "zpool set" instead
- * of during pool creation/import). We may also call this function when
- * starting an on-demand trim. Crucially, on-demand trim can also request
- * synctasks be performed for it in syncing context and will be holding
- * spa_trim_ondemand_lock while waiting for the synctask to complete.
- * Therefore it is important that we protect spa_trim_taskq's creation and
- * destruction using a separate lock, the spa_trim_taskq_lock. When called
- * on behalf of autotrim, the caller should only be holding spa_trim_taskq_lock.
- * When called on behalf of on-demand trim, the caller will also be holding
- * spa_trim_ondemand_lock. Also, it is crucial that threads trying to acquire
- * spa_trim_ondemand_lock do so before trying to acquire spa_trim_taskq_lock.
- *
- * To enforce the proper locking strategy, callers must pass a `sync' flag
- * indicating whether the call is from syncing context. If B_TRUE, the caller
- * MUST NOT be holding spa_trim_ondemand_lock. If B_FALSE, the caller MAY
- * be holding spa_trim_ondemand_lock. In any case, the caller is responsible
- * for acquiring spa_trim_taskq_lock prior to calling spa_trim_taskq_create
- * or spa_trim_taskq_destroy.
+ * Increments the slow-trim kstat for a spa.
  */
 void
-spa_trim_taskq_create(spa_t *spa, boolean_t sync)
+spa_trimstats_auto_slow_incr(spa_t *spa)
 {
-	char name[MAXPATHLEN];
-
-	ASSERT(MUTEX_HELD(&spa->spa_trim_taskq_lock));
-	ASSERT(!MUTEX_HELD(&spa->spa_trim_ondemand_lock) || !sync);
-	if (spa->spa_trim_taskq == NULL) {
-		spa_async_unrequest(spa, SPA_ASYNC_TRIM_TASKQ_DESTROY);
-		(void) snprintf(name, sizeof (name), "%s_trim", spa->spa_name);
-		spa->spa_trim_taskq = taskq_create(name, 1, minclsyspri, 1,
-		    spa->spa_root_vdev->vdev_children, TASKQ_DYNAMIC);
-		VERIFY(spa->spa_trim_taskq != NULL);
-	}
+	spa_trimstats_t *st = spa->spa_trimstats;
+	if (st)
+		atomic_inc_64(&st->st_auto_slow.value.ui64);
 }
 
 /*
- * Destroys the taskq's used for autotrim and on-demand trim. `unload'
- * specifies whether we've been called from spa_unload and hence whether
- * the autotrim setting on the pool should be ignored. `sync' has the same
- * meaning as in spa_trim_taskq_create.
+ * Creates the taskq used for dispatching auto-trim. This is called only when
+ * the property is set to `on' or when the pool is loaded (and the autotrim
+ * property is `on').
  */
 void
-spa_trim_taskq_destroy(spa_t *spa, boolean_t unload, boolean_t sync)
+spa_auto_trim_taskq_create(spa_t *spa)
 {
-	ASSERT(MUTEX_HELD(&spa->spa_trim_taskq_lock));
-	ASSERT(!MUTEX_HELD(&spa->spa_trim_ondemand_lock) || !sync);
-	/* Check if we still need to exist */
-	if ((spa->spa_auto_trim == SPA_AUTO_TRIM_ON && !unload) ||
-	    spa->spa_num_trimming > 0) {
+	char name[MAXPATHLEN];
+	ASSERT(MUTEX_HELD(&spa->spa_auto_trim_lock));
+	ASSERT(spa->spa_auto_trim_taskq == NULL);
+	(void) snprintf(name, sizeof (name), "%s_auto_trim", spa->spa_name);
+	spa->spa_auto_trim_taskq = taskq_create(name, 1, minclsyspri, 1,
+	    spa->spa_root_vdev->vdev_children, TASKQ_DYNAMIC);
+	VERIFY(spa->spa_auto_trim_taskq != NULL);
+}
+
+/*
+ * Creates the taskq for dispatching manual trim. This taskq is recreated
+ * each time `zpool trim <poolname>' is issued and destroyed after the run
+ * completes in an async spa request.
+ */
+void
+spa_man_trim_taskq_create(spa_t *spa)
+{
+	char name[MAXPATHLEN];
+	ASSERT(MUTEX_HELD(&spa->spa_man_trim_lock));
+	spa_async_unrequest(spa, SPA_ASYNC_MAN_TRIM_TASKQ_DESTROY);
+	if (spa->spa_man_trim_taskq != NULL)
 		/*
-		 * If we're unloading the pool, we must NEVER skip out here.
-		 * The spa_unload must terminate all on-demand trims before
-		 * calling spa_trim_taskq_destroy.
+		 * The async taskq destroy has been pre-empted, so just
+		 * return, the taskq is still good to use.
 		 */
-		VERIFY(!unload);
 		return;
-	}
-	ASSERT(spa->spa_trim_taskq != NULL);
-	taskq_destroy(spa->spa_trim_taskq);
-	spa->spa_trim_taskq = NULL;
+	(void) snprintf(name, sizeof (name), "%s_man_trim", spa->spa_name);
+	spa->spa_man_trim_taskq = taskq_create(name, 1, minclsyspri, 1,
+	    spa->spa_root_vdev->vdev_children, TASKQ_DYNAMIC);
+	VERIFY(spa->spa_man_trim_taskq != NULL);
+}
+
+/*
+ * Destroys the taskq created in spa_auto_trim_taskq_create. The taskq
+ * is only destroyed when the autotrim property is set to `off'.
+ */
+void
+spa_auto_trim_taskq_destroy(spa_t *spa)
+{
+	ASSERT(MUTEX_HELD(&spa->spa_auto_trim_lock));
+	ASSERT(spa->spa_auto_trim_taskq != NULL);
+	while (spa->spa_num_auto_trimming != 0)
+		cv_wait(&spa->spa_auto_trim_done_cv, &spa->spa_auto_trim_lock);
+	taskq_destroy(spa->spa_auto_trim_taskq);
+	spa->spa_auto_trim_taskq = NULL;
+}
+
+/*
+ * Destroys the taskq created in spa_man_trim_taskq_create. The taskq is
+ * destroyed after a manual trim run completes from an async spa request.
+ * There is a bit of lag between an async request being issued at the
+ * completion of a trim run and it finally being acted on, hence why this
+ * function checks if new manual trimming threads haven't been re-spawned.
+ * If they have, we assume the async spa request been preempted by another
+ * manual trim request and we back off.
+ */
+void
+spa_man_trim_taskq_destroy(spa_t *spa)
+{
+	ASSERT(MUTEX_HELD(&spa->spa_man_trim_lock));
+	ASSERT(spa->spa_man_trim_taskq != NULL);
+	if (spa->spa_num_man_trimming != 0)
+		/* another trim got started before we got here, back off */
+		return;
+	taskq_destroy(spa->spa_man_trim_taskq);
+	spa->spa_man_trim_taskq = NULL;
 }

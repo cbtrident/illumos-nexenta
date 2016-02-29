@@ -84,8 +84,6 @@ typedef struct dsl_sync_task {
 void dsl_sync_task_sync(dsl_sync_task_t *, dmu_tx_t *);
 int dsl_sync_task(const char *, dsl_checkfunc_t *,
     dsl_syncfunc_t *, void *, int, zfs_space_check_t);
-int dsl_sync_task_dp(struct dsl_pool *, dsl_checkfunc_t *,
-    dsl_syncfunc_t *, void *, int, zfs_space_check_t);
 void dsl_sync_task_nowait(struct dsl_pool *, dsl_syncfunc_t *,
     void *, int, zfs_space_check_t, dmu_tx_t *);
 #define	DST_AVG_BLKSHIFT 14

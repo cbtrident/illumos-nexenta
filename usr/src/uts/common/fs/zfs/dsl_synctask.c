@@ -62,13 +62,21 @@ dsl_null_checkfunc(void *arg, dmu_tx_t *tx)
  * the dataset.
  */
 int
-dsl_sync_task_dp(struct dsl_pool *dp, dsl_checkfunc_t *checkfunc,
+dsl_sync_task(const char *pool, dsl_checkfunc_t *checkfunc,
     dsl_syncfunc_t *syncfunc, void *arg,
     int blocks_modified, zfs_space_check_t space_check)
 {
+	spa_t *spa;
 	dmu_tx_t *tx;
 	int err;
 	dsl_sync_task_t dst = { 0 };
+	dsl_pool_t *dp;
+
+	err = spa_open(pool, &spa, FTAG);
+	if (err != 0)
+		return (err);
+	dp = spa_get_dsl(spa);
+
 top:
 	tx = dmu_tx_create_dd(dp->dp_mos_dir);
 	VERIFY0(dmu_tx_assign(tx, TXG_WAIT));
@@ -89,6 +97,7 @@ top:
 
 	if (err != 0) {
 		dmu_tx_commit(tx);
+		spa_close(spa, FTAG);
 		return (err);
 	}
 
@@ -102,33 +111,8 @@ top:
 		txg_wait_synced(dp, dst.dst_txg + TXG_DEFER_SIZE);
 		goto top;
 	}
-	return (dst.dst_error);
-}
-
-/*
- * This is a front-end to dsl_sync_task_dp allowing you to pass just the pool
- * name. This function performs a spa_open, so it's not always safe to call
- * from contexts where a recursive spa_open could cause a deadlock. In those
- * cases, use dsl_sync_task_dp, pasing an already opened dsl_pool_t instead.
- */
-int
-dsl_sync_task(const char *pool, dsl_checkfunc_t *checkfunc,
-    dsl_syncfunc_t *syncfunc, void *arg,
-    int blocks_modified, zfs_space_check_t space_check)
-{
-	spa_t *spa;
-	dsl_pool_t *dp;
-	int err;
-
-	err = spa_open(pool, &spa, FTAG);
-	if (err != 0)
-		return (err);
-	dp = spa_get_dsl(spa);
-	err = dsl_sync_task_dp(dp, checkfunc, syncfunc, arg, blocks_modified,
-	    space_check);
 	spa_close(spa, FTAG);
-
-	return (err);
+	return (dst.dst_error);
 }
 
 void

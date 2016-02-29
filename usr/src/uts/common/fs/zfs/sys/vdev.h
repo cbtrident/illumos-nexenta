@@ -47,9 +47,9 @@ typedef enum vdev_dtl_type {
 } vdev_dtl_type_t;
 
 typedef struct vdev_trim_info {
-	spa_t *vti_spa;
 	vdev_t *vti_vdev;
-	void (*vti_done)(struct vdev_trim_info *);
+	uint64_t vti_txg;	/* ignored for manual trim */
+	void (*vti_done_cb)(void *);
 	void *vti_done_arg;
 } vdev_trim_info_t;
 
@@ -147,7 +147,8 @@ extern nvlist_t *vdev_config_generate(spa_t *spa, vdev_t *vd,
 
 extern boolean_t vdev_type_is_ddt(vdev_t *vd);
 
-void vdev_trim_all(vdev_trim_info_t *vti);
+extern void vdev_man_trim(vdev_trim_info_t *vti);
+extern void vdev_auto_trim(vdev_trim_info_t *vti);
 
 /*
  * Label routines

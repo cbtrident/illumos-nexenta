@@ -151,9 +151,10 @@ static int spa_load_impl(spa_t *spa, uint64_t, nvlist_t *config,
     spa_load_state_t state, spa_import_type_t type, boolean_t mosconfig,
     char **ereport);
 static void spa_vdev_resilver_done(spa_t *spa);
-static void spa_vdev_trim_all_done(vdev_trim_info_t *vti);
+static void spa_auto_trim(spa_t *spa, uint64_t txg);
+static void spa_vdev_man_trim_done(spa_t *spa);
+static void spa_vdev_auto_trim_done(spa_t *spa);
 static uint64_t spa_min_trim_rate(spa_t *spa);
-static void spa_trim_stop_wait(spa_t *spa);
 
 uint_t		zio_taskq_batch_pct = 75;	/* 1 thread per cpu in pset */
 id_t		zio_taskq_psrset_bind = PS_NONE;
@@ -1388,10 +1389,14 @@ spa_unload(spa_t *spa)
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
 	/*
-	 * Stop on-demand trim before stopping spa sync, because on-demand
-	 * trim needs to execute synctasks at shutdown.
+	 * Stop manual trim before stopping spa sync, because manual trim
+	 * needs to execute a synctask (trim timestamp sync) at the end.
 	 */
+	mutex_enter(&spa->spa_auto_trim_lock);
+	mutex_enter(&spa->spa_man_trim_lock);
 	spa_trim_stop_wait(spa);
+	mutex_exit(&spa->spa_man_trim_lock);
+	mutex_exit(&spa->spa_auto_trim_lock);
 
 	/*
 	 * Stop async tasks.
@@ -1423,11 +1428,8 @@ spa_unload(spa_t *spa)
 	/*
 	 * Stop autotrim tasks.
 	 */
-	if (spa->spa_trim_taskq) {
-		mutex_enter(&spa->spa_trim_taskq_lock);
-		spa_trim_taskq_destroy(spa, B_TRUE, B_FALSE);
-		mutex_exit(&spa->spa_trim_taskq_lock);
-	}
+	if (spa->spa_auto_trim_taskq)
+		spa_auto_trim_taskq_destroy(spa);
 
 	/*
 	 * Close all vdevs.
@@ -2850,12 +2852,12 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		spa_prop_find(spa, ZPOOL_PROP_DEDUPDITTO,
 		    &spa->spa_dedup_ditto);
 		spa_prop_find(spa, ZPOOL_PROP_FORCETRIM, &spa->spa_force_trim);
+
+		mutex_enter(&spa->spa_auto_trim_lock);
 		spa_prop_find(spa, ZPOOL_PROP_AUTOTRIM, &spa->spa_auto_trim);
-		if (spa->spa_auto_trim == SPA_AUTO_TRIM_ON) {
-			mutex_enter(&spa->spa_trim_taskq_lock);
-			spa_trim_taskq_create(spa, B_FALSE);
-			mutex_exit(&spa->spa_trim_taskq_lock);
-		}
+		if (spa->spa_auto_trim == SPA_AUTO_TRIM_ON)
+			spa_auto_trim_taskq_create(spa);
+		mutex_exit(&spa->spa_auto_trim_lock);
 
 		spa_prop_find(spa, ZPOOL_PROP_HIWATERMARK, &spa->spa_hiwat);
 		spa_prop_find(spa, ZPOOL_PROP_LOWATERMARK, &spa->spa_lowat);
@@ -2896,9 +2898,9 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		(void) spa_load_vdev_props(spa);
 
 	(void) spa_dir_prop(spa, DMU_POOL_TRIM_START_TIME,
-	    &spa->spa_trim_start_time);
+	    &spa->spa_man_trim_start_time);
 	(void) spa_dir_prop(spa, DMU_POOL_TRIM_STOP_TIME,
-	    &spa->spa_trim_stop_time);
+	    &spa->spa_man_trim_stop_time);
 
 	/*
 	 * If the 'autoreplace' property is set, then post a resource notifying
@@ -4011,12 +4013,12 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa->spa_dedup_hi_best_effort =
 	    zpool_prop_default_numeric(ZPOOL_PROP_DEDUP_HI_BEST_EFFORT);
 	spa->spa_force_trim = zpool_prop_default_numeric(ZPOOL_PROP_FORCETRIM);
+
+	mutex_enter(&spa->spa_auto_trim_lock);
 	spa->spa_auto_trim = zpool_prop_default_numeric(ZPOOL_PROP_AUTOTRIM);
-	if (spa->spa_auto_trim == SPA_AUTO_TRIM_ON) {
-		mutex_enter(&spa->spa_trim_taskq_lock);
-		spa_trim_taskq_create(spa, B_FALSE);
-		mutex_exit(&spa->spa_trim_taskq_lock);
-	}
+	if (spa->spa_auto_trim == SPA_AUTO_TRIM_ON)
+		spa_auto_trim_taskq_create(spa);
+	mutex_exit(&spa->spa_auto_trim_lock);
 
 	mp->spa_enable_meta_placement_selection =
 	    zpool_prop_default_numeric(ZPOOL_PROP_META_PLACEMENT);
@@ -5152,7 +5154,6 @@ spa_vdev_detach(spa_t *spa, uint64_t guid, uint64_t pguid, int replace_done)
 	ASSERT(spa_writeable(spa));
 
 	txg = spa_vdev_enter(spa);
-	spa_trim_stop_wait(spa);
 
 	vd = spa_lookup_by_guid(spa, guid, B_FALSE);
 
@@ -5308,11 +5309,8 @@ spa_vdev_detach(spa_t *spa, uint64_t guid, uint64_t pguid, int replace_done)
 	 * just detached was smaller than the others, it may be possible to
 	 * add metaslabs (i.e. grow the pool). We need to reopen the vdev
 	 * first so that we can obtain the updated sizes of the leaf vdevs.
-	 * Be sure to shut down any on-demand TRIMs prior to manipulating
-	 * metaslabs.
 	 */
 	if (spa->spa_autoexpand) {
-		spa_trim_stop_wait(spa);
 		vdev_reopen(tvd);
 		vdev_expand(tvd, txg);
 	}
@@ -5411,7 +5409,6 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 		return (SET_ERROR(ENOTSUP));
 
 	txg = spa_vdev_enter(spa);
-	spa_trim_stop_wait(spa);
 
 	/* clear the log and flush everything up to now */
 	activate_slog = spa_passivate_log(spa);
@@ -5827,8 +5824,6 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 
 	if (!locked)
 		txg = spa_vdev_enter(spa);
-
-	spa_trim_stop_wait(spa);
 
 	vd = spa_lookup_by_guid(spa, guid, B_FALSE);
 
@@ -6262,10 +6257,10 @@ spa_async_thread(spa_t *spa)
 	if (tasks & SPA_ASYNC_L2CACHE_REBUILD)
 		l2arc_spa_rebuild_start(spa);
 
-	if (tasks & SPA_ASYNC_TRIM_TASKQ_DESTROY) {
-		mutex_enter(&spa->spa_trim_taskq_lock);
-		spa_trim_taskq_destroy(spa, B_FALSE, B_FALSE);
-		mutex_exit(&spa->spa_trim_taskq_lock);
+	if (tasks & SPA_ASYNC_MAN_TRIM_TASKQ_DESTROY) {
+		mutex_enter(&spa->spa_man_trim_lock);
+		spa_man_trim_taskq_destroy(spa);
+		mutex_exit(&spa->spa_man_trim_lock);
 	}
 
 	/*
@@ -6668,17 +6663,16 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 				spa->spa_force_trim = intval;
 				break;
 			case ZPOOL_PROP_AUTOTRIM:
+				mutex_enter(&spa->spa_auto_trim_lock);
 				if (intval != spa->spa_auto_trim) {
 					spa->spa_auto_trim = intval;
-					mutex_enter(&spa->spa_trim_taskq_lock);
-					if (intval)
-						spa_trim_taskq_create(spa,
-						    B_TRUE);
+					if (intval != 0)
+						spa_auto_trim_taskq_create(spa);
 					else
-						spa_trim_taskq_destroy(spa,
-						    B_FALSE, B_TRUE);
-					mutex_exit(&spa->spa_trim_taskq_lock);
+						spa_auto_trim_taskq_destroy(
+						    spa);
 				}
+				mutex_exit(&spa->spa_auto_trim_lock);
 				break;
 			case ZPOOL_PROP_AUTOEXPAND:
 				spa->spa_autoexpand = intval;
@@ -6802,25 +6796,6 @@ spa_sync_upgrades(spa_t *spa, dmu_tx_t *tx)
 }
 
 /*
- * Dispatches all auto-trim processing to all top-level vdevs. This is
- * called from spa_sync once every txg.
- */
-static void
-spa_auto_trim_dispatch(spa_t *spa, uint64_t txg)
-{
-	ASSERT(spa->spa_trim_taskq != NULL);
-	for (uint64_t i = 0; i < spa->spa_root_vdev->vdev_children; i++) {
-		vdev_auto_trim_info_t *vati = kmem_zalloc(sizeof (*vati),
-		    KM_SLEEP);
-		vati->vati_vdev = spa->spa_root_vdev->vdev_child[i];
-		vati->vati_txg = txg;
-		spa_config_enter(spa, SCL_TRIM_ALL, vati, RW_READER);
-		(void) taskq_dispatch(spa->spa_trim_taskq,
-		    (void (*)(void *))vdev_auto_trim, vati, TQ_SLEEP);
-	}
-}
-
-/*
  * Sync the specified transaction group.  New blocks may be dirtied as
  * part of the process, so we iterate until it converges.
  */
@@ -6844,6 +6819,17 @@ spa_sync(spa_t *spa, uint64_t txg)
 
 	spa->spa_syncing_txg = txg;
 	spa->spa_sync_pass = 0;
+
+	/*
+	 * Another pool management task might be currently preventing
+	 * from starting and the current txg sync was invoked on its behalf,
+	 * so be prepared to postpone autotrim processing.
+	 */
+	if (mutex_tryenter(&spa->spa_auto_trim_lock)) {
+		if (spa->spa_auto_trim == SPA_AUTO_TRIM_ON)
+			spa_auto_trim(spa, txg);
+		mutex_exit(&spa->spa_auto_trim_lock);
+	}
 
 	/*
 	 * If there are any pending vdev state changes, convert them
@@ -6937,9 +6923,6 @@ spa_sync(spa_t *spa, uint64_t txg)
 
 		ddt_sync(spa, txg);
 		dsl_scan_sync(dp, tx);
-
-		if (pass == 1 && spa->spa_auto_trim == SPA_AUTO_TRIM_ON)
-			spa_auto_trim_dispatch(spa, txg);
 
 		while (vd = txg_list_remove(&spa->spa_vdev_txg_list, txg))
 			vdev_sync(vd, txg);
@@ -7354,6 +7337,29 @@ spa_event_notify(spa_t *spa, vdev_t *vdev, const char *name)
 }
 
 /*
+ * Dispatches all auto-trim processing to all top-level vdevs. This is
+ * called from spa_sync once every txg.
+ */
+static void
+spa_auto_trim(spa_t *spa, uint64_t txg)
+{
+	ASSERT(spa_config_held(spa, SCL_CONFIG, RW_READER) == SCL_CONFIG);
+	ASSERT(MUTEX_HELD(&spa->spa_auto_trim_lock));
+	ASSERT(spa->spa_auto_trim_taskq != NULL);
+
+	for (uint64_t i = 0; i < spa->spa_root_vdev->vdev_children; i++) {
+		vdev_trim_info_t *vti = kmem_zalloc(sizeof (*vti), KM_SLEEP);
+		vti->vti_vdev = spa->spa_root_vdev->vdev_child[i];
+		vti->vti_txg = txg;
+		vti->vti_done_cb = (void (*)(void *))spa_vdev_auto_trim_done;
+		vti->vti_done_arg = spa;
+		(void) taskq_dispatch(spa->spa_auto_trim_taskq,
+		    (void (*)(void *))vdev_auto_trim, vti, TQ_SLEEP);
+		spa->spa_num_auto_trimming++;
+	}
+}
+
+/*
  * Performs the sync update of the MOS pool directory's trim start/stop values.
  */
 static void
@@ -7362,127 +7368,139 @@ spa_trim_update_time_sync(void *arg, dmu_tx_t *tx)
 	spa_t *spa = arg;
 	VERIFY0(zap_update(spa->spa_meta_objset, DMU_POOL_DIRECTORY_OBJECT,
 	    DMU_POOL_TRIM_START_TIME, sizeof (uint64_t), 1,
-	    &spa->spa_trim_start_time, tx));
+	    &spa->spa_man_trim_start_time, tx));
 	VERIFY0(zap_update(spa->spa_meta_objset, DMU_POOL_DIRECTORY_OBJECT,
 	    DMU_POOL_TRIM_STOP_TIME, sizeof (uint64_t), 1,
-	    &spa->spa_trim_stop_time, tx));
+	    &spa->spa_man_trim_stop_time, tx));
 }
 
 /*
- * Updates the in-core and on-disk on-demand TRIM operation start/stop time.
+ * Updates the in-core and on-disk manual TRIM operation start/stop time.
  * Passing UINT64_MAX for either start_time or stop_time means that no
  * update to that value should be recorded.
- * This function blocks for the on-disk update and therefore must NOT be
- * called holding spa_trim_taskq_lock (which could be called from syncing
- * context, leading to a deadlock).
  */
-static void
+static dmu_tx_t *
 spa_trim_update_time(spa_t *spa, uint64_t start_time, uint64_t stop_time)
 {
-	ASSERT(MUTEX_HELD(&spa->spa_trim_ondemand_lock));
-	ASSERT(!MUTEX_HELD(&spa->spa_trim_taskq_lock));
+	int err;
+	dmu_tx_t *tx;
+
+	ASSERT(MUTEX_HELD(&spa->spa_man_trim_lock));
 	if (start_time != UINT64_MAX)
-		spa->spa_trim_start_time = start_time;
+		spa->spa_man_trim_start_time = start_time;
 	if (stop_time != UINT64_MAX)
-		spa->spa_trim_stop_time = stop_time;
-	(void) dsl_sync_task_dp(spa_get_dsl(spa), NULL,
-	    spa_trim_update_time_sync, spa, 1, ZFS_SPACE_CHECK_RESERVED);
+		spa->spa_man_trim_stop_time = stop_time;
+	tx = dmu_tx_create_dd(spa_get_dsl(spa)->dp_mos_dir);
+	err = dmu_tx_assign(tx, TXG_WAIT);
+	if (err) {
+		dmu_tx_abort(tx);
+		return (NULL);
+	}
+	dsl_sync_task_nowait(spa_get_dsl(spa), spa_trim_update_time_sync,
+	    spa, 1, ZFS_SPACE_CHECK_RESERVED, tx);
+
+	return (tx);
 }
 
 /*
- * Initiates an on-demand TRIM of the whole pool. This kicks off individual
+ * Initiates an manual TRIM of the whole pool. This kicks off individual
  * TRIM tasks for each top-level vdev, which then pass over all of the free
  * space in all of the vdev's metaslabs and issues TRIM commands for that
  * space to the underlying vdevs.
  */
 extern void
-spa_trim(spa_t *spa, uint64_t rate)
+spa_man_trim(spa_t *spa, uint64_t rate)
 {
+	dmu_tx_t *time_update_tx;
+
+	mutex_enter(&spa->spa_man_trim_lock);
+
 	if (rate != 0)
-		spa->spa_trim_rate = MAX(rate, spa_min_trim_rate(spa));
+		spa->spa_man_trim_rate = MAX(rate, spa_min_trim_rate(spa));
 	else
-		spa->spa_trim_rate = 0;
+		spa->spa_man_trim_rate = 0;
 
-	spa_config_enter(spa, SCL_TRIM_ALL, FTAG, RW_READER);
-	mutex_enter(&spa->spa_trim_ondemand_lock);
-
-	if (spa->spa_num_trimming) {
+	if (spa->spa_num_man_trimming) {
 		/*
 		 * TRIM is already ongoing. Wake up all sleeping vdev trim
 		 * threads because the trim rate might have changed above.
 		 */
-		cv_broadcast(&spa->spa_trim_update_cv);
-		mutex_exit(&spa->spa_trim_ondemand_lock);
-		spa_config_exit(spa, SCL_TRIM_ALL, FTAG);
+		cv_broadcast(&spa->spa_man_trim_update_cv);
+		mutex_exit(&spa->spa_man_trim_lock);
 		return;
 	}
-
-	spa->spa_trim_stop = B_FALSE;
+	spa_man_trim_taskq_create(spa);
+	spa->spa_man_trim_stop = B_FALSE;
 
 	spa_event_notify(spa, NULL, ESC_ZFS_TRIM_START);
-	mutex_enter(&spa->spa_trim_taskq_lock);
-	spa_trim_taskq_create(spa, B_FALSE);
+	spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 	for (uint64_t i = 0; i < spa->spa_root_vdev->vdev_children; i++) {
 		vdev_t *vd = spa->spa_root_vdev->vdev_child[i];
 		vdev_trim_info_t *vti = kmem_zalloc(sizeof (*vti), KM_SLEEP);
-		vti->vti_spa = spa;
 		vti->vti_vdev = vd;
-		vti->vti_done = spa_vdev_trim_all_done;
+		vti->vti_done_cb = (void (*)(void *))spa_vdev_man_trim_done;
 		vti->vti_done_arg = spa;
-		spa->spa_num_trimming++;
+		spa->spa_num_man_trimming++;
 
 		vd->vdev_trim_prog = 0;
-		(void) taskq_dispatch(spa->spa_trim_taskq,
-		    (void (*)(void *))vdev_trim_all, vti, TQ_SLEEP);
+		(void) taskq_dispatch(spa->spa_man_trim_taskq,
+		    (void (*)(void *))vdev_man_trim, vti, TQ_SLEEP);
 	}
-	mutex_exit(&spa->spa_trim_taskq_lock);
-	spa_trim_update_time(spa, gethrestime_sec(), 0);
-	mutex_exit(&spa->spa_trim_ondemand_lock);
-	spa_config_exit(spa, SCL_TRIM_ALL, FTAG);
+	spa_config_exit(spa, SCL_CONFIG, FTAG);
+	time_update_tx = spa_trim_update_time(spa, gethrestime_sec(), 0);
+	mutex_exit(&spa->spa_man_trim_lock);
+	/* mustn't hold spa_man_trim_lock to prevent deadlock /w syncing ctx */
+	if (time_update_tx != NULL)
+		dmu_tx_commit(time_update_tx);
 }
 
 /*
- * Orders an on-demand TRIM operation to stop and returns immediately.
+ * Orders a manual TRIM operation to stop and returns immediately.
  */
 extern void
-spa_trim_stop(spa_t *spa)
+spa_man_trim_stop(spa_t *spa)
 {
-	mutex_enter(&spa->spa_trim_ondemand_lock);
-	spa->spa_trim_stop = B_TRUE;
-	cv_broadcast(&spa->spa_trim_update_cv);
-	mutex_exit(&spa->spa_trim_ondemand_lock);
+	boolean_t held = MUTEX_HELD(&spa->spa_man_trim_lock);
+	if (!held)
+		mutex_enter(&spa->spa_man_trim_lock);
+	spa->spa_man_trim_stop = B_TRUE;
+	cv_broadcast(&spa->spa_man_trim_update_cv);
+	if (!held)
+		mutex_exit(&spa->spa_man_trim_lock);
 }
 
 /*
- * Orders an on-demand TRIM operation to stop and waits for it to complete.
- * You must hold the spa_namespace_lock in order to guarantee that after
- * returning from this function, no further on-demand TRIMs can be started.
+ * Orders a manual TRIM operation to stop and waits for both manual and
+ * automatic TRIM to complete. By holding both the spa_man_trim_lock and
+ * the spa_auto_trim_lock, the caller can guarantee that after this
+ * function returns, no new TRIM operations can be initiated in parallel.
  */
-static void
+void
 spa_trim_stop_wait(spa_t *spa)
 {
-	ASSERT(MUTEX_HELD(&spa_namespace_lock));
-	mutex_enter(&spa->spa_trim_ondemand_lock);
-	spa->spa_trim_stop = B_TRUE;
-	cv_broadcast(&spa->spa_trim_update_cv);
-	while (spa->spa_num_trimming)
-		cv_wait(&spa->spa_trim_done_cv, &spa->spa_trim_ondemand_lock);
-	mutex_exit(&spa->spa_trim_ondemand_lock);
+	ASSERT(MUTEX_HELD(&spa->spa_man_trim_lock));
+	ASSERT(MUTEX_HELD(&spa->spa_auto_trim_lock));
+	spa->spa_man_trim_stop = B_TRUE;
+	cv_broadcast(&spa->spa_man_trim_update_cv);
+	while (spa->spa_num_man_trimming > 0)
+		cv_wait(&spa->spa_man_trim_done_cv, &spa->spa_man_trim_lock);
+	while (spa->spa_num_auto_trimming > 0)
+		cv_wait(&spa->spa_auto_trim_done_cv, &spa->spa_auto_trim_lock);
 }
 
 /*
- * Returns on-demand TRIM progress. Progress is indicated by four return values:
- * 1) prog: the number of bytes of space on thep ool in total that on-demand
+ * Returns manual TRIM progress. Progress is indicated by four return values:
+ * 1) prog: the number of bytes of space on the pool in total that manual
  *	TRIM has already passed (regardless if the space is allocated or not).
  *	Completion of the operation is indicated when either the returned value
  *	is zero, or when the returned value is equal to the sum of the sizes of
  *	all top-level vdevs.
  * 2) rate: the trim rate in bytes per second. A value of zero indicates that
  *	trim progresses as fast as possible.
- * 3) start_time: the UNIXTIME of when the last on-demand TRIM operation was
- *	started. If no on-demand trim was ever initiated on the pool, this is
+ * 3) start_time: the UNIXTIME of when the last manual TRIM operation was
+ *	started. If no manual trim was ever initiated on the pool, this is
  *	zero.
- * 4) stop_time: the UNIXTIME of when the last on-demand TRIM operation has
+ * 4) stop_time: the UNIXTIME of when the last manual TRIM operation has
  *	stopped on the pool. If a trim was started (start_time != 0), but has
  *	not yet completed, stop_time will be zero. If a trim is NOT currently
  *	ongoing and start_time is non-zero, this indicates that the previously
@@ -7496,45 +7514,63 @@ spa_get_trim_prog(spa_t *spa, uint64_t *prog, uint64_t *rate,
 	vdev_t *root_vd = spa->spa_root_vdev;
 
 	ASSERT(spa_config_held(spa, SCL_CONFIG, RW_READER));
-	mutex_enter(&spa->spa_trim_ondemand_lock);
-	if (spa->spa_num_trimming > 0) {
+	mutex_enter(&spa->spa_man_trim_lock);
+	if (spa->spa_num_man_trimming > 0) {
 		for (uint64_t i = 0; i < root_vd->vdev_children; i++) {
 			total += root_vd->vdev_child[i]->vdev_trim_prog;
 		}
 	}
 	*prog = total;
-	*rate = spa->spa_trim_rate;
-	*start_time = spa->spa_trim_start_time;
-	*stop_time = spa->spa_trim_stop_time;
-	mutex_exit(&spa->spa_trim_ondemand_lock);
+	*rate = spa->spa_man_trim_rate;
+	*start_time = spa->spa_man_trim_start_time;
+	*stop_time = spa->spa_man_trim_stop_time;
+	mutex_exit(&spa->spa_man_trim_lock);
 }
 
 /*
- * Callback when a vdev_trim_all has finished on a single top-level vdev.
+ * Callback when a vdev_man_trim has finished on a single top-level vdev.
  */
 static void
-spa_vdev_trim_all_done(vdev_trim_info_t *vti)
+spa_vdev_man_trim_done(spa_t *spa)
 {
-	spa_t *spa = vti->vti_done_arg;
+	dmu_tx_t *time_update_tx = NULL;
 
-	mutex_enter(&spa->spa_trim_ondemand_lock);
-	ASSERT(spa->spa_num_trimming != 0);
-	spa->spa_num_trimming--;
-	if (spa->spa_num_trimming == 0) {
-		spa_event_notify(spa, NULL, ESC_ZFS_TRIM_FINISH);
-		spa_async_request(spa, SPA_ASYNC_TRIM_TASKQ_DESTROY);
+	mutex_enter(&spa->spa_man_trim_lock);
+	ASSERT(spa->spa_num_man_trimming > 0);
+	spa->spa_num_man_trimming--;
+	if (spa->spa_num_man_trimming == 0) {
 		/* if we were interrupted, leave stop_time at zero */
-		if (!spa->spa_trim_stop)
-			spa_trim_update_time(spa, UINT64_MAX,
+		if (!spa->spa_man_trim_stop)
+			time_update_tx = spa_trim_update_time(spa, UINT64_MAX,
 			    gethrestime_sec());
+		spa_event_notify(spa, NULL, ESC_ZFS_TRIM_FINISH);
+		spa_async_request(spa, SPA_ASYNC_MAN_TRIM_TASKQ_DESTROY);
+		cv_broadcast(&spa->spa_man_trim_done_cv);
 	}
-	cv_broadcast(&spa->spa_trim_done_cv);
-	mutex_exit(&spa->spa_trim_ondemand_lock);
+	mutex_exit(&spa->spa_man_trim_lock);
+
+	if (time_update_tx != NULL)
+		dmu_tx_commit(time_update_tx);
 }
 
 /*
- * Determines the minimum sensible rate at which an on-demand TRIM can
- * be performed on a given spa and returns it. Since we perform TRIM in
+ * Called from vdev_auto_trim when a vdev has completed its auto-trim
+ * processing.
+ */
+static void
+spa_vdev_auto_trim_done(spa_t *spa)
+{
+	mutex_enter(&spa->spa_auto_trim_lock);
+	ASSERT(spa->spa_num_auto_trimming > 0);
+	spa->spa_num_auto_trimming--;
+	if (spa->spa_num_auto_trimming == 0)
+		cv_broadcast(&spa->spa_auto_trim_done_cv);
+	mutex_exit(&spa->spa_auto_trim_lock);
+}
+
+/*
+ * Determines the minimum sensible rate at which a manual TRIM can be
+ * performed on a given spa and returns it. Since we perform TRIM in
  * metaslab-sized increments, we'll just let the longest step between
  * metaslab TRIMs be 100s (random number, really). Thus, on a typical
  * 200-metaslab vdev, the longest TRIM should take is about 5.5 hours.

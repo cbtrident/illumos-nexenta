@@ -2812,10 +2812,7 @@ metaslab_trim_all(metaslab_t *msp, uint64_t *delta)
 	boolean_t was_loaded;
 	uint64_t trimmed_space;
 	zio_t *trim_io;
-	spa_t *spa = msp->ms_group->mg_class->mc_spa;
 
-	ASSERT3S(spa_config_held(spa, SCL_TRIM_ALL, RW_READER), ==,
-	    SCL_TRIM_ALL);
 	ASSERT(!MUTEX_HELD(&msp->ms_group->mg_lock));
 
 	mutex_enter(&msp->ms_lock);
@@ -2917,12 +2914,14 @@ metaslab_auto_trim(metaslab_t *msp, uint64_t txg)
 	if (txg == msp->ms_cur_ts->ts_birth + txgs_per_trim) {
 		if (msp->ms_prev_ts != NULL) {
 			if (msp->ms_trimming_ts != NULL) {
+				spa_t *spa = msp->ms_group->mg_class->mc_spa;
 				/*
 				 * The previous trim run is still ongoing, so
 				 * the device is reacting slowly to our trim
 				 * requests. Drop this trimset, so as not to
 				 * back the device up with trim requests.
 				 */
+				spa_trimstats_auto_slow_incr(spa);
 				metaslab_free_trimset(msp->ms_prev_ts);
 			} else {
 				/*
@@ -2931,9 +2930,6 @@ metaslab_auto_trim(metaslab_t *msp, uint64_t txg)
 				 * the trimset around to deny allocations from
 				 * these regions while the trims are ongoing.
 				 */
-				spa_t *spa = msp->ms_group->mg_class->mc_spa;
-				ASSERT(spa_config_held(spa, SCL_TRIM_ALL,
-				    RW_READER));
 				zio_nowait(metaslab_exec_trim(msp));
 			}
 		}
@@ -2974,8 +2970,6 @@ metaslab_exec_trim(metaslab_t *msp)
 	zio_t *zio;
 
 	ASSERT(MUTEX_HELD(&msp->ms_lock));
-	ASSERT3S(spa_config_held(spa, SCL_TRIM_ALL, RW_READER), ==,
-	    SCL_TRIM_ALL);
 
 	/* wait for a preceding trim to finish */
 	while (msp->ms_trimming_ts != NULL)

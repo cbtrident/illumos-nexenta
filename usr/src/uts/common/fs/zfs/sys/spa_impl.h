@@ -337,23 +337,23 @@ struct spa {
 
 	/* TRIM */
 	uint64_t	spa_force_trim;		/* force sending trim? */
-	uint64_t	spa_auto_trim;		/* in-line switch */
+	uint64_t	spa_auto_trim;		/* see spa_auto_trim_t */
 
-	kmutex_t	spa_trim_ondemand_lock;
-	uint64_t	spa_trim_rate;		/* rate of trim in bytes/sec */
-	uint64_t	spa_num_trimming;	/* num of trimming threads */
-	boolean_t	spa_trim_stop;		/* requested a trim stop */
-	kcondvar_t	spa_trim_update_cv;	/* updates to TRIM settings */
-	kcondvar_t	spa_trim_done_cv;	/* trim on a vdev is done */
+	kmutex_t	spa_auto_trim_lock;
+	kcondvar_t	spa_auto_trim_done_cv;	/* all autotrim thrd's exited */
+	uint64_t	spa_num_auto_trimming;	/* # of autotrim threads */
+	taskq_t		*spa_auto_trim_taskq;
+
+	kmutex_t	spa_man_trim_lock;
+	uint64_t	spa_man_trim_rate;	/* rate of trim in bytes/sec */
+	uint64_t	spa_num_man_trimming;	/* # of manual trim threads */
+	boolean_t	spa_man_trim_stop;	/* requested manual trim stop */
+	kcondvar_t	spa_man_trim_update_cv;	/* updates to TRIM settings */
+	kcondvar_t	spa_man_trim_done_cv;	/* manual trim has completed */
 	/* For details on trim start/stop times see spa_get_trim_prog. */
-	uint64_t	spa_trim_start_time;
-	uint64_t	spa_trim_stop_time;
-	/*
-	 * spa_trim_taskq manipulations require a separate lock. See
-	 * spa_trim_taskq_create for the details on the locking strategy.
-	 */
-	kmutex_t	spa_trim_taskq_lock;
-	taskq_t		*spa_trim_taskq;
+	uint64_t	spa_man_trim_start_time;
+	uint64_t	spa_man_trim_stop_time;
+	taskq_t		*spa_man_trim_taskq;
 
 	/*
 	 * spa_iokstat_lock protects spa_iokstat and
@@ -469,9 +469,10 @@ extern const char *spa_config_path;
 extern void spa_taskq_dispatch_ent(spa_t *spa, zio_type_t t, zio_taskq_type_t q,
     task_func_t *func, void *arg, uint_t flags, taskq_ent_t *ent);
 
-extern void spa_trim_taskq_create(spa_t *spa, boolean_t sync);
-extern void spa_trim_taskq_destroy(spa_t *spa, boolean_t unload,
-    boolean_t sync);
+extern void spa_auto_trim_taskq_create(spa_t *spa);
+extern void spa_man_trim_taskq_create(spa_t *spa);
+extern void spa_auto_trim_taskq_destroy(spa_t *spa);
+extern void spa_man_trim_taskq_destroy(spa_t *spa);
 
 #ifdef	__cplusplus
 }

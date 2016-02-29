@@ -1842,9 +1842,9 @@ zfs_ioc_pool_trim(zfs_cmd_t *zc)
 		return (error);
 
 	if (tci.tci_start) {
-		spa_trim(spa, tci.tci_rate);
+		spa_man_trim(spa, tci.tci_rate);
 	} else {
-		spa_trim_stop(spa);
+		spa_man_trim_stop(spa);
 	}
 
 	spa_close(spa, FTAG);
