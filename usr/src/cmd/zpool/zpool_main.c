@@ -4254,13 +4254,12 @@ print_trim_status(uint64_t trim_prog, uint64_t total_size, uint64_t rate,
     uint64_t start_time_u64, uint64_t end_time_u64)
 {
 	time_t start_time = start_time_u64, end_time = end_time_u64;
-	struct tm t;
-	char buf[128];
+	char *buf;
 
 	assert(trim_prog <= total_size);
 	if (trim_prog != 0 && trim_prog != total_size) {
-		(void) gmtime_r(&start_time, &t);
-		(void) strftime(buf, sizeof (buf), NULL, &t);
+		buf = ctime(&start_time);
+		buf[strlen(buf) - 1] = '\0';	/* strip trailing newline */
 		if (rate != 0) {
 			char rate_str[32];
 			zfs_nicenum(rate, rate_str, sizeof (rate_str));
@@ -4283,22 +4282,22 @@ print_trim_status(uint64_t trim_prog, uint64_t total_size, uint64_t rate,
 				time_t diff = end_time - start_time;
 				int hrs, mins;
 
+				buf = ctime(&end_time);
+				buf[strlen(buf) - 1] = '\0';
 				hrs = diff / 3600;
 				mins = (diff % 3600) / 60;
-				(void) gmtime_r(&end_time, &t);
-				(void) strftime(buf, sizeof (buf), NULL, &t);
-				(void) printf("  trim: completed on %s "
-				    "(after %dh%dm)\n", buf, hrs, mins);
+				(void) printf(gettext("  trim: completed on %s "
+				    "(after %dh%dm)\n"), buf, hrs, mins);
 			} else {
+				buf = ctime(&start_time);
+				buf[strlen(buf) - 1] = '\0';
 				/* Zero end time means we were interrupted */
-				(void) gmtime_r(&start_time, &t);
-				(void) strftime(buf, sizeof (buf), NULL, &t);
-				(void) printf("  trim: interrupted\t"
-				    "(started %s)\n", buf);
+				(void) printf(gettext("  trim: interrupted\t"
+				    "(started %s)\n"), buf);
 			}
 		} else {
 			/* trim was never run */
-			(void) printf("  trim: none requested\n");
+			(void) printf(gettext("  trim: none requested\n"));
 		}
 	}
 }
