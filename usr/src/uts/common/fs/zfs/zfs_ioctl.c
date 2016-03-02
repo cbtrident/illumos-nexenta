@@ -2956,6 +2956,44 @@ clear_received_props(const char *dsname, nvlist_t *props,
 	return (err);
 }
 
+int
+zfs_ioc_set_prop_impl(char *name, nvlist_t *props,
+    boolean_t received, nvlist_t **out_errors)
+{
+	int error = 0;
+	nvlist_t *errors, *event;
+	zprop_source_t source = (received ? ZPROP_SRC_RECEIVED :
+	    ZPROP_SRC_LOCAL);
+
+	if (received) {
+		nvlist_t *origprops;
+
+		if (dsl_prop_get_received(name, &origprops) == 0) {
+			(void) clear_received_props(name, origprops, props);
+			nvlist_free(origprops);
+		}
+
+		error = dsl_prop_set_hasrecvd(name);
+	}
+
+	errors = fnvlist_alloc();
+	if (error == 0)
+		error = zfs_set_prop_nvlist(name, source, props, errors);
+
+	event = fnvlist_alloc();
+	fnvlist_add_string(event, "fsname", name);
+	fnvlist_add_nvlist(event, "properties", props);
+	fnvlist_add_nvlist(event, "errors", errors);
+	zfs_event_post(ZFS_EC_STATUS, "set", event);
+
+	if (out_errors != NULL)
+		*out_errors = fnvlist_dup(errors);
+
+	fnvlist_free(errors);
+
+	return (error);
+}
+
 /*
  * inputs:
  * zc_name		name of filesystem
@@ -2971,41 +3009,18 @@ zfs_ioc_set_prop(zfs_cmd_t *zc)
 {
 	nvlist_t *nvl;
 	boolean_t received = zc->zc_cookie;
-	zprop_source_t source = (received ? ZPROP_SRC_RECEIVED :
-	    ZPROP_SRC_LOCAL);
-	nvlist_t *errors;
-	nvlist_t *event;
+	nvlist_t *errors = NULL;
 	int error;
 
 	if ((error = get_nvlist(zc->zc_nvlist_src, zc->zc_nvlist_src_size,
 	    zc->zc_iflags, &nvl)) != 0)
 		return (error);
 
-	if (received) {
-		nvlist_t *origprops;
-
-		if (dsl_prop_get_received(zc->zc_name, &origprops) == 0) {
-			(void) clear_received_props(zc->zc_name,
-			    origprops, nvl);
-			nvlist_free(origprops);
-		}
-
-		error = dsl_prop_set_hasrecvd(zc->zc_name);
-	}
-
-	errors = fnvlist_alloc();
-	if (error == 0)
-		error = zfs_set_prop_nvlist(zc->zc_name, source, nvl, errors);
+	error = zfs_ioc_set_prop_impl(zc->zc_name, nvl, received, &errors);
 
 	if (zc->zc_nvlist_dst != NULL && errors != NULL) {
 		(void) put_nvlist(zc, errors);
 	}
-
-	event = fnvlist_alloc();
-	fnvlist_add_string(event, "fsname", zc->zc_name);
-	fnvlist_add_nvlist(event, "properties", nvl);
-	fnvlist_add_nvlist(event, "errors", errors);
-	zfs_event_post(ZFS_EC_STATUS, "set", event);
 
 	nvlist_free(errors);
 	nvlist_free(nvl);

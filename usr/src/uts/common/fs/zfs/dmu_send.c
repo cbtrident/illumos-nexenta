@@ -1273,8 +1273,10 @@ recv_begin_check_existing_impl(dmu_recv_begin_arg_t *drba, dsl_dataset_t *ds,
 				error = 0;
 			}
 		}
-		if (error != ENOENT)
-			return (error == 0 ? EBUSY : error);
+		if (error != ENOENT) {
+			return (error == 0 ?
+			    SET_ERROR(EBUSY) : SET_ERROR(error));
+		}
 	}
 
 	/* new snapshot name must not exist */
@@ -1282,7 +1284,7 @@ recv_begin_check_existing_impl(dmu_recv_begin_arg_t *drba, dsl_dataset_t *ds,
 	    dsl_dataset_phys(ds)->ds_snapnames_zapobj,
 	    drba->drba_cookie->drc_tosnap, 8, 1, &val);
 	if (error != ENOENT)
-		return (error == 0 ? EEXIST : error);
+		return (error == 0 ? SET_ERROR(EEXIST) : SET_ERROR(error));
 
 	/*
 	 * Check snapshot limit before receiving. We'll recheck again at the

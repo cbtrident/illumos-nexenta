@@ -25,7 +25,7 @@
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_SYS_DSL_DATASET_H
@@ -372,12 +372,12 @@ void dsl_dataset_snapshot_sync(void *arg, dmu_tx_t *tx);
 
 typedef struct {
 	char name[MAXNAMELEN];
-	char sguid[64];
-	uint64_t guid;
 	uint64_t cookie;
 	boolean_t cookie_is_snap;
+	boolean_t top_level_ds;
 	dsl_dataset_t *ds;
 	list_node_t node;
+	avl_tree_t snapshots;
 } zfs_ds_collector_entry_t;
 
 uint64_t dsl_dataset_creation_txg(const char *name);

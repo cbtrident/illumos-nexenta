@@ -398,6 +398,9 @@ typedef struct zfs_useracct {
 
 void zfs_event_post(const char *subclass,
     const char *operation, nvlist_t *ev_data);
+int zfs_ioc_set_prop_impl(char *name, nvlist_t *props,
+    boolean_t received, nvlist_t **out_errors);
+
 
 #ifdef _KERNEL
 

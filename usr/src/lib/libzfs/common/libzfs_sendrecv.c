@@ -51,6 +51,7 @@
 #include "zfs_namecheck.h"
 #include "zfs_prop.h"
 #include "zfs_fletcher.h"
+#include "zfs_sendrecv.h"
 #include "libzfs_impl.h"
 #include <zlib.h>
 #include <sha2.h>
@@ -464,117 +465,6 @@ out:
 }
 
 /*
- * Routines for dealing with the AVL tree of fs-nvlists
- */
-typedef struct fsavl_node {
-	avl_node_t fn_node;
-	nvlist_t *fn_nvfs;
-	char *fn_snapname;
-	uint64_t fn_guid;
-} fsavl_node_t;
-
-static int
-fsavl_compare(const void *arg1, const void *arg2)
-{
-	const fsavl_node_t *fn1 = arg1;
-	const fsavl_node_t *fn2 = arg2;
-
-	if (fn1->fn_guid > fn2->fn_guid)
-		return (+1);
-	else if (fn1->fn_guid < fn2->fn_guid)
-		return (-1);
-	else
-		return (0);
-}
-
-/*
- * Given the GUID of a snapshot, find its containing filesystem and
- * (optionally) name.
- */
-static nvlist_t *
-fsavl_find(avl_tree_t *avl, uint64_t snapguid, char **snapname)
-{
-	fsavl_node_t fn_find;
-	fsavl_node_t *fn;
-
-	fn_find.fn_guid = snapguid;
-
-	fn = avl_find(avl, &fn_find, NULL);
-	if (fn) {
-		if (snapname)
-			*snapname = fn->fn_snapname;
-		return (fn->fn_nvfs);
-	}
-	return (NULL);
-}
-
-static void
-fsavl_destroy(avl_tree_t *avl)
-{
-	fsavl_node_t *fn;
-	void *cookie;
-
-	if (avl == NULL)
-		return;
-
-	cookie = NULL;
-	while ((fn = avl_destroy_nodes(avl, &cookie)) != NULL)
-		free(fn);
-	avl_destroy(avl);
-	free(avl);
-}
-
-/*
- * Given an nvlist, produce an avl tree of snapshots, ordered by guid
- */
-static avl_tree_t *
-fsavl_create(nvlist_t *fss)
-{
-	avl_tree_t *fsavl;
-	nvpair_t *fselem = NULL;
-
-	if ((fsavl = malloc(sizeof (avl_tree_t))) == NULL)
-		return (NULL);
-
-	avl_create(fsavl, fsavl_compare, sizeof (fsavl_node_t),
-	    offsetof(fsavl_node_t, fn_node));
-
-	while ((fselem = nvlist_next_nvpair(fss, fselem)) != NULL) {
-		nvlist_t *nvfs, *snaps;
-		nvpair_t *snapelem = NULL;
-
-		VERIFY(0 == nvpair_value_nvlist(fselem, &nvfs));
-		VERIFY(0 == nvlist_lookup_nvlist(nvfs, "snaps", &snaps));
-
-		while ((snapelem =
-		    nvlist_next_nvpair(snaps, snapelem)) != NULL) {
-			fsavl_node_t *fn;
-			uint64_t guid;
-
-			VERIFY(0 == nvpair_value_uint64(snapelem, &guid));
-			if ((fn = malloc(sizeof (fsavl_node_t))) == NULL) {
-				fsavl_destroy(fsavl);
-				return (NULL);
-			}
-			fn->fn_nvfs = nvfs;
-			fn->fn_snapname = nvpair_name(snapelem);
-			fn->fn_guid = guid;
-
-			/*
-			 * Note: if there are multiple snaps with the
-			 * same GUID, we ignore all but one.
-			 */
-			if (avl_find(fsavl, fn, NULL) == NULL)
-				avl_add(fsavl, fn);
-			else
-				free(fn);
-		}
-	}
-
-	return (fsavl);
-}
-
-/*
  * Routines for dealing with the giant nvlist of fs-nvlists, etc.
  */
 typedef struct send_data {
@@ -807,7 +697,7 @@ gather_nvlist(libzfs_handle_t *hdl, const char *fsname, const char *fromsnap,
 		return (error);
 	}
 
-	if (avlp != NULL && (*avlp = fsavl_create(sd.fss)) == NULL) {
+	if (avlp != NULL && fsavl_create(sd.fss, avlp) != 0) {
 		nvlist_free(sd.fss);
 		*nvlp = NULL;
 		return (EZFS_NOMEM);
@@ -2713,10 +2603,15 @@ zfs_receive_package(libzfs_handle_t *hdl, int fd, const char *destname,
 
 		VERIFY(0 == nvlist_lookup_nvlist(stream_nv, "fss",
 		    &stream_fss));
-		if ((stream_avl = fsavl_create(stream_fss)) == NULL) {
+		error = fsavl_create(stream_fss, &stream_avl);
+		if (error != 0) {
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "couldn't allocate avl tree"));
-			error = zfs_error(hdl, EZFS_NOMEM, errbuf);
+			if (error == ENOMEM)
+				error = zfs_error(hdl, EZFS_NOMEM, errbuf);
+			else
+				error = zfs_error(hdl, EZFS_BADSTREAM, errbuf);
+
 			goto out;
 		}
 

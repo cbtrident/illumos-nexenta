@@ -25,8 +25,8 @@
  * Copyright (c) 2014 RackTop Systems.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2016, OmniTI Computer Consulting, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/dmu_objset.h>
@@ -3641,6 +3641,8 @@ zfs_collect_ds(spa_t *spa, const char *from_ds, boolean_t recursive,
 		}
 		dsl_dataset_long_hold(head->ds, NULL);
 	}
+
+	head->top_level_ds = B_TRUE;
 	list_insert_tail(ds_to_send, head);
 
 	if (!recursive)
@@ -3706,6 +3708,8 @@ zfs_collect_ds(spa_t *spa, const char *from_ds, boolean_t recursive,
 				}
 				dsl_dataset_long_hold(d_el->ds, NULL);
 			}
+
+			d_el->top_level_ds = B_FALSE;
 			list_insert_tail(&namestack, el);
 			list_insert_tail(ds_to_send, d_el);
 		} else {

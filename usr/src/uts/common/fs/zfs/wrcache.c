@@ -2398,6 +2398,13 @@ wrc_lookup_instance(wrc_data_t *wrc_data,
 	    &wrc_instance, where));
 }
 
+/*
+ * Returns:
+ * 0  - the dataset is a top-level (root) writecached dataset
+ * EOPNOTSUPP - the dataset is a writecached child
+ * ENOTACTIVE - is not writecached
+ * other zfs err - cannot open the pool, is busy, etc.
+ */
 int
 wrc_check_dataset(const char *ds_name)
 {
@@ -2435,12 +2442,16 @@ wrc_check_dataset(const char *ds_name)
 	spa_close(spa, FTAG);
 
 	if (wrc_mode != ZFS_WRC_MODE_OFF) {
-		if (wrc_root_object != ds_object)
+		if (wrc_root_object != ds_object) {
+			/* The child of writecached ds-tree */
 			return (EOPNOTSUPP);
+		}
 
+		/* The root of writecached ds-tree */
 		return (0);
 	}
 
+	/* not writecached */
 	return (ENOTACTIVE);
 }
 

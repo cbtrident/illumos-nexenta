@@ -1461,6 +1461,7 @@ ZFS_COMMON_OBJS +=		\
 
 ZFS_SHARED_OBJS +=		\
 	zfeature_common.o	\
+	zfs_sendrecv.o		\
 	zfs_comutil.o		\
 	zfs_deleg.o		\
 	zfs_fletcher.o		\

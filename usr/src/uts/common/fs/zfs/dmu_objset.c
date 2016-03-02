@@ -24,9 +24,9 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2015, STRATO AG, Inc. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -72,12 +72,21 @@ int dmu_find_threads = 0;
 
 static void dmu_objset_find_dp_cb(void *arg);
 
+/* ARGSUSED */
+static int
+zfs_ds_collector_constructor(void *ds_el, void *unused, int flags)
+{
+	bzero(ds_el, sizeof (zfs_ds_collector_entry_t));
+	return (0);
+}
+
 void
 dmu_objset_init(void)
 {
 	zfs_ds_collector_cache = kmem_cache_create("zfs_ds_collector_cache",
 	    sizeof (zfs_ds_collector_entry_t),
-	    8, NULL, NULL, NULL, NULL, NULL, 0);
+	    8, zfs_ds_collector_constructor,
+	    NULL, NULL, NULL, NULL, 0);
 	rw_init(&os_lock, NULL, RW_DEFAULT, NULL);
 }
 
