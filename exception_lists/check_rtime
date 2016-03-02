@@ -239,4 +239,7 @@ NOSYMSORT	usr/lib/amd64/libfru\.so\.1			# C++
 # unneeded library.
 UNREF_OBJ	lib/(libdevinfo|libcfgadm)\.so\.1; .*\ of\ .*SUNW,Netra-CP2300/lib/libprtdiag_psr\.so\.1
 
-
+#
+#  Unreferenced object of libtcl8.5.so we can not change
+#
+UNREF_OBJ	/lib.*\ of\ .*libtcl8\.5\.so
