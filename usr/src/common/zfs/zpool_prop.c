@@ -73,10 +73,19 @@ zpool_prop_init(void)
 		{ NULL }
 	};
 
+	static zprop_index_t sync_to_special_table[] = {
+		{ "disabled",	SYNC_TO_SPECIAL_DISABLED },
+		{ "standard",	SYNC_TO_SPECIAL_STANDARD },
+		{ "balanced",	SYNC_TO_SPECIAL_BALANCED },
+		{ "always",	SYNC_TO_SPECIAL_ALWAYS},
+		{ NULL }
+	};
+
 	/*
 	 * NOTE: When either adding or changing a property make sure
 	 * to update the zfs-tests zpool_get configuration file
-	 * at usr/src/test/zfs-tests/tests/functional/cli_root/zpool_get/zpool_get.cfg
+	 * at usr/src/test/zfs-tests/tests/functional/cli_root/zpool_get/
+	 * zpool_get.cfg
 	 */
 
 	/* string properties */
@@ -155,6 +164,10 @@ zpool_prop_init(void)
 	zprop_register_index(ZPOOL_PROP_META_PLACEMENT, "meta_placement", 0,
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "META_PLCMNT",
 	    boolean_table);
+	zprop_register_index(ZPOOL_PROP_SYNC_TO_SPECIAL, "sync_to_special",
+	    SYNC_TO_SPECIAL_STANDARD, PROP_DEFAULT, ZFS_TYPE_POOL,
+	    "never | standard | balanced | always", "SYNC_TO_SPECIAL",
+	    sync_to_special_table);
 	zprop_register_index(ZPOOL_PROP_DDT_META_TO_METADEV,
 	    "ddt_meta_to_metadev", META_PLACEMENT_OFF, PROP_DEFAULT,
 	    ZFS_TYPE_POOL, "on | dual | off",

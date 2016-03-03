@@ -1053,16 +1053,32 @@ zvol_log_write(zvol_state_t *zv, dmu_tx_t *tx, offset_t off, ssize_t resid,
 {
 	uint32_t blocksize = zv->zv_volblocksize;
 	zilog_t *zilog = zv->zv_zilog;
-	boolean_t slogging;
+	spa_t *spa = zilog->zl_spa;
+	spa_meta_placement_t *mp = &spa->spa_meta_policy;
+	boolean_t slogging, zil_to_special, write_to_special;
 	ssize_t immediate_write_sz;
 
 	if (zil_replaying(zilog, tx))
 		return;
 
+	/*
+	 * See comments in zfs_log_write()
+	 */
+
 	immediate_write_sz = (zilog->zl_logbias == ZFS_LOGBIAS_THROUGHPUT)
 	    ? 0 : zvol_immediate_write_sz;
 
-	slogging = spa_has_slogs(zilog->zl_spa) &&
+	zil_to_special = !spa_has_slogs(spa) &&
+	    spa_can_special_be_used(spa) &&
+	    mp->spa_sync_to_special != SYNC_TO_SPECIAL_DISABLED;
+
+	write_to_special = !spa_has_slogs(spa) &&
+	    spa_write_data_to_special(spa, zilog->zl_os) &&
+	    (mp->spa_sync_to_special == SYNC_TO_SPECIAL_ALWAYS ||
+	    (mp->spa_sync_to_special == SYNC_TO_SPECIAL_BALANCED &&
+	    spa->spa_avg_stat_rotor % 100 < spa->spa_special_to_normal_ratio));
+
+	slogging = (spa_has_slogs(spa) || zil_to_special) &&
 	    (zilog->zl_logbias == ZFS_LOGBIAS_LATENCY);
 
 	while (resid) {
@@ -1077,6 +1093,9 @@ zvol_log_write(zvol_state_t *zv, dmu_tx_t *tx, offset_t off, ssize_t resid,
 		 */
 		if (blocksize > immediate_write_sz && !slogging &&
 		    resid >= blocksize && off % blocksize == 0) {
+			write_state = WR_INDIRECT; /* uses dmu_sync */
+			len = blocksize;
+		} else if (write_to_special) {
 			write_state = WR_INDIRECT; /* uses dmu_sync */
 			len = blocksize;
 		} else if (sync) {

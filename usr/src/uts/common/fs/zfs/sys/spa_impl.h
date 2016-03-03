@@ -165,12 +165,15 @@ typedef struct spa_perfmon_data {
  *
  * spa_small_data_to_special contains max size of data that
  * can be placed on special
+ *
+ * spa_sync_to_special uses special device for slog synchronous transactions
  */
 typedef struct spa_meta_placement {
 	uint64_t spa_enable_meta_placement_selection;
 	uint64_t spa_ddt_meta_to_special;
 	uint64_t spa_zfs_meta_to_special;
 	uint64_t spa_small_data_to_special;
+	uint64_t spa_sync_to_special;
 } spa_meta_placement_t;
 
 /*

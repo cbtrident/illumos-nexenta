@@ -34,6 +34,11 @@ extern "C" {
 #define	META_PLACEMENT_ON	1
 #define	META_PLACEMENT_DUAL	2
 
+#define	SYNC_TO_SPECIAL_DISABLED	0
+#define	SYNC_TO_SPECIAL_STANDARD	1
+#define	SYNC_TO_SPECIAL_BALANCED	2
+#define	SYNC_TO_SPECIAL_ALWAYS		3
+
 void spa_special_init(spa_t *spa);
 void spa_special_fini(spa_t *spa);
 void spa_check_special(spa_t *);

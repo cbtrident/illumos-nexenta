@@ -228,6 +228,8 @@ spa_prop_get_config(spa_t *spa, nvlist_t **nvp)
 
 		spa_prop_add_list(*nvp, ZPOOL_PROP_META_PLACEMENT, NULL,
 		    mp->spa_enable_meta_placement_selection, src);
+		spa_prop_add_list(*nvp, ZPOOL_PROP_SYNC_TO_SPECIAL, NULL,
+		    mp->spa_sync_to_special, src);
 		spa_prop_add_list(*nvp, ZPOOL_PROP_DDT_META_TO_METADEV, NULL,
 		    mp->spa_ddt_meta_to_special, src);
 		spa_prop_add_list(*nvp, ZPOOL_PROP_ZFS_META_TO_METADEV,
@@ -525,6 +527,12 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 		case ZPOOL_PROP_ZFS_META_TO_METADEV:
 			error = nvpair_value_uint64(elem, &intval);
 			if (!error && intval > META_PLACEMENT_DUAL)
+				error = SET_ERROR(EINVAL);
+			break;
+
+		case ZPOOL_PROP_SYNC_TO_SPECIAL:
+			error = nvpair_value_uint64(elem, &intval);
+			if (!error && intval > SYNC_TO_SPECIAL_ALWAYS)
 				error = SET_ERROR(EINVAL);
 			break;
 
@@ -2815,6 +2823,8 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 
 	mp->spa_enable_meta_placement_selection =
 	    zpool_prop_default_numeric(ZPOOL_PROP_META_PLACEMENT);
+	mp->spa_sync_to_special =
+	    zpool_prop_default_numeric(ZPOOL_PROP_SYNC_TO_SPECIAL);
 	mp->spa_ddt_meta_to_special =
 	    zpool_prop_default_numeric(ZPOOL_PROP_DDT_META_TO_METADEV);
 	mp->spa_zfs_meta_to_special =
@@ -2864,6 +2874,8 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 
 		spa_prop_find(spa, ZPOOL_PROP_META_PLACEMENT,
 		    &mp->spa_enable_meta_placement_selection);
+		spa_prop_find(spa, ZPOOL_PROP_SYNC_TO_SPECIAL,
+		    &mp->spa_sync_to_special);
 		spa_prop_find(spa, ZPOOL_PROP_DDT_META_TO_METADEV,
 		    &mp->spa_ddt_meta_to_special);
 		spa_prop_find(spa, ZPOOL_PROP_ZFS_META_TO_METADEV,
@@ -4008,6 +4020,8 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 
 	mp->spa_enable_meta_placement_selection =
 	    zpool_prop_default_numeric(ZPOOL_PROP_META_PLACEMENT);
+	mp->spa_sync_to_special =
+	    zpool_prop_default_numeric(ZPOOL_PROP_SYNC_TO_SPECIAL);
 	mp->spa_ddt_meta_to_special =
 	    zpool_prop_default_numeric(ZPOOL_PROP_DDT_META_TO_METADEV);
 	mp->spa_zfs_meta_to_special =
@@ -6728,6 +6742,9 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 			case ZPOOL_PROP_META_PLACEMENT:
 				mp->spa_enable_meta_placement_selection =
 				    intval;
+				break;
+			case ZPOOL_PROP_SYNC_TO_SPECIAL:
+				mp->spa_sync_to_special = intval;
 				break;
 			case ZPOOL_PROP_DDT_META_TO_METADEV:
 				mp->spa_ddt_meta_to_special = intval;

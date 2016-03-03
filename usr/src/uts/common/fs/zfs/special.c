@@ -148,8 +148,8 @@ spa_enable_special(spa_t *spa, boolean_t usesc)
 }
 
 /*
- * Determine whether we should consider writing data to special vdevs
- * for performance reasons
+ * Determine whether we should consider writing data synchronously to
+ * special vdevs. See comments in zvol_log_write() and zfs_log_write()
  */
 boolean_t
 spa_write_data_to_special(spa_t *spa, objset_t *os)
@@ -365,10 +365,27 @@ uint64_t spa_special_factor = 5;
  * spa_special_to_normal-1:1 proportion
  */
 static boolean_t
-spa_refine_data_placement(spa_t *spa)
+spa_refine_data_placement(spa_t *spa, zio_t *zio)
 {
-	uint64_t val = atomic_inc_64_nv(&spa->spa_avg_stat_rotor);
-	return ((val % 100) < spa->spa_special_to_normal_ratio);
+	uint64_t rotor = atomic_inc_64_nv(&spa->spa_avg_stat_rotor);
+	spa_meta_placement_t *mp = &spa->spa_meta_policy;
+	boolean_t result = B_FALSE;
+
+	/*
+	 * For the "balanced" sync-writes the load balancing is already done
+	 * see comment in zfs_log_write()
+	 */
+	if (zio->io_priority == ZIO_PRIORITY_SYNC_WRITE) {
+		if (spa->spa_watermark == SPA_WM_NONE &&
+		    (mp->spa_sync_to_special == SYNC_TO_SPECIAL_ALWAYS ||
+		    mp->spa_sync_to_special == SYNC_TO_SPECIAL_BALANCED)) {
+			result = B_TRUE;
+		}
+	} else {
+		result = ((rotor % 100) < spa->spa_special_to_normal_ratio);
+	}
+
+	return (result);
 }
 
 static boolean_t
@@ -451,33 +468,25 @@ spa_select_class(spa_t *spa, zio_t *zio)
 {
 	zio_prop_t *zp = &zio->io_prop;
 	spa_meta_placement_t *mp = &spa->spa_meta_policy;
+	boolean_t match = B_FALSE;
 
-	if (zp->zp_usesc && spa_has_special(spa) &&
-	    !spa->spa_special_has_errors) {
-		boolean_t match = B_FALSE;
-		if (zp->zp_metadata) {
-			if (mp->spa_enable_meta_placement_selection)
-				match = spa_refine_meta_placement(spa,
-				    zp->zp_zpl_meta_to_special, zp->zp_type);
-		} else {
-			match = zp->zp_usewrc &&
-			    spa->spa_wrc.wrc_ready_to_use &&
-			    !spa->spa_wrc.wrc_isfault;
-			if (match) {
-				match = spa_refine_data_placement(spa);
-				DTRACE_PROBE1(wrc_data_placement,
-				    boolean_t, match);
-			}
-			if (!match) {
-				match =
-				    (BP_GET_PSIZE(zio->io_bp) <=
-				    mp->spa_small_data_to_special);
-			}
-		}
-
-		if (match)
-			return (spa_special_class(spa));
+	if (!zp->zp_usesc || !spa_has_special(spa) ||
+	    spa->spa_special_has_errors) {
+		match = B_FALSE;
+	} else if (zp->zp_metadata) {
+		match = mp->spa_enable_meta_placement_selection &&
+		    spa_refine_meta_placement(spa, zp->zp_zpl_meta_to_special,
+		    zp->zp_type);
+	} else if (BP_GET_PSIZE(zio->io_bp) <= mp->spa_small_data_to_special) {
+		match = B_TRUE;
+	} else {
+		match = spa->spa_wrc.wrc_ready_to_use &&
+		    !spa->spa_wrc.wrc_isfault &&
+		    spa_refine_data_placement(spa, zio);
 	}
+
+	if (match)
+		return (spa_special_class(spa));
 
 	return (spa_normal_class(spa));
 }

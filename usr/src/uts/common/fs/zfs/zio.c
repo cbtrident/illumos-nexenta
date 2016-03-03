@@ -47,7 +47,6 @@
 
 #include <sys/metaslab_impl.h>
 
-extern int zil_use_sdev;
 extern int zfs_txg_timeout;
 
 /*
@@ -2844,6 +2843,7 @@ zio_alloc_zil(spa_t *spa, uint64_t txg, blkptr_t *new_bp, blkptr_t *old_bp,
     uint64_t size, boolean_t use_slog)
 {
 	int error = 1;
+	spa_meta_placement_t *mp = &spa->spa_meta_policy;
 
 	ASSERT(txg > spa_syncing_txg(spa));
 
@@ -2851,27 +2851,47 @@ zio_alloc_zil(spa_t *spa, uint64_t txg, blkptr_t *new_bp, blkptr_t *old_bp,
 	 * ZIL blocks are always contiguous (i.e. not gang blocks) so we
 	 * set the METASLAB_GANG_AVOID flag so that they don't "fast gang"
 	 * when allocating them.
+	 * If the caller indicates that slog is not to be used
+	 * (via use_slog)
+	 * separate allocation class will not indeed be used, independently
+	 * of whether this is log or special
 	 */
 	if (use_slog) {
-		error = metaslab_alloc(spa, spa_log_class(spa), size,
-		    new_bp, 1, txg, old_bp,
-		    METASLAB_HINTBP_AVOID | METASLAB_GANG_AVOID);
-	}
+		if (spa_has_slogs(spa)) {
+			error = metaslab_alloc(spa, spa_log_class(spa),
+			    size, new_bp, 1, txg, old_bp,
+			    METASLAB_HINTBP_AVOID | METASLAB_GANG_AVOID);
 
-	/*
-	 * use special when failed to allocate from the regular slog,
-	 * but only if the special is usable and has enough space
-	 */
-	if (zil_use_sdev && error && spa_can_special_be_used(spa)) {
-		error = metaslab_alloc(spa, spa_special_class(spa), size,
-		    new_bp, 1, txg, old_bp,
-		    METASLAB_HINTBP_AVOID | METASLAB_GANG_AVOID);
+			DTRACE_PROBE2(zio_alloc_zil_log,
+			    spa_t *, spa,
+			    int, error);
+		}
+
+		/*
+		 * use special when failed to allocate from the regular slog,
+		 * but only if allowed and if the special used space is
+		 * below watermarks
+		 */
+		if (error && spa_can_special_be_used(spa) &&
+		    mp->spa_sync_to_special != SYNC_TO_SPECIAL_DISABLED) {
+			error = metaslab_alloc(spa, spa_special_class(spa),
+			    size, new_bp, 1, txg, old_bp,
+			    METASLAB_HINTBP_AVOID | METASLAB_GANG_AVOID);
+
+			DTRACE_PROBE2(zio_alloc_zil_special,
+			    spa_t *, spa,
+			    int, error);
+		}
 	}
 
 	if (error) {
 		error = metaslab_alloc(spa, spa_normal_class(spa), size,
 		    new_bp, 1, txg, old_bp,
 		    METASLAB_HINTBP_AVOID);
+
+		DTRACE_PROBE2(zio_alloc_zil_normal,
+		    spa_t *, spa,
+		    int, error);
 	}
 
 	if (error == 0) {

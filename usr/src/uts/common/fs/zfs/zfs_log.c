@@ -45,6 +45,7 @@
 #include <sys/acl.h>
 #include <sys/dmu.h>
 #include <sys/spa.h>
+#include <sys/spa_impl.h>
 #include <sys/zfs_fuid.h>
 #include <sys/ddi.h>
 #include <sys/dsl_dataset.h>
@@ -451,14 +452,15 @@ zfs_log_rename(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
  * Handles TX_WRITE transactions.
  */
 ssize_t zfs_immediate_write_sz = 32768;
-ssize_t zfs_immediate_write_sz_special = 1;
 
 void
 zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
     znode_t *zp, offset_t off, ssize_t resid, int ioflag)
 {
+	spa_t *spa = zilog->zl_spa;
+	spa_meta_placement_t *mp = &spa->spa_meta_policy;
 	itx_wr_state_t write_state;
-	boolean_t slogging;
+	boolean_t slogging, zil_to_special, write_to_special;
 	uintptr_t fsync_cnt;
 	ssize_t immediate_write_sz;
 
@@ -467,56 +469,65 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 
 	/*
 	 * Decide how to handle the write:
-	 * - WR_INDIRECT - write to the regular vdev as opposed to slog vdev
-	 * - WR_COPIED   - write to slog following the tx desctiptor as
-	 *			immediate data
+	 * - WR_INDIRECT  - synchronously write in zfs format, via dmu_sync()
+	 * - WR_COPIED    - write to slog following the tx descriptor as
+	 *                  immediate data
 	 * - WR_NEED_COPY - copy out in the future (e.g. with next sync)
 	 *
-	 * This works well under assumption that if SLOGs are used, then they
-	 * are always faster than regular vdevs, so all sizes of data are copied
-	 * through the SLOGs.
+	 * Special vdevs are as fast as slogs - therefore a conservative
+	 * extension to the existing logic allows for the following
+	 * zpool-configurable options:
 	 *
-	 * Special vdevs in WRCACHE mode are as fast as SLOGs
-	 * In fact, such devices usually also host ZIL (and
-	 * therefore, eliminate the need for a separate log device), so
-	 * the conventional strategy results in double writes to such vdevs.
+	 * (1) SYNC_TO_SPECIAL_DISABLED: do not use special vdev,
+	 *     neither for zil, nor for WR_INDIRECT
+	 * (2) SYNC_TO_SPECIAL_STANDARD (default): use special vdev
+	 *     exactly like slog
+	 * The remaining two options add the capability to sync data to
+	 * special vdev:
+	 * (3) SYNC_TO_SPECIAL_BALANCED: same as "standard", plus
+	 *     load balance writes to the special vdev
+	 * (4) SYNC_TO_SPECIAL_ALWAYS: same as "standard" plus always
+	 *     write to the special vdev
 	 *
-	 * A (conservative) modification to the logic below allows for writing
-	 * to WRCACHE vdevs once:
-	 * - if the write would for sure go to a WRCACHE vdev (usage below
-	 *   lower watermark), and it is enabled, then use WR_INDIRECT
-	 *   for all writes that do not exceed max block size for the object
-	 *
-	 * If SLOGs are cofigured, they work according to the original logic.
+	 * Presence of special vdev has no affect if slog is configured:
+	 * the latter indicates that user expects conventional zfs
+	 * sync-write behavior.
 	 */
 
 	immediate_write_sz = (zilog->zl_logbias == ZFS_LOGBIAS_THROUGHPUT)
 	    ? 0 : zfs_immediate_write_sz;
 
-	slogging = spa_has_slogs(zilog->zl_spa) &&
-	    (zilog->zl_logbias == ZFS_LOGBIAS_LATENCY);
+	/* use special only if all of the following is true */
+	zil_to_special = !spa_has_slogs(spa) &&
+	    spa_can_special_be_used(spa) &&
+	    mp->spa_sync_to_special != SYNC_TO_SPECIAL_DISABLED;
 
-	if (immediate_write_sz && !slogging && zfs_immediate_write_sz_special &&
-	    immediate_write_sz > zfs_immediate_write_sz_special &&
-	    (ioflag & (FSYNC | FDSYNC)) &&
-	    spa_can_special_be_used(zilog->zl_spa))
-		immediate_write_sz = zfs_immediate_write_sz_special;
+	/*
+	 * synchronously write data to special in zfs format - the
+	 * WR_INDIRECT case
+	 *
+	 * for the "balanced" option distribute the load based on the
+	 * special-to-normal ratio - the value that is periodically
+	 * recomputed by the load balancer implementing one of
+	 * SPA_SPECIAL_SELECTION_LATENCY etc. strategies
+	 */
+	write_to_special = !spa_has_slogs(spa) &&
+	    spa_write_data_to_special(spa, zilog->zl_os) &&
+	    (mp->spa_sync_to_special == SYNC_TO_SPECIAL_ALWAYS ||
+	    (mp->spa_sync_to_special == SYNC_TO_SPECIAL_BALANCED &&
+	    spa->spa_avg_stat_rotor % 100 < spa->spa_special_to_normal_ratio));
 
-	if (resid > immediate_write_sz && !slogging && resid <= zp->z_blksz) {
+	slogging = (spa_has_slogs(spa) || zil_to_special) &&
+	    zilog->zl_logbias == ZFS_LOGBIAS_LATENCY;
+
+	if (resid > immediate_write_sz && !slogging && resid <= zp->z_blksz)
 		write_state = WR_INDIRECT;
-	} else if (ioflag & (FSYNC | FDSYNC)) {
-		/*
-		 * If the target DS is under WRC, then we can
-		 * be like 'zl_logbias == ZFS_LOGBIAS_THROUGHPUT'
-		 */
-		if (spa_write_data_to_special(zilog->zl_spa, zilog->zl_os)) {
-			write_state = WR_INDIRECT;
-		} else {
-			write_state = WR_COPIED;
-		}
-	} else {
+	else if (write_to_special)
+		write_state = WR_INDIRECT;
+	else if (ioflag & (FSYNC | FDSYNC))
+		write_state = WR_COPIED;
+	else
 		write_state = WR_NEED_COPY;
-	}
 
 	DTRACE_PROBE3(zfs_lwr, ssize_t, immediate_write_sz,
 	    itx_wr_state_t, write_state, uint_t, zp->z_blksz);
