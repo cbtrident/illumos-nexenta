@@ -480,7 +480,7 @@ spa_select_class(spa_t *spa, zio_t *zio)
 	} else if (BP_GET_PSIZE(zio->io_bp) <= mp->spa_small_data_to_special) {
 		match = B_TRUE;
 	} else {
-		match = spa->spa_wrc.wrc_ready_to_use &&
+		match = zp->zp_usewrc && spa->spa_wrc.wrc_ready_to_use &&
 		    !spa->spa_wrc.wrc_isfault &&
 		    spa_refine_data_placement(spa, zio);
 	}
