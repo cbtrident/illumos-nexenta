@@ -24,8 +24,8 @@
 # Copyright 2014, Joyent, Inc. All rights reserved.
 # Copyright 2013 Garrett D'Amore <garrett@damore.org>
 # Copyright 2013 Saso Kiselkov. All rights reserved.
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 # Copyright 2015 Igor Kozhukhov <ikozhukhov@gmail.com>
+# Copyright 2016 Nexenta Systems, Inc.
 #
 
 include $(SRC)/uts/Makefile.uts
@@ -907,6 +907,7 @@ SCSIHDRS=		\
 	scsi_address.h	\
 	scsi_ctl.h	\
 	scsi_fm.h	\
+	scsi_names.h	\
 	scsi_params.h	\
 	scsi_pkt.h	\
 	scsi_resource.h	\
