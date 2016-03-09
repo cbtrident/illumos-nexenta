@@ -1600,6 +1600,7 @@ typedef struct open_param {
 	 */
 	uint64_t	dsize;	/* alloc size, actual size */
 	uint32_t	desired_access;
+	uint32_t	maximum_access;
 	uint32_t	share_access;
 	uint32_t	create_options;
 	uint32_t	create_disposition;
@@ -1610,6 +1611,7 @@ typedef struct open_param {
 	uint32_t	action_taken;
 	uint64_t	fileid;
 	uint32_t	rootdirfid;
+	fsid_t		op_fsid;
 	smb_ofile_t	*dir;
 	smb_opipe_t	*pipe;	/* for smb_opipe_open */
 	struct smb_sd	*sd;	/* for NTTransactCreate */
