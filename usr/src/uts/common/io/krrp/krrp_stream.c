@@ -898,6 +898,7 @@ krrp_stream_read(void *arg)
 			stream->cur_send_txg = 0;
 		}
 
+		stream->bytes_processed += pdu->cur_data_sz;
 		krrp_stream_callback(stream, KRRP_STREAM_DATA_PDU,
 		    (uintptr_t)pdu);
 
@@ -999,6 +1000,7 @@ krrp_stream_write(void *arg)
 			break;
 		}
 
+		stream->bytes_processed += pdu->cur_data_sz;
 		if (stream_task->done) {
 			VERIFY(pdu->final == B_TRUE);
 

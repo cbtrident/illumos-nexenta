@@ -182,6 +182,12 @@ out:
 }
 
 size_t
+krrp_pdu_engine_get_used_mem(krrp_pdu_engine_t *pdu_engine)
+{
+	return (pdu_engine->pdu_data_sz * pdu_engine->cur_pdu_cnt);
+}
+
+size_t
 krrp_pdu_engine_get_free_mem(krrp_pdu_engine_t *pdu_engine)
 {
 	size_t free_pdus;

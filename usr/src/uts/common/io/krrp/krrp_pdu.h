@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _KRRP_PDU_H
@@ -156,6 +156,7 @@ void krrp_pdu_engine_register_callback(krrp_pdu_engine_t *engine,
 void krrp_pdu_engine_force_notify(krrp_pdu_engine_t *engine,
     boolean_t initial);
 
+size_t krrp_pdu_engine_get_used_mem(krrp_pdu_engine_t *pdu_engine);
 size_t krrp_pdu_engine_get_free_mem(krrp_pdu_engine_t *pdu_engine);
 
 void krrp_pdu_alloc(krrp_pdu_engine_t *, krrp_pdu_t **, boolean_t);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_KRRP_SESSION_H
@@ -34,7 +34,7 @@ typedef enum {
  * write corresponding update-code in krrp_sess_sender_kstat_update()
  */
 #define	KRRP_SESS_SENDER_STAT_NAME_MAP(X) \
-	X(avg_stream_rpo, KSTAT_DATA_UINT64, 0) \
+	X(avg_rpo, KSTAT_DATA_UINT64, 0) \
 	X(avg_network_rpo, KSTAT_DATA_UINT64, 0) \
 	X(cur_send_stream_txg, KSTAT_DATA_UINT64, 0) \
 	X(cur_send_network_txg, KSTAT_DATA_UINT64, 0) \
@@ -46,6 +46,8 @@ typedef enum {
 	X(fl_ctrl_window_size, KSTAT_DATA_UINT64, 0) \
 	X(bytes_tx, KSTAT_DATA_UINT64, 0) \
 	X(bytes_rx, KSTAT_DATA_UINT64, 0) \
+	X(rbytes, KSTAT_DATA_UINT64, 0) \
+	X(mem_used, KSTAT_DATA_UINT64, 0) \
 	X(uptime, KSTAT_DATA_UINT64, 0) \
 
 /*
@@ -59,6 +61,8 @@ typedef enum {
 	X(cur_pdu_seq_num, KSTAT_DATA_UINT64, 0) \
 	X(bytes_tx, KSTAT_DATA_UINT64, 0) \
 	X(bytes_rx, KSTAT_DATA_UINT64, 0) \
+	X(wbytes, KSTAT_DATA_UINT64, 0) \
+	X(mem_used, KSTAT_DATA_UINT64, 0) \
 	X(uptime, KSTAT_DATA_UINT64, 0) \
 
 /*
@@ -69,6 +73,9 @@ typedef enum {
 	X(avg_rpo, KSTAT_DATA_UINT64, 0) \
 	X(cur_send_stream_txg, KSTAT_DATA_UINT64, 0) \
 	X(cur_recv_stream_txg, KSTAT_DATA_UINT64, 0) \
+	X(rbytes, KSTAT_DATA_UINT64, 0) \
+	X(wbytes, KSTAT_DATA_UINT64, 0) \
+	X(mem_used, KSTAT_DATA_UINT64, 0) \
 	X(uptime, KSTAT_DATA_UINT64, 0) \
 
 #define	NUM_OF_FIELDS(S) (sizeof (S) / sizeof (kstat_named_t))

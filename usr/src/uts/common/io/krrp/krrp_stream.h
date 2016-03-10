@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _KRRP_STREAM_H
@@ -90,6 +90,8 @@ struct krrp_stream_s {
 	uint64_t				cur_recv_txg;
 	uint64_t				last_ack_txg;
 	uint64_t				last_full_ack_txg;
+
+	uint64_t				bytes_processed;
 
 	size_t					keep_snaps;
 

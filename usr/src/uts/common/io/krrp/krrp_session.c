@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -971,7 +971,7 @@ krrp_sess_sender_kstat_update(krrp_sess_t *sess, kstat_t *ks)
 	krrp_sess_sender_kstat_t *stats = &sess->kstat.data.sender;
 
 	/* The RPO-time between snap create and total recv by the remote ZFS */
-	stats->avg_stream_rpo.value.ui64 =
+	stats->avg_rpo.value.ui64 =
 	    sess->stream_read->avg_total_rpo.value;
 
 	/* The RPO-time between snap create and total recv by the remote KRRP */
@@ -1001,6 +1001,11 @@ krrp_sess_sender_kstat_update(krrp_sess_t *sess, kstat_t *ks)
 	stats->cur_pdu_seq_num.value.ui64 = sess->fl_ctrl.cur_pdu_seq_num;
 	stats->fl_ctrl_window_size.value.ui64 = sess->fl_ctrl.cwnd;
 
+	stats->rbytes.value.ui64 = sess->stream_read->bytes_processed;
+
+	stats->mem_used.value.ui64 =
+	    krrp_pdu_engine_get_used_mem(sess->data_pdu_engine);
+
 	stats->uptime.value.ui64 =
 	    (gethrtime() - ks->ks_crtime) / 1000 / 1000;
 }
@@ -1024,6 +1029,11 @@ krrp_sess_receiver_kstat_update(krrp_sess_t *sess, kstat_t *ks)
 	stats->max_pdu_seq_num.value.ui64 = sess->fl_ctrl.max_pdu_seq_num;
 	stats->cur_pdu_seq_num.value.ui64 = sess->fl_ctrl.cur_pdu_seq_num;
 
+	stats->wbytes.value.ui64 = sess->stream_write->bytes_processed;
+
+	stats->mem_used.value.ui64 =
+	    krrp_pdu_engine_get_used_mem(sess->data_pdu_engine);
+
 	stats->uptime.value.ui64 =
 	    (gethrtime() - ks->ks_crtime) / 1000 / 1000;
 }
@@ -1045,6 +1055,12 @@ krrp_sess_compound_kstat_update(krrp_sess_t *sess, kstat_t *ks)
 	/* The TXG that is now wrote by ZFS */
 	stats->cur_recv_stream_txg.value.ui64 =
 	    sess->stream_write->cur_recv_txg;
+
+	stats->rbytes.value.ui64 = sess->stream_read->bytes_processed;
+	stats->wbytes.value.ui64 = sess->stream_write->bytes_processed;
+
+	stats->mem_used.value.ui64 =
+	    krrp_pdu_engine_get_used_mem(sess->data_pdu_engine);
 
 	stats->uptime.value.ui64 =
 	    (gethrtime() - ks->ks_crtime) / 1000 / 1000;
