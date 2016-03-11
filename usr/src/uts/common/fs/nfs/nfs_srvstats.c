@@ -916,10 +916,13 @@ nfssrv_get_exp_stats(const char *path, size_t len, bool_t pseudo)
 		    offsetof(struct nfssrv_clnt_exp_stats, nsces_link));
 		rw_init(&e->nses_clnt_stats_lock, NULL, RW_DEFAULT, NULL);
 
+		e->nses_agg = NULL;
+
 		/*
 		 * Generic share kstat
 		 */
-		if ((nfssrv_stats_flags & (EXP_STATS | CLNT_EXP_STATS)) == 0 ||
+		if ((nfssrv_stats_flags & (EXP_STATS | CLNT_EXP_STATS |
+		    AGG_EXP_STATS | AGG_CLNT_EXP_STATS)) == 0 ||
 		    e->nses_id < 0) {
 			e->nses_share_kstat = NULL;
 		} else {
@@ -955,19 +958,17 @@ nfssrv_get_exp_stats(const char *path, size_t len, bool_t pseudo)
 				    e->nses_id, "share", NULL,
 				    &e->nses_procio_lock);
 			}
-		}
 
-		/*
-		 * Aggregated stats
-		 */
-		if (e->nses_share_kstat == NULL ||
-		    (nfssrv_stats_flags & AGG_EXP_STATS) == 0) {
-			e->nses_agg = NULL;
-		} else {
-			e->nses_agg =
-			    nfssrv_kstat_aggregates_create(&e->nses_stats,
-			    &e->nses_procio_lock, "nfs", e->nses_id,
-			    "share_aggregates", "misc", getzoneid());
+			/*
+			 * Aggregated stats
+			 */
+			if ((nfssrv_stats_flags & AGG_EXP_STATS) != 0) {
+				e->nses_agg =
+				    nfssrv_kstat_aggregates_create(
+				    &e->nses_stats, &e->nses_procio_lock, "nfs",
+				    e->nses_id, "share_aggregates", "misc",
+				    getzoneid());
+			}
 		}
 
 		mutex_enter(&e->nses_procio_lock);
@@ -1283,10 +1284,13 @@ nfssrv_get_clnt_stats(SVCXPRT *xprt)
 			}
 		}
 
+		c->nscs_agg = NULL;
+
 		/*
 		 * Generic client kstat
 		 */
-		if ((nfssrv_stats_flags & (CLNT_STATS | CLNT_EXP_STATS)) == 0 ||
+		if ((nfssrv_stats_flags & (CLNT_STATS | CLNT_EXP_STATS |
+		    AGG_CLNT_STATS | AGG_CLNT_EXP_STATS)) == 0 ||
 		    c->nscs_id < 0) {
 			c->nscs_clnt_kstat = NULL;
 		} else {
@@ -1321,19 +1325,17 @@ nfssrv_get_clnt_stats(SVCXPRT *xprt)
 				    c->nscs_id, "client", NULL,
 				    &c->nscs_procio_lock);
 			}
-		}
 
-		/*
-		 * Aggregated stats
-		 */
-		if (c->nscs_clnt_kstat == NULL ||
-		    (nfssrv_stats_flags & AGG_CLNT_STATS) == 0) {
-			c->nscs_agg = NULL;
-		} else {
-			c->nscs_agg =
-			    nfssrv_kstat_aggregates_create(&c->nscs_stats,
-			    &c->nscs_procio_lock, "nfs", c->nscs_id,
-			    "client_aggregates", "misc", getzoneid());
+			/*
+			 * Aggregated stats
+			 */
+			if ((nfssrv_stats_flags & AGG_CLNT_STATS) != 0) {
+				c->nscs_agg =
+				    nfssrv_kstat_aggregates_create(
+				    &c->nscs_stats, &c->nscs_procio_lock, "nfs",
+				    c->nscs_id, "client_aggregates", "misc",
+				    getzoneid());
+			}
 		}
 
 		mutex_enter(&c->nscs_procio_lock);
@@ -1548,7 +1550,8 @@ nfssrv_get_clnt_exp_stats(struct nfssrv_clnt_stats *c,
 		 */
 		if (ce->nsces_exp_stats->nses_share_kstat != NULL &&
 		    ce->nsces_clnt_stats->nscs_clnt_kstat != NULL &&
-		    (nfssrv_stats_flags & CLNT_EXP_STATS) != 0) {
+		    (nfssrv_stats_flags & (CLNT_EXP_STATS | AGG_CLNT_EXP_STATS))
+		    != 0) {
 			char class[KSTAT_STRLEN];
 			int r;
 
@@ -1558,20 +1561,24 @@ nfssrv_get_clnt_exp_stats(struct nfssrv_clnt_stats *c,
 			r = snprintf(class, sizeof (class), "client%d",
 			    ce->nsces_clnt_stats->nscs_id);
 			if (r >= 0 && r < sizeof (class)) {
-				nfssrv_stats_init(&ce->nsces_stats, getzoneid(),
-				    ce->nsces_exp_stats->nses_id, NULL, class,
-				    &ce->nsces_procio_lock);
+				if ((nfssrv_stats_flags & CLNT_EXP_STATS) != 0)
+					nfssrv_stats_init(&ce->nsces_stats,
+					    getzoneid(),
+					    ce->nsces_exp_stats->nses_id, NULL,
+					    class, &ce->nsces_procio_lock);
 
 				/*
 				 * Aggregated stats
 				 */
-				if ((nfssrv_stats_flags & AGG_CLNT_STATS) != 0)
+				if ((nfssrv_stats_flags & AGG_CLNT_EXP_STATS) !=
+				    0) {
 					ce->nsces_agg =
 					    nfssrv_kstat_aggregates_create(
 					    &ce->nsces_stats,
 					    &ce->nsces_procio_lock, "nfs",
 					    ce->nsces_exp_stats->nses_id,
 					    "aggregates", class, getzoneid());
+				}
 			}
 		}
 
