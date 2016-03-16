@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/spa.h>
@@ -747,7 +747,7 @@ autosnap_unlock(spa_t *spa)
 
 	autosnap->locked = B_FALSE;
 
-	cv_signal(&autosnap->autosnap_cv);
+	cv_broadcast(&autosnap->autosnap_cv);
 	mutex_exit(&autosnap->autosnap_lock);
 }
 
