@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
 [DEFAULT]
@@ -511,7 +511,7 @@ tests = ['utils_test_001_pos', 'utils_test_002_pos', 'utils_test_003_pos',
 [/opt/zfs-tests/tests/functional/wrc]
 tests = ['wrc_001_pos', 'wrc_002_pos', 'wrc_003_pos', 'wrc_004_pos',
     'wrc_005_neg', 'wrc_006_neg', 'wrc_007_neg', 'wrc_008_pos',
-    'wrc_009_pos', 'wrc_010_neg']
+    'wrc_009_pos', 'wrc_010_neg', 'wrc_012_pos']
 timeout = 7200
 
 [/opt/zfs-tests/tests/functional/write_dirs]

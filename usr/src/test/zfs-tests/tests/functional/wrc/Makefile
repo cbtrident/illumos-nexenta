@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
 include $(SRC)/Makefile.master
@@ -30,7 +30,8 @@ PROGS = cleanup \
 	wrc_008_pos \
 	wrc_009_pos \
 	wrc_010_neg \
-	wrc_011_neg
+	wrc_011_neg \
+	wrc_012_pos
 
 FILES = wrc.cfg \
 	wrc.kshlib

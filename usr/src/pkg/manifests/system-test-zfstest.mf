@@ -2205,6 +2205,7 @@ file path=opt/zfs-tests/tests/functional/wrc/wrc_008_pos mode=0555
 file path=opt/zfs-tests/tests/functional/wrc/wrc_009_pos mode=0555
 file path=opt/zfs-tests/tests/functional/wrc/wrc_010_neg mode=0555
 file path=opt/zfs-tests/tests/functional/wrc/wrc_011_neg mode=0555
+file path=opt/zfs-tests/tests/functional/wrc/wrc_012_pos mode=0555
 file path=opt/zfs-tests/tests/functional/write_dirs/cleanup mode=0555
 file path=opt/zfs-tests/tests/functional/write_dirs/setup mode=0555
 file path=opt/zfs-tests/tests/functional/write_dirs/write_dirs_001_pos \
