@@ -1297,3 +1297,88 @@ spa_special_check_errors(spa_t *spa)
 	if (clean_special_err_flag)
 		spa->spa_special_has_errors = B_FALSE;
 }
+
+int
+spa_special_vdev_remove(spa_t *spa, vdev_t *vd, uint64_t *txg)
+{
+	int err;
+	metaslab_group_t *mg;
+
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
+	ASSERT(vd == vd->vdev_top);
+	ASSERT(vdev_is_special(vd));
+
+	if (spa_feature_is_active(spa, SPA_FEATURE_WRC)) {
+		/*
+		 * WRC still active, so we cannot remove
+		 * special at this time
+		 */
+		return (SET_ERROR(EBUSY));
+	}
+
+	mg = vd->vdev_mg;
+
+	/*
+	 * Stop allocating from this vdev.
+	 */
+	metaslab_group_passivate(mg);
+
+	/*
+	 * Wait for the youngest allocations and frees to sync,
+	 * and then wait for the deferral of those frees to finish.
+	 */
+	spa_vdev_config_exit(spa, NULL,
+	    *txg + TXG_CONCURRENT_STATES + TXG_DEFER_SIZE, 0, FTAG);
+
+	if (vd->vdev_stat.vs_alloc != 0) {
+		/* Make sure that special does not have ZIL data */
+		err = spa_offline_log(spa);
+
+		if (err != 0 || vd->vdev_stat.vs_alloc != 0) {
+			/*
+			 * err == 0 means all ZIL data is gone,
+			 * but we here so special vdev contains metadata,
+			 * that we cannot migrate.
+			 * It is possible that user has enabled some of
+			 * the *_to_metadev prop but we cannot migrate
+			 * metadata from special vdev to normal vdev in
+			 * this case
+			 */
+			if (err == 0)
+				err = SET_ERROR(ENOTSUP);
+
+			*txg = spa_vdev_config_enter(spa);
+			metaslab_group_activate(mg);
+			return (err);
+		}
+	}
+
+	*txg = spa_vdev_config_enter(spa);
+
+	vd->vdev_removing = B_TRUE;
+	vdev_dirty_leaves(vd, VDD_DTL, *txg);
+	vdev_config_dirty(vd);
+
+	/* This exit is required to sync dirty configuration */
+	spa_vdev_config_exit(spa, NULL, *txg, 0, FTAG);
+
+	if (spa_feature_is_active(spa, SPA_FEATURE_META_DEVICES)) {
+		dmu_tx_t *tx = dmu_tx_create_assigned(spa_get_dsl(spa),
+		    spa_last_synced_txg(spa) + 1);
+
+		spa_feature_decr(spa, SPA_FEATURE_META_DEVICES, tx);
+		dmu_tx_commit(tx);
+	}
+
+	*txg = spa_vdev_config_enter(spa);
+
+	/*
+	 * Release the references to CoS descriptors if any
+	 */
+	if (vd->vdev_queue.vq_cos) {
+		cos_rele(vd->vdev_queue.vq_cos);
+		vd->vdev_queue.vq_cos = NULL;
+	}
+
+	return (0);
+}

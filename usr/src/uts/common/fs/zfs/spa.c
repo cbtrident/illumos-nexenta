@@ -5925,69 +5925,17 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 
 	} else if (vd != NULL && vdev_is_special(vd)) {
 		ASSERT(!locked);
-		ASSERT(vd == vd->vdev_top);
 
-		mg = vd->vdev_mg;
+		error = spa_special_vdev_remove(spa, vd, &txg);
+		if (error == 0) {
+			spa_vdev_remove_from_namespace(spa, vd);
 
-		/*
-		 * Stop allocating from this vdev.
-		 */
-		metaslab_group_passivate(mg);
-
-		if (spa_feature_is_active(spa, SPA_FEATURE_WRC)) {
 			/*
-			 * WRC still active, so we cannot remove
-			 * special at this time
+			 * User sees this field as 'enablespecial'
+			 * pool-level property
 			 */
-			metaslab_group_activate(mg);
-			return (spa_vdev_exit(spa, NULL, txg,
-			    SET_ERROR(EBUSY)));
+			spa->spa_usesc = B_FALSE;
 		}
-
-		if (metaslab_class_get_alloc(spa->spa_special_class) != 0) {
-			/*
-			 * Writecache disabled, but special still
-			 * have some data. It is possible if user
-			 * enabled a *_to_metadev prop, but we cannot
-			 * migrate metadata from special to normal.
-			 */
-			metaslab_group_activate(mg);
-			return (spa_vdev_exit(spa, NULL, txg,
-			    SET_ERROR(ENOTSUP)));
-		}
-
-		vd->vdev_removing = B_TRUE;
-		vdev_dirty_leaves(vd, VDD_DTL, txg);
-		vdev_config_dirty(vd);
-
-		/* This exit is required to sync dirty configuration */
-		spa_vdev_config_exit(spa, NULL, txg, 0, FTAG);
-
-		if (spa_feature_is_active(spa, SPA_FEATURE_META_DEVICES)) {
-			dmu_tx_t *tx = dmu_tx_create_assigned(spa_get_dsl(spa),
-			    spa_last_synced_txg(spa) + 1);
-
-			spa_feature_decr(spa, SPA_FEATURE_META_DEVICES, tx);
-			dmu_tx_commit(tx);
-		}
-
-		txg = spa_vdev_config_enter(spa);
-
-		/*
-		 * Release the references to CoS descriptors if any
-		 */
-		if (vd->vdev_queue.vq_cos) {
-			cos_rele(vd->vdev_queue.vq_cos);
-			vd->vdev_queue.vq_cos = NULL;
-		}
-
-		spa_vdev_remove_from_namespace(spa, vd);
-
-		/*
-		 * User sees this field as 'enablespecial'
-		 * pool-level property
-		 */
-		spa->spa_usesc = B_FALSE;
 	} else if (vd != NULL) {
 		/*
 		 * Normal vdevs cannot be removed (yet).

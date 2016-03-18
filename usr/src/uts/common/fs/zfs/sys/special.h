@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -45,6 +45,7 @@ void spa_check_special(spa_t *);
 boolean_t spa_write_data_to_special(spa_t *, objset_t *);
 boolean_t spa_can_special_be_used(spa_t *spa);
 void spa_special_check_errors(spa_t *spa);
+int spa_special_vdev_remove(spa_t *spa, vdev_t *vd, uint64_t *txg);
 
 /* currently there are 2 flags */
 enum specialflagbit {
