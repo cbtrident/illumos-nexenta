@@ -1964,6 +1964,13 @@ nfssrv_kstat_aggregates_update(kstat_t *ksp, int rw)
 	nfssrv_kstat_aggregates_add_io(d, s->rfsprocio_v4_data, OP_ACCESS,
 	    OP_RELEASE_LOCKOWNER, OP_READ, OP_WRITE);
 
+	/*
+	 * Normalize time units
+	 */
+	scalehrtime((hrtime_t *)&d[AGG_READ + AGG_TIME].value.ui64);
+	scalehrtime((hrtime_t *)&d[AGG_WRITE + AGG_TIME].value.ui64);
+	scalehrtime((hrtime_t *)&d[AGG_OTHER + AGG_TIME].value.ui64);
+
 	return (0);
 }
 
