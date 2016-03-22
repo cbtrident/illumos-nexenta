@@ -1048,7 +1048,7 @@ static const fmd_hdl_ops_t fmd_ops = {
 static const fmd_prop_t fmd_props[] = {
 	{ "spare_on_remove", FMD_TYPE_BOOL, "true" },
 	{ "slow_io_skip_retire", FMD_TYPE_BOOL, "true"},
-	{ "ssm_wearout_retire", FMD_TYPE_BOOL, "true"},
+	{ "ssm_wearout_skip_retire", FMD_TYPE_BOOL, "true"},
 	{ "fru_compare", FMD_TYPE_STRING, "ses-enclosure"},
 	{ NULL, 0, NULL }
 };
