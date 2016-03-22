@@ -1254,9 +1254,9 @@ typedef struct l2arc_log_blk_buf {
 #define	BLKPROP_SET_LSIZE(_obj, _field, x)	\
 	BF64_SET_SB((_obj)->_field, 0, 16, SPA_MINBLOCKSHIFT, 1, x)
 #define	BLKPROP_GET_PSIZE(_obj, _field)		\
-	BF64_GET_SB((_obj)->_field, 16, 16, SPA_MINBLOCKSHIFT, 1)
+	BF64_GET_SB((_obj)->_field, 16, 16, SPA_MINBLOCKSHIFT, 0)
 #define	BLKPROP_SET_PSIZE(_obj, _field, x)	\
-	BF64_SET_SB((_obj)->_field, 16, 16, SPA_MINBLOCKSHIFT, 1, x)
+	BF64_SET_SB((_obj)->_field, 16, 16, SPA_MINBLOCKSHIFT, 0, x)
 #define	BLKPROP_GET_COMPRESS(_obj, _field)	\
 	BF64_GET((_obj)->_field, 32, 8)
 #define	BLKPROP_SET_COMPRESS(_obj, _field, x)	\
