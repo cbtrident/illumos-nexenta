@@ -1437,6 +1437,7 @@ wrc_rele_autosnaps(wrc_data_t *wrc_data, uint64_t txg_to_rele,
 				 * But since we are here already in the sync
 				 * context, the operation is task-dispatched
 				 */
+				wrc_data->wrc_instance_fini_cnt--;
 				wrc_instance->fini_done = B_TRUE;
 				VERIFY(taskq_dispatch(
 				    wrc_data->wrc_instance_fini,
@@ -1614,9 +1615,11 @@ wrc_confirm_cb(const char *name, boolean_t recursive, uint64_t txg, void *arg)
 	 * - no active writecache window currently
 	 * - writecache is not locked
 	 * - used space on special vdev is at or above min-watermark
+	 * or an instance waits for finalization
 	 */
 	return (wrc_data->wrc_wait_for_window && !wrc_data->wrc_locked &&
-	    !wrc_check_space(wrc_data->wrc_spa));
+	    (!wrc_check_space(wrc_data->wrc_spa) ||
+	    wrc_data->wrc_instance_fini_cnt != 0));
 }
 
 uint64_t wrc_window_roll_delay_ms = 0;
@@ -1796,16 +1799,17 @@ wrc_activate_instances(dsl_pool_t *dp, dsl_dataset_t *ds, void *arg)
 	else
 		rc = EINTR;
 
-	mutex_exit(&wrc_data->wrc_lock);
-
 	if (wrc_instance != NULL) {
 		if (os->os_wrc_mode == ZFS_WRC_MODE_OFF_DELAYED) {
 			wrc_instance->fini_migration = B_TRUE;
 			wrc_instance->txg_off = os->os_wrc_off_txg;
+			wrc_data->wrc_instance_fini_cnt++;
 		}
 
 		autosnap_force_snap_fast(wrc_instance->wrc_autosnap_hdl);
 	}
+
+	mutex_exit(&wrc_data->wrc_lock);
 
 	return (rc);
 }
@@ -1942,6 +1946,7 @@ wrc_activate_impl(spa_t *spa, boolean_t pool_creation)
 	wrc_data->wrc_walk = B_TRUE;
 	wrc_data->wrc_spa = spa;
 	wrc_data->wrc_isvalid = B_TRUE;
+	wrc_data->wrc_instance_fini_cnt = 0;
 
 	/* Finalize window interrupted by power cycle or reimport */
 	wrc_free_restore(spa);
@@ -2257,6 +2262,7 @@ wrc_process_objset(wrc_data_t *wrc_data,
 		    os->os_wrc_mode == ZFS_WRC_MODE_OFF_DELAYED &&
 		    !wrc_instance->fini_migration) {
 			wrc_instance->fini_migration = B_TRUE;
+			wrc_data->wrc_instance_fini_cnt++;
 			wrc_instance->txg_off = os->os_wrc_off_txg;
 			autosnap_force_snap_fast(
 			    wrc_instance->wrc_autosnap_hdl);

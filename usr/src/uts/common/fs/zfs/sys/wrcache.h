@@ -132,6 +132,8 @@ struct wrc_data {
 	/* TASKQ that does async finalization of wrc_instances */
 	taskq_t		*wrc_instance_fini;
 
+	uint64_t	wrc_instance_fini_cnt;
+
 	avl_tree_t	wrc_blocks;		/* collected blocks */
 	avl_tree_t	wrc_moved_blocks;	/* moved blocks */
 
