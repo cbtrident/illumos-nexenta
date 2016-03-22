@@ -1076,12 +1076,6 @@ zfs_send_thread(void *krrp_task_void)
 
 final:
 
-	/* !!! DEBUG !!! */
-	if (err != 0) {
-		cmn_err(CE_PANIC, "ds_to_send:[%p] [%d]",
-		    (void *)&ds_to_send, err);
-	}
-
 	zfs_cleanup_send_list(&ds_to_send, owner);
 
 	list_destroy(&ds_to_send);
