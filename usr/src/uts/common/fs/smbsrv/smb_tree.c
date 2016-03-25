@@ -338,11 +338,6 @@ smb_tree_disconnect(smb_tree_t *tree, boolean_t do_exec)
 		smb_server_dec_trees(tree->t_server);
 	}
 
-	if (tree->t_kshare != NULL) {
-		smb_kshare_release(tree->t_server, tree->t_kshare);
-		tree->t_kshare = NULL;
-	}
-
 	mutex_exit(&tree->t_mutex);
 
 	if (do_exec && (tree->t_state == SMB_TREE_STATE_DISCONNECTED) &&
@@ -1036,6 +1031,11 @@ smb_tree_dealloc(void *arg)
 	mutex_exit(&tree->t_mutex);
 
 	tree->t_magic = (uint32_t)~SMB_TREE_MAGIC;
+
+	if (tree->t_kshare != NULL) {
+		smb_kshare_release(tree->t_server, tree->t_kshare);
+		tree->t_kshare = NULL;
+	}
 
 	if (tree->t_snode)
 		smb_node_release(tree->t_snode);
