@@ -1408,7 +1408,7 @@ dmu_recv_begin_check(void *arg, dmu_tx_t *tx)
 	if (error == 0) {
 		/* target fs already exists; recv into temp clone */
 
-		if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WRC)) {
+		if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WBC)) {
 			objset_t *os = NULL;
 
 			error = dmu_objset_from_ds(ds, &os);
@@ -1417,10 +1417,10 @@ dmu_recv_begin_check(void *arg, dmu_tx_t *tx)
 				return (error);
 			}
 
-			/* Recv is impossible into DS that uses WRC */
-			if (os->os_wrc_mode != ZFS_WRC_MODE_OFF) {
+			/* Recv is impossible into DS that uses WBC */
+			if (os->os_wbc_mode != ZFS_WBC_MODE_OFF) {
 				dsl_dataset_rele(ds, FTAG);
-				return (SET_ERROR(EKZFS_WRCNOTSUP));
+				return (SET_ERROR(EKZFS_WBCNOTSUP));
 			}
 		}
 
@@ -1460,7 +1460,7 @@ dmu_recv_begin_check(void *arg, dmu_tx_t *tx)
 		if (error != 0)
 			return (error);
 
-		if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WRC)) {
+		if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WBC)) {
 			objset_t *os = NULL;
 
 			error = dmu_objset_from_ds(ds, &os);
@@ -1469,10 +1469,10 @@ dmu_recv_begin_check(void *arg, dmu_tx_t *tx)
 				return (error);
 			}
 
-			/* Recv is impossible into DS that uses WRC */
-			if (os->os_wrc_mode != ZFS_WRC_MODE_OFF) {
+			/* Recv is impossible into DS that uses WBC */
+			if (os->os_wbc_mode != ZFS_WBC_MODE_OFF) {
 				dsl_dataset_rele(ds, FTAG);
-				return (SET_ERROR(EKZFS_WRCNOTSUP));
+				return (SET_ERROR(EKZFS_WBCNOTSUP));
 			}
 		}
 
@@ -3092,16 +3092,16 @@ dmu_recv_end_check(void *arg, dmu_tx_t *tx)
 
 	ASSERT3P(drc->drc_ds->ds_owner, ==, dmu_recv_tag);
 
-	if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WRC)) {
+	if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WBC)) {
 		objset_t *os = NULL;
 
 		error  = dmu_objset_from_ds(drc->drc_ds, &os);
 		if (error)
 			return (error);
 
-		/* Recv is impossible into DS that uses WRC */
-		if (os->os_wrc_mode != ZFS_WRC_MODE_OFF)
-			return (SET_ERROR(EKZFS_WRCNOTSUP));
+		/* Recv is impossible into DS that uses WBC */
+		if (os->os_wbc_mode != ZFS_WBC_MODE_OFF)
+			return (SET_ERROR(EKZFS_WBCNOTSUP));
 	}
 
 	if (!drc->drc_newfs) {

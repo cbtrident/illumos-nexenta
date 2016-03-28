@@ -60,7 +60,6 @@ dmu_tx_create_dd(dsl_dir_t *dd)
 	refcount_create(&tx->tx_space_written);
 	refcount_create(&tx->tx_space_freed);
 #endif
-	tx->tx_wrc_io = B_FALSE;
 	return (tx);
 }
 

@@ -25,7 +25,7 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -37,7 +37,7 @@
 #
 #  1. Create a new pool.
 #  2. Verify that every feature@ property is in the 'enabled' or 'active' state
-#  2.1 feature@wrcache is skipped, because it requires 'special' vdev that is not
+#  2.1 feature@wbc is skipped, because it requires 'special' vdev that is not
 #      available for the given test pool. Also the feature is tested separately.
 #  3. Destroy the pool and create a new pool with
 #     '-o feature@async_destroy=enabled'
@@ -54,7 +54,7 @@ function cleanup
 
 function check_features
 {
-	for state in $($ZPOOL get all $TESTPOOL | $EGREP -v feature@wrcache | \
+	for state in $($ZPOOL get all $TESTPOOL | $EGREP -v feature@wbc | \
 	    $AWK '$2 ~ /feature@/ { print $3 }'); do
 		if [[ "$state" != "enabled" && "$state" != "active" ]]; then
 			log_fail "some features are not enabled on new pool"

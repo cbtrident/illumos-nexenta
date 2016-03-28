@@ -2689,8 +2689,8 @@ zfs_set_prop_nvlist(const char *dsname, zprop_source_t source, nvlist_t *nvl,
 	nvlist_t *retrynvl = fnvlist_alloc();
 	zfsvfs_t *zfsvfs;
 	boolean_t set_worm = B_FALSE;
-	boolean_t set_wrc_mode = B_FALSE;
-	boolean_t wrc_walk_locked = B_FALSE;
+	boolean_t set_wbc_mode = B_FALSE;
+	boolean_t wbc_walk_locked = B_FALSE;
 	boolean_t set_dedup = B_FALSE;
 
 	if ((rv = spa_open(dsname, &spa, FTAG)) != 0)
@@ -2708,11 +2708,11 @@ retry:
 		}
 
 		/*
-		 * If 'wrc_mode' is going to be changed, then we need to
+		 * If 'wbc_mode' is going to be changed, then we need to
 		 * do some actions before 'set'
 		 */
-		if (prop == ZFS_PROP_WRC_MODE)
-			set_wrc_mode = B_TRUE;
+		if (prop == ZFS_PROP_WBC_MODE)
+			set_wbc_mode = B_TRUE;
 
 		/*
 		 *
@@ -2806,29 +2806,29 @@ retry:
 	}
 
 	/*
-	 * Deduplication and WRC cannot be used together
+	 * Deduplication and WBC cannot be used together
 	 * This code returns error also for case when
-	 * WRC is ON, DEDUP is off and a user tries
+	 * WBC is ON, DEDUP is off and a user tries
 	 * to do DEDUP=off, because in this case the code
 	 * will be more complex, but benefit is too small
 	 */
-	if (set_wrc_mode && set_dedup) {
+	if (set_wbc_mode && set_dedup) {
 		nvlist_free(genericnvl);
 		nvlist_free(retrynvl);
 		spa_close(spa, FTAG);
 
-		return (SET_ERROR(EKZFS_WRCCONFLICT));
+		return (SET_ERROR(EKZFS_WBCCONFLICT));
 	}
 
 	/*
-	 * Additional actions before set wrc_mode:
-	 * - first need to try to lock WRC-walking, to stop migration and
+	 * Additional actions before set wbc_mode:
+	 * - first need to try to lock WBC-walking, to stop migration and
 	 *   avoid the openning of new migration window
 	 * - second step (from sync-context): if migration window
-	 *   is active it will be purged, to correctly add/remove WRC-instance
+	 *   is active it will be purged, to correctly add/remove WBC-instance
 	 */
-	if (set_wrc_mode && wrc_walk_lock(spa) == 0)
-		wrc_walk_locked = B_TRUE;
+	if (set_wbc_mode && wbc_walk_lock(spa) == 0)
+		wbc_walk_locked = B_TRUE;
 
 	if (!nvlist_empty(genericnvl) &&
 	    dsl_props_set(dsname, source, genericnvl) != 0) {
@@ -2871,8 +2871,8 @@ retry:
 	nvlist_free(genericnvl);
 	nvlist_free(retrynvl);
 
-	if (wrc_walk_locked)
-		wrc_walk_unlock(spa);
+	if (wbc_walk_locked)
+		wbc_walk_unlock(spa);
 
 	if (set_worm && getzfsvfs(dsname, &zfsvfs) == 0) {
 		if (zfs_is_wormed(dsname)) {
@@ -4024,14 +4024,14 @@ zfs_ioc_destroy(zfs_cmd_t *zc)
 			return (err);
 		err = autosnap_lock(spa);
 		if (!err) {
-			err = wrc_walk_lock(spa);
+			err = wbc_walk_lock(spa);
 			if (err)
 				autosnap_unlock(spa);
 		}
 		if (!err) {
 			err = dsl_destroy_atomically(zc->zc_name,
 			    zc->zc_defer_destroy);
-			wrc_walk_unlock(spa);
+			wbc_walk_unlock(spa);
 			autosnap_unlock(spa);
 		}
 		spa_close(spa, FTAG);
@@ -4344,28 +4344,28 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 		}
 		break;
 
-	case ZFS_PROP_WRC_MODE:
+	case ZFS_PROP_WBC_MODE:
 		{
 			spa_t *spa;
-			boolean_t wrc_feature_enabled;
+			boolean_t wbc_feature_enabled;
 
 			if ((err = spa_open(dsname, &spa, FTAG)) != 0)
 				return (err);
 
-			wrc_feature_enabled =
-			    spa_feature_is_enabled(spa, SPA_FEATURE_WRC);
+			wbc_feature_enabled =
+			    spa_feature_is_enabled(spa, SPA_FEATURE_WBC);
 			spa_close(spa, FTAG);
 
-			/* WRC cannot be used without special-vdev */
-			if (!wrc_feature_enabled || !spa_has_special(spa))
-				return (SET_ERROR(EKZFS_WRCNOTSUP));
+			/* WBC cannot be used without special-vdev */
+			if (!wbc_feature_enabled || !spa_has_special(spa))
+				return (SET_ERROR(EKZFS_WBCNOTSUP));
 
 			/*
 			 * We do not want to have races, because on
-			 * import or after reboot WRC does registration
+			 * import or after reboot WBC does registration
 			 * asynchronously.
 			 */
-			if (!spa->spa_wrc.wrc_ready_to_use)
+			if (!spa->spa_wbc.wbc_ready_to_use)
 				return (SET_ERROR(EBUSY));
 		}
 		break;

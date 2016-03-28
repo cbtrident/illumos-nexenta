@@ -24,16 +24,16 @@
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
 #include <sys/spa.h>
+#include <sys/spa_impl.h>
 #include <sys/vdev_impl.h>
 #include <sys/vdev_disk.h>
 #include <sys/vdev_file.h>
 #include <sys/vdev_raidz.h>
-#include <sys/wrcache.h>
 #include <sys/zio.h>
 #include <sys/zio_checksum.h>
 #include <sys/fs/zfs.h>
@@ -1946,6 +1946,7 @@ raidz_checksum_error(zio_t *zio, raidz_col_t *rc, void *bad_data)
 {
 	vdev_t *vd = zio->io_vd->vdev_child[rc->rc_devidx];
 	vdev_stat_t *vs = &vd->vdev_stat;
+	spa_t *spa = zio->io_spa;
 
 	if (!(zio->io_flags & ZIO_FLAG_SPECULATIVE)) {
 		zio_bad_cksum_t zbc;
@@ -1964,8 +1965,9 @@ raidz_checksum_error(zio_t *zio, raidz_col_t *rc, void *bad_data)
 	}
 
 	if (vd->vdev_isspecial && (vs->vs_checksum_errors ||
-	    vs->vs_read_errors || vs->vs_write_errors)) {
-		wrc_enter_fault_state(vd->vdev_spa);
+	    vs->vs_read_errors || vs->vs_write_errors) &&
+	    !spa->spa_special_has_errors) {
+		spa->spa_special_has_errors = B_TRUE;
 	}
 }
 

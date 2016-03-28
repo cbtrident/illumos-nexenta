@@ -42,7 +42,7 @@
  * following personalities:
  *  - ZIL     - store ZIL blocks in a way quite similar to SLOG
  *  - META    - in addition to ZIL blocks, store ZFS metadata
- *  - WRCACHE - in addition to ZIL blocks and ZFS metadata, also
+ *  - WBC     - in addition to ZIL blocks and ZFS metadata, also
  *              absorb write load spikes (store data blocks),
  *              and move the data blocks to "regular" vdevs
  *              when the system is not too busy
@@ -58,7 +58,7 @@
  * goes to the special vdev, then it stops going to the vdev
  * until the space used drops below low watermark
  *
- * For WRCACHE, the watermarks also gradually reduce the load
+ * For WBC, the watermarks also gradually reduce the load
  * on the special vdev once the space consumption grows beyond
  * the low watermark yet is still below high watermark:
  * the closer to the high watermark the space consumtion gets,
@@ -66,21 +66,21 @@
  * and once the high watermark is reached, all the data goes to
  * the regular vdevs.
  *
- * Additionally, WRCACHE moves the data off the special device
+ * Additionally, WBC moves the data off the special device
  * when the system write load subsides, and the amount of data
  * moved off the special device increases as the load falls. Note
- * that metadata is not moved off the WRCACHE vdevs.
+ * that metadata is not moved off the WBC vdevs.
  *
  * The pool configuration parameters that describe special vdevs
  * are stored as nvlist in the vdevs' labels along with other
  * standard pool and vdev properties. These parameters include:
- * - class of special vdevs in the pool (ZIL, META, WRCACHE)
+ * - class of special vdevs in the pool (ZIL, META, WBC)
  * - whether special vdevs are enabled or not
- * - low and high watermarks for META and WRCACHE
+ * - low and high watermarks for META and WBC
  * - a flag that marks special vdevs
  *
  * The currently supported modes are ZIL and META
- * (see usr/src/common/zfs/zpool_prop.c) but WRCACHE support will
+ * (see usr/src/common/zfs/zpool_prop.c) but WBC support will
  * be provided soon
  */
 
@@ -158,7 +158,7 @@ spa_write_data_to_special(spa_t *spa, objset_t *os)
 	return ((spa_has_special(spa)) &&
 	    (spa->spa_usesc) &&
 	    (spa->spa_watermark == SPA_WM_NONE) &&
-	    (os->os_wrc_mode != ZFS_WRC_MODE_OFF));
+	    (os->os_wbc_mode != ZFS_WBC_MODE_OFF));
 }
 
 boolean_t
@@ -201,7 +201,7 @@ spa_check_watermarks(spa_t *spa)
 	aspace = metaslab_class_get_alloc(mc);
 	spa->spa_lwm_space = spa_special_space_perc(spa, spa->spa_lowat);
 	spa->spa_hwm_space = spa_special_space_perc(spa, spa->spa_hiwat);
-	spa->spa_wrc_wm_range = spa->spa_hwm_space - spa->spa_lwm_space;
+	spa->spa_wbc_wm_range = spa->spa_hwm_space - spa->spa_lwm_space;
 
 	if (aspace <= spa->spa_lwm_space) {
 		if (spa->spa_watermark != SPA_WM_NONE) {
@@ -234,7 +234,7 @@ spa_check_watermarks(spa_t *spa)
 		    ((aspace - spa->spa_lwm_space) * 100) /
 		    (spa->spa_hwm_space - spa->spa_lwm_space);
 
-		if (spa->spa_wrc.wrc_thread != NULL) {
+		if (spa->spa_wbc.wbc_thread != NULL) {
 			/*
 			 * Unlike Meta device, write cache is enabled, when
 			 * we change from SPA_WM_HIGH to SPA_WM_LOW and then
@@ -243,11 +243,11 @@ spa_check_watermarks(spa_t *spa)
 			if (spa->spa_watermark == SPA_WM_HIGH)
 				spa_enable_special(spa, B_TRUE);
 			lspace = aspace - spa->spa_lwm_space;
-			if (spa->spa_wrc_wm_range) {
-				spa->spa_wrc_perc = (uint8_t)(lspace * 100 /
-				    spa->spa_wrc_wm_range);
+			if (spa->spa_wbc_wm_range) {
+				spa->spa_wbc_perc = (uint8_t)(lspace * 100 /
+				    spa->spa_wbc_wm_range);
 			} else {
-				spa->spa_wrc_perc = 50;
+				spa->spa_wbc_perc = 50;
 			}
 		}
 	}
@@ -480,8 +480,8 @@ spa_select_class(spa_t *spa, zio_t *zio)
 	} else if (BP_GET_PSIZE(zio->io_bp) <= mp->spa_small_data_to_special) {
 		match = B_TRUE;
 	} else {
-		match = zp->zp_usewrc && spa->spa_wrc.wrc_ready_to_use &&
-		    !spa->spa_wrc.wrc_isfault &&
+		match = zp->zp_usewbc && spa->spa_wbc.wbc_ready_to_use &&
+		    !spa->spa_wbc.wbc_isfault &&
 		    spa_refine_data_placement(spa, zio);
 	}
 
@@ -1308,9 +1308,9 @@ spa_special_vdev_remove(spa_t *spa, vdev_t *vd, uint64_t *txg)
 	ASSERT(vd == vd->vdev_top);
 	ASSERT(vdev_is_special(vd));
 
-	if (spa_feature_is_active(spa, SPA_FEATURE_WRC)) {
+	if (spa_feature_is_active(spa, SPA_FEATURE_WBC)) {
 		/*
-		 * WRC still active, so we cannot remove
+		 * WBC still active, so we cannot remove
 		 * special at this time
 		 */
 		return (SET_ERROR(EBUSY));

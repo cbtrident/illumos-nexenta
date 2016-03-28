@@ -157,7 +157,7 @@ typedef enum {
 	ZFS_PROP_PREV_SNAP,
 	ZFS_PROP_LSTXG,
 	ZFS_PROP_ZPL_META_TO_METADEV,
-	ZFS_PROP_WRC_MODE,
+	ZFS_PROP_WBC_MODE,
 	ZFS_PROP_RECEIVE_RESUME_TOKEN,
 	ZFS_PROP_SMARTCOMPRESSION,
 	ZFS_NUM_PROPS
@@ -468,10 +468,10 @@ typedef enum {
 } zfs_redundant_metadata_type_t;
 
 typedef enum {
-	ZFS_WRC_MODE_OFF,
-	ZFS_WRC_MODE_ON,
-	ZFS_WRC_MODE_OFF_DELAYED
-} zfs_wrc_mode_t;
+	ZFS_WBC_MODE_OFF,
+	ZFS_WBC_MODE_ON,
+	ZFS_WBC_MODE_OFF_DELAYED
+} zfs_wbc_mode_t;
 
 /*
  * On-disk version number.

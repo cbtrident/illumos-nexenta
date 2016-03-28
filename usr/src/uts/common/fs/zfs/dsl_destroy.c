@@ -24,7 +24,7 @@
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2013 by Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/autosnap.h>
@@ -43,7 +43,7 @@
 #include <sys/zfs_ioctl.h>
 #include <sys/dsl_deleg.h>
 #include <sys/dmu_impl.h>
-#include <sys/wrcache.h>
+#include <sys/wbc.h>
 
 typedef struct dmu_snapshots_destroy_arg {
 	nvlist_t *dsda_snaps;
@@ -245,7 +245,7 @@ dsl_destroy_snapshot_sync_impl(dsl_dataset_t *ds, boolean_t defer, dmu_tx_t *tx)
 	int after_branch_point = FALSE;
 	dsl_pool_t *dp = ds->ds_dir->dd_pool;
 	spa_t *spa = dp->dp_spa;
-	wrc_data_t *wrc_data = spa_get_wrc_data(spa);
+	wbc_data_t *wbc_data = spa_get_wbc_data(spa);
 	objset_t *mos = dp->dp_meta_objset;
 	dsl_dataset_t *ds_prev = NULL;
 	uint64_t obj;
@@ -255,13 +255,13 @@ dsl_destroy_snapshot_sync_impl(dsl_dataset_t *ds, boolean_t defer, dmu_tx_t *tx)
 	ASSERT(refcount_is_zero(&ds->ds_longholds));
 
 	/*
-	 * if an edge snapshot of wrc window is destroyed, the window must be
+	 * if an edge snapshot of WBC window is destroyed, the window must be
 	 * aborted
 	 */
-	mutex_enter(&wrc_data->wrc_lock);
-	if (dsl_dataset_phys(ds)->ds_creation_txg == wrc_data->wrc_finish_txg)
-		wrc_purge_window(spa, tx);
-	mutex_exit(&wrc_data->wrc_lock);
+	mutex_enter(&wbc_data->wbc_lock);
+	if (dsl_dataset_phys(ds)->ds_creation_txg == wbc_data->wbc_finish_txg)
+		wbc_purge_window(spa, tx);
+	mutex_exit(&wbc_data->wbc_lock);
 
 	if (defer &&
 	    (ds->ds_userrefs > 0 ||
@@ -797,8 +797,8 @@ dsl_destroy_head_sync_impl(dsl_dataset_t *ds, dmu_tx_t *tx)
 	objset_t *os;
 	VERIFY0(dmu_objset_from_ds(ds, &os));
 
-	if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WRC))
-		wrc_process_objset(spa_get_wrc_data(dp->dp_spa), os, B_TRUE);
+	if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WBC))
+		wbc_process_objset(spa_get_wbc_data(dp->dp_spa), os, B_TRUE);
 
 	if (!spa_feature_is_enabled(dp->dp_spa, SPA_FEATURE_ASYNC_DESTROY)) {
 		old_synchronous_dataset_destroy(ds, tx);
@@ -1031,7 +1031,7 @@ dsl_destroy_atomically_sync(void *arg, dmu_tx_t *tx)
 		return (SET_ERROR(ENOTSUP));
 
 	/* It is possible than autosnap watches the DS */
-	if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WRC)) {
+	if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WBC)) {
 		objset_t *os = NULL;
 		dsl_dataset_t *ds = NULL;
 
@@ -1046,7 +1046,7 @@ dsl_destroy_atomically_sync(void *arg, dmu_tx_t *tx)
 		}
 
 		if (!dmu_objset_is_snapshot(os)) {
-			wrc_process_objset(spa_get_wrc_data(dp->dp_spa),
+			wbc_process_objset(spa_get_wbc_data(dp->dp_spa),
 			    os, B_TRUE);
 		}
 

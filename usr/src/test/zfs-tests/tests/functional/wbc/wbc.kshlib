@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -292,7 +292,7 @@ function create_pool #pool_name
 # Note: In local zones, this function should return 0 silently.
 #
 # $1 - pool name:    required
-# $2 - wrc_mode:     optional
+# $2 - wbc_mode:     optional
 # $3 - pool_type:    optional
 # $4 - special_type: optional
 # $5 - recordsize:   optional
@@ -301,7 +301,7 @@ function create_pool #pool_name
 function create_pool_special #pool_name
 {
 	typeset pool_name=${1%%/*}
-	typeset wrc_mode=$2
+	typeset wbc_mode=$2
 	typeset pool_type=$3
 	typeset special_type=$4
 	typeset recordsize=$5
@@ -338,12 +338,12 @@ function create_pool_special #pool_name
 		compression=$(get_random_compression)
 	fi
 
-	if [[ $wrc_mode == "none" ]] ; then
-		wrc_mode=""
+	if [[ $wbc_mode == "none" ]] ; then
+		wbc_mode=""
 	fi
 
-	if [[ -n $wrc_mode ]] ; then
-		wrc_mode="-O wrc_mode=$wrc_mode"
+	if [[ -n $wbc_mode ]] ; then
+		wbc_mode="-O wbc_mode=$wbc_mode"
 	fi
 
 	if [[ $pool_type == "stripe" ]] ; then
@@ -358,7 +358,7 @@ function create_pool_special #pool_name
 		-O compression=$compression \
 		-O recordsize=$recordsize \
 		-o cachefile=none \
-		$wrc_mode \
+		$wbc_mode \
 		$pool_name \
 		$pool_type $HDD_DISKS \
 		special $special_type $SSD_DISKS
@@ -386,7 +386,7 @@ function get_random_special_type
 	random_get "stripe" "mirror"
 }
 
-function get_wrc_mode # <dataset>
+function get_wbc_mode # <dataset>
 {
 	typeset dataset=$1
 
@@ -395,12 +395,12 @@ function get_wrc_mode # <dataset>
 		return 1
 	fi
 
-	$ZFS get -H -o value wrc_mode $dataset
+	$ZFS get -H -o value wbc_mode $dataset
 
 	return $?
 }
 
-function set_wrc_mode # <dataset> <mode>
+function set_wbc_mode # <dataset> <mode>
 {
 	typeset dataset=$1
 	typeset mode=$2
@@ -411,12 +411,12 @@ function set_wrc_mode # <dataset> <mode>
 	fi
 
 	if [[ -z $mode ]] ; then
-		log_note "Missing wrc mode."
+		log_note "Missing wbc mode."
 		return 1
 	fi
 
-	$ZFS set wrc_mode=$mode $dataset
-	value=$(get_wrc_mode $dataset)
+	$ZFS set wbc_mode=$mode $dataset
+	value=$(get_wbc_mode $dataset)
 
 	if [[ "$mode" != "$value" ]] ; then
 		return 1
@@ -425,7 +425,7 @@ function set_wrc_mode # <dataset> <mode>
 	return 0
 }
 
-function enable_wrc # <dataset>
+function enable_wbc # <dataset>
 {
 	typeset dataset=$1
 
@@ -434,12 +434,12 @@ function enable_wrc # <dataset>
 		return 1
 	fi
 
-	set_wrc_mode $dataset on
+	set_wbc_mode $dataset on
 
 	return $?
 }
 
-function disable_wrc # <dataset>
+function disable_wbc # <dataset>
 {
 	typeset dataset=$1
 
@@ -448,7 +448,7 @@ function disable_wrc # <dataset>
 		return 1
 	fi
 
-	set_wrc_mode $dataset off
+	set_wbc_mode $dataset off
 
 	return $?
 }

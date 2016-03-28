@@ -979,9 +979,9 @@ autosnap_iterate_listeners(autosnap_zone_t *zone, autosnap_snapshot_t *snap,
 }
 
 /*
- * With no wrc and a dataset which is either a standalone or root of
+ * With no WBC and a dataset which is either a standalone or root of
  * recursion, just notify about creation
- * With no wrc and dataset not being a part of any zone, just reject it
+ * With no WBC and dataset not being a part of any zone, just reject it
  */
 void
 autosnap_create_cb(zfs_autosnap_t *autosnap,

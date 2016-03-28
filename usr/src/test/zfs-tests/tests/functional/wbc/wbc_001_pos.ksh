@@ -12,38 +12,30 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
-. $STF_SUITE/tests/functional/wrc/wrc.cfg
-. $STF_SUITE/tests/functional/wrc/wrc.kshlib
+. $STF_SUITE/tests/functional/wbc/wbc.cfg
+. $STF_SUITE/tests/functional/wbc/wbc.kshlib
 
 #
 # DESCRIPTION:
-#	Creating a pool and adding special device to existing pool succeeds
+#	Creating a pool with a special device succeeds
 #
 # STRATEGY:
-#	1. Create pool without separated special devices
+#	1. Create pool with separated special devices
 #	2. Display pool status
-#	3. Add special device
-#	4. Display pool status
-#	5. Scrub pool and check status
-#	6. Destroy and loop to create pool with different configuration
+#	3. Scrub pool and check status
+#	4. Destroy and loop to create pool with different configuration
 #
 
 verify_runnable "global"
-log_assert "Creating a pool and adding special device to existing pool succeeds."
+log_assert "Creating a pool with a special device succeeds."
 log_onexit cleanup
 for pool_type in "stripe" "mirror" "raidz" "raidz2" "raidz3" ; do
 	for special_type in "stripe" "mirror" ; do
-		for wrc_mode in "on" "off" ; do
-			log_must create_pool $TESTPOOL $pool_type
-			if [[ $special_type == "stripe" ]] ; then
-				log_must $ZPOOL add -f $TESTPOOL special $SSD_DISKS
-			else
-				log_must $ZPOOL add -f $TESTPOOL special $special_type $SSD_DISKS
-			fi
-			log_must set_wrc_mode $TESTPOOL $wrc_mode
+		for wbc_mode in "none" "on" ; do
+			log_must create_pool_special $TESTPOOL $wbc_mode $pool_type $special_type
 			log_must display_status $TESTPOOL
 			log_must $SYNC
 			log_must $ZPOOL scrub $TESTPOOL
@@ -55,4 +47,4 @@ for pool_type in "stripe" "mirror" "raidz" "raidz2" "raidz3" ; do
 		done
 	done
 done
-log_pass "Creating a pool and adding special device to existing pool succeeds."
+log_pass "Creating a pool with a special device succeeds."

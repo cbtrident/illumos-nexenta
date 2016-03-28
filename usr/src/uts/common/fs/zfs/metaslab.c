@@ -23,7 +23,7 @@
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -35,7 +35,7 @@
 #include <sys/zio.h>
 #include <sys/spa_impl.h>
 #include <sys/zfeature.h>
-#include <sys/wrcache.h>
+#include <sys/wbc.h>
 
 /*
  * Allow allocations to switch to gang blocks quickly. We do this to
@@ -2617,11 +2617,11 @@ metaslab_alloc(spa_t *spa, metaslab_class_t *mc, uint64_t psize, blkptr_t *bp,
 	    !(spa->spa_meta_policy.spa_small_data_to_special &&
 	    psize <= spa->spa_meta_policy.spa_small_data_to_special)) {
 		error = metaslab_alloc_dva(spa, spa_normal_class(spa),
-		    psize, &dva[WRC_NORMAL_DVA], 0, NULL, txg,
+		    psize, &dva[WBC_NORMAL_DVA], 0, NULL, txg,
 		    flags | METASLAB_USE_WEIGHT_SECONDARY);
 		if (error == 0) {
 			error = metaslab_alloc_dva(spa, mc, psize,
-			    &dva[WRC_SPECIAL_DVA], 0, NULL, txg, flags);
+			    &dva[WBC_SPECIAL_DVA], 0, NULL, txg, flags);
 			if (error != 0) {
 				error = 0;
 				/*
@@ -2630,14 +2630,14 @@ metaslab_alloc(spa_t *spa, metaslab_class_t *mc, uint64_t psize, blkptr_t *bp,
 				 * regular BP with one DVA
 				 *
 				 * This operation is valid only if:
-				 * WRC_SPECIAL_DVA is dva[0]
-				 * WRC_NORMAL_DVA is dva[1]
+				 * WBC_SPECIAL_DVA is dva[0]
+				 * WBC_NORMAL_DVA is dva[1]
 				 *
-				 * see wrcache.h
+				 * see wbc.h
 				 */
-				bcopy(&dva[WRC_NORMAL_DVA],
-				    &dva[WRC_SPECIAL_DVA], sizeof (dva_t));
-				bzero(&dva[WRC_NORMAL_DVA], sizeof (dva_t));
+				bcopy(&dva[WBC_NORMAL_DVA],
+				    &dva[WBC_SPECIAL_DVA], sizeof (dva_t));
+				bzero(&dva[WBC_NORMAL_DVA], sizeof (dva_t));
 			} else {
 				BP_SET_SPECIAL(bp, 1);
 			}
@@ -2683,20 +2683,20 @@ metaslab_free(spa_t *spa, const blkptr_t *bp, uint64_t txg, boolean_t now)
 
 	if (BP_IS_SPECIAL(bp)) {
 		int start_dva;
-		wrc_data_t *wrc_data = spa_get_wrc_data(spa);
+		wbc_data_t *wbc_data = spa_get_wbc_data(spa);
 
-		mutex_enter(&wrc_data->wrc_lock);
-		start_dva = wrc_first_valid_dva(bp, wrc_data, B_TRUE);
-		mutex_exit(&wrc_data->wrc_lock);
+		mutex_enter(&wbc_data->wbc_lock);
+		start_dva = wbc_first_valid_dva(bp, wbc_data, B_TRUE);
+		mutex_exit(&wbc_data->wbc_lock);
 
 		/*
 		 * Actual freeing should not be locked as
-		 * the block is already exempted from wrc
+		 * the block is already exempted from WBC
 		 * trees, and thus will not be moved
 		 */
-		metaslab_free_dva(spa, &dva[WRC_NORMAL_DVA], txg, now);
+		metaslab_free_dva(spa, &dva[WBC_NORMAL_DVA], txg, now);
 		if (start_dva == 0) {
-			metaslab_free_dva(spa, &dva[WRC_SPECIAL_DVA],
+			metaslab_free_dva(spa, &dva[WBC_SPECIAL_DVA],
 			    txg, now);
 		}
 	} else {
@@ -2729,25 +2729,25 @@ metaslab_claim(spa_t *spa, const blkptr_t *bp, uint64_t txg)
 
 	if (BP_IS_SPECIAL(bp)) {
 		int start_dva;
-		wrc_data_t *wrc_data = spa_get_wrc_data(spa);
+		wbc_data_t *wbc_data = spa_get_wbc_data(spa);
 
-		mutex_enter(&wrc_data->wrc_lock);
-		start_dva = wrc_first_valid_dva(bp, wrc_data, B_FALSE);
+		mutex_enter(&wbc_data->wbc_lock);
+		start_dva = wbc_first_valid_dva(bp, wbc_data, B_FALSE);
 
 		/*
-		 * Actual claiming should be under lock for wrc blocks. It must
+		 * Actual claiming should be under lock for WBC blocks. It must
 		 * be done to ensure zdb will not fail. The only other user of
-		 * the claiming is ZIL whose blocks can not be WRC ones, and
+		 * the claiming is ZIL whose blocks can not be WBC ones, and
 		 * thus the lock will not be held for them.
 		 */
 		error = metaslab_claim_dva(spa,
-		    &dva[WRC_NORMAL_DVA], txg);
+		    &dva[WBC_NORMAL_DVA], txg);
 		if (error == 0 && start_dva == 0) {
 			error = metaslab_claim_dva(spa,
-			    &dva[WRC_SPECIAL_DVA], txg);
+			    &dva[WBC_SPECIAL_DVA], txg);
 		}
 
-		mutex_exit(&wrc_data->wrc_lock);
+		mutex_exit(&wbc_data->wbc_lock);
 	} else {
 		for (int d = 0; d < ndvas; d++)
 			if ((error = metaslab_claim_dva(spa,
@@ -2769,7 +2769,7 @@ metaslab_check_free(spa_t *spa, const blkptr_t *bp)
 		return;
 
 	if (BP_IS_SPECIAL(bp)) {
-		/* Do not check frees for wrc blocks */
+		/* Do not check frees for WBC blocks */
 		return;
 	}
 

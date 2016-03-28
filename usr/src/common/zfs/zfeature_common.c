@@ -294,7 +294,7 @@ zpool_feature_init(void)
 	    "com.nexenta:class_of_storage", "class_of_storage",
 	    "Properties for groups of vdevs.", ZFEATURE_FLAG_READONLY_COMPAT,
 	    cos_deps);
-	zfeature_register(SPA_FEATURE_WRC,
-	    "com.nexenta:wrcache", "wrcache",
+	zfeature_register(SPA_FEATURE_WBC,
+	    "com.nexenta:wbc", "wbc",
 	    "Write back cache support", 0, NULL);
 }

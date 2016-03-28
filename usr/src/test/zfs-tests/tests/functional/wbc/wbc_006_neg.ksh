@@ -12,11 +12,11 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
-. $STF_SUITE/tests/functional/wrc/wrc.cfg
-. $STF_SUITE/tests/functional/wrc/wrc.kshlib
+. $STF_SUITE/tests/functional/wbc/wbc.cfg
+. $STF_SUITE/tests/functional/wbc/wbc.kshlib
 
 #
 # DESCRIPTION:
@@ -32,8 +32,8 @@ log_assert "A raidz special is not supported."
 log_onexit cleanup
 for pool_type in "stripe" "mirror" ; do
 	for special_type in "raidz" "raidz2" "raidz3" ; do
-		for wrc_mode in "none" "on" ; do
-			log_mustnot create_pool_special $TESTPOOL $wrc_mode $pool_type $special_type
+		for wbc_mode in "none" "on" ; do
+			log_mustnot create_pool_special $TESTPOOL $wbc_mode $pool_type $special_type
 		done
 	done
 done

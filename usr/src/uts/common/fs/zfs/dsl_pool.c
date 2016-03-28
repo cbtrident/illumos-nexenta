@@ -24,7 +24,7 @@
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/autosnap.h>
@@ -52,7 +52,7 @@
 #include <sys/zil_impl.h>
 #include <sys/dsl_userhold.h>
 
-#include <sys/wrcache.h>
+#include <sys/wbc.h>
 #include <sys/time.h>
 
 /*
@@ -490,7 +490,7 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 	spa_t *spa = dp->dp_spa;
 	list_t synced_datasets;
 	dsl_sync_task_t *iter;
-	boolean_t wrc_skip_txg = B_FALSE;
+	boolean_t wbc_skip_txg = B_FALSE;
 	boolean_t sync_ops = B_FALSE;
 	boolean_t user_snap = B_FALSE;
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
@@ -527,13 +527,13 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 		mutex_enter(&autosnap->autosnap_lock);
 
 		/*
-		 * WRC: the mechanism to ensure all wrc-ed dirty datasets
+		 * WBC: the mechanism to ensure all WBC-ed dirty datasets
 		 * are synchronously auto-snapshotted
 		 * within (or by) the same TXG sync
-		 * The "synchronicity" of the rightmost boundary of the WRC
+		 * The "synchronicity" of the rightmost boundary of the WBC
 		 * window is important to avoid used-space leakages
 		 * on special vdev.
-		 * Note that we skip here the wrc-ed datasets that are
+		 * Note that we skip here the WBC-ed datasets that are
 		 * already fully migrated and don't have data on special
 		 */
 
@@ -541,7 +541,7 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 		    ds != NULL;
 		    ds = txg_list_next(&dp->dp_dirty_datasets, ds, txg)) {
 			char ds_name[MAXPATHLEN];
-			boolean_t wrc_azone;
+			boolean_t wbc_azone;
 
 			dsl_dataset_name(ds, ds_name);
 
@@ -554,34 +554,34 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 
 			azone->delayed = B_TRUE;
 			azone->dirty = B_TRUE;
-			wrc_azone = (azone->flags & AUTOSNAP_WRC) != 0;
+			wbc_azone = (azone->flags & AUTOSNAP_WBC) != 0;
 
 			if (autosnap_confirm_snap(azone, txg)) {
-				if (!wrc_azone && !user_snap && !sync_ops) {
+				if (!wbc_azone && !user_snap && !sync_ops) {
 					autosnap_create_snapshot(azone,
 					    snap, dp, txg, tx);
 				}
-			} else if (wrc_azone) {
-				wrc_skip_txg = B_TRUE;
+			} else if (wbc_azone) {
+				wbc_skip_txg = B_TRUE;
 			}
 		}
 
 		azone = list_head(&autosnap->autosnap_zones);
 		while (azone != NULL) {
-			boolean_t wrc_azone =
-			    ((azone->flags & AUTOSNAP_WRC) != 0);
+			boolean_t wbc_azone =
+			    ((azone->flags & AUTOSNAP_WBC) != 0);
 
 			if (user_snap) {
 				azone->delayed = B_TRUE;
 			} else if (!azone->dirty && azone->delayed) {
 				if (autosnap_confirm_snap(azone, txg)) {
-					if (!wrc_azone && !user_snap &&
+					if (!wbc_azone && !user_snap &&
 					    !sync_ops) {
 						autosnap_create_snapshot(azone,
 						    snap, dp, txg, tx);
 					}
-				} else if (wrc_azone) {
-					wrc_skip_txg = B_TRUE;
+				} else if (wbc_azone) {
+					wbc_skip_txg = B_TRUE;
 				}
 			}
 
@@ -629,10 +629,10 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 			    ((azone->flags & AUTOSNAP_CREATOR) == 0);
 
 			if (azone->delayed && !skip_zone) {
-				boolean_t wrc_azone =
-				    ((azone->flags & AUTOSNAP_WRC) != 0);
+				boolean_t wbc_azone =
+				    ((azone->flags & AUTOSNAP_WBC) != 0);
 
-				if (!wrc_azone || !wrc_skip_txg) {
+				if (!wbc_azone || !wbc_skip_txg) {
 					autosnap_create_snapshot(azone,
 					    snap, dp, txg, tx);
 				}
@@ -753,8 +753,8 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 			dsl_sync_task_sync(dst, tx);
 	}
 
-	if (spa_feature_is_active(spa, SPA_FEATURE_WRC)) {
-		wrc_trigger_wrcthread(dp->dp_spa,
+	if (spa_feature_is_active(spa, SPA_FEATURE_WBC)) {
+		wbc_trigger_wbcthread(dp->dp_spa,
 		    ((dp->dp_sync_history[0] + dp->dp_sync_history[1]) / 2));
 	}
 

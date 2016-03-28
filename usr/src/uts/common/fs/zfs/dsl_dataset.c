@@ -173,7 +173,7 @@ dsl_dataset_block_kill(dsl_dataset_t *ds, const blkptr_t *bp, dmu_tx_t *tx,
 	int used = bp_get_dsize_sync(tx->tx_pool->dp_spa, bp);
 	int compressed = BP_GET_PSIZE(bp);
 	int uncompressed = BP_GET_UCSIZE(bp);
-	wrc_data_t *wrc_data = spa_get_wrc_data(tx->tx_pool->dp_spa);
+	wbc_data_t *wbc_data = spa_get_wbc_data(tx->tx_pool->dp_spa);
 
 	if (BP_IS_HOLE(bp))
 		return (0);
@@ -199,21 +199,21 @@ dsl_dataset_block_kill(dsl_dataset_t *ds, const blkptr_t *bp, dmu_tx_t *tx,
 		dsl_free(tx->tx_pool, tx->tx_txg, bp);
 
 		/* update amount of data which is changed in the window */
-		mutex_enter(&wrc_data->wrc_lock);
-		if (wrc_data->wrc_isvalid &&
-		    bp->blk_birth && wrc_data->wrc_finish_txg &&
-		    bp->blk_birth <= wrc_data->wrc_finish_txg &&
-		    bp->blk_birth >= wrc_data->wrc_start_txg &&
-		    !wrc_data->wrc_purge) {
+		mutex_enter(&wbc_data->wbc_lock);
+		if (wbc_data->wbc_isvalid &&
+		    bp->blk_birth && wbc_data->wbc_finish_txg &&
+		    bp->blk_birth <= wbc_data->wbc_finish_txg &&
+		    bp->blk_birth >= wbc_data->wbc_start_txg &&
+		    !wbc_data->wbc_purge) {
 
-			wrc_data->wrc_altered_bytes += used;
-			if (wrc_data->wrc_altered_limit &&
-			    wrc_data->wrc_altered_bytes >
-			    wrc_data->wrc_altered_limit) {
-				wrc_purge_window(tx->tx_pool->dp_spa, tx);
+			wbc_data->wbc_altered_bytes += used;
+			if (wbc_data->wbc_altered_limit &&
+			    wbc_data->wbc_altered_bytes >
+			    wbc_data->wbc_altered_limit) {
+				wbc_purge_window(tx->tx_pool->dp_spa, tx);
 			}
 		}
-		mutex_exit(&wrc_data->wrc_lock);
+		mutex_exit(&wbc_data->wbc_lock);
 
 		mutex_enter(&ds->ds_lock);
 		ASSERT(dsl_dataset_phys(ds)->ds_unique_bytes >= used ||
@@ -1445,8 +1445,8 @@ dsl_dataset_snapshot_sync_impl(dsl_dataset_t *ds, const char *snapname,
 	if (os == NULL)
 		VERIFY0(dmu_objset_from_ds(ds, &os));
 
-	if (os->os_wrc_mode != ZFS_WRC_MODE_OFF)
-		wrc_add_bytes(dp->dp_spa, tx->tx_txg, unique_bytes);
+	if (os->os_wbc_mode != ZFS_WBC_MODE_OFF)
+		wbc_add_bytes(dp->dp_spa, tx->tx_txg, unique_bytes);
 }
 
 void

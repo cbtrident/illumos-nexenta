@@ -15,8 +15,8 @@
 # Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
-. $STF_SUITE/tests/functional/wrc/wrc.cfg
-. $STF_SUITE/tests/functional/wrc/wrc.kshlib
+. $STF_SUITE/tests/functional/wbc/wbc.cfg
+. $STF_SUITE/tests/functional/wbc/wbc.kshlib
 
 #
 # DESCRIPTION:

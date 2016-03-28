@@ -71,7 +71,7 @@
 #include <sys/dsl_destroy.h>
 #include <sys/cos.h>
 #include <sys/special.h>
-#include <sys/wrcache.h>
+#include <sys/wbc.h>
 
 #ifdef	_KERNEL
 #include <sys/bootprops.h>
@@ -491,7 +491,7 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 				break;
 			}
 
-			if (feature == SPA_FEATURE_WRC &&
+			if (feature == SPA_FEATURE_WBC &&
 			    !spa_has_special(spa)) {
 				error = SET_ERROR(ENOTSUP);
 				break;
@@ -3319,7 +3319,7 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
 
 	if (open_with_activation) {
 		autosnap_collect_orphaned_snapshots(spa);
-		wrc_activate(spa, B_FALSE);
+		wbc_activate(spa, B_FALSE);
 	}
 
 	*spapp = spa;
@@ -3771,7 +3771,7 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	nvlist_t **spares, **l2cache;
 	uint_t nspares, nl2cache;
 	uint64_t version, obj;
-	boolean_t has_features = B_FALSE, wrc_feature_exists = B_FALSE;
+	boolean_t has_features = B_FALSE, wbc_feature_exists = B_FALSE;
 	spa_meta_placement_t *mp;
 
 	/*
@@ -3792,7 +3792,7 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa_activate(spa, spa_mode_global);
 
 	if (props != NULL) {
-		nvpair_t *wrc_feature_nvp = NULL;
+		nvpair_t *wbc_feature_nvp = NULL;
 
 		for (nvpair_t *elem = nvlist_next_nvpair(props, NULL);
 		    elem != NULL; elem = nvlist_next_nvpair(props, elem)) {
@@ -3803,9 +3803,9 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 				const char *fname = strchr(propname, '@') + 1;
 
 				err = zfeature_lookup_name(fname, &feature);
-				if (err == 0 && feature == SPA_FEATURE_WRC) {
-					wrc_feature_nvp = elem;
-					wrc_feature_exists = B_TRUE;
+				if (err == 0 && feature == SPA_FEATURE_WBC) {
+					wbc_feature_nvp = elem;
+					wbc_feature_exists = B_TRUE;
 				}
 
 				has_features = B_TRUE;
@@ -3813,14 +3813,14 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 		}
 
 		/*
-		 * We do not want to enabled feature@wrcache if
+		 * We do not want to enabled feature@wbc if
 		 * this pool does not have special vdev.
 		 * At this stage we remove this feature from common list,
 		 * but later after check that special vdev available this
 		 * feature will be enabled
 		 */
-		if (wrc_feature_nvp != NULL)
-			fnvlist_remove_nvpair(props, wrc_feature_nvp);
+		if (wbc_feature_nvp != NULL)
+			fnvlist_remove_nvpair(props, wbc_feature_nvp);
 
 		if ((error = spa_prop_validate(spa, props)) != 0) {
 			spa_deactivate(spa);
@@ -4040,8 +4040,8 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 		spa_feature_enable(spa, SPA_FEATURE_META_DEVICES, tx);
 		spa_feature_incr(spa, SPA_FEATURE_META_DEVICES, tx);
 
-		if (wrc_feature_exists)
-			spa_feature_enable(spa, SPA_FEATURE_WRC, tx);
+		if (wbc_feature_exists)
+			spa_feature_enable(spa, SPA_FEATURE_WBC, tx);
 	}
 
 	dmu_tx_commit(tx);
@@ -4069,7 +4069,7 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 
 	mutex_exit(&spa_namespace_lock);
 
-	wrc_activate(spa, B_TRUE);
+	wbc_activate(spa, B_TRUE);
 
 	return (0);
 }
@@ -4116,7 +4116,7 @@ spa_special_feature_activate(void *arg, dmu_tx_t *tx)
 			spa_feature_incr(spa, SPA_FEATURE_META_DEVICES, tx);
 		}
 
-		spa_feature_enable(spa, SPA_FEATURE_WRC, tx);
+		spa_feature_enable(spa, SPA_FEATURE_WBC, tx);
 	}
 }
 
@@ -4523,7 +4523,7 @@ spa_import(const char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 
 	autosnap_collect_orphaned_snapshots(spa);
 
-	wrc_activate(spa, B_FALSE);
+	wbc_activate(spa, B_FALSE);
 
 	return (dsl_sync_task(spa->spa_name, NULL, spa_special_feature_activate,
 	    spa, 3, ZFS_SPACE_CHECK_RESERVED));
@@ -4636,7 +4636,7 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 {
 	spa_t *spa;
 	zfs_autosnap_t *autosnap;
-	boolean_t wrcthr_stopped = B_FALSE;
+	boolean_t wbcthr_stopped = B_FALSE;
 
 	if (oldconfig)
 		*oldconfig = NULL;
@@ -4670,7 +4670,7 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 
 	mutex_exit(&autosnap->autosnap_lock);
 
-	wrcthr_stopped = wrc_stop_thread(spa); /* stop write cache thread */
+	wbcthr_stopped = wbc_stop_thread(spa); /* stop write cache thread */
 	autosnap_destroyer_thread_stop(spa);
 	spa_async_suspend(spa);
 	mutex_enter(&spa_namespace_lock);
@@ -4698,8 +4698,8 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 		    new_state != POOL_STATE_UNINITIALIZED)) {
 			spa_async_resume(spa);
 			mutex_exit(&spa_namespace_lock);
-			if (wrcthr_stopped)
-				(void) wrc_start_thread(spa);
+			if (wbcthr_stopped)
+				(void) wbc_start_thread(spa);
 			autosnap_destroyer_thread_start(spa);
 			return (SET_ERROR(EBUSY));
 		}
@@ -4714,8 +4714,8 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 		    spa_has_active_shared_spare(spa)) {
 			spa_async_resume(spa);
 			mutex_exit(&spa_namespace_lock);
-			if (wrcthr_stopped)
-				(void) wrc_start_thread(spa);
+			if (wbcthr_stopped)
+				(void) wbc_start_thread(spa);
 			autosnap_destroyer_thread_start(spa);
 			return (SET_ERROR(EXDEV));
 		}
@@ -4738,7 +4738,7 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 	spa_event_notify(spa, NULL, ESC_ZFS_POOL_DESTROY);
 
 	if (spa->spa_state != POOL_STATE_UNINITIALIZED) {
-		wrc_deactivate(spa);
+		wbc_deactivate(spa);
 
 		spa_unload(spa);
 		spa_deactivate(spa);
@@ -4908,7 +4908,7 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 	spa_special_feature_activate(spa, tx);
 	dmu_tx_commit(tx);
 
-	wrc_activate(spa, B_FALSE);
+	wbc_activate(spa, B_FALSE);
 
 	return (0);
 }
@@ -5404,10 +5404,10 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 	ASSERT(spa_writeable(spa));
 
 	/*
-	 * split for pools with activated WRC
+	 * split for pools with activated WBC
 	 * will be implemented in the next release
 	 */
-	if (spa_feature_is_active(spa, SPA_FEATURE_WRC))
+	if (spa_feature_is_active(spa, SPA_FEATURE_WBC))
 		return (SET_ERROR(ENOTSUP));
 
 	txg = spa_vdev_enter(spa);
@@ -7132,7 +7132,7 @@ spa_evict_all(void)
 		spa_close(spa, FTAG);
 
 		if (spa->spa_state != POOL_STATE_UNINITIALIZED) {
-			wrc_deactivate(spa);
+			wbc_deactivate(spa);
 
 			spa_unload(spa);
 			spa_deactivate(spa);

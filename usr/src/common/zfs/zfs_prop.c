@@ -24,7 +24,7 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -191,9 +191,9 @@ zfs_prop_init(void)
 		{ NULL }
 	};
 
-	static zprop_index_t wrc_modes_table[] = {
-		{ "off",		ZFS_WRC_MODE_OFF },
-		{ "on",			ZFS_WRC_MODE_ON },
+	static zprop_index_t wbc_modes_table[] = {
+		{ "off",		ZFS_WBC_MODE_OFF },
+		{ "on",			ZFS_WBC_MODE_ON },
 		{ NULL }
 	};
 
@@ -291,9 +291,9 @@ zfs_prop_init(void)
 	zprop_register_index(ZFS_PROP_LOGBIAS, "logbias", ZFS_LOGBIAS_LATENCY,
 	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
 	    "latency | throughput", "LOGBIAS", logbias_table);
-	zprop_register_index(ZFS_PROP_WRC_MODE, "wrc_mode", ZFS_WRC_MODE_OFF,
+	zprop_register_index(ZFS_PROP_WBC_MODE, "wbc_mode", ZFS_WBC_MODE_OFF,
 	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
-	    "off | on", "WRC_MODE", wrc_modes_table);
+	    "off | on", "WBC_MODE", wbc_modes_table);
 	zprop_register_index(ZFS_PROP_ZPL_META_TO_METADEV,
 	    "zpl_meta_to_metadev", META_PLACEMENT_OFF, PROP_INHERIT,
 	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_AUTOSNAP |

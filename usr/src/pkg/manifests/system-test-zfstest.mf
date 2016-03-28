@@ -135,7 +135,7 @@ dir path=opt/zfs-tests/tests/functional/threadsappend
 dir path=opt/zfs-tests/tests/functional/truncate
 dir path=opt/zfs-tests/tests/functional/userquota
 dir path=opt/zfs-tests/tests/functional/utils_test
-dir path=opt/zfs-tests/tests/functional/wrc
+dir path=opt/zfs-tests/tests/functional/wbc
 dir path=opt/zfs-tests/tests/functional/write_dirs
 dir path=opt/zfs-tests/tests/functional/xattr
 dir path=opt/zfs-tests/tests/functional/zvol
@@ -2190,22 +2190,22 @@ file path=opt/zfs-tests/tests/functional/utils_test/utils_test_008_pos \
     mode=0555
 file path=opt/zfs-tests/tests/functional/utils_test/utils_test_009_pos \
     mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/cleanup mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/setup mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc.cfg mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc.kshlib mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_001_pos mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_002_pos mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_003_pos mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_004_pos mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_005_neg mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_006_neg mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_007_neg mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_008_pos mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_009_pos mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_010_neg mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_011_neg mode=0555
-file path=opt/zfs-tests/tests/functional/wrc/wrc_012_pos mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/cleanup mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/setup mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc.cfg mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc.kshlib mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_001_pos mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_002_pos mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_003_pos mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_004_pos mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_005_neg mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_006_neg mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_007_neg mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_008_pos mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_009_pos mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_010_neg mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_011_neg mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_012_pos mode=0555
 file path=opt/zfs-tests/tests/functional/write_dirs/cleanup mode=0555
 file path=opt/zfs-tests/tests/functional/write_dirs/setup mode=0555
 file path=opt/zfs-tests/tests/functional/write_dirs/write_dirs_001_pos \

@@ -12,18 +12,18 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
-. $STF_SUITE/tests/functional/wrc/wrc.cfg
-. $STF_SUITE/tests/functional/wrc/wrc.kshlib
+. $STF_SUITE/tests/functional/wbc/wbc.cfg
+. $STF_SUITE/tests/functional/wbc/wbc.kshlib
 
 #
 # DESCRIPTION:
 #	Write back cache can not be deactivated during the creation of the pool
 #
 # STRATEGY:
-#	1. Try to create pool with wrc_mode=off
+#	1. Try to create pool with wbc_mode=off
 #	2. Creating pool must fail
 #
 

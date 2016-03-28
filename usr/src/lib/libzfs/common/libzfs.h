@@ -133,11 +133,11 @@ typedef enum zfs_error {
 	EZFS_COSNOTFOUND,	/* no matching CoS descriptor found */
 	EZFS_COSEXIST,		/* CoS descriptor already exists */
 	EZFS_COSREF,		/* CoS descriptor still referenced */
-	EZFS_WRCNOTSUP,		/* wrcache feature flag is not enabled */
-	EZFS_WRCCHILD,		/* child ds has enabled wrc */
-	EZFS_WRCPARENT,		/* parent ds has enabled wrc */
-	EZFS_WRCALREADY,    /* wrc already enabled or disabled */
-	EZFS_WRCINPROGRESS, /* wrc is disabling */
+	EZFS_WBCNOTSUP,		/* 'feature@wbc' is not enabled */
+	EZFS_WBCCHILD,		/* child ds has enabled WBC */
+	EZFS_WBCPARENT,		/* parent ds has enabled WBC */
+	EZFS_WBCALREADY,    /* WBC already enabled or disabled */
+	EZFS_WBCINPROGRESS, /* WBC is disabling */
 	EZFS_UNKNOWN
 } zfs_error_t;
 

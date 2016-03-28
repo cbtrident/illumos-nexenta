@@ -24,7 +24,7 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -104,9 +104,9 @@ struct objset {
 	zfs_redundant_metadata_type_t os_redundant_metadata;
 	int os_recordsize;
 	uint64_t os_zpl_meta_to_special;
-	zfs_wrc_mode_t os_wrc_mode;
-	uint64_t os_wrc_root_ds_obj;
-	uint64_t os_wrc_off_txg;
+	zfs_wbc_mode_t os_wbc_mode;
+	uint64_t os_wbc_root_ds_obj;
+	uint64_t os_wbc_off_txg;
 
 	/* no lock needed: */
 	struct dmu_tx *os_synctx; /* XXX sketchy */

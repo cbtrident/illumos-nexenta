@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_LIBKRRP_H_
@@ -82,8 +82,8 @@ typedef struct libkrrp_event_s libkrrp_event_t;
 	X(READFAIL)              \
 	X(WRITEFAIL)             \
 	X(FLCTRLVIOL)            \
-	X(ZFSWRCBADMODE)         \
-	X(ZFSWRCBADUSE)          \
+	X(ZFSWBCBADMODE)         \
+	X(ZFSWBCBADUSE)          \
 	X(PINGTIMEOUT)           \
 	X(SETSOCKOPTFAIL)        \
 	X(PROTO)                 \

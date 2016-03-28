@@ -12,18 +12,18 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
-. $STF_SUITE/tests/functional/wrc/wrc.cfg
-. $STF_SUITE/tests/functional/wrc/wrc.kshlib
+. $STF_SUITE/tests/functional/wbc/wbc.cfg
+. $STF_SUITE/tests/functional/wbc/wbc.kshlib
 
 #
 # DESCRIPTION:
 #	Non-redundant special vdev can not be detached from existing pool
 #
 # STRATEGY:
-#	1. Create pool with separated wrc devices and enabled/disabled wrte back cache
+#	1. Create pool with separated wbc devices and enabled/disabled wrte back cache
 #	2. Display pool status
 #	3. Try to detach non-redundant special vdev
 #	4. Verify failed to detach
@@ -32,8 +32,8 @@
 verify_runnable "global"
 log_assert "Non-redundant special vdev can not be detached."
 log_onexit cleanup
-for wrc_mode in "none" "on" ; do
-	log_must create_pool_special $TESTPOOL $wrc_mode "stripe" "stripe"
+for wbc_mode in "none" "on" ; do
+	log_must create_pool_special $TESTPOOL $wbc_mode "stripe" "stripe"
 	log_must display_status $TESTPOOL
 	log_mustnot $ZPOOL detach $TESTPOOL $SSD_DISK1
 	log_must $ZPOOL scrub $TESTPOOL

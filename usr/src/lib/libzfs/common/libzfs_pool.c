@@ -1116,7 +1116,7 @@ zpool_create(libzfs_handle_t *hdl, const char *pool, nvlist_t *nvroot,
 	nvlist_t *zc_props = NULL;
 	char msg[1024];
 	int ret = -1;
-	boolean_t wrc_mode_prop_exists = B_FALSE;
+	boolean_t wbc_mode_prop_exists = B_FALSE;
 
 	(void) snprintf(msg, sizeof (msg), dgettext(TEXT_DOMAIN,
 	    "cannot create '%s'"), pool);
@@ -1150,8 +1150,8 @@ zpool_create(libzfs_handle_t *hdl, const char *pool, nvlist_t *nvroot,
 		}
 
 		if (nvlist_exists(zc_fsprops,
-		    zfs_prop_to_name(ZFS_PROP_WRC_MODE))) {
-			wrc_mode_prop_exists = B_TRUE;
+		    zfs_prop_to_name(ZFS_PROP_WBC_MODE))) {
+			wbc_mode_prop_exists = B_TRUE;
 		}
 
 		if (!zc_props &&
@@ -1231,10 +1231,10 @@ zpool_create(libzfs_handle_t *hdl, const char *pool, nvlist_t *nvroot,
 			return (zfs_error(hdl, EZFS_BADDEV, msg));
 
 		case EALREADY:
-			if (wrc_mode_prop_exists) {
+			if (wbc_mode_prop_exists) {
 				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-				    "WRC is already in the OFF state"));
-				return (zfs_error(hdl, EZFS_WRCALREADY, msg));
+				    "WBC is already in the OFF state"));
+				return (zfs_error(hdl, EZFS_WBCALREADY, msg));
 			}
 
 		default:

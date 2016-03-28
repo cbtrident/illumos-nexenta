@@ -12,28 +12,36 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
-. $STF_SUITE/tests/functional/wrc/wrc.cfg
-. $STF_SUITE/tests/functional/wrc/wrc.kshlib
+. $STF_SUITE/tests/functional/wbc/wbc.cfg
+. $STF_SUITE/tests/functional/wbc/wbc.kshlib
 
 #
 # DESCRIPTION:
-#	Write back cache can not be deactivated for child dataset
+#	Disabling write back cache succeeds
 #
 # STRATEGY:
 #	1. Create pool with separated special devices and enabled write back cache
 #	2. Display pool status
-#	3. Create child dataset
-#	4. Try to disable write back cache for child dataset
+#	3. Disable write back cache
+#	4. Display pool status
+#	5. Scrub pool and check status
 #
 
 verify_runnable "global"
-log_assert "Write back cache can not be deactivated for child dataset."
+log_assert "Disabling WBC succeeds."
 log_onexit cleanup
 log_must create_pool_special $TESTPOOL "on"
 log_must display_status $TESTPOOL
-log_must create_dataset $TESTPOOL/child_dataset
-log_mustnot disable_wrc $TESTPOOL/child_dataset
-log_pass "Write back cache can not be deactivated for child dataset."
+log_must disable_wbc $TESTPOOL
+log_must display_status $TESTPOOL
+log_must $SYNC
+log_must $ZPOOL scrub $TESTPOOL
+while is_pool_scrubbing $TESTPOOL ; do
+	$SLEEP 1
+done
+log_must check_pool_errors $TESTPOOL
+log_must destroy_pool $TESTPOOL
+log_pass "Disabling WBC succeeds."

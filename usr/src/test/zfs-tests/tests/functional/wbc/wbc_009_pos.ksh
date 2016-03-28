@@ -12,11 +12,11 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
-. $STF_SUITE/tests/functional/wrc/wrc.cfg
-. $STF_SUITE/tests/functional/wrc/wrc.kshlib
+. $STF_SUITE/tests/functional/wbc/wbc.cfg
+. $STF_SUITE/tests/functional/wbc/wbc.kshlib
 
 #
 # DESCRIPTION:
@@ -33,8 +33,8 @@
 verify_runnable "global"
 log_assert "Detaching redundant special vdev succeeds."
 log_onexit cleanup
-for wrc_mode in "none" "on" ; do
-	log_must create_pool_special $TESTPOOL $wrc_mode "mirror" "mirror"
+for wbc_mode in "none" "on" ; do
+	log_must create_pool_special $TESTPOOL $wbc_mode "mirror" "mirror"
 	log_must display_status $TESTPOOL
 	log_must $ZPOOL detach $TESTPOOL $SSD_DISK1
 	log_must $ZPOOL scrub $TESTPOOL

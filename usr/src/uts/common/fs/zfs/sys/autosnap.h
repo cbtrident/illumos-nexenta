@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 #ifndef _SYS_AUTOSNAP_H
 #define	_SYS_AUTOSNAP_H
@@ -132,7 +132,7 @@ typedef enum autosnap_flags {
 	AUTOSNAP_DESTROYER	= 1 << 2,
 	AUTOSNAP_KRRP		= 1 << 3,
 	AUTOSNAP_OWNER		= 1 << 4,
-	AUTOSNAP_WRC		= 1 << 5
+	AUTOSNAP_WBC		= 1 << 5
 } autosnap_flags_t;
 
 /*

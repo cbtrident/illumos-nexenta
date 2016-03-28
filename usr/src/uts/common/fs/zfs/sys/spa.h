@@ -23,7 +23,7 @@
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  */
@@ -212,7 +212,7 @@ typedef struct zio_cksum_salt {
  * G		gang block indicator
  * B		byteorder (endianness)
  * D		dedup
- * S		special WRC block (unused for embedded blocks)
+ * S		special WBC block (unused for embedded blocks)
  * E		blkptr_t contains embedded data (see below)
  * lvl		level of indirection
  * type		DMU object type
@@ -258,7 +258,7 @@ typedef struct zio_cksum_salt {
  * payload		contains the embedded data
  * B (byteorder)	byteorder (endianness)
  * D (dedup)		padding (set to zero)
- * S			special WRC block (unused for embedded blocks)
+ * S			special WBC block (unused for embedded blocks)
  * E (embedded)		set to one
  * lvl			indirection level
  * type			DMU object type
@@ -885,10 +885,10 @@ extern boolean_t spa_has_pending_synctask(spa_t *spa);
 extern boolean_t spa_has_special(spa_t *spa);
 extern int spa_maxblocksize(spa_t *spa);
 extern void zfs_blkptr_verify(spa_t *spa, const blkptr_t *bp);
-extern boolean_t spa_wrc_present(spa_t *spa);
-extern boolean_t spa_wrc_active(spa_t *spa);
+extern boolean_t spa_wbc_present(spa_t *spa);
+extern boolean_t spa_wbc_active(spa_t *spa);
 extern struct zfs_autosnap *spa_get_autosnap(spa_t *spa);
-extern void wrc_purge_window(spa_t *spa, dmu_tx_t *tx);
+extern void wbc_purge_window(spa_t *spa, dmu_tx_t *tx);
 
 extern int spa_mode(spa_t *spa);
 extern uint64_t strtonum(const char *str, char **nptr);
@@ -951,13 +951,13 @@ extern void spa_event_notify(spa_t *spa, vdev_t *vdev, const char *name);
 /* krrp */
 extern taskqid_t spa_dispatch_krrp_task(const char *dataset,
     task_func_t func, void *args);
-extern int spa_wrc_mode(const char *name);
+extern int spa_wbc_mode(const char *name);
 
-typedef enum spa_wrc_mode {
-	WRC_MODE_OFF,
-	WRC_MODE_ACTIVE,
-	WRC_MODE_PASSIVE
-} spa_wrc_mode_t;
+typedef enum spa_wbc_mode {
+	WBC_MODE_OFF,
+	WBC_MODE_ACTIVE,
+	WBC_MODE_PASSIVE
+} spa_wbc_mode_t;
 
 /* TRIM/UNMAP kstat update */
 extern void spa_trimstats_update(spa_t *spa, uint64_t extents, uint64_t bytes,

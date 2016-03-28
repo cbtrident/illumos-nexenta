@@ -4934,10 +4934,10 @@ upgrade_enable_all(zpool_handle_t *zhp, int *countp)
 			char *propname;
 
 			/*
-			 * SPA_FEATURE_WRC can be enabled only
+			 * SPA_FEATURE_WBC can be enabled only
 			 * if 'special' vdev available
 			 */
-			if (finfo->fi_feature == SPA_FEATURE_WRC)
+			if (finfo->fi_feature == SPA_FEATURE_WBC)
 				continue;
 
 			verify(-1 != asprintf(&propname, "feature@%s", fname));

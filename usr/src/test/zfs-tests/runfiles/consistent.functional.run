@@ -495,10 +495,10 @@ tests = ['utils_test_001_pos', 'utils_test_002_pos', 'utils_test_003_pos',
     'utils_test_004_pos', 'utils_test_005_pos', 'utils_test_006_pos',
     'utils_test_007_pos', 'utils_test_008_pos', 'utils_test_009_pos']
 
-[/opt/zfs-tests/tests/functional/wrc]
-tests = ['wrc_001_pos', 'wrc_002_pos', 'wrc_003_pos', 'wrc_004_pos', 'wrc_005_neg',
-    'wrc_006_neg', 'wrc_007_neg', 'wrc_008_pos', 'wrc_009_pos', 'wrc_010_neg',
-    'wrc_011_neg', 'wrc_012_pos']
+[/opt/zfs-tests/tests/functional/wbc]
+tests = ['wbc_001_pos', 'wbc_002_pos', 'wbc_003_pos', 'wbc_004_pos', 'wbc_005_neg',
+    'wbc_006_neg', 'wbc_007_neg', 'wbc_008_pos', 'wbc_009_pos', 'wbc_010_neg',
+    'wbc_011_neg', 'wbc_012_pos']
 
 [/opt/zfs-tests/tests/functional/write_dirs]
 tests = ['write_dirs_001_pos', 'write_dirs_002_pos']

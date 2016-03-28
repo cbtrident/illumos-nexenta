@@ -1,3 +1,5 @@
+#! /usr/bin/ksh -p
+#
 #
 # This file and its contents are supplied under the terms of the
 # Common Development and Distribution License ("CDDL"), version 1.0.
@@ -10,18 +12,14 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
-. $STF_SUITE/tests/functional/wrc/wrc.kshlib
+. $STF_SUITE/tests/functional/wbc/wbc.cfg
+. $STF_SUITE/tests/functional/wbc/wbc.kshlib
 
-export SSD_MODELS="STEC|INTEL"
-export MIN_SSD_COUNT="2"
-export MIN_HDD_COUNT="4"
-export MKTEMP="/usr/bin/mktemp"
-export VDEV_SIZE="512m"
-export VDEV_DIR="/var/tmp/vdev4wrc"
-export TESTPOOL="wrc"
-export TESTPOOL2="wrc2"
-
-set_disks
+verify_runnable "global"
+log_must disable_krrp_debug
+log_must cleanup
+log_must $RM -rf $VDEV_DIR
+log_pass

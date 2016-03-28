@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
@@ -331,7 +331,7 @@ typedef struct zio_prop {
 	boolean_t		zp_nopwrite;
 	boolean_t		zp_metadata;
 	boolean_t		zp_usesc;
-	boolean_t		zp_usewrc;
+	boolean_t		zp_usewbc;
 	uint64_t		zp_zpl_meta_to_special;
 } zio_prop_t;
 
@@ -564,7 +564,7 @@ extern zio_t *zio_write_phys(zio_t *pio, vdev_t *vd, uint64_t offset,
     zio_done_func_t *done, void *private, zio_priority_t priority,
     enum zio_flag flags, boolean_t labels);
 
-extern zio_t *zio_wrc(zio_type_t type, vdev_t *vd, void *data,
+extern zio_t *zio_wbc(zio_type_t type, vdev_t *vd, void *data,
     uint64_t size, uint64_t offset);
 
 extern zio_t *zio_free_sync(zio_t *pio, spa_t *spa, uint64_t txg,

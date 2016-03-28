@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _KRRP_ERROR_H
@@ -66,8 +66,8 @@ typedef enum {
 	X(WRITEFAIL)          \
 	X(SNAPFAIL)           \
 	X(FLCTRLVIOL)         \
-	X(ZFSWRCBADMODE)      \
-	X(ZFSWRCBADUSE)       \
+	X(ZFSWBCBADMODE)      \
+	X(ZFSWBCBADUSE)       \
 	X(PINGTIMEOUT)        \
 	X(PROTO)              \
 	X(AUTH)               \

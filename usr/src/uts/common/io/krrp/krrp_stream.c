@@ -28,7 +28,7 @@
 /* #define	KRRP_STREAM_DEBUG 1 */
 
 /* These extern functions are part of ZFS sources */
-extern int wrc_check_dataset(const char *name);
+extern int wbc_check_dataset(const char *name);
 extern uint64_t dsl_dataset_creation_txg(const char *name);
 extern int dmu_krrp_get_recv_cookie(const char *pool,
     const char *token, char *cookie, size_t len);
@@ -484,11 +484,11 @@ krrp_stream_validate_run(krrp_stream_t *stream, krrp_error_t *error)
 
 	rc = 0;
 	if (stream->mode == KRRP_STRMM_READ && !stream->non_continuous) {
-		rc = wrc_check_dataset(stream->dataset);
+		rc = wbc_check_dataset(stream->dataset);
 		if (rc == 0 || rc == ENOTACTIVE)
 			rc = 0;
 		else if (rc == ENOTSUP)
-			krrp_error_set(error, KRRP_ERRNO_ZFSWRCBADUSE, 0);
+			krrp_error_set(error, KRRP_ERRNO_ZFSWBCBADUSE, 0);
 		else
 			krrp_error_set(error, KRRP_ERRNO_STREAM, rc);
 	}

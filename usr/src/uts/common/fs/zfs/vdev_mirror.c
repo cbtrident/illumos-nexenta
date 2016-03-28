@@ -25,7 +25,7 @@
 
 /*
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -33,7 +33,7 @@
 #include <sys/spa_impl.h>
 #include <sys/vdev_impl.h>
 #include <sys/zio.h>
-#include <sys/wrcache.h>
+#include <sys/wbc.h>
 #include <sys/fs/zfs.h>
 
 /*
@@ -324,11 +324,11 @@ vdev_mirror_io_start(zio_t *zio)
 
 			/*
 			 * Scrub of special BPs should take into
-			 * account the state of WRC-Window
+			 * account the state of WBC-Window
 			 */
 			if (spec_case) {
-				target = wrc_select_dva(
-				    spa_get_wrc_data(spa), zio);
+				target = wbc_select_dva(
+				    spa_get_wbc_data(spa), zio);
 			}
 
 
@@ -366,7 +366,7 @@ vdev_mirror_io_start(zio_t *zio)
 		 */
 
 		if (spec_case)
-			c = wrc_select_dva(spa_get_wrc_data(spa), zio);
+			c = wbc_select_dva(spa_get_wbc_data(spa), zio);
 		else
 			c = vdev_mirror_child_select(zio);
 

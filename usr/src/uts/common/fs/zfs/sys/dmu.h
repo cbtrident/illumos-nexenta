@@ -692,7 +692,6 @@ boolean_t dmu_buf_freeable(dmu_buf_t *);
 #define	DMU_OBJECT_END	(-1ULL)
 
 dmu_tx_t *dmu_tx_create(objset_t *os);
-dmu_tx_t *dmu_tx_create_wrc(objset_t *os, boolean_t wrc_io);
 void dmu_tx_hold_write(dmu_tx_t *tx, uint64_t object, uint64_t off, int len);
 void dmu_tx_hold_free(dmu_tx_t *tx, uint64_t object, uint64_t off,
     uint64_t len);
@@ -706,7 +705,6 @@ int dmu_tx_assign(dmu_tx_t *tx, enum txg_how txg_how);
 void dmu_tx_wait(dmu_tx_t *tx);
 void dmu_tx_commit(dmu_tx_t *tx);
 void dmu_tx_mark_netfree(dmu_tx_t *tx);
-boolean_t dmu_tx_is_wrcio(dmu_tx_t *tx);
 
 /*
  * To register a commit callback, dmu_tx_callback_register() must be called.

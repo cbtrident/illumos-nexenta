@@ -570,7 +570,7 @@ send_iterate_prop(zfs_handle_t *zhp, nvlist_t *nv)
 		 * This property make sense only to this dataset,
 		 * so no reasons to include it into stream
 		 */
-                if (prop == ZFS_PROP_WRC_MODE)
+                if (prop == ZFS_PROP_WBC_MODE)
                         continue;
 
 		if (!zfs_prop_user(propname)) {
@@ -3604,10 +3604,10 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 			    "destination %s space quota exceeded"), zc.zc_name);
 			(void) zfs_error(hdl, EZFS_NOSPC, errbuf);
 			break;
-		case EKZFS_WRCNOTSUP:
+		case EKZFS_WBCNOTSUP:
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-			    "wrcached datasets do not support recv"));
-			(void) zfs_error(hdl, EZFS_WRCNOTSUP, errbuf);
+			    "write back cached datasets do not support recv"));
+			(void) zfs_error(hdl, EZFS_WBCNOTSUP, errbuf);
 			break;
 		default:
 			(void) zfs_standard_error(hdl, ioctl_errno, errbuf);

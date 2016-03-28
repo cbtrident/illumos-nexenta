@@ -22,7 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  */
@@ -687,7 +687,7 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 
 	spa->spa_min_ashift = INT_MAX;
 	spa->spa_max_ashift = 0;
-	wrc_init(&spa->spa_wrc, spa);
+	wbc_init(&spa->spa_wbc, spa);
 
 	/*
 	 * As a pool is being created, treat all features as disabled by
@@ -734,7 +734,7 @@ spa_remove(spa_t *spa)
 
 	list_destroy(&spa->spa_config_list);
 
-	wrc_fini(&spa->spa_wrc);
+	wbc_fini(&spa->spa_wbc);
 
 	spa_special_fini(spa);
 
@@ -2205,19 +2205,19 @@ spa_maxblocksize(spa_t *spa)
 }
 
 boolean_t
-spa_wrc_present(spa_t *spa)
+spa_wbc_present(spa_t *spa)
 {
-	return (spa->spa_wrc_mode != WRC_MODE_OFF);
+	return (spa->spa_wbc_mode != WBC_MODE_OFF);
 }
 
 boolean_t
-spa_wrc_active(spa_t *spa)
+spa_wbc_active(spa_t *spa)
 {
-	return (spa->spa_wrc_mode == WRC_MODE_ACTIVE);
+	return (spa->spa_wbc_mode == WBC_MODE_ACTIVE);
 }
 
 int
-spa_wrc_mode(const char *name)
+spa_wbc_mode(const char *name)
 {
 	int ret = 0;
 	spa_t *spa;
@@ -2229,7 +2229,7 @@ spa_wrc_mode(const char *name)
 		return (-1);
 	}
 
-	ret = (int)spa->spa_wrc_mode;
+	ret = (int)spa->spa_wbc_mode;
 	mutex_exit(&spa_namespace_lock);
 	return (ret);
 }
@@ -2240,10 +2240,10 @@ spa_get_autosnap(spa_t *spa)
 	return (&spa->spa_autosnap);
 }
 
-wrc_data_t *
-spa_get_wrc_data(spa_t *spa)
+wbc_data_t *
+spa_get_wbc_data(spa_t *spa)
 {
-	return (&spa->spa_wrc);
+	return (&spa->spa_wbc);
 }
 
 static void

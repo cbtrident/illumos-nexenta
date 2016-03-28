@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <libintl.h>
@@ -177,8 +177,8 @@ static size_t unix_errnos_sz = sizeof (unix_errnos) / sizeof (unix_errnos[0]);
 	    KRRP_MIN_KEEP_SNAPS, KRRP_MAX_KEEP_SNAPS) \
 
 #define	KRRP_ERRDESCR_SESS_COMMON_MAP(X) \
-	X(ZFSWRCBADMODE, 0, LIBKRRP_EMSG_ZFSWRCBADMODE) \
-	X(ZFSWRCBADUSE, 0, LIBKRRP_EMSG_ZFSWRCBADUSE) \
+	X(ZFSWBCBADMODE, 0, LIBKRRP_EMSG_ZFSWBCBADMODE) \
+	X(ZFSWBCBADUSE, 0, LIBKRRP_EMSG_ZFSWBCBADUSE) \
 	X(AUTOSNAP, EINVAL, LIBKRRP_EMSG_AUTOSNAP_INVAL) \
 	X(CMNSNAP, ENOENT, LIBKRRP_EMSG_CMNSNAP_NOTEXIST) \
 	X(SRCDS, ENOENT, LIBKRRP_EMSG_SRCDS_NOTEXIST) \
@@ -459,5 +459,5 @@ libkrrp_sess_error_description(libkrrp_error_t *error,
     libkrrp_error_descr_t descr)
 {
 	libkrrp_common_error_description(LIBKRRP_SESS_STATUS_ERROR,
-		error, descr);
+	    error, descr);
 }

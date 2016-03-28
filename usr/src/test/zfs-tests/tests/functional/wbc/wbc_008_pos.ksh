@@ -12,11 +12,11 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
-. $STF_SUITE/tests/functional/wrc/wrc.cfg
-. $STF_SUITE/tests/functional/wrc/wrc.kshlib
+. $STF_SUITE/tests/functional/wbc/wbc.cfg
+. $STF_SUITE/tests/functional/wbc/wbc.kshlib
 
 #
 # DESCRIPTION:
@@ -35,11 +35,11 @@
 verify_runnable "global"
 log_assert "Attaching special vdev succeeds."
 log_onexit cleanup
-for wrc_mode in "on" "off" ; do
+for wbc_mode in "on" "off" ; do
 	log_must create_pool $TESTPOOL $pool_type
 	log_must display_status $TESTPOOL
 	log_must $ZPOOL add -f $TESTPOOL special $SSD_DISK1
-	log_must set_wrc_mode $TESTPOOL $wrc_mode
+	log_must set_wbc_mode $TESTPOOL $wbc_mode
 	log_must display_status $TESTPOOL
 	log_must $ZPOOL attach $TESTPOOL $SSD_DISK1 $SSD_DISK2
 	log_must display_status $TESTPOOL

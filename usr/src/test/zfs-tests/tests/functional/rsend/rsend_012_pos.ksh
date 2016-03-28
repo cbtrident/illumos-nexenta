@@ -27,6 +27,7 @@
 
 #
 # Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/rsend/rsend.kshlib
@@ -55,7 +56,7 @@ function rand_set_prop
 }
 
 #
-# 'wrc_mode' is skipped, because the tested pools do not have 
+# 'wbc_mode' is skipped, because the tested pools do not have 
 # 'special' vdev, so the setting of this property will cause
 # test-fail
 #
@@ -68,7 +69,7 @@ function edited_prop
 	case $behaviour in
 		"get")
 			typeset props=$($ZFS inherit 2>&1 | \
-				$AWK '$2=="YES" {print $1}' | $EGREP -v "^wrc_mode" | \
+				$AWK '$2=="YES" {print $1}' | $EGREP -v "^wbc_mode" | \
 				$EGREP -v "^vol|\.\.\.$")
 			for item in $props ; do
 				if [[ $item == "mlslabel" ]] && \

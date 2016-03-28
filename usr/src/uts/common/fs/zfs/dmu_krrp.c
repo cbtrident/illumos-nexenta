@@ -18,7 +18,7 @@
 
 #define	RECV_BUFFER_SIZE (1 << 20)
 
-extern int wrc_check_dataset(const char *name);
+extern int wbc_check_dataset(const char *name);
 
 int zfs_send_timeout = 5;
 uint64_t krrp_debug = 0;
@@ -209,7 +209,7 @@ zfs_send_collect_props(objset_t *mos, uint64_t zapobj, nvlist_t *props)
 		 * This property make sense only to this dataset,
 		 * so no reasons to include it into stream
 		 */
-		if (prop == ZFS_PROP_WRC_MODE) {
+		if (prop == ZFS_PROP_WBC_MODE) {
 			zap_cursor_advance(&zc);
 			continue;
 		}
@@ -990,7 +990,7 @@ zfs_cleanup_send_list(list_t *ds_to_send, void *owner)
 /*
  * zfs_send_thread
  * executes ONE iteration, initial or incremental, on the sender side
- * 1) validates versus wrc
+ * 1) validates versus WBC
  * 2) collects source datasets and its to-be-sent snapshots
  *    2.1) each source dataset is an element of list, that contains
  *    - name of dataset
@@ -1036,7 +1036,7 @@ zfs_send_thread(void *krrp_task_void)
 	 * Source cannot be a writecached child if
 	 * the from_snapshot is an autosnap
 	 */
-	err = wrc_check_dataset(buffer_args->from_ds);
+	err = wbc_check_dataset(buffer_args->from_ds);
 	if (err != 0 && err != ENOTACTIVE) {
 		boolean_t from_snap_is_autosnap =
 		    autosnap_check_name(buffer_args->from_snap);
@@ -1367,7 +1367,7 @@ zfs_recv_one_ds(char *ds, dmu_replay_record_t *drr, nvlist_t *fs_props,
 
 /*
  * Recv one stream
- * 1) validates versus wrc
+ * 1) validates versus WBC
  * 2) prepares receiving paths according to the given
  * flags ('leave_tail' or 'strip_head')
  * 3) recv stream
@@ -1452,14 +1452,14 @@ zfs_recv_thread(void *krrp_task_void)
 	}
 
 	/* destination cannot be writecached */
-	err = wrc_check_dataset(to_ds);
+	err = wbc_check_dataset(to_ds);
 	if (err == 0 || err == EOPNOTSUPP) {
 		err = SET_ERROR(ENOTDIR);
 		goto out;
 	}
 
 	/*
-	 * ENOTACTIVE means WRC is not active for the DS
+	 * ENOTACTIVE means WBC is not active for the DS
 	 * If some another error just return
 	 */
 	if (err != ENOTACTIVE)

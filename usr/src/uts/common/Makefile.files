@@ -1461,7 +1461,7 @@ ZFS_COMMON_OBJS +=		\
 	special.o		\
 	cos.o			\
 	spa_vdev_props.o	\
-	wrcache.o
+	wbc.o
 
 ZFS_SHARED_OBJS +=		\
 	zfeature_common.o	\

@@ -16,25 +16,25 @@
 include $(SRC)/Makefile.master
 
 ROOTOPTPKG = $(ROOT)/opt/zfs-tests
-TESTDIR = $(ROOTOPTPKG)/tests/functional/wrc
+TESTDIR = $(ROOTOPTPKG)/tests/functional/wbc
 
 PROGS = cleanup \
 	setup \
-	wrc_001_pos \
-	wrc_002_pos \
-	wrc_003_pos \
-	wrc_004_pos \
-	wrc_005_neg \
-	wrc_006_neg \
-	wrc_007_neg \
-	wrc_008_pos \
-	wrc_009_pos \
-	wrc_010_neg \
-	wrc_011_neg \
-	wrc_012_pos
+	wbc_001_pos \
+	wbc_002_pos \
+	wbc_003_pos \
+	wbc_004_pos \
+	wbc_005_neg \
+	wbc_006_neg \
+	wbc_007_neg \
+	wbc_008_pos \
+	wbc_009_pos \
+	wbc_010_neg \
+	wbc_011_neg \
+	wbc_012_pos
 
-FILES = wrc.cfg \
-	wrc.kshlib
+FILES = wbc.cfg \
+	wbc.kshlib
 
 CMDS = $(PROGS:%=$(TESTDIR)/%) $(FILES:%=$(TESTDIR)/%)
 $(CMDS) := FILEMODE = 0555

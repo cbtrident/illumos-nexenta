@@ -42,7 +42,7 @@
 #include <sys/bplist.h>
 #include <sys/bpobj.h>
 #include <sys/special_impl.h>
-#include <sys/wrcache.h>
+#include <sys/wbc.h>
 #include <sys/zfeature.h>
 #include <zfeature_common.h>
 #include <sys/autosnap.h>
@@ -386,14 +386,14 @@ struct spa {
 	uint64_t	spa_hiwat;		/* high watermark percent */
 	uint64_t	spa_lwm_space;		/* low watermark */
 	uint64_t	spa_hwm_space;		/* high watermark */
-	uint64_t	spa_wrc_wm_range;	/* high wm - low wm */
-	uint8_t		spa_wrc_perc;		/* percent of writes to spec. */
+	uint64_t	spa_wbc_wm_range;	/* high wm - low wm */
+	uint8_t		spa_wbc_perc;		/* percent of writes to spec. */
 	spa_watermark_t	spa_watermark;
 	boolean_t	spa_special_has_errors;
 
-	/* wrcache thread. */
-	uint64_t	spa_wrc_mode;
-	wrc_data_t	spa_wrc;
+	/* Write Back Cache */
+	uint64_t	spa_wbc_mode;
+	wbc_data_t	spa_wbc;
 
 	/* cos list */
 	list_t		spa_cos_list;

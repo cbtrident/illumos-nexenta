@@ -38,7 +38,7 @@
 #include <sys/spa.h>
 #include <sys/zap.h>
 #include <sys/fs/zfs.h>
-#include <sys/wrcache.h>
+#include <sys/wbc.h>
 
 #include "zfs_prop.h"
 #include "zfs_errno.h"
@@ -291,11 +291,11 @@ dsl_prop_register(dsl_dataset_t *ds, const char *propname,
 
 	ASSERT(dsl_pool_config_held(dp));
 
-	if (zfs_name_to_prop(propname) == ZFS_PROP_WRC_MODE) {
-		wrc_mode_prop_val_t val;
+	if (zfs_name_to_prop(propname) == ZFS_PROP_WBC_MODE) {
+		wbc_mode_prop_val_t val;
 
 		err = dsl_prop_get_ds(ds, propname, 8,
-		    WRC_MODE_PROP_VAL_SZ, &val, NULL);
+		    WBC_MODE_PROP_VAL_SZ, &val, NULL);
 		if (err == 0)
 			value = (uintptr_t)((void *)&val);
 	} else
@@ -519,11 +519,11 @@ dsl_prop_notify_all_cb(dsl_pool_t *dp, dsl_dataset_t *ds, void *arg)
 				continue;
 
 			propname = cbr->cbr_pr->pr_propname;
-			if (zfs_name_to_prop(propname) == ZFS_PROP_WRC_MODE) {
-				wrc_mode_prop_val_t val;
+			if (zfs_name_to_prop(propname) == ZFS_PROP_WBC_MODE) {
+				wbc_mode_prop_val_t val;
 
 				if (dsl_prop_get_ds(cbr->cbr_ds, propname, 8,
-				    WRC_MODE_PROP_VAL_SZ, &val, NULL) == 0) {
+				    WBC_MODE_PROP_VAL_SZ, &val, NULL) == 0) {
 					value = (uintptr_t)((void *)&val);
 					cbr->cbr_func(cbr->cbr_arg, value);
 				}
@@ -742,41 +742,41 @@ dsl_prop_set_sync_impl(dsl_dataset_t *ds, const char *propname,
 	strfree(inheritstr);
 	strfree(recvdstr);
 
-	if (zfs_name_to_prop(propname) == ZFS_PROP_WRC_MODE) {
-		wrc_mode_prop_val_t val;
+	if (zfs_name_to_prop(propname) == ZFS_PROP_WBC_MODE) {
+		wbc_mode_prop_val_t val;
 
 		VERIFY0(dsl_prop_get_ds(ds, propname, 8,
-		    WRC_MODE_PROP_VAL_SZ, &val, NULL));
+		    WBC_MODE_PROP_VAL_SZ, &val, NULL));
 
 		dsl_prop_changed_notify(ds->ds_dir->dd_pool,
 		    ds->ds_dir->dd_object, propname,
 		    (uintptr_t)((void *)&val), TRUE);
 
 		/*
-		 * Flow diagram of ZFS_PROP_WRC_MODE states
+		 * Flow diagram of ZFS_PROP_WBC_MODE states
 		 *
 		 * off (root_ds_object == 0, txg_off == 0)
-		 *	(user sees wrc_mode=off, source=default)
+		 *	(user sees wbc_mode=off, source=default)
 		 *
 		 *	user operation "set on" ==>>
 		 *
 		 * on (root_ds_object != 0, txg_off == 0)
-		 *	(user sees wrc_mode=on, source=local)
+		 *	(user sees wbc_mode=on, source=local)
 		 *
 		 *	user operation "set off" ==>>
 		 *
 		 * off_delayed (root_ds_object != 0, txg_off != 0)
-		 *	(user sees wrc_mode=off, source=local)
+		 *	(user sees wbc_mode=off, source=local)
 		 *
 		 *	internal operation "inherit" ==>>
 		 *
 		 * off (root_ds_object == 0, txg_off == 0)
-		 *	(user sees wrc_mode=off, source=default)
+		 *	(user sees wbc_mode=off, source=default)
 		 */
 		if (val.root_ds_object == 0)
-			spa_feature_decr(spa, SPA_FEATURE_WRC, tx);
+			spa_feature_decr(spa, SPA_FEATURE_WBC, tx);
 		else if (val.txg_off == 0)
-			spa_feature_incr(spa, SPA_FEATURE_WRC, tx);
+			spa_feature_incr(spa, SPA_FEATURE_WBC, tx);
 
 		(void) snprintf(valbuf, sizeof (valbuf),
 		    "%s", (val.root_ds_object != 0 &&
@@ -868,7 +868,7 @@ dsl_prop_inherit(const char *dsname, const char *propname,
 
 /* ARGSUSED */
 static int
-dsl_prop_wrc_mode_check_child_cb(dsl_pool_t *dp,
+dsl_prop_wbc_mode_check_child_cb(dsl_pool_t *dp,
     dsl_dataset_t *ds, void *arg)
 {
 	int err;
@@ -886,49 +886,49 @@ dsl_prop_wrc_mode_check_child_cb(dsl_pool_t *dp,
 		 * the target DS and its children
 		 * do not use writecache
 		 */
-		if (os->os_wrc_mode != ZFS_WRC_MODE_OFF)
-			return (SET_ERROR(EKZFS_WRCCONFLICT));
+		if (os->os_wbc_mode != ZFS_WBC_MODE_OFF)
+			return (SET_ERROR(EKZFS_WBCCONFLICT));
 	} else {
-		ASSERT3U(*prop, ==, ZFS_PROP_WRC_MODE);
+		ASSERT3U(*prop, ==, ZFS_PROP_WBC_MODE);
 
 		/*
-		 * User tries to set ZFS_PROP_WRC_MODE.
+		 * User tries to set ZFS_PROP_WBC_MODE.
 		 * In this case we need check that
 		 * the target DS and its children
 		 * do not use writecache and dedup
 		 */
-		if (os->os_wrc_mode != ZFS_WRC_MODE_OFF)
-			return (SET_ERROR(EKZFS_WRCCHILD));
+		if (os->os_wbc_mode != ZFS_WBC_MODE_OFF)
+			return (SET_ERROR(EKZFS_WBCCHILD));
 
 		if (os->os_dedup_checksum != ZIO_CHECKSUM_OFF)
-			return (SET_ERROR(EKZFS_WRCCONFLICT));
+			return (SET_ERROR(EKZFS_WBCCONFLICT));
 	}
 
 	return (0);
 }
 
 static int
-dsl_prop_wrc_mode_check(dsl_dataset_t *ds, objset_t *os)
+dsl_prop_wbc_mode_check(dsl_dataset_t *ds, objset_t *os)
 {
 	int err = 0;
-	zfs_prop_t prop = ZFS_PROP_WRC_MODE;
+	zfs_prop_t prop = ZFS_PROP_WBC_MODE;
 
-	if (os->os_wrc_mode != ZFS_WRC_MODE_OFF) {
+	if (os->os_wbc_mode != ZFS_WBC_MODE_OFF) {
 		/*
-		 * ZFS_PROP_WRC_MODE cannot be set for
+		 * ZFS_PROP_WBC_MODE cannot be set for
 		 * a child DS if the prop was set for
 		 * the parent
 		 */
-		if (os->os_wrc_root_ds_obj != ds->ds_object)
-			return (SET_ERROR(EKZFS_WRCPARENT));
+		if (os->os_wbc_root_ds_obj != ds->ds_object)
+			return (SET_ERROR(EKZFS_WBCPARENT));
 	} else {
 		/*
-		 * Is not allowed to change wrc_mode for parent
+		 * Is not allowed to change wbc_mode for parent
 		 * if its children already have the changed prop
 		 */
 		err = dmu_objset_find_dp(ds->ds_dir->dd_pool,
 		    ds->ds_dir->dd_object,
-		    dsl_prop_wrc_mode_check_child_cb, &prop,
+		    dsl_prop_wbc_mode_check_child_cb, &prop,
 		    DS_FIND_CHILDREN);
 	}
 
@@ -973,16 +973,16 @@ dsl_props_set_check(void *arg, dmu_tx_t *tx)
 		}
 
 		/*
-		 * Deduplication and WRC cannot be used together
+		 * Deduplication and WBC cannot be used together
 		 * This code returns error also for case when
-		 * WRC is ON, DEDUP is off and a user tries
+		 * WBC is ON, DEDUP is off and a user tries
 		 * to do DEDUP=off, because in this case the code
 		 * will be more complex, but benefit is too small
 		 */
 		if (prop == ZFS_PROP_DEDUP) {
-			if (os->os_wrc_root_ds_obj != 0) {
+			if (os->os_wbc_root_ds_obj != 0) {
 				dsl_dataset_rele(ds, FTAG);
-				return (SET_ERROR(EKZFS_WRCCONFLICT));
+				return (SET_ERROR(EKZFS_WBCCONFLICT));
 			}
 
 			/*
@@ -991,7 +991,7 @@ dsl_props_set_check(void *arg, dmu_tx_t *tx)
 			 */
 			err = dmu_objset_find_dp(ds->ds_dir->dd_pool,
 			    ds->ds_dir->dd_object,
-			    dsl_prop_wrc_mode_check_child_cb, &prop,
+			    dsl_prop_wbc_mode_check_child_cb, &prop,
 			    DS_FIND_CHILDREN);
 			if (err != 0) {
 				dsl_dataset_rele(ds, FTAG);
@@ -999,47 +999,47 @@ dsl_props_set_check(void *arg, dmu_tx_t *tx)
 			}
 		}
 
-		if (prop == ZFS_PROP_WRC_MODE) {
-			uint64_t wrc_mode_new = 0;
+		if (prop == ZFS_PROP_WBC_MODE) {
+			uint64_t wbc_mode_new = 0;
 			data_type_t elem_type = nvpair_type(elem);
 
 			if (elem_type == DATA_TYPE_UINT64)
-				wrc_mode_new = fnvpair_value_uint64(elem);
+				wbc_mode_new = fnvpair_value_uint64(elem);
 
-			if (os->os_wrc_root_ds_obj == ds->ds_object &&
+			if (os->os_wbc_root_ds_obj == ds->ds_object &&
 			    elem_type == DATA_TYPE_UINT64) {
 
 				/*
-				 * ZFS_WRC_MODE_OFF_DELAYED means that
-				 * the coresponding wrc_instance is in
+				 * ZFS_WBC_MODE_OFF_DELAYED means that
+				 * the coresponding wbc_instance is in
 				 * transition state: from ON to OFF
 				 * so ON/OFF is not permitted
 				 */
-				if (os->os_wrc_mode ==
-				    ZFS_WRC_MODE_OFF_DELAYED) {
+				if (os->os_wbc_mode ==
+				    ZFS_WBC_MODE_OFF_DELAYED) {
 					dsl_dataset_rele(ds, FTAG);
 					return (SET_ERROR(EINPROGRESS));
 				}
 
-				ASSERT3U(os->os_wrc_mode, ==, ZFS_WRC_MODE_ON);
+				ASSERT3U(os->os_wbc_mode, ==, ZFS_WBC_MODE_ON);
 
 				/* Check for double ON */
-				if (wrc_mode_new == ZFS_WRC_MODE_ON) {
+				if (wbc_mode_new == ZFS_WBC_MODE_ON) {
 					dsl_dataset_rele(ds, FTAG);
 					return (SET_ERROR(EALREADY));
 				}
 			}
 
-			err = dsl_prop_wrc_mode_check(ds, os);
+			err = dsl_prop_wbc_mode_check(ds, os);
 			if (err != 0) {
 				dsl_dataset_rele(ds, FTAG);
 				return (err);
 			}
 
 			/* Check for double OFF */
-			if (os->os_wrc_root_ds_obj == 0 &&
+			if (os->os_wbc_root_ds_obj == 0 &&
 			    elem_type == DATA_TYPE_UINT64 &&
-			    wrc_mode_new == ZFS_WRC_MODE_OFF) {
+			    wbc_mode_new == ZFS_WBC_MODE_OFF) {
 				dsl_dataset_rele(ds, FTAG);
 				return (SET_ERROR(EALREADY));
 			}
@@ -1094,27 +1094,27 @@ dsl_props_set_sync_impl(dsl_dataset_t *ds, zprop_source_t source,
 			zfs_prop_t prop = zfs_name_to_prop(propname);
 			uint64_t intval = fnvpair_value_uint64(pair);
 
-			if (prop == ZFS_PROP_WRC_MODE) {
-				wrc_mode_prop_val_t val;
+			if (prop == ZFS_PROP_WBC_MODE) {
+				wbc_mode_prop_val_t val;
 
 				/*
-				 * Disabling WRC involves the following:
+				 * Disabling WBC involves the following:
 				 * 1) all the subsequent data writes will
 				 * stop using special vdev
-				 * 2) already wrcached data blocks (with
-				 * TXG <= txg_off below) will gradually
+				 * 2) already WriteBackCached data blocks
+				 * (with TXG <= txg_off below) will gradually
 				 * migrated from special vdev
 				 *
 				 * To handle this need to remember TXG.
-				 * WRC will be completely disabled for this DS,
-				 * after WRC-window cross this TXG
+				 * WBC will be completely disabled for this DS,
+				 * after WBC-window cross this TXG
 				 */
 				val.txg_off = (intval == 0) ? tx->tx_txg : 0;
 				val.root_ds_object = ds->ds_object;
 				val.flags = 0;
 
 				dsl_prop_set_sync_impl(ds, nvpair_name(pair),
-				    source, 8, WRC_MODE_PROP_VAL_SZ, &val, tx);
+				    source, 8, WBC_MODE_PROP_VAL_SZ, &val, tx);
 			} else {
 				dsl_prop_set_sync_impl(ds, nvpair_name(pair),
 				    source, sizeof (intval), 1, &intval, tx);
@@ -1281,11 +1281,11 @@ dsl_prop_get_all_impl(objset_t *mos, uint64_t propobj,
 			 */
 			ASSERT(za.za_integer_length == 8);
 
-			if (prop == ZFS_PROP_WRC_MODE) {
-				wrc_mode_prop_val_t val;
+			if (prop == ZFS_PROP_WBC_MODE) {
+				wbc_mode_prop_val_t val;
 
 				ASSERT(za.za_num_integers ==
-				    WRC_MODE_PROP_VAL_SZ);
+				    WBC_MODE_PROP_VAL_SZ);
 
 				err = zap_lookup(mos, propobj,
 				    za.za_name, 8, za.za_num_integers, &val);
@@ -1294,9 +1294,9 @@ dsl_prop_get_all_impl(objset_t *mos, uint64_t propobj,
 
 				if (val.root_ds_object != 0 &&
 				    val.txg_off == 0)
-					za.za_first_integer = ZFS_WRC_MODE_ON;
+					za.za_first_integer = ZFS_WBC_MODE_ON;
 				else
-					za.za_first_integer = ZFS_WRC_MODE_OFF;
+					za.za_first_integer = ZFS_WBC_MODE_OFF;
 			}
 
 			(void) nvlist_add_uint64(propval, ZPROP_VALUE,

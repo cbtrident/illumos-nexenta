@@ -24,7 +24,7 @@
  */
 /* Copyright (c) 2013 by Saso Kiselkov. All rights reserved. */
 /* Copyright (c) 2013, Joyent, Inc. All rights reserved. */
-/* Copyright 2015 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/dmu.h>
 #include <sys/dmu_impl.h>
@@ -1942,8 +1942,8 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 	zp->zp_metadata = ismd;
 	zp->zp_nopwrite = nopwrite;
 	zp->zp_zpl_meta_to_special = os->os_zpl_meta_to_special;
-	zp->zp_usewrc = (zp->zp_usesc &&
-	    os->os_wrc_mode == ZFS_WRC_MODE_ON);
+	zp->zp_usewbc = (zp->zp_usesc &&
+	    os->os_wbc_mode == ZFS_WBC_MODE_ON);
 
 	/* explicitly control the number for copies for DDT */
 	if (DMU_OT_IS_DDT_META(type) && (spa->spa_ddt_meta_copies > 0))

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_LIBKRRP_ERROR_H
@@ -90,9 +90,9 @@ typedef enum {
 #define	LIBKRRP_EMSG_SRCDS_NOTEXIST "Source dataset does not exist"
 #define	LIBKRRP_EMSG_DSTDS_NOTEXIST "Destination dataset does not exist"
 #define	LIBKRRP_EMSG_SRCSNAP_NOTEXIST "Source snapshot does not exist"
-#define	LIBKRRP_EMSG_ZFSWRCBADMODE "Incompatible WRC mode"
-#define	LIBKRRP_EMSG_ZFSWRCBADUSE \
-	    "WRC is enabled, but source or destination is not a pool"
+#define	LIBKRRP_EMSG_ZFSWBCBADMODE "Incompatible WBC mode"
+#define	LIBKRRP_EMSG_ZFSWBCBADUSE \
+	    "WBC is enabled, but source or destination is not a pool"
 #define	LIBKRRP_EMSG_CMNSNAP_NOTEXIST "Common snapshot does not exist"
 #define	LIBKRRP_EMSG_SESS_THROTTLE_RECV \
 	    "Throttle limit can be set only for sender session"

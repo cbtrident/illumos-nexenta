@@ -11,7 +11,7 @@
 
 #
 # Copyright (c) 2013, 2015 by Delphix. All rights reserved.
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
 .PARALLEL: $(SUBDIRS)
@@ -72,7 +72,7 @@ SUBDIRS = acl \
 	truncate \
 	userquota \
 	utils_test \
-	wrc \
+	wbc \
 	write_dirs \
 	xattr \
 	zvol

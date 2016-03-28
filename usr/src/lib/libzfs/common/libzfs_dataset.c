@@ -1489,13 +1489,13 @@ zfs_setprop_error(libzfs_handle_t *hdl, zfs_prop_t prop, int err,
 		}
 		break;
 
-	case EKZFS_WRCCONFLICT:
-		if (prop == ZFS_PROP_WRC_MODE || prop == ZFS_PROP_DEDUP) {
+	case EKZFS_WBCCONFLICT:
+		if (prop == ZFS_PROP_WBC_MODE || prop == ZFS_PROP_DEDUP) {
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-			    "WRC and deduplication cannot be "
-			    "activate simultaneously on the "
+			    "WBC and deduplication cannot be "
+			    "active simultaneously on the "
 			    "same dataset"));
-			(void) zfs_error(hdl, EZFS_WRCNOTSUP, errbuf);
+			(void) zfs_error(hdl, EZFS_WBCNOTSUP, errbuf);
 		} else {
 			(void) zfs_standard_error(hdl, err, errbuf);
 		}
@@ -1514,7 +1514,7 @@ zfs_setprop_error(libzfs_handle_t *hdl, zfs_prop_t prop, int err,
 #endif
 		/* FALLTHROUGH */
 	default:
-		if (prop != ZFS_PROP_WRC_MODE) {
+		if (prop != ZFS_PROP_WBC_MODE) {
 			(void) zfs_standard_error(hdl, err, errbuf);
 			break;
 		}
@@ -1522,32 +1522,32 @@ zfs_setprop_error(libzfs_handle_t *hdl, zfs_prop_t prop, int err,
 		switch (err) {
 		case EINPROGRESS:
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-			    "WRC cannot be enabled for the dataset since "
+			    "WBC cannot be enabled for the dataset since "
 			    "the latter is currently in transition to "
-			    "wrc_mode = off. Try again later"));
-			(void) zfs_error(hdl, EZFS_WRCINPROGRESS, errbuf);
+			    "wbc_mode = off. Try again later"));
+			(void) zfs_error(hdl, EZFS_WBCINPROGRESS, errbuf);
 			break;
 		case EALREADY:
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-			    "WRC is already in the requested (on/off) "
+			    "WBC is already in the requested (on/off) "
 			    "state, nothing to do"));
-			(void) zfs_error(hdl, EZFS_WRCALREADY, errbuf);
+			(void) zfs_error(hdl, EZFS_WBCALREADY, errbuf);
 			break;
-		case EKZFS_WRCNOTSUP:
+		case EKZFS_WBCNOTSUP:
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-			    "feature flag 'wrcache' is not enabled or "
+			    "feature@wbc is not enabled or "
 			    "special device (special vdev) is not present"));
-			(void) zfs_error(hdl, EZFS_WRCNOTSUP, errbuf);
+			(void) zfs_error(hdl, EZFS_WBCNOTSUP, errbuf);
 			break;
-		case EKZFS_WRCCHILD:
+		case EKZFS_WBCCHILD:
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "a child dataset has this property enabled"));
-			(void) zfs_error(hdl, EZFS_WRCCHILD, errbuf);
+			(void) zfs_error(hdl, EZFS_WBCCHILD, errbuf);
 			break;
-		case EKZFS_WRCPARENT:
+		case EKZFS_WBCPARENT:
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "a parent dataset has this property enabled"));
-			(void) zfs_error(hdl, EZFS_WRCPARENT, errbuf);
+			(void) zfs_error(hdl, EZFS_WBCPARENT, errbuf);
 			break;
 		default:
 			(void) zfs_standard_error(hdl, err, errbuf);
@@ -1797,7 +1797,7 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 	 * but user can do only "set" operation,
 	 * because "inherit" does not make sence
 	 */
-	if (prop == ZFS_PROP_WRC_MODE)
+	if (prop == ZFS_PROP_WBC_MODE)
 		return (zfs_error(hdl, EZFS_PROPNONINHERIT, errbuf));
 
 	/*

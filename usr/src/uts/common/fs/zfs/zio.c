@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/sysmacros.h>
@@ -3675,7 +3675,7 @@ zio_done(zio_t *zio)
 }
 
 zio_t *
-zio_wrc(zio_type_t type, vdev_t *vd, void *data,
+zio_wbc(zio_type_t type, vdev_t *vd, void *data,
     uint64_t size, uint64_t offset)
 {
 	zio_t *zio = NULL;
