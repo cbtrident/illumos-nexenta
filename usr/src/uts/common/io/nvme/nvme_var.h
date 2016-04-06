@@ -137,7 +137,8 @@ struct nvme {
 	uint16_t n_async_event_limit;
 	uint16_t n_abort_command_limit;
 	uint64_t n_max_data_transfer_size;
-	boolean_t n_volatile_write_cache_enabled;
+	boolean_t n_write_cache_present;
+	boolean_t n_write_cache_enabled;
 	int n_error_log_len;
 	boolean_t n_lba_range_supported;
 
