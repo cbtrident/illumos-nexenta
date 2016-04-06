@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef _NVME_VAR_H
@@ -41,6 +41,7 @@ extern "C" {
 #define	NVME_DEFAULT_IO_QUEUE_LEN	1024
 #define	NVME_DEFAULT_ASYNC_EVENT_LIMIT	10
 #define	NVME_MIN_ASYNC_EVENT_LIMIT	1
+#define	NVME_DEFAULT_MIN_BLOCK_SIZE	4096
 
 #define	NVME_ADMIN_CMD_TIMEOUT		100000
 
@@ -136,6 +137,7 @@ struct nvme {
 	uint32_t n_admin_queue_len;
 	uint32_t n_io_queue_len;
 	uint16_t n_async_event_limit;
+	uint_t n_min_block_size;
 	uint16_t n_abort_command_limit;
 	uint64_t n_max_data_transfer_size;
 	boolean_t n_write_cache_present;
