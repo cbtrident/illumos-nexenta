@@ -315,6 +315,7 @@ krrp_ioctl_sess_create_conn(nvlist_t *params, krrp_error_t *error)
 	    params, (void *) &timeout);
 	if (rc == 0 && (timeout < KRRP_MIN_CONN_TIMEOUT ||
 	    timeout > KRRP_MAX_CONN_TIMEOUT)) {
+		rc = -1;
 		krrp_error_set(error, KRRP_ERRNO_CONNTIMEOUT, EINVAL);
 		goto out;
 	}
@@ -336,6 +337,7 @@ krrp_ioctl_sess_create_conn(nvlist_t *params, krrp_error_t *error)
 	}
 
 	if (remote_port < KRRP_MIN_PORT || remote_port > KRRP_MAX_PORT) {
+		rc = -1;
 		krrp_error_set(error, KRRP_ERRNO_PORT, EINVAL);
 		goto out;
 	}
@@ -399,6 +401,7 @@ krrp_ioctl_sess_create_pdu_engine(nvlist_t *params, krrp_error_t *error)
 	 */
 	if (dblk_data_sz < KRRP_MIN_SESS_PDU_DBLK_DATA_SZ ||
 	    dblk_data_sz > KRRP_MAX_SESS_PDU_DBLK_DATA_SZ) {
+		rc = -1;
 		krrp_error_set(error, KRRP_ERRNO_DBLKSZ, EINVAL);
 		goto out;
 	}
@@ -411,6 +414,7 @@ krrp_ioctl_sess_create_pdu_engine(nvlist_t *params, krrp_error_t *error)
 	}
 
 	if (max_memory < KRRP_MIN_MAXMEM) {
+		rc = -1;
 		krrp_error_set(error, KRRP_ERRNO_MAXMEMSZ, EINVAL);
 		goto out;
 	}
