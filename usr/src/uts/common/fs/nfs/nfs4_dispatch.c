@@ -592,6 +592,7 @@ rfs4_minorvers_mismatch(struct svc_req *req, SVCXPRT *xprt, void *args)
 	    resp->tag.utf8string_len);
 	resp->array_len = 0;
 	resp->array = NULL;
+	resp->nses = NULL;
 	resp->status = NFS4ERR_MINOR_VERS_MISMATCH;
 	if (!svc_sendreply(xprt,  xdr_COMPOUND4res_srv, (char *)resp)) {
 		DTRACE_PROBE2(nfss__e__minorvers_mismatch,
