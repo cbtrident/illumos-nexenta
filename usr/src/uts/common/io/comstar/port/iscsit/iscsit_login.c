@@ -39,7 +39,6 @@
 #include <sys/sysmacros.h>
 #include <sys/note.h>
 #include <sys/sdt.h>
-#include <sys/kstat.h>
 #include <sys/errno.h>
 
 #include <sys/stmf.h>

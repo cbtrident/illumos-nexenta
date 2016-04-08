@@ -1376,7 +1376,7 @@ fct_deregport_fail1:;
 /* ARGSUSED */
 void
 fct_handle_event(fct_local_port_t *port, int event_id, uint32_t event_flags,
-		caddr_t arg)
+    caddr_t arg)
 {
 	char			info[FCT_INFO_LEN];
 	fct_i_event_t		*e;
@@ -1626,8 +1626,7 @@ fct_local_port_cleanup_done(fct_i_local_port_t *iport)
 
 fct_cmd_t *
 fct_scsi_task_alloc(fct_local_port_t *port, uint16_t rp_handle,
-		uint32_t rportid, uint8_t *lun, uint16_t cdb_length,
-		uint16_t task_ext)
+    uint32_t rportid, uint8_t *lun, uint16_t cdb_length, uint16_t task_ext)
 {
 	fct_cmd_t *cmd;
 	fct_i_cmd_t *icmd;
@@ -2149,7 +2148,7 @@ fct_cmd_free(fct_cmd_t *cmd)
 /* ARGSUSED */
 stmf_status_t
 fct_scsi_abort(stmf_local_port_t *lport, int abort_cmd, void *arg,
-							uint32_t flags)
+    uint32_t flags)
 {
 	stmf_status_t ret = STMF_SUCCESS;
 	scsi_task_t *task;
@@ -2284,7 +2283,7 @@ fct_ctl(struct stmf_local_port *lport, int cmd, void *arg)
 /* ARGSUSED */
 stmf_status_t
 fct_info(uint32_t cmd, stmf_local_port_t *lport, void *arg, uint8_t *buf,
-						uint32_t *bufsizep)
+    uint32_t *bufsizep)
 {
 	return (STMF_NOT_SUPPORTED);
 }
@@ -3097,7 +3096,7 @@ fct_queue_cmd_for_termination(fct_cmd_t *cmd, fct_status_t s)
  */
 void
 fct_q_for_termination_lock_held(fct_i_local_port_t *iport, fct_i_cmd_t *icmd,
-		fct_status_t s)
+    fct_status_t s)
 {
 	uint32_t old, new;
 
@@ -3257,7 +3256,7 @@ fct_handle_port_offline(fct_i_local_port_t *iport)
  */
 fct_status_t
 fct_port_initialize(fct_local_port_t *port, uint32_t rflags,
-				char *additional_info)
+    char *additional_info)
 {
 	stmf_state_change_info_t st;
 
@@ -3270,7 +3269,7 @@ fct_port_initialize(fct_local_port_t *port, uint32_t rflags,
 
 fct_status_t
 fct_port_shutdown(fct_local_port_t *port, uint32_t rflags,
-				char *additional_info)
+    char *additional_info)
 {
 	stmf_state_change_info_t st;
 
