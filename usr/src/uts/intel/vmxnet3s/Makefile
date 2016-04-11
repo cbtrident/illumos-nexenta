@@ -1,56 +1,94 @@
 #
-# This file and its contents are supplied under the terms of the
-# Common Development and Distribution License ("CDDL"), version 1.0.
-# You may only use this file in accordance with the terms of version
-# 1.0 of the CDDL.
+# CDDL HEADER START
 #
-# A full copy of the text of the CDDL should have accompanied this
-# source.  A copy of the CDDL is also available via the Internet at
-# http://www.illumos.org/license/CDDL.
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+#
+# Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# uts/intel/vmxnet3s/Makefile
+#
+#	This makefile drives the production of the vmxnet3s
+#	network driver kernel module.
+#
+#	intel architecture dependent
 #
 
 #
-# Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+#	Paths to the base of the uts directory trees
 #
+UTSBASE = ../..
 
-UTSBASE=	../..
+#
+#	Define the module and object file sets.
+#
+MODULE		= vmxnet3s
+OBJECTS		= $(VMXNET3S_OBJS:%=$(OBJS_DIR)/%)
+LINTS		= $(VMXNET3S_OBJS:%.o=$(LINTS_DIR)/%.ln)
+ROOTMODULE	= $(ROOT_DRV_DIR)/$(MODULE)
+CONF_SRCDIR	= $(UTSBASE)/intel/io/vmxnet3s
 
-MODULE=		vmxnet3s
-OBJECTS=	$(VMXNET3S_OBJS:%=$(OBJS_DIR)/%)
-LINTS=		$(VMXNET3S_OBJS:%.o=$(LINTS_DIR)/%.ln)
-ROOTMODULE=	$(ROOT_DRV_DIR)/$(MODULE)
-CONF_SRCDIR=	$(UTSBASE)/intel/io/vmxnet3s
+#
+#	Include common rules.
+#
+include $(UTSBASE)/intel/Makefile.intel
 
-include		$(UTSBASE)/intel/Makefile.intel
+INC_PATH	+= -I$(UTSBASE)/intel/io/vmxnet3s
 
-ALL_TARGET=	$(BINARY) $(CONFMOD)
-LINT_TARGET=	$(MODULE).lint
-INSTALL_TARGET=	$(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
+#
+#	Define targets
+#
+ALL_TARGET	= $(BINARY) $(CONFMOD)
+LINT_TARGET	= $(MODULE).lint
+INSTALL_TARGET	= $(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
 
-LDFLAGS	+=	-dy -N misc/mac
+#
+# Driver depends on MAC
+#
+LDFLAGS		+= -dy -N misc/mac
 
-CERRWARN +=	-_gcc=-Wno-switch
+LINTFLAGS	+= -a -erroff=E_BAD_PTR_CAST_ALIGN
+LINTFLAGS64	+= -a -erroff=E_BAD_PTR_CAST_ALIGN
 
-LINTTAGS +=	-erroff=E_BAD_PTR_CAST_ALIGN
-LINTTAGS +=	-erroff=E_CONSTANT_CONDITION
-LINTTAGS +=	-erroff=E_ASSIGN_NARROW_CONV
-
+#
+#	Default build targets.
+#
 .KEEP_STATE:
 
-all:		$(ALL_DEPS)
+def:		$(DEF_DEPS)
 
-clean.lint:	$(CLEAN_LINT_DEPS)
+all:		$(ALL_DEPS)
 
 clean:		$(CLEAN_DEPS)
 
 clobber:	$(CLOBBER_DEPS)
 
-def:		$(DEF_DEPS)
-
-install:	$(INSTALL_DEPS)
 
 lint:		$(LINT_DEPS)
 
 modlintlib:	$(MODLINTLIB_DEPS)
 
-include		$(UTSBASE)/intel/Makefile.targ
+clean.lint:	$(CLEAN_LINT_DEPS)
+
+install:	$(INSTALL_DEPS)
+
+#
+#	Include common targets.
+#
+include $(UTSBASE)/intel/Makefile.targ

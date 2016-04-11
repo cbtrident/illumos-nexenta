@@ -244,11 +244,6 @@ ACPICA_OBJS +=	utaddress.o utalloc.o utcache.o utclib.o utcopy.o	\
 #
 PVSCSI_OBJS=	pvscsi.o
 
-#
-#	VMXNET3S module
-#
-VMXNET3S_OBJS=	vmxnet3s_main.o vmxnet3s_rx.o vmxnet3s_tx.o vmxnet3s_utils.o
-
 AGP_OBJS += agpmaster.o
 FBT_OBJS += fbt.o
 SDT_OBJS += sdt.o
@@ -344,3 +339,11 @@ INTEL_NB5000_OBJS += \
 	dimm_addr.o \
 	nb_pci_cfg.o \
 	nb5000_init.o
+
+#
+# VMware VMXNET3 virtual network device
+#
+VMXNET3S_OBJS =	vmxnet3_main.o \
+		vmxnet3_rx.o \
+		vmxnet3_tx.o \
+		vmxnet3_utils.o
