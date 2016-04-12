@@ -1309,7 +1309,7 @@ smb_ofile_open_check(smb_ofile_t *of, uint32_t desired_access,
 
 	mutex_enter(&of->f_mutex);
 
-	if (smb_ofile_is_open_locked(of)) {
+	if (!smb_ofile_is_open_locked(of)) {
 		mutex_exit(&of->f_mutex);
 		return (NT_STATUS_INVALID_HANDLE);
 	}
@@ -1382,7 +1382,7 @@ smb_ofile_rename_check(smb_ofile_t *of)
 
 	mutex_enter(&of->f_mutex);
 
-	if (smb_ofile_is_open_locked(of)) {
+	if (!smb_ofile_is_open_locked(of)) {
 		mutex_exit(&of->f_mutex);
 		return (NT_STATUS_INVALID_HANDLE);
 	}
@@ -1430,7 +1430,7 @@ smb_ofile_delete_check(smb_ofile_t *of)
 
 	mutex_enter(&of->f_mutex);
 
-	if (smb_ofile_is_open_locked(of)) {
+	if (!smb_ofile_is_open_locked(of)) {
 		mutex_exit(&of->f_mutex);
 		return (NT_STATUS_INVALID_HANDLE);
 	}
