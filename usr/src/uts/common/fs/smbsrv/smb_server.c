@@ -1643,7 +1643,7 @@ smb_server_listener(smb_thread_t *thread, void *arg)
 
 	DTRACE_PROBE1(so__wait__accept, struct sonode *, ld->ld_so);
 
-	while (1) {
+	for (;;) {
 		int ret = ksocket_accept(ld->ld_so, NULL, NULL, &s_so, CRED());
 
 		switch (ret) {
