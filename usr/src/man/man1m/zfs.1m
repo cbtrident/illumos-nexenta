@@ -179,14 +179,14 @@
 .Fl t Ar receive_resume_token
 .Nm
 .Cm receive
-.Op Fl Fnsuv
+.Op Fl FKnsuv
 .Oo Fl l Ar filesystem Ns | Ns Ar volume Oc Ns ...
 .Oo Fl o Ar property Ns = Ns Ar value Oc Ns ...
 .Oo Fl x Ar property Oc Ns ...
 .Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot
 .Nm
 .Cm receive
-.Op Fl Fnsuv
+.Op Fl FKnsuv
 .Op Fl d Ns | Ns Fl e
 .Oo Fl l Ar filesystem Ns | Ns Ar volume Oc Ns ...
 .Oo Fl o Ar property Ns = Ns Ar value Oc Ns ...
@@ -2583,7 +2583,12 @@ properties, and current snapshot and file system names are set when the stream
 is received. If the
 .Fl F
 flag is specified when this stream is received, snapshots and file systems that
-do not exist on the sending side are destroyed.
+do not exist on the sending side are destroyed. If the
+.Fl K
+flag is specified in conjunction with
+.Fl F
+flag, then it modifies the conventional force-receive behavior to not destroy
+destination snapshots that are not present at the replication source.
 .It Fl e
 Generate a more compact stream by using
 .Sy WRITE_EMBEDDED
@@ -2729,7 +2734,7 @@ for more details.
 .It Xo
 .Nm
 .Cm receive
-.Op Fl Fsnuv
+.Op Fl FKsnuv
 .Oo Fl l Ar filesystem Ns | Ns Ar volume Oc Ns ...
 .Oo Fl o Ar property Ns = Ns Ar value Oc Ns ...
 .Oo Fl x Ar property Oc Ns ...
@@ -2737,7 +2742,7 @@ for more details.
 .br
 .Nm
 .Cm receive
-.Op Fl Fnsuv
+.Op Fl FKnsuv
 .Op Fl d Ns | Ns Fl e
 .Oo Fl l Ar filesystem Ns | Ns Ar volume Oc Ns ...
 .Oo Fl o Ar property Ns = Ns Ar value Oc Ns ...
@@ -2819,6 +2824,9 @@ performing the receive operation. If receiving an incremental replication stream
 .Nm zfs Cm send Fl R Op Fl i Ns | Ns Fl I
 .Pc ,
 destroy snapshots and file systems that do not exist on the sending side.
+.It Fl K
+When force receive is enabled, do not destroy snapshots on the receiving side
+that do not exist on the sending side.
 .It Fl d
 Discard the first element of the sent snapshot's file system name, using the
 remaining elements to determine the name of the target file system for the new
