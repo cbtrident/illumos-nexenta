@@ -1428,8 +1428,10 @@ spa_unload(spa_t *spa)
 	/*
 	 * Stop autotrim tasks.
 	 */
+	mutex_enter(&spa->spa_auto_trim_lock);
 	if (spa->spa_auto_trim_taskq)
 		spa_auto_trim_taskq_destroy(spa);
+	mutex_exit(&spa->spa_auto_trim_lock);
 
 	/*
 	 * Close all vdevs.
