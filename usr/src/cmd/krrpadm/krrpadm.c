@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -52,8 +52,6 @@
 	    krrp_usage_sess, SESS_CREATE_PDU_ENGINE) \
 	X(sess-conn-throttle, krrp_do_sess_action, \
 	    krrp_usage_sess, SESS_CONN_THROTTLE) \
-	X(zfs-get-recv-cookies, krrp_do_get_recv_cookies, \
-	    krrp_usage_cookies, ZFS_GET_RECV_COOKIES) \
 	X(ksvc-enable, krrp_do_ksvc_action, \
 	    krrp_usage_ksvc, KSVC_ENABLE) \
 	X(ksvc-disable, krrp_do_ksvc_action, \
@@ -86,14 +84,13 @@ struct krrp_cmd_s {
 static void common_usage(int);
 static int krrp_lookup_cmd(const char *, krrp_cmd_t **);
 
-static krrp_usage_func krrp_usage_ksvc, krrp_usage_sess, krrp_usage_event,
-    krrp_usage_cookies;
+static krrp_usage_func krrp_usage_ksvc, krrp_usage_sess, krrp_usage_event;
 
 static krrp_handler_func krrp_do_ksvc_action, krrp_do_ksvc_configure,
     krrp_do_sess_list, krrp_do_sess_action, krrp_do_sess_create_conn,
     krrp_do_sess_create_read_stream, krrp_do_sess_create_write_stream,
     krrp_do_sess_create_pdu_engine, krrp_do_sess_status, krrp_do_read_event,
-    krrp_do_get_recv_cookies, krrp_do_svc_get_state, krrp_do_sess_create;
+    krrp_do_svc_get_state, krrp_do_sess_create;
 
 static int krrp_parse_and_check_sess_id(char *sess_id_str,
     uuid_t sess_id);
@@ -157,20 +154,6 @@ common_usage(int rc)
 
 	for (i = 0; i < cmds_sz; i++)
 		cmds[i].usage_func(0, &cmds[i], B_TRUE);
-
-	exit(rc);
-}
-
-static void
-krrp_usage_cookies(int rc, krrp_cmd_t *cmd, boolean_t use_return)
-{
-	assert(cmd->item == KRRP_CMD_ZFS_GET_RECV_COOKIES);
-
-	fprintf_msg("Usage: %s zfs-get-recv-cookies "
-	    "-d <dst dataset>\n\n\n", tool_name);
-
-	if (use_return)
-		return;
 
 	exit(rc);
 }
@@ -260,14 +243,14 @@ krrp_usage_sess(int rc, krrp_cmd_t *cmd, boolean_t use_return)
 		fprintf_msg("Usage: %s sess-create-read-stream "
 		    "<-s sess_id> [-d <src dataset>] [-z <src snapshot>] "
 		    "[-c <common snapshot>] [-I] [-r] [-p] [-e] [-k] "
-		    "[-f <fake_data_sz>] [-t <zcookies>] "
+		    "[-f <fake_data_sz>] [-t <resume_token>] "
 		    "[-n <keep snaps>]\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_CREATE_WRITE_STREAM:
 		fprintf_msg("Usage: %s sess-create-write-stream "
 		    "<-s sess_id> [-d <dst dataset>] [-c <common snapshot>] "
 		    "[-F] [-e] [-k] [-l | -x] [-i <prop_name>] "
-		    "[-o <prop_name=value>] [-t <zcookies>] "
+		    "[-o <prop_name=value>] [-t <resume_token>] "
 		    "[-n <keep snaps>]\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_CREATE_PDU_ENGINE:
@@ -359,51 +342,6 @@ krrp_sysevent_cb(libkrrp_event_t *ev, void *cookie)
 		fprintf_err("Unknow event type\n");
 		assert(0);
 	}
-
-	return (0);
-}
-
-static int
-krrp_do_get_recv_cookies(int argc, char **argv, krrp_cmd_t *cmd)
-{
-	int c, rc = 0;
-	const char *dataset = NULL;
-	char cookies[MAXNAMELEN];
-
-	while ((c = getopt(argc, argv, "hd:")) != -1) {
-		switch (c) {
-		case 'd':
-			if (dataset != NULL) {
-				krrp_print_err_already_defined("d");
-				exit(1);
-			}
-
-			dataset = optarg;
-			break;
-		case '?':
-			krrp_print_err_unknown_param(argv[optind - 1]);
-			cmd->usage_func(1, cmd, B_FALSE);
-			break;
-		case 'h':
-			cmd->usage_func(0, cmd, B_FALSE);
-			break;
-		}
-	}
-
-	if (dataset == NULL) {
-		fprintf_err("Destination dataset must be defined\n");
-		cmd->usage_func(1, cmd, B_FALSE);
-	}
-
-	rc = krrp_zfs_get_recv_cookies(libkrrp_hdl, dataset,
-	    cookies, sizeof (cookies));
-	if (rc != 0) {
-		fprintf_err("Failed to get cookies for given ZFS dataset\n");
-		krrp_print_libkrrp_error();
-		exit(1);
-	}
-
-	fprintf_msg("ZFS Cookies: [%s]\n", cookies);
 
 	return (0);
 }
@@ -848,7 +786,7 @@ krrp_do_sess_create_read_stream(int argc, char **argv, krrp_cmd_t *cmd)
 	uuid_t sess_id;
 	uint64_t fake_data_sz = 0;
 	char *dataset = NULL, *common_snap = NULL, *src_snap = NULL,
-	    *zcookies = NULL;
+	    *resume_token = NULL;
 	krrp_sess_stream_flags_t flags = 0;
 	uint32_t keep_snaps = 0;
 
@@ -939,12 +877,12 @@ krrp_do_sess_create_read_stream(int argc, char **argv, krrp_cmd_t *cmd)
 
 			break;
 		case 't':
-			if (zcookies != NULL) {
+			if (resume_token != NULL) {
 				krrp_print_err_already_defined("t");
 				exit(1);
 			}
 
-			zcookies = optarg;
+			resume_token = optarg;
 			break;
 		case 'n':
 			if (keep_snaps != 0) {
@@ -984,7 +922,7 @@ krrp_do_sess_create_read_stream(int argc, char **argv, krrp_cmd_t *cmd)
 
 	rc = krrp_sess_create_read_stream(libkrrp_hdl, sess_id,
 	    dataset, common_snap, src_snap, fake_data_sz, flags,
-	    zcookies, keep_snaps);
+	    resume_token, keep_snaps);
 	if (rc != 0) {
 		fprintf_err("Failed to create read-stream\n");
 		krrp_print_libkrrp_error();
@@ -1000,7 +938,7 @@ krrp_do_sess_create_write_stream(int argc, char **argv, krrp_cmd_t *cmd)
 	int c, i, rc = 0;
 	uuid_t sess_id;
 	nvlist_t *ignore_props_list, *replace_props_list;
-	char *dataset = NULL, *common_snap = NULL, *zcookies = NULL;
+	char *dataset = NULL, *common_snap = NULL, *resume_token = NULL;
 	krrp_sess_stream_flags_t flags = 0;
 	uint32_t keep_snaps = 0;
 
@@ -1091,12 +1029,12 @@ krrp_do_sess_create_write_stream(int argc, char **argv, krrp_cmd_t *cmd)
 			flags |= KRRP_STREAM_ZFS_CHKSUM;
 			break;
 		case 't':
-			if (zcookies != NULL) {
+			if (resume_token != NULL) {
 				krrp_print_err_already_defined("t");
 				exit(1);
 			}
 
-			zcookies = optarg;
+			resume_token = optarg;
 			break;
 		case 'n':
 			if (keep_snaps != 0) {
@@ -1170,7 +1108,7 @@ krrp_do_sess_create_write_stream(int argc, char **argv, krrp_cmd_t *cmd)
 
 	rc = krrp_sess_create_write_stream(libkrrp_hdl, sess_id,
 	    dataset, common_snap, flags, ignore_props_list,
-	    replace_props_list, zcookies, keep_snaps);
+	    replace_props_list, resume_token, keep_snaps);
 	if (rc != 0) {
 		fprintf_err("Failed to create write stream\n");
 		krrp_print_libkrrp_error();

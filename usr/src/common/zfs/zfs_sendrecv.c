@@ -11,6 +11,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
@@ -18,15 +19,55 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 #include <umem.h>
 #include <stddef.h>
+#include <zlib.h>
+#include <libnvpair.h>
 #else
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
 #include <sys/sysmacros.h>
+#include <sys/nvpair.h>
+
+#include <util/sscanf.h>
 #endif
 
+#include <sys/zfs_context.h>
+#include <sys/zfs_ioctl.h>
+#include <sys/zio_compress.h>
+#include <sys/zio_checksum.h>
+#include "zfs_fletcher.h"
 #include "zfs_sendrecv.h"
+
+#ifndef _KERNEL
+#ifndef SET_ERROR
+#define	SET_ERROR(err) (err)
+#endif
+#endif
+
+static int
+zfs_mem_alloc(void **data, size_t data_sz)
+{
+#ifdef _KERNEL
+		*data = kmem_zalloc(data_sz, KM_SLEEP);
+#else
+		if ((*data = calloc(1, data_sz)) == NULL)
+			return (SET_ERROR(ENOMEM));
+#endif
+		return (0);
+}
+
+/* ARGSUSED */
+static void
+zfs_mem_free(void *data, size_t data_sz)
+{
+#ifdef _KERNEL
+		kmem_free(data, data_sz);
+#else
+		free(data);
+#endif
+}
 
 typedef struct fsavl_node {
 	avl_node_t fn_node;
@@ -86,21 +127,12 @@ fsavl_destroy(avl_tree_t *avl)
 		return;
 
 	cookie = NULL;
-	while ((fn = avl_destroy_nodes(avl, &cookie)) != NULL) {
-#ifdef _KERNEL
-		kmem_free(fn, sizeof (fsavl_node_t));
-#else
-		free(fn);
-#endif
-	}
+	while ((fn = avl_destroy_nodes(avl, &cookie)) != NULL)
+		zfs_mem_free(fn, sizeof (fsavl_node_t));
 
 	avl_destroy(avl);
 
-#ifdef _KERNEL
-	kmem_free(avl, sizeof (avl_tree_t));
-#else
-	free(avl);
-#endif
+	zfs_mem_free(avl, sizeof (avl_tree_t));
 }
 
 static int
@@ -114,12 +146,12 @@ fsavl_create_nodes(avl_tree_t *fsavl, nvlist_t *nvfs)
 
 	err = nvlist_lookup_nvlist(nvfs, "snaps", &snaps);
 	if (err != 0)
-		return (err);
+		return (SET_ERROR(err));
 
 	while ((snapelem = nvlist_next_nvpair(snaps, snapelem)) != NULL) {
 		err = nvpair_value_uint64(snapelem, &guid);
 		if (err != 0)
-			return (err);
+			return (SET_ERROR(err));
 
 		/*
 		 * Note: if there are multiple snaps with the
@@ -129,12 +161,9 @@ fsavl_create_nodes(avl_tree_t *fsavl, nvlist_t *nvfs)
 		if (avl_find(fsavl, &fn_find, NULL) != NULL)
 			continue;
 
-#ifdef _KERNEL
-		fn = kmem_alloc(sizeof (fsavl_node_t), KM_SLEEP);
-#else
-		if ((fn = malloc(sizeof (fsavl_node_t))) == NULL)
-			return (ENOMEM);
-#endif
+		err = zfs_mem_alloc((void **)&fn, sizeof (fsavl_node_t));
+		if (err != 0)
+			return (err);
 
 		fn->fn_nvfs = nvfs;
 		fn->fn_snapname = nvpair_name(snapelem);
@@ -156,12 +185,9 @@ fsavl_create(nvlist_t *fss, avl_tree_t **fsavl_result)
 	avl_tree_t *fsavl;
 	nvpair_t *fselem = NULL;
 
-#ifdef _KERNEL
-	fsavl = kmem_zalloc(sizeof (avl_tree_t), KM_SLEEP);
-#else
-	if ((fsavl = malloc(sizeof (avl_tree_t))) == NULL)
-		return (ENOMEM);
-#endif
+	err = zfs_mem_alloc((void **)&fsavl, sizeof (avl_tree_t));
+	if (err != 0)
+		return (err);
 
 	avl_create(fsavl, fsavl_compare, sizeof (fsavl_node_t),
 	    offsetof(fsavl_node_t, fn_node));
@@ -184,4 +210,90 @@ fsavl_create(nvlist_t *fss, avl_tree_t **fsavl_result)
 		*fsavl_result = fsavl;
 
 	return (err);
+}
+
+int
+zfs_send_resume_token_to_nvlist_impl(const char *token, nvlist_t **result_nvl)
+{
+	int err;
+	unsigned int version;
+	int nread, len;
+	uint64_t checksum, packed_len;
+	unsigned char *compressed = NULL;
+	void *packed = NULL;
+
+	/*
+	 * Decode token header, which is:
+	 *   <token version>-<checksum of payload>-<uncompressed payload length>
+	 * Note that the only supported token version is 1.
+	 */
+	nread = sscanf(token, "%u-%llx-%llx-",
+	    &version, (unsigned long long *)&checksum,
+	    (unsigned long long *)&packed_len);
+	if (nread != 3)
+		return (SET_ERROR(EINVAL));
+
+	if (version != ZFS_SEND_RESUME_TOKEN_VERSION)
+		return (SET_ERROR(ENOTSUP));
+
+	/* convert hexadecimal representation to binary */
+	token = strrchr(token, '-') + 1;
+	len = strlen(token) / 2;
+	err = zfs_mem_alloc((void **)&compressed, len + 1);
+	if (err != 0)
+		return (err);
+
+	for (int i = 0; i < len; i++) {
+		nread = sscanf(token + i * 2, "%2hhx", compressed + i);
+		if (nread != 1) {
+			zfs_mem_free(compressed, len + 1);
+			return (SET_ERROR(EBADMSG));
+		}
+	}
+
+	/* verify checksum */
+	zio_cksum_t cksum;
+	fletcher_4_native(compressed, len, NULL, &cksum);
+	if (cksum.zc_word[0] != checksum) {
+		zfs_mem_free(compressed, len + 1);
+		return (SET_ERROR(ECKSUM));
+	}
+
+	/* uncompress */
+	err = zfs_mem_alloc(&packed, packed_len);
+	if (err != 0) {
+		zfs_mem_free(compressed, len + 1);
+		return (err);
+	}
+
+#ifdef _KERNEL
+	err = gzip_decompress(compressed, packed, len, packed_len, 0);
+#else
+	uLongf packed_len_long = packed_len;
+	if (uncompress(packed, &packed_len_long, compressed, len) != Z_OK ||
+	    packed_len_long != packed_len)
+		err = -1;
+#endif
+
+	if (err != 0) {
+		zfs_mem_free(packed, packed_len);
+		zfs_mem_free(compressed, len + 1);
+		return (SET_ERROR(ENOSR));
+	}
+
+	/* unpack nvlist */
+	nvlist_t *nv = NULL;
+#ifdef _KERNEL
+	err = nvlist_unpack(packed, packed_len, &nv, KM_SLEEP);
+#else
+	err = nvlist_unpack(packed, packed_len, &nv, 0);
+#endif
+
+	zfs_mem_free(packed, packed_len);
+	zfs_mem_free(compressed, len + 1);
+	if (err != 0)
+		return (SET_ERROR(ENODATA));
+
+	*result_nvl = nv;
+	return (0);
 }

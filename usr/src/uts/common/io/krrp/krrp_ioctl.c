@@ -38,9 +38,6 @@ static int krrp_ioctl_sess_create_write_stream(krrp_stream_t **result_stream,
 
 static int krrp_ioctl_sess_conn_throttle(nvlist_t *params, krrp_error_t *error);
 
-static int krrp_ioctl_zfs_get_recv_cookies(nvlist_t *params,
-    nvlist_t *result, krrp_error_t *error);
-
 static krrp_sess_t *krrp_ioctl_sess_action_common(nvlist_t *params,
     krrp_error_t *error);
 
@@ -122,9 +119,6 @@ int krrp_ioctl_process(krrp_ioctl_cmd_t cmd, nvlist_t *input,
 	case KRRP_IOCTL_SESS_CONN_THROTTLE:
 		rc = krrp_ioctl_sess_conn_throttle(input, error);
 		break;
-	case KRRP_IOCTL_ZFS_GET_RECV_COOKIES:
-		rc = krrp_ioctl_zfs_get_recv_cookies(input, output, error);
-		break;
 	default:
 		cmn_err(CE_PANIC, "Unknown ioctl cmd [%d]", cmd);
 	}
@@ -156,7 +150,6 @@ krrp_is_input_data_required(krrp_ioctl_cmd_t cmd)
 	case KRRP_IOCTL_SESS_CREATE_PDU_ENGINE:
 	case KRRP_IOCTL_SESS_CREATE_READ_STREAM:
 	case KRRP_IOCTL_SESS_CREATE_WRITE_STREAM:
-	case KRRP_IOCTL_ZFS_GET_RECV_COOKIES:
 		result = B_TRUE;
 		break;
 	default:
@@ -541,7 +534,7 @@ krrp_ioctl_sess_create_read_stream(krrp_stream_t **result_stream,
 {
 	int rc;
 	const char *dataset = NULL, *base_snap_name = NULL,
-	    *common_snap_name = NULL, *zcookies = NULL;
+	    *common_snap_name = NULL, *resume_token = NULL;
 	uint32_t keep_snaps;
 	krrp_stream_read_flag_t flags;
 
@@ -552,8 +545,8 @@ krrp_ioctl_sess_create_read_stream(krrp_stream_t **result_stream,
 		return (-1);
 	}
 
-	(void) krrp_param_get(KRRP_PARAM_ZCOOKIES,
-	    params, (void *) &zcookies);
+	(void) krrp_param_get(KRRP_PARAM_RESUME_TOKEN,
+	    params, (void *) &resume_token);
 
 	(void) krrp_param_get(KRRP_PARAM_COMMON_SNAPSHOT,
 	    params, (void *) &common_snap_name);
@@ -573,7 +566,7 @@ krrp_ioctl_sess_create_read_stream(krrp_stream_t **result_stream,
 
 	flags = krrp_fill_read_stream_flags(params);
 	return (krrp_stream_read_create(result_stream, keep_snaps, dataset,
-	    base_snap_name, common_snap_name, zcookies, flags, error));
+	    base_snap_name, common_snap_name, resume_token, flags, error));
 }
 
 static int
@@ -582,7 +575,7 @@ krrp_ioctl_sess_create_write_stream(krrp_stream_t **result_stream,
 {
 	int rc;
 	const char *dataset = NULL, *common_snap_name = NULL,
-	    *zcookies = NULL;
+	    *resume_token = NULL;
 	nvlist_t *ignore_props_list = NULL, *replace_props_list = NULL;
 	uint32_t keep_snaps;
 	krrp_stream_write_flag_t flags;
@@ -594,8 +587,8 @@ krrp_ioctl_sess_create_write_stream(krrp_stream_t **result_stream,
 		return (-1);
 	}
 
-	(void) krrp_param_get(KRRP_PARAM_ZCOOKIES,
-	    params, (void *) &zcookies);
+	(void) krrp_param_get(KRRP_PARAM_RESUME_TOKEN,
+	    params, (void *) &resume_token);
 
 	(void) krrp_param_get(KRRP_PARAM_IGNORE_PROPS_LIST,
 	    params, (void *) &ignore_props_list);
@@ -619,7 +612,7 @@ krrp_ioctl_sess_create_write_stream(krrp_stream_t **result_stream,
 	flags = krrp_fill_write_stream_flags(params);
 
 	return (krrp_stream_write_create(result_stream, keep_snaps,
-	    dataset, common_snap_name, zcookies, flags,
+	    dataset, common_snap_name, resume_token, flags,
 	    ignore_props_list, replace_props_list, error));
 }
 
@@ -687,32 +680,6 @@ static int krrp_ioctl_sess_conn_throttle(nvlist_t *params,
 
 out:
 	krrp_sess_rele(sess);
-	return (rc);
-}
-
-static int krrp_ioctl_zfs_get_recv_cookies(nvlist_t *params,
-    nvlist_t *result, krrp_error_t *error)
-{
-	int rc;
-	const char *dataset = NULL;
-	char cookies[MAXNAMELEN];
-
-	rc = krrp_param_get(KRRP_PARAM_DST_DATASET, params,
-	    (void *) &dataset);
-	if (rc != 0 || dataset[0] == '\0') {
-		krrp_error_set(error, KRRP_ERRNO_DSTDS, EINVAL);
-		rc = -1;
-		goto out;
-	}
-
-	rc = krrp_zfs_get_recv_cookies(dataset, cookies,
-	    sizeof (cookies), error);
-	if (rc == 0) {
-		(void) krrp_param_put(KRRP_PARAM_ZCOOKIES, result,
-		    (void *) cookies);
-	}
-
-out:
 	return (rc);
 }
 

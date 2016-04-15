@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_KREPLICATION_COMMON_H
@@ -40,13 +40,13 @@ typedef struct kreplication_zfs_args {
 	char from_incr_base[MAXNAMELEN];
 	char to_ds[MAXNAMELEN];
 	char to_snap[MAXNAMELEN];
-	char rep_cookie[MAXNAMELEN];
 	boolean_t force;
 	boolean_t properties;
 	boolean_t recursive;
 	boolean_t do_all;
 	nvlist_t *ignore_list;
 	nvlist_t *replace_list;
+	nvlist_t *resume_info;
 	boolean_t strip_head;
 	boolean_t leave_tail;
 	boolean_t force_thread;

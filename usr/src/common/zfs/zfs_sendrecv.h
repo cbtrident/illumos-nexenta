@@ -34,6 +34,9 @@ int fsavl_create(nvlist_t *fss, avl_tree_t **fsavl_result);
 void fsavl_destroy(avl_tree_t *avl);
 nvlist_t *fsavl_find(avl_tree_t *avl, uint64_t snapguid, char **snapname);
 
+int zfs_send_resume_token_to_nvlist_impl(const char *token,
+    nvlist_t **result_nvl);
+
 
 #ifdef	__cplusplus
 }

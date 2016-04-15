@@ -26,6 +26,7 @@ uint64_t krrp_debug = 0;
 static void dmu_set_send_recv_error(void *krrp_task_void, int err);
 static int dmu_krrp_get_buffer(void *krrp_task_void);
 static int dmu_krrp_put_buffer(void *krrp_task_void);
+static int dmu_krrp_validate_resume_info(nvlist_t *resume_info);
 
 /* An element of snapshots AVL-tree of zfs_ds_collector_entry_t */
 typedef struct {
@@ -569,6 +570,8 @@ zfs_send_one_ds(dmu_krrp_task_t *krrp_task, zfs_snap_avl_node_t *snap_el,
 	dsl_dataset_t *snap_ds = NULL;
 	dsl_dataset_t *snap_ds_prev = NULL;
 	boolean_t embedok = krrp_task->buffer_args.embedok;
+	nvlist_t *resume_info = krrp_task->buffer_args.resume_info;
+	uint64_t resumeobj = 0, resumeoff = 0;
 
 	/*
 	 * 'ds' of snap_ds/snap_ds_prev alredy long-held
@@ -587,6 +590,22 @@ zfs_send_one_ds(dmu_krrp_task_t *krrp_task, zfs_snap_avl_node_t *snap_el,
 	 * that already is opened in our case.
 	 */
 	VERIFY0(dsl_pool_hold(snap_el->name, FTAG, &dp));
+
+	if (resume_info != NULL) {
+		err = nvlist_lookup_uint64(resume_info, "object", &resumeobj);
+		ASSERT3U(err, !=, ENOENT);
+		if (err != 0) {
+			dsl_pool_rele(dp, FTAG);
+			return (SET_ERROR(err));
+		}
+
+		err = nvlist_lookup_uint64(resume_info, "offset", &resumeoff);
+		ASSERT3U(err, !=, ENOENT);
+		if (err != 0) {
+			dsl_pool_rele(dp, FTAG);
+			return (SET_ERROR(err));
+		}
+	}
 
 	if (krrp_debug) {
 		cmn_err(CE_NOTE, "KRRP SEND INC_BASE: %s -- DS: "
@@ -613,10 +632,12 @@ zfs_send_one_ds(dmu_krrp_task_t *krrp_task, zfs_snap_avl_node_t *snap_el,
 		is_clone = (snap_ds_prev->ds_dir != snap_ds->ds_dir);
 
 		err = dmu_send_impl(FTAG, dp, snap_ds, &zb, is_clone,
-		    embedok, B_FALSE, -1, 0, 0, NULL, &off, krrp_task);
+		    embedok, B_FALSE, -1, resumeobj, resumeoff, NULL,
+		    &off, krrp_task);
 	} else {
 		err = dmu_send_impl(FTAG, dp, snap_ds, NULL, B_FALSE,
-		    embedok, B_FALSE, -1, 0, 0, NULL, &off, krrp_task);
+		    embedok, B_FALSE, -1, resumeobj, resumeoff, NULL,
+		    &off, krrp_task);
 	}
 
 	/*
@@ -844,6 +865,15 @@ zfs_send_snapshots(dmu_krrp_task_t *krrp_task, avl_tree_t *snapshots,
 		if (err != 0)
 			break;
 
+		/*
+		 * We have sent resumed snap,
+		 * so resume_info is not relevant anymore
+		 */
+		if (krrp_task->buffer_args.resume_info != NULL) {
+			fnvlist_free(krrp_task->buffer_args.resume_info);
+			krrp_task->buffer_args.resume_info = NULL;
+		}
+
 		snap_el_prev = snap_el;
 		snap_el = AVL_NEXT(snapshots, snap_el);
 	}
@@ -852,16 +882,16 @@ zfs_send_snapshots(dmu_krrp_task_t *krrp_task, avl_tree_t *snapshots,
 }
 
 static int
-zfs_send_resume(char *resume_cookie, list_t *ds_to_send,
+dmu_krrp_send_resume(char *resume_token, list_t *ds_to_send,
     char **resume_fs_name, char **resume_snap_name)
 {
 	zfs_ds_collector_entry_t *fs_el;
 	zfs_snap_avl_node_t *snap_el;
 	char *at_ptr;
 
-	at_ptr = strrchr(resume_cookie, '@');
+	at_ptr = strrchr(resume_token, '@');
 	if (at_ptr == NULL) {
-		cmn_err(CE_WARN, "Invalid resume_cookie [%s]", resume_cookie);
+		cmn_err(CE_WARN, "Invalid resume_token [%s]", resume_token);
 		return (SET_ERROR(ENOSR));
 	}
 
@@ -870,7 +900,7 @@ zfs_send_resume(char *resume_cookie, list_t *ds_to_send,
 	/* First need to find FS that matches the given cookie */
 	fs_el = list_head(ds_to_send);
 	while (fs_el != NULL) {
-		if (strcmp(fs_el->name, resume_cookie) == 0)
+		if (strcmp(fs_el->name, resume_token) == 0)
 			break;
 
 		fs_el = list_next(ds_to_send, fs_el);
@@ -878,7 +908,7 @@ zfs_send_resume(char *resume_cookie, list_t *ds_to_send,
 
 	/* There is no target FS */
 	if (fs_el == NULL) {
-		cmn_err(CE_WARN, "Unknown FS name [%s]", resume_cookie);
+		cmn_err(CE_WARN, "Unknown FS name [%s]", resume_token);
 		return (SET_ERROR(ENOSR));
 	}
 
@@ -890,7 +920,7 @@ zfs_send_resume(char *resume_cookie, list_t *ds_to_send,
 	 */
 	snap_el = avl_first(&fs_el->snapshots);
 	while (snap_el != NULL) {
-		if (strcmp(snap_el->name, resume_cookie) == 0)
+		if (strcmp(snap_el->name, resume_token) == 0)
 			break;
 
 		snap_el = AVL_NEXT(&fs_el->snapshots, snap_el);
@@ -898,30 +928,11 @@ zfs_send_resume(char *resume_cookie, list_t *ds_to_send,
 
 	/* There is no target snapshot */
 	if (snap_el == NULL) {
-		cmn_err(CE_WARN, "Unknown SNAP name [%s]", resume_cookie);
+		cmn_err(CE_WARN, "Unknown SNAP name [%s]", resume_token);
 		return (SET_ERROR(ENOSR));
 	}
 
-	/*
-	 * FS and SNAP have been found. Our target is the next
-	 * element in out structure.
-	 * If the next SNAP is NULL, then we start from
-	 * the first SNAP of the next FS, otherwise
-	 * resume_fs_name is current FS and resume_snap_name
-	 * is the next SNAP
-	 */
-
-	snap_el = AVL_NEXT(&fs_el->snapshots, snap_el);
-	if (snap_el == NULL) {
-		fs_el = list_next(ds_to_send, fs_el);
-		if (fs_el == NULL) {
-			cmn_err(CE_WARN, "There is no next FS");
-			return (SET_ERROR(ENOSR));
-		}
-	} else {
-		*resume_snap_name = snap_el->name;
-	}
-
+	*resume_snap_name = snap_el->name;
 	*resume_fs_name = fs_el->name;
 
 	return (0);
@@ -937,9 +948,18 @@ zfs_send_ds(dmu_krrp_task_t *krrp_task, list_t *ds_to_send)
 
 	fs_el = list_head(ds_to_send);
 
-	if (krrp_task->buffer_args.rep_cookie[0] != '\0') {
-		err = zfs_send_resume(krrp_task->buffer_args.rep_cookie,
-		    ds_to_send, &resume_fs_name, &resume_snap_name);
+	/* Resume logic */
+	if (krrp_task->buffer_args.resume_info != NULL) {
+		char *toname = NULL;
+
+		err = nvlist_lookup_string(krrp_task->buffer_args.resume_info,
+		    "toname", &toname);
+		ASSERT(err != ENOENT);
+		if (err != 0)
+			return (SET_ERROR(err));
+
+		err = dmu_krrp_send_resume(toname, ds_to_send,
+		    &resume_fs_name, &resume_snap_name);
 		if (err != 0)
 			return (err);
 
@@ -1030,6 +1050,12 @@ zfs_send_thread(void *krrp_task_void)
 	if (spa == NULL) {
 		err = SET_ERROR(ENOENT);
 		goto final;
+	}
+
+	if (buffer_args->resume_info != NULL) {
+		err = dmu_krrp_validate_resume_info(buffer_args->resume_info);
+		if (err != 0)
+			goto final;
 	}
 
 	/*
@@ -1188,127 +1214,6 @@ zfs_recv_alter_props(nvlist_t *props, nvlist_t *exclude, nvlist_t *replace)
 	}
 }
 
-typedef struct {
-	const char *token;
-	int err;
-} dmu_krrp_token_check_t;
-
-int
-dmu_krrp_get_recv_cookie(const char *pool, const char *token, char *cookie,
-    size_t len)
-{
-	spa_t *spa;
-	dsl_pool_t *dp;
-	int err;
-	uint64_t int_size, val_length;
-
-	err = spa_open(pool, &spa, FTAG);
-	if (err)
-		return (err);
-
-	dp = spa_get_dsl(spa);
-	err = zap_length(dp->dp_meta_objset,
-	    DMU_POOL_DIRECTORY_OBJECT,
-	    token, &int_size, &val_length);
-
-	if (err)
-		goto out;
-
-	if (int_size != 1) {
-		err = EINVAL;
-		goto out;
-	}
-
-	if (val_length > len) {
-		err = ENAMETOOLONG;
-		goto out;
-	}
-
-	err = zap_lookup(dp->dp_meta_objset,
-	    DMU_POOL_DIRECTORY_OBJECT,
-	    token, int_size, val_length, cookie);
-
-out:
-	spa_close(spa, FTAG);
-
-	return (err);
-}
-
-static int
-dmu_krrp_erase_recv_cookie_check(void *arg, dmu_tx_t *tx)
-{
-	dmu_krrp_token_check_t *arg_tok = arg;
-	dsl_pool_t *dp = tx->tx_pool;
-
-	return (zap_contains(dp->dp_meta_objset,
-	    DMU_POOL_DIRECTORY_OBJECT, arg_tok->token));
-}
-
-static void
-dmu_krrp_erase_recv_cookie_sync(void *arg, dmu_tx_t *tx)
-{
-	dsl_pool_t *dp = tx->tx_pool;
-	dmu_krrp_token_check_t *arg_tok = arg;
-
-	arg_tok->err = zap_remove(dp->dp_meta_objset,
-	    DMU_POOL_DIRECTORY_OBJECT, arg_tok->token, tx);
-}
-
-int
-dmu_krrp_erase_recv_cookie(const char *pool, const char *token)
-{
-	spa_t *spa;
-	int err;
-	dmu_krrp_token_check_t arg_tok = { 0 };
-
-	err = spa_open(pool, &spa, FTAG);
-	if (err)
-		return (err);
-
-	arg_tok.token = token;
-
-	err = dsl_sync_task(spa_name(spa),
-	    dmu_krrp_erase_recv_cookie_check,
-	    dmu_krrp_erase_recv_cookie_sync,
-	    &arg_tok, 0, ZFS_SPACE_CHECK_NONE);
-
-	if (!err)
-		err = arg_tok.err;
-
-	spa_close(spa, FTAG);
-
-	return (err);
-}
-
-static int
-dmu_krrp_add_recv_cookie_check(void *arg, dmu_tx_t *tx)
-{
-	dsl_pool_t *dp = tx->tx_pool;
-	dmu_krrp_token_check_t *arg_tok = arg;
-	int err;
-
-	err = zap_contains(dp->dp_meta_objset,
-	    DMU_POOL_DIRECTORY_OBJECT, arg_tok->token);
-
-	if (err == ENOENT) {
-		err = 0;
-	} else if (err == 0) {
-		err = EEXIST;
-	}
-
-	return (err);
-}
-
-static void
-dmu_krrp_add_recv_cookie_sync(void *arg, dmu_tx_t *tx)
-{
-	dsl_pool_t *dp = tx->tx_pool;
-	dmu_krrp_token_check_t *arg_tok = arg;
-
-	arg_tok->err = zap_add(dp->dp_meta_objset,
-	    DMU_POOL_DIRECTORY_OBJECT, arg_tok->token, 1, 1, "", tx);
-}
-
 /* Recv a single snapshot. It is a simplified version of recv */
 static int
 zfs_recv_one_ds(char *ds, dmu_replay_record_t *drr, nvlist_t *fs_props,
@@ -1339,7 +1244,7 @@ zfs_recv_one_ds(char *ds, dmu_replay_record_t *drr, nvlist_t *fs_props,
 
 	/* hack to avoid adding the symnol to the libzpool export list */
 #ifdef _KERNEL
-	err = dmu_recv_impl(NULL, ds, tosnap, NULL, drr, B_FALSE, fs_props,
+	err = dmu_recv_impl(NULL, ds, tosnap, NULL, drr, B_TRUE, fs_props,
 	    NULL, &errf, -1, &ahdl, &sz, krrp_task->buffer_args.force,
 	    krrp_task);
 
@@ -1396,7 +1301,6 @@ zfs_recv_thread(void *krrp_task_void)
 	spa_t *spa;
 	char latest_snap[MAXNAMELEN] = { 0 };
 	char to_ds[MAXNAMELEN];
-	dmu_krrp_token_check_t arg_tok = { 0 };
 
 	ASSERT(krrp_task != NULL);
 	separate_thread = krrp_task->buffer_user_thread != NULL;
@@ -1492,22 +1396,6 @@ zfs_recv_thread(void *krrp_task_void)
 			baselen = pos - drrb->drr_toname;
 	}
 
-	arg_tok.token = krrp_task->buffer_args.to_ds;
-
-	err = dsl_sync_task(spa_name(spa),
-	    dmu_krrp_add_recv_cookie_check,
-	    dmu_krrp_add_recv_cookie_sync,
-	    &arg_tok, 0, ZFS_SPACE_CHECK_RESERVED);
-
-	if (err == 0)
-		err = arg_tok.err;
-
-	if (err == EEXIST)
-		err = 0;
-
-	if (err != 0)
-		goto out;
-
 	if (DMU_GET_STREAM_HDRTYPE(drrb->drr_versioninfo) == DMU_SUBSTREAM) {
 		/* recv a simple single snapshot */
 		char full_ds[MAXNAMELEN];
@@ -1521,7 +1409,8 @@ zfs_recv_thread(void *krrp_task_void)
 			    strlen(drrb->drr_toname + baselen) + 1;
 			if (len < MAXNAMELEN) {
 				(void) strlcat(full_ds, "/", sizeof (full_ds));
-				(void) strlcat(full_ds, drrb->drr_toname + baselen,
+				(void) strlcat(full_ds,
+				    drrb->drr_toname + baselen,
 				    sizeof (full_ds));
 				pos = strchr(full_ds, '@');
 				*pos = '\0';
@@ -1625,7 +1514,8 @@ zfs_recv_thread(void *krrp_task_void)
 			}
 
 			(void) snprintf(ds, sizeof (ds), "%s%s",
-			    krrp_task->buffer_args.to_ds, drrb->drr_toname + baselen);
+			    krrp_task->buffer_args.to_ds,
+			    drrb->drr_toname + baselen);
 			if (nvfs != NULL) {
 				char *snapname;
 				nvlist_t *snapprops;
@@ -1679,17 +1569,12 @@ out_nvl:
 	}
 
 	/* Put final block */
-	if (err == 0) {
+	if (err == 0)
 		(void) dmu_krrp_put_buffer(krrp_task);
-
-		err = dmu_krrp_erase_recv_cookie(
-		    krrp_task->buffer_args.to_ds,
-		    krrp_task->buffer_args.to_ds);
-	}
 
 out:
 	dmu_set_send_recv_error(krrp_task_void, err);
-	if (err) {
+	if (err != 0) {
 		cmn_err(CE_WARN, "Recv thread exited with "
 		    "error code %d", err);
 	}
@@ -1800,6 +1685,9 @@ dmu_krrp_fini_task(void *krrp_task_void)
 		mutex_destroy(&krrp_task->buffer_state_lock);
 		cv_destroy(&krrp_task->buffer_state_cv);
 		cv_destroy(&krrp_task->buffer_destroy_cv);
+		if (krrp_task->buffer_args.resume_info != NULL)
+			fnvlist_free(krrp_task->buffer_args.resume_info);
+
 		kmem_free(krrp_task, sizeof (dmu_krrp_task_t));
 	}
 
@@ -1948,4 +1836,39 @@ dmu_krrp_direct_arc_read(spa_t *spa, dmu_krrp_task_t *krrp_task,
 	}
 
 	return (error);
+}
+
+static int
+dmu_krrp_validate_resume_info(nvlist_t *resume_info)
+{
+	char *toname = NULL;
+	uint64_t resumeobj = 0, resumeoff = 0, bytes = 0, toguid = 0;
+
+	if (nvlist_lookup_string(resume_info, "toname", &toname) != 0 ||
+	    nvlist_lookup_uint64(resume_info, "object", &resumeobj) != 0 ||
+	    nvlist_lookup_uint64(resume_info, "offset", &resumeoff) != 0 ||
+	    nvlist_lookup_uint64(resume_info, "bytes", &bytes) != 0 ||
+	    nvlist_lookup_uint64(resume_info, "toguid", &toguid) != 0)
+		return (SET_ERROR(EINVAL));
+
+	return (0);
+}
+
+int
+dmu_krrp_decode_resume_token(const char *resume_token, nvlist_t **resume_info)
+{
+	nvlist_t *nvl = NULL;
+	int err;
+
+	err = zfs_send_resume_token_to_nvlist_impl(resume_token, &nvl);
+	if (err != 0)
+		return (err);
+
+	err = dmu_krrp_validate_resume_info(nvl);
+	if (err != 0)
+		return (err);
+
+	ASSERT(resume_info != NULL && *resume_info == NULL);
+	*resume_info = nvl;
+	return (0);
 }

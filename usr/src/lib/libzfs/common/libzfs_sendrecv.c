@@ -1399,78 +1399,44 @@ again:
 nvlist_t *
 zfs_send_resume_token_to_nvlist(libzfs_handle_t *hdl, const char *token)
 {
-	unsigned int version;
-	int nread;
-	unsigned long long checksum, packed_len;
+	nvlist_t *nvl = NULL;
+	int error;
 
-	/*
-	 * Decode token header, which is:
-	 *   <token version>-<checksum of payload>-<uncompressed payload length>
-	 * Note that the only supported token version is 1.
-	 */
-	nread = sscanf(token, "%u-%llx-%llx-",
-	    &version, &checksum, &packed_len);
-	if (nread != 3) {
+	error = zfs_send_resume_token_to_nvlist_impl(token, &nvl);
+	switch (error) {
+	case EINVAL:
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "resume token is corrupt (invalid format)"));
-		return (NULL);
-	}
-
-	if (version != ZFS_SEND_RESUME_TOKEN_VERSION) {
+		break;
+	case ENOTSUP:
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "resume token is corrupt (invalid version %u)"),
-		    version);
-		return (NULL);
-	}
-
-	/* convert hexadecimal representation to binary */
-	token = strrchr(token, '-') + 1;
-	int len = strlen(token) / 2;
-	unsigned char *compressed = zfs_alloc(hdl, len);
-	for (int i = 0; i < len; i++) {
-		nread = sscanf(token + i * 2, "%2hhx", compressed + i);
-		if (nread != 1) {
-			free(compressed);
-			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-			    "resume token is corrupt "
-			    "(payload is not hex-encoded)"));
-			return (NULL);
-		}
-	}
-
-	/* verify checksum */
-	zio_cksum_t cksum;
-	fletcher_4_native(compressed, len, NULL, &cksum);
-	if (cksum.zc_word[0] != checksum) {
-		free(compressed);
+		    "resume token is corrupt (invalid version)"));
+		break;
+	case EBADMSG:
+		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+		    "resume token is corrupt "
+		    "(payload is not hex-encoded)"));
+		break;
+	case ECKSUM:
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "resume token is corrupt (incorrect checksum)"));
-		return (NULL);
-	}
-
-	/* uncompress */
-	void *packed = zfs_alloc(hdl, packed_len);
-	uLongf packed_len_long = packed_len;
-	if (uncompress(packed, &packed_len_long, compressed, len) != Z_OK ||
-	    packed_len_long != packed_len) {
-		free(packed);
-		free(compressed);
+		break;
+	case ENOSR:
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "resume token is corrupt (decompression failed)"));
-		return (NULL);
-	}
-
-	/* unpack nvlist */
-	nvlist_t *nv;
-	int error = nvlist_unpack(packed, packed_len, &nv, KM_SLEEP);
-	free(packed);
-	free(compressed);
-	if (error != 0) {
+		break;
+	case ENODATA:
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "resume token is corrupt (nvlist_unpack failed)"));
-		return (NULL);
-	}
-	return (nv);
+		break;
+	case ENOMEM:
+		(void) no_memory(hdl);
+		break;
+	default:
+		break;
+	};
+
+	return (nvl);
 }
 
 int

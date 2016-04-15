@@ -30,8 +30,8 @@
 /* These extern functions are part of ZFS sources */
 extern int wbc_check_dataset(const char *name);
 extern uint64_t dsl_dataset_creation_txg(const char *name);
-extern int dmu_krrp_get_recv_cookie(const char *pool,
-    const char *token, char *cookie, size_t len);
+extern int dmu_krrp_decode_resume_token(const char *resume_token,
+    nvlist_t **resume_info);
 
 
 typedef void (krrp_stream_handler_t)(void *);
@@ -77,7 +77,7 @@ static boolean_t krrp_stream_read_snap_notify_cb(const char *, boolean_t,
 int
 krrp_stream_read_create(krrp_stream_t **result_stream,
     size_t keep_snaps, const char *dataset, const char *base_snap_name,
-    const char *incr_snap_name, const char *zcookies,
+    const char *incr_snap_name, const char *resume_token,
     krrp_stream_read_flag_t flags, krrp_error_t *error)
 {
 	krrp_stream_t *stream;
@@ -120,12 +120,12 @@ krrp_stream_read_create(krrp_stream_t **result_stream,
 			goto err;
 		}
 
-		if (zcookies != NULL) {
-			rc = copy_str(stream->zcookies, zcookies,
-			    sizeof (stream->zcookies));
-			if (rc != 0 || is_str_empty(zcookies)) {
+		if (resume_token != NULL) {
+			rc = dmu_krrp_decode_resume_token(resume_token,
+			    &stream->resume_info);
+			if (rc != 0) {
 				krrp_error_set(error,
-				    KRRP_ERRNO_ZCOOKIES, EINVAL);
+				    KRRP_ERRNO_RESUMETOKEN, rc);
 				goto err;
 			}
 		}
@@ -159,7 +159,7 @@ err:
 int
 krrp_stream_write_create(krrp_stream_t **result_stream,
     size_t keep_snaps, const char *dataset, const char *incr_snap_name,
-    const char *zcookies, krrp_stream_write_flag_t flags,
+    const char *resume_token, krrp_stream_write_flag_t flags,
     nvlist_t *ignore_props_list, nvlist_t *replace_props_list,
     krrp_error_t *error)
 {
@@ -180,11 +180,12 @@ krrp_stream_write_create(krrp_stream_t **result_stream,
 		goto err;
 	}
 
-	if (zcookies != NULL) {
-		rc = copy_str(stream->zcookies, zcookies,
-		    sizeof (stream->zcookies));
-		if (rc != 0 || is_str_empty(zcookies)) {
-			krrp_error_set(error, KRRP_ERRNO_ZCOOKIES, EINVAL);
+	if (resume_token != NULL) {
+		rc = dmu_krrp_decode_resume_token(resume_token,
+		    &stream->resume_info);
+		if (rc != 0) {
+			krrp_error_set(error,
+			    KRRP_ERRNO_RESUMETOKEN, rc);
 			goto err;
 		}
 	}
@@ -302,6 +303,9 @@ krrp_stream_destroy(krrp_stream_t *stream)
 
 	if (stream->autosnap != NULL)
 		krrp_autosnap_destroy(stream->autosnap);
+
+	if (stream->resume_info != NULL)
+		fnvlist_free(stream->resume_info);
 
 	krrp_stream_unlock(stream);
 
@@ -537,7 +541,6 @@ krrp_stream_activate_autosnap(krrp_stream_t *stream,
 			krrp_autosnap_create_snapshot(stream->autosnap);
 		} else {
 			uint64_t base_snap_txg;
-			const char *zcookies;
 
 			VERIFY(stream->base_snap_name[0] != '\0');
 
@@ -549,12 +552,9 @@ krrp_stream_activate_autosnap(krrp_stream_t *stream,
 				goto out;
 			}
 
-			zcookies = (stream->zcookies[0] != '\0') ?
-			    stream->zcookies : NULL;
-
 			krrp_stream_read_task_init(stream->task_engine,
 			    base_snap_txg, stream->base_snap_name,
-			    stream->incr_snap_name, zcookies);
+			    stream->incr_snap_name, stream->resume_info);
 		}
 
 		break;
@@ -931,7 +931,6 @@ krrp_stream_write(void *arg)
 
 	krrp_pdu_data_t *pdu = NULL;
 	krrp_stream_task_t *stream_task = NULL;
-	const char *zcookies;
 	int rc;
 
 	VERIFY(stream->write_data_queue != NULL);
@@ -940,8 +939,6 @@ krrp_stream_write(void *arg)
 	krrp_queue_init(&stream->debug_pdu_queue, sizeof (krrp_pdu_t),
 	    offsetof(krrp_pdu_t, node));
 #endif
-
-	zcookies = (stream->zcookies[0] != '\0') ? stream->zcookies : NULL;
 
 	krrp_stream_lock(stream);
 	stream->state = KRRP_STRMS_ACTIVE;
@@ -963,14 +960,16 @@ krrp_stream_write(void *arg)
 			VERIFY(stream_task == NULL);
 
 			krrp_stream_write_task_init(stream->task_engine,
-			    pdu->txg, &stream_task, zcookies);
+			    pdu->txg, &stream_task, stream->resume_info);
 
 			/*
 			 * Cookies are required only for
 			 * the first received task
 			 */
-			if (zcookies)
-				zcookies = NULL;
+			if (stream->resume_info != NULL) {
+				fnvlist_free(stream->resume_info);
+				stream->resume_info = NULL;
+			}
 
 			stream->cur_task = stream_task;
 			stream->cur_recv_txg = pdu->txg;
@@ -1099,24 +1098,6 @@ krrp_stream_get_snap_txg(krrp_stream_t *stream,
 	    stream->dataset, short_snap_name);
 
 	return (dsl_dataset_creation_txg(full_ds_name));
-}
-
-int
-krrp_zfs_get_recv_cookies(const char *dataset, char *cookies_buf,
-    size_t cookies_buf_len, krrp_error_t *error)
-{
-	int rc = -1;
-
-	if (dsl_dataset_creation_txg(dataset) == UINT64_MAX) {
-		krrp_error_set(error, KRRP_ERRNO_DSTDS, ENOENT);
-	} else {
-		rc = dmu_krrp_get_recv_cookie(dataset, dataset,
-		    cookies_buf, cookies_buf_len);
-		if (rc != 0)
-			krrp_error_set(error, KRRP_ERRNO_ZCOOKIES, rc);
-	}
-
-	return (rc);
 }
 
 boolean_t

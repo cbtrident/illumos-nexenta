@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _KRRP_STREAM_TASK_H
@@ -128,9 +128,9 @@ void krrp_stream_task_engine_get_task(krrp_stream_te_t *,
 
 void krrp_stream_fake_read_task_init(krrp_stream_te_t *, uint64_t);
 void krrp_stream_read_task_init(krrp_stream_te_t *, uint64_t,
-    const char *, const char *, const char *);
+    const char *, const char *, nvlist_t *);
 void krrp_stream_write_task_init(krrp_stream_te_t *, uint64_t,
-    krrp_stream_task_t **, const char *);
+    krrp_stream_task_t **, nvlist_t *);
 void krrp_stream_task_fini(krrp_stream_task_t *);
 
 hrtime_t krrp_stream_task_calc_rpo(krrp_stream_task_t *);

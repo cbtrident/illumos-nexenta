@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_KRRP_IOCTL_COMMON_H
@@ -38,7 +38,6 @@ extern "C" {
 	X(SESS_RUN) \
 	X(SESS_SEND_STOP) \
 	X(SESS_CONN_THROTTLE) \
-	X(ZFS_GET_RECV_COOKIES) \
 	X(SESS_SET_PRIVATE_DATA) \
 	X(SESS_GET_PRIVATE_DATA) \
 

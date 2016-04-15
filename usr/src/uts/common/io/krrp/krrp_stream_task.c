@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -65,7 +65,7 @@ uint32_t krrp_stream_fake_rate_limit_mb = 0;
 int
 krrp_stream_te_read_create(krrp_stream_te_t **result_te,
     const char *dataset, krrp_stream_read_flag_t flags,
-	krrp_check_enough_mem *mem_check_cb, void *mem_check_cb_arg,
+    krrp_check_enough_mem *mem_check_cb, void *mem_check_cb_arg,
     krrp_error_t *error)
 {
 	int rc;
@@ -255,7 +255,7 @@ krrp_stream_task_num_of_tasks(krrp_stream_te_t *task_engine)
 
 void
 krrp_stream_read_task_init(krrp_stream_te_t *task_engine, uint64_t txg,
-    const char *src_snap, const char *src_inc_snap, const char *cookie)
+    const char *src_snap, const char *src_inc_snap, nvlist_t *resume_info)
 {
 	ASSERT(task_engine->mode == KRRP_STEM_READ);
 
@@ -275,11 +275,8 @@ krrp_stream_read_task_init(krrp_stream_te_t *task_engine, uint64_t txg,
 	else
 		task->zargs.from_incr_base[0] = '\0';
 
-	if (cookie != NULL)
-		(void) strlcpy(task->zargs.rep_cookie, cookie,
-		    sizeof (task->zargs.rep_cookie));
-	else
-		task->zargs.rep_cookie[0] = '\0';
+	task->zargs.resume_info =
+	    resume_info != NULL ? fnvlist_dup(resume_info) : NULL;
 
 	task->init_hrtime = gethrtime();
 
@@ -306,7 +303,7 @@ krrp_stream_fake_read_task_init(krrp_stream_te_t *task_engine,
 
 void
 krrp_stream_write_task_init(krrp_stream_te_t *task_engine, uint64_t txg,
-    krrp_stream_task_t **result_task, const char *cookie)
+    krrp_stream_task_t **result_task, nvlist_t *resume_info)
 {
 	ASSERT(task_engine->mode == KRRP_STEM_WRITE);
 
@@ -319,11 +316,8 @@ krrp_stream_write_task_init(krrp_stream_te_t *task_engine, uint64_t txg,
 	task->txg_start = UINT64_MAX;
 	task->txg_end = UINT64_MAX;
 
-	if (cookie != NULL)
-		(void) strlcpy(task->zargs.rep_cookie, cookie,
-		    sizeof (task->zargs.rep_cookie));
-	else
-		task->zargs.rep_cookie[0] = '\0';
+	task->zargs.resume_info =
+	    resume_info != NULL ? fnvlist_dup(resume_info) : NULL;
 
 	if (!task_engine->fake_mode)
 		task->zfs_ctx = dmu_krrp_init_recv_task(&task->zargs);

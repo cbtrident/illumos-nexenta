@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <strings.h>
@@ -229,47 +229,4 @@ krrp_sess_list_free(libkrrp_sess_list_t *sess_list)
 		umem_free(sess_list, sizeof (libkrrp_sess_list_t));
 		sess_list = next;
 	}
-}
-
-int
-krrp_zfs_get_recv_cookies(libkrrp_handle_t *hdl, const char *dataset,
-    char *res_zcookies, size_t res_zcookies_sz)
-{
-	int rc;
-	nvlist_t *result_nvl = NULL;
-	nvlist_t *params = NULL;
-	const char *zcookies = NULL;
-
-	VERIFY(hdl != NULL);
-
-	res_zcookies[0] = '\0';
-
-	libkrrp_reset(hdl);
-
-	params = fnvlist_alloc();
-	(void) krrp_param_put(KRRP_PARAM_DST_DATASET, params, (void *) dataset);
-
-	rc = krrp_ioctl_perform(hdl, KRRP_IOCTL_ZFS_GET_RECV_COOKIES, params,
-	    &result_nvl);
-
-	fnvlist_free(params);
-
-	if (rc != 0)
-		return (rc);
-
-	if (result_nvl == NULL)
-		return (rc);
-
-	VERIFY3U(krrp_param_get(KRRP_PARAM_ZCOOKIES, result_nvl,
-	    (void *) &zcookies), ==, 0);
-
-	if ((zcookies != NULL) && (strlcpy(res_zcookies, zcookies,
-	    res_zcookies_sz) >= res_zcookies_sz)) {
-		rc = EOVERFLOW;
-		libkrrp_error_set(&hdl->libkrrp_error, LIBKRRP_ERRNO_ZCOOKIES,
-		    rc, 0);
-	}
-
-	fnvlist_free(result_nvl);
-	return (rc);
 }

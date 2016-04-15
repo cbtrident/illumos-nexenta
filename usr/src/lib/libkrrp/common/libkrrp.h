@@ -93,7 +93,7 @@ typedef struct libkrrp_event_s libkrrp_event_t;
 	X(CONNTIMEOUT)           \
 	X(THROTTLE)              \
 	X(AUTOSNAP)              \
-	X(ZCOOKIES)              \
+	X(RESUMETOKEN)           \
 	X(KEEPSNAPS)             \
 
 #define	LIBKRRP_ERRNO_MAP(X)     \
@@ -218,8 +218,6 @@ void krrp_sess_list_free(libkrrp_sess_list_t *);
 
 int krrp_sess_status(libkrrp_handle_t *, uuid_t, libkrrp_sess_status_t *);
 void libkrrp_sess_error_description(libkrrp_error_t *, libkrrp_error_descr_t);
-
-int krrp_zfs_get_recv_cookies(libkrrp_handle_t *, const char *, char *, size_t);
 
 int krrp_svc_enable(libkrrp_handle_t *);
 int krrp_svc_disable(libkrrp_handle_t *);

@@ -1,5 +1,5 @@
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 #
 # MAPFILE HEADER START
@@ -40,7 +40,6 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	krrp_sess_status;
 	krrp_sess_set_private_data;
 	krrp_sess_get_private_data;
-	krrp_zfs_get_recv_cookies;
 	krrp_svc_enable;
 	krrp_svc_disable;
 	krrp_svc_state;

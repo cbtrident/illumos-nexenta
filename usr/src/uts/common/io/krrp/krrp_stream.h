@@ -82,9 +82,9 @@ struct krrp_stream_s {
 	boolean_t				fake_mode;
 	boolean_t				recursive;
 	char					dataset[MAXNAMELEN];
-	char					zcookies[MAXNAMELEN];
 	char					base_snap_name[MAXNAMELEN];
 	char					incr_snap_name[MAXNAMELEN];
+	nvlist_t				*resume_info;
 	uint64_t				last_send_txg;
 	uint64_t				cur_send_txg;
 	uint64_t				cur_recv_txg;
@@ -112,11 +112,11 @@ struct krrp_stream_s {
 
 int krrp_stream_read_create(krrp_stream_t **result_stream,
     size_t keep_snaps, const char *dataset, const char *base_snap_name,
-    const char *incr_snap_name, const char *zcookies,
+    const char *incr_snap_name, const char *resume_token,
 	krrp_stream_read_flag_t flags, krrp_error_t *error);
 int krrp_stream_write_create(krrp_stream_t **result_stream,
     size_t keep_snaps, const char *dataset, const char *incr_snap_name,
-    const char *zcookies, krrp_stream_write_flag_t flags,
+    const char *resume_token, krrp_stream_write_flag_t flags,
     nvlist_t *ignore_props_list, nvlist_t *replace_props_list,
     krrp_error_t *error);
 int krrp_stream_fake_read_create(krrp_stream_t **result_stream,
@@ -135,9 +135,6 @@ void krrp_stream_txg_confirmed(krrp_stream_t *, uint64_t, boolean_t);
 
 void krrp_stream_stop(krrp_stream_t *stream);
 int krrp_stream_send_stop(krrp_stream_t *stream);
-
-int krrp_zfs_get_recv_cookies(const char *dataset, char *cookies_buf,
-    size_t cookies_buf_len, krrp_error_t *error);
 
 boolean_t krrp_stream_is_write_flag_set(krrp_stream_write_flag_t flags,
     krrp_stream_write_flag_t flag);

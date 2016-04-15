@@ -1690,7 +1690,7 @@ dmu_recv_resume_begin_check(void *arg, dmu_tx_t *tx)
 		dsl_dataset_rele(ds, FTAG);
 		return (SET_ERROR(EINVAL));
 	}
-	uint64_t val;
+	uint64_t val = 0;
 	error = zap_lookup(dp->dp_meta_objset, ds->ds_object,
 	    DS_FIELD_RESUME_TOGUID, sizeof (val), 1, &val);
 	if (error != 0 || drrb->drr_toguid != val) {

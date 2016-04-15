@@ -75,7 +75,7 @@ typedef enum {
 	X(CONNTIMEOUT)        \
 	X(THROTTLE)           \
 	X(AUTOSNAP)           \
-	X(ZCOOKIES)           \
+	X(RESUMETOKEN)        \
 	X(KEEPSNAPS)          \
 
 

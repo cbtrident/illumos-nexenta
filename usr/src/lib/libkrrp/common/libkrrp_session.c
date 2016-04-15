@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/uuid.h>
@@ -267,7 +267,7 @@ krrp_sess_create_pdu_engine(libkrrp_handle_t *hdl, uuid_t sess_id,
 static void
 krrp_sess_create_stream_common(libkrrp_handle_t *hdl, nvlist_t *params,
     uuid_t sess_id, const char *common_snap,
-    krrp_sess_stream_flags_t krrp_sess_stream_flags, const char *zcookies,
+    krrp_sess_stream_flags_t krrp_sess_stream_flags, const char *resume_token,
     uint32_t keep_snaps)
 {
 	krrp_sess_id_str_t sess_id_str;
@@ -291,9 +291,9 @@ krrp_sess_create_stream_common(libkrrp_handle_t *hdl, nvlist_t *params,
 		    params, (void *)common_snap);
 	}
 
-	if (zcookies != NULL) {
-		(void) krrp_param_put(KRRP_PARAM_ZCOOKIES,
-		    params, (void *)zcookies);
+	if (resume_token != NULL) {
+		(void) krrp_param_put(KRRP_PARAM_RESUME_TOKEN,
+		    params, (void *)resume_token);
 	}
 
 	if (krrp_sess_stream_flags & KRRP_STREAM_ZFS_EMBEDDED) {
@@ -311,7 +311,7 @@ int
 krrp_sess_create_write_stream(libkrrp_handle_t *hdl, uuid_t sess_id,
     const char *dataset, const char *common_snap,
     krrp_sess_stream_flags_t krrp_sess_stream_flags, nvlist_t *ignore_props,
-    nvlist_t *replace_props, const char *zcookies, uint32_t keep_snaps)
+    nvlist_t *replace_props, const char *resume_token, uint32_t keep_snaps)
 {
 	nvlist_t *params = NULL;
 	int rc;
@@ -319,7 +319,7 @@ krrp_sess_create_write_stream(libkrrp_handle_t *hdl, uuid_t sess_id,
 	params = fnvlist_alloc();
 
 	krrp_sess_create_stream_common(hdl, params, sess_id, common_snap,
-	    krrp_sess_stream_flags, zcookies, keep_snaps);
+	    krrp_sess_stream_flags, resume_token, keep_snaps);
 
 	(void) krrp_param_put(KRRP_PARAM_DST_DATASET, params,
 	    (void *)dataset);
@@ -365,7 +365,7 @@ int
 krrp_sess_create_read_stream(libkrrp_handle_t *hdl, uuid_t sess_id,
     const char *dataset, const char *common_snap, const char *src_snap,
     uint64_t fake_data_sz, krrp_sess_stream_flags_t krrp_sess_stream_flags,
-    const char *zcookies, uint32_t keep_snaps)
+    const char *resume_token, uint32_t keep_snaps)
 {
 	nvlist_t *params = NULL;
 	int rc;
@@ -373,7 +373,7 @@ krrp_sess_create_read_stream(libkrrp_handle_t *hdl, uuid_t sess_id,
 	params = fnvlist_alloc();
 
 	krrp_sess_create_stream_common(hdl, params, sess_id, common_snap,
-	    krrp_sess_stream_flags, zcookies, keep_snaps);
+	    krrp_sess_stream_flags, resume_token, keep_snaps);
 
 	(void) krrp_param_put(KRRP_PARAM_SRC_DATASET, params, (void *)dataset);
 

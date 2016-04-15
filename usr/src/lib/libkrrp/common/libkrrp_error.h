@@ -142,10 +142,20 @@ typedef enum {
 	    "the sender flag or the authentication digest"
 #define	LIBKRRP_EMSG_SESS_CREATE_CONN_INVAL \
 	    "Cannot create connection for compound session"
-#define	LIBKRRP_EMSG_ZCOOKIES_OVERFLOW "ZFS cookie is too long"
-#define	LIBKRRP_EMSG_ZCOOKIES_INVAL "Invalid ZFS cookie"
-#define	LIBKRRP_EMSG_ZCOOKIES_NOENT "ZFS cookie does not exist"
-#define	LIBKRRP_EMSG_ZCOOKIES_FAIL "Failed to retrieve ZFS cookie (%s)"
+
+#define	LIBKRRP_EMSG_RESUMETOKEN_INVAL \
+	    "Resume token is corrupt (invalid format)"
+#define	LIBKRRP_EMSG_RESUMETOKEN_ENOTSUP \
+	    "Resume token is corrupt (invalid version)"
+#define	LIBKRRP_EMSG_RESUMETOKEN_EBADMSG \
+	    "Resume token is corrupt (payload is not hex-encoded)"
+#define	LIBKRRP_EMSG_RESUMETOKEN_ECKSUM \
+	    "Resume token is corrupt (incorrect checksum failed)"
+#define	LIBKRRP_EMSG_RESUMETOKEN_ENOSR \
+	    "Resume token is corrupt (decompression failed)"
+#define	LIBKRRP_EMSG_RESUMETOKEN_ENODATA \
+	    "Resume token is corrupt (nvlist_unpack failed)"
+
 #define	LIBKRRP_EMSG_RUN_ONCE_RECV "Impossible to use the option 'run-once' " \
 	    "at the receiver side"
 #define	LIBKRRP_EMSG_STREAM_POOL_FAULT "Failed to read configuration of " \
@@ -178,7 +188,6 @@ typedef enum {
 	X(EVBINDFAIL, 0, LIBKRRP_EMSG_EVBINDFAIL) \
 	X(EVSUBSRIBEFAIL, 0, LIBKRRP_EMSG_EVSUBSCRIBEFAIL) \
 	X(EVREADFAIL, 0, LIBKRRP_EMSG_EVREADFAIL) \
-	X(ZCOOKIES, EOVERFLOW, LIBKRRP_EMSG_ZCOOKIES_OVERFLOW) \
 
 #define	UNIX_ERRNO_MAP(X) \
 	X(EPERM)	/* Not super-user			*/ \

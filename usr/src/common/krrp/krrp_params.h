@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_KRRP_PARAMS_H_
@@ -60,7 +60,7 @@ extern "C" {
 	X(STREAM_EMBEDDED_BLOCKS, BOOLEAN) \
 	X(IGNORE_PROPS_LIST, NVLIST) \
 	X(REPLACE_PROPS_LIST, NVLIST) \
-	X(ZCOOKIES, STRING) \
+	X(RESUME_TOKEN, STRING) \
 \
 	X(ONLY_ONCE, BOOLEAN) \
 	X(GRACEFUL_SHUTDOWN, BOOLEAN) \
