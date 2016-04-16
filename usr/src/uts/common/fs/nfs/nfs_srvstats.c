@@ -21,7 +21,6 @@
 #include <sys/kstat.h>
 #include <sys/zone.h>
 #include <sys/kmem.h>
-#include <sys/systm.h>
 #include <sys/disp.h>
 #include <sys/note.h>
 #include <sys/acl.h>
@@ -116,7 +115,7 @@ volatile int nfssrv_clnt_exp_stats_reclaimtime = 5 * 60;
  * Aggregates
  */
 static kstat_t *nfssrv_kstat_aggregates_create(struct nfssrv_stats *,
-    kmutex_t *, const char *, int, const char *, const char *, zoneid_t);
+    kmutex_t *, int, int, zoneid_t);
 
 /*
  * Implementation of the nscs_cache
@@ -454,17 +453,36 @@ nsces_reclaim(void *arg)
  */
 static kstat_t **
 nfssrv_kstat_io_init(zoneid_t zoneid, const char *module, int instance,
-    const char *name_prefix, int vers, const char *class,
-    const kstat_named_t *tmpl, int count, kstat_io_t *data, kmutex_t *lock)
+    const char *name_prefix, const char *class, const kstat_named_t *tmpl,
+    int count, kstat_io_t *data, kmutex_t *lock)
 {
 	int i;
 	kstat_t **ret = kmem_alloc(count * sizeof (*ret), KM_SLEEP);
 
 	for (i = 0; i < count; i++) {
 		char namebuf[KSTAT_STRLEN];
+		int r;
 
-		(void) snprintf(namebuf, sizeof (namebuf), "%s_v%d_%s",
-		    name_prefix, vers, tmpl[i].name);
+		/*
+		 * We skip the "reserved" kstat.  Currently, it is used only by
+		 * NFSv4.0 template for procedure/operation number 2, which is
+		 * undefined by the NFSv4.0 specification.
+		 */
+		if (strcmp(tmpl[i].name, "reserved") == 0) {
+			ret[i] = NULL;
+			continue;
+		}
+
+		r = snprintf(namebuf, sizeof (namebuf), "%s/%s", name_prefix,
+		    tmpl[i].name);
+		if (r < 0 || r >= sizeof (namebuf)) {
+			zcmn_err(zoneid, CE_WARN,
+			    "nfssrv_kstat_io_init: snprintf() failed for %s/%s",
+			    name_prefix, tmpl[i].name);
+			ret[i] = NULL;
+			continue;
+		}
+
 		ret[i] = kstat_create_zone(module, instance, namebuf, class,
 		    KSTAT_TYPE_IO, 1, data == NULL ? 0 : KSTAT_FLAG_VIRTUAL,
 		    zoneid);
@@ -565,61 +583,50 @@ nfssrv_stats_free_data(nfssrv_stats *s)
 }
 
 static void
-nfssrv_stats_init(nfssrv_stats *s, zoneid_t zoneid, int instance,
-    const char *name_prefix, const char *class, kmutex_t *lock)
+nfssrv_stats_init(nfssrv_stats *s, zoneid_t zoneid, int share_id, int client_id,
+    kmutex_t *lock)
 {
-	const char *nm;
-	const char *cl;
+	char module_buffer[KSTAT_STRLEN];
+	const char *module = "nfssrv";
+
+	/*
+	 * If this is going to be per-client or per-client/per-exportinfo we
+	 * need to adjust the module name
+	 */
+	if (client_id > 0) {
+		int r = snprintf(module_buffer, sizeof (module_buffer),
+		    "nfssrv_client%d", client_id);
+		if (r < 0 || r >= sizeof (module_buffer)) {
+			zcmn_err(zoneid, CE_WARN,
+			    "nfssrv_stats_init: snprintf() failed for client%d",
+			    client_id);
+			return;
+		}
+		module = module_buffer;
+	}
 
 	/*
 	 * NFS_ACL
 	 */
-	nm = name_prefix != NULL ? name_prefix : "aclprocio";
-
-	/*
-	 * NFS_ACL version 2
-	 */
-	cl = class != NULL ? class : "aclprocio_v2";
-	s->aclprocio_v2_ptr = nfssrv_kstat_io_init(zoneid, "nfs_acl", instance,
-	    nm, NFS_ACL_V2, cl, aclproccnt_v2_tmpl, aclproccnt_v2_count,
-	    s->aclprocio_v2_data, lock);
-
-	/*
-	 * NFS_ACL version 3
-	 */
-	cl = class != NULL ? class : "aclprocio_v3";
-	s->aclprocio_v3_ptr = nfssrv_kstat_io_init(zoneid, "nfs_acl", instance,
-	    nm, NFS_ACL_V3, cl, aclproccnt_v3_tmpl, aclproccnt_v3_count,
-	    s->aclprocio_v3_data, lock);
+	s->aclprocio_v2_ptr = nfssrv_kstat_io_init(zoneid, module, share_id,
+	    "NFS_ACLv2", "aclprocio_v2", aclproccnt_v2_tmpl,
+	    aclproccnt_v2_count, s->aclprocio_v2_data, lock);
+	s->aclprocio_v3_ptr = nfssrv_kstat_io_init(zoneid, module, share_id,
+	    "NFS_ACLv3", "aclprocio_v3", aclproccnt_v3_tmpl,
+	    aclproccnt_v3_count, s->aclprocio_v3_data, lock);
 
 	/*
 	 * NFS
 	 */
-	nm = name_prefix != NULL ? name_prefix : "rfsprocio";
-
-	/*
-	 * NFS version 2
-	 */
-	cl = class != NULL ? class : "rfsprocio_v2";
-	s->rfsprocio_v2_ptr = nfssrv_kstat_io_init(zoneid, "nfs", instance, nm,
-	    NFS_VERSION, cl, rfsproccnt_v2_tmpl, rfsproccnt_v2_count,
+	s->rfsprocio_v2_ptr = nfssrv_kstat_io_init(zoneid, module, share_id,
+	    "NFSv2", "rfsprocio_v2", rfsproccnt_v2_tmpl, rfsproccnt_v2_count,
 	    s->rfsprocio_v2_data, lock);
-
-	/*
-	 * NFS version 3
-	 */
-	cl = class != NULL ? class : "rfsprocio_v3";
-	s->rfsprocio_v3_ptr = nfssrv_kstat_io_init(zoneid, "nfs", instance, nm,
-	    NFS_V3, cl, rfsproccnt_v3_tmpl, rfsproccnt_v3_count,
+	s->rfsprocio_v3_ptr = nfssrv_kstat_io_init(zoneid, module, share_id,
+	    "NFSv3", "rfsprocio_v3", rfsproccnt_v3_tmpl, rfsproccnt_v3_count,
 	    s->rfsprocio_v3_data, lock);
-
-	/*
-	 * NFS version 4
-	 */
-	cl = class != NULL ? class : "rfsprocio_v4";
-	s->rfsprocio_v4_ptr = nfssrv_kstat_io_init(zoneid, "nfs", instance, nm,
-	    NFS_V4, cl, rfsproccnt_v4_tmpl, rfsproccnt_v4_count,
-	    s->rfsprocio_v4_data, lock);
+	s->rfsprocio_v4_ptr = nfssrv_kstat_io_init(zoneid, module, share_id,
+	    "NFSv4.0", "rfsprocio_v4.0", rfsproccnt_v4_tmpl,
+	    rfsproccnt_v4_count, s->rfsprocio_v4_data, lock);
 }
 
 static void
@@ -926,7 +933,7 @@ nfssrv_get_exp_stats(const char *path, size_t len, bool_t pseudo)
 		    e->nses_id < 0) {
 			e->nses_share_kstat = NULL;
 		} else {
-			e->nses_share_kstat = kstat_create_zone("nfs",
+			e->nses_share_kstat = kstat_create_zone("nfssrv",
 			    e->nses_id, "share", "misc", KSTAT_TYPE_NAMED,
 			    sizeof (e->nses_share_kstat_data) /
 			    sizeof (kstat_named_t), KSTAT_FLAG_VIRTUAL |
@@ -955,8 +962,7 @@ nfssrv_get_exp_stats(const char *path, size_t len, bool_t pseudo)
 			 */
 			if ((nfssrv_stats_flags & EXP_STATS) != 0) {
 				nfssrv_stats_init(&e->nses_stats, getzoneid(),
-				    e->nses_id, "share", NULL,
-				    &e->nses_procio_lock);
+				    e->nses_id, 0, &e->nses_procio_lock);
 			}
 
 			/*
@@ -965,9 +971,8 @@ nfssrv_get_exp_stats(const char *path, size_t len, bool_t pseudo)
 			if ((nfssrv_stats_flags & AGG_EXP_STATS) != 0) {
 				e->nses_agg =
 				    nfssrv_kstat_aggregates_create(
-				    &e->nses_stats, &e->nses_procio_lock, "nfs",
-				    e->nses_id, "share_aggregates", "misc",
-				    getzoneid());
+				    &e->nses_stats, &e->nses_procio_lock,
+				    e->nses_id, 0, getzoneid());
 			}
 		}
 
@@ -1294,7 +1299,7 @@ nfssrv_get_clnt_stats(SVCXPRT *xprt)
 		    c->nscs_id < 0) {
 			c->nscs_clnt_kstat = NULL;
 		} else {
-			c->nscs_clnt_kstat = kstat_create_zone("nfs",
+			c->nscs_clnt_kstat = kstat_create_zone("nfssrv",
 			    c->nscs_id, "client", "misc", KSTAT_TYPE_NAMED,
 			    sizeof (c->nscs_clnt_kstat_data) /
 			    sizeof (kstat_named_t), KSTAT_FLAG_VIRTUAL |
@@ -1322,8 +1327,7 @@ nfssrv_get_clnt_stats(SVCXPRT *xprt)
 			 */
 			if ((nfssrv_stats_flags & CLNT_STATS) != 0) {
 				nfssrv_stats_init(&c->nscs_stats, getzoneid(),
-				    c->nscs_id, "client", NULL,
-				    &c->nscs_procio_lock);
+				    0, c->nscs_id, &c->nscs_procio_lock);
 			}
 
 			/*
@@ -1332,9 +1336,8 @@ nfssrv_get_clnt_stats(SVCXPRT *xprt)
 			if ((nfssrv_stats_flags & AGG_CLNT_STATS) != 0) {
 				c->nscs_agg =
 				    nfssrv_kstat_aggregates_create(
-				    &c->nscs_stats, &c->nscs_procio_lock, "nfs",
-				    c->nscs_id, "client_aggregates", "misc",
-				    getzoneid());
+				    &c->nscs_stats, &c->nscs_procio_lock, 0,
+				    c->nscs_id, getzoneid());
 			}
 		}
 
@@ -1552,33 +1555,24 @@ nfssrv_get_clnt_exp_stats(struct nfssrv_clnt_stats *c,
 		    ce->nsces_clnt_stats->nscs_clnt_kstat != NULL &&
 		    (nfssrv_stats_flags & (CLNT_EXP_STATS | AGG_CLNT_EXP_STATS))
 		    != 0) {
-			char class[KSTAT_STRLEN];
-			int r;
-
 			ASSERT(ce->nsces_exp_stats->nses_id >= 0);
 			ASSERT(ce->nsces_clnt_stats->nscs_id >= 0);
 
-			r = snprintf(class, sizeof (class), "client%d",
-			    ce->nsces_clnt_stats->nscs_id);
-			if (r >= 0 && r < sizeof (class)) {
-				if ((nfssrv_stats_flags & CLNT_EXP_STATS) != 0)
-					nfssrv_stats_init(&ce->nsces_stats,
-					    getzoneid(),
-					    ce->nsces_exp_stats->nses_id, NULL,
-					    class, &ce->nsces_procio_lock);
+			if ((nfssrv_stats_flags & CLNT_EXP_STATS) != 0) {
+				nfssrv_stats_init(&ce->nsces_stats, getzoneid(),
+				    ce->nsces_exp_stats->nses_id,
+				    ce->nsces_clnt_stats->nscs_id,
+				    &ce->nsces_procio_lock);
+			}
 
-				/*
-				 * Aggregated stats
-				 */
-				if ((nfssrv_stats_flags & AGG_CLNT_EXP_STATS) !=
-				    0) {
-					ce->nsces_agg =
-					    nfssrv_kstat_aggregates_create(
-					    &ce->nsces_stats,
-					    &ce->nsces_procio_lock, "nfs",
-					    ce->nsces_exp_stats->nses_id,
-					    "aggregates", class, getzoneid());
-				}
+			/*
+			 * Aggregated stats
+			 */
+			if ((nfssrv_stats_flags & AGG_CLNT_EXP_STATS) != 0) {
+				ce->nsces_agg = nfssrv_kstat_aggregates_create(
+				    &ce->nsces_stats, &ce->nsces_procio_lock,
+				    ce->nsces_exp_stats->nses_id,
+				    ce->nsces_clnt_stats->nscs_id, getzoneid());
 			}
 		}
 
@@ -1677,8 +1671,8 @@ nfssrv_stat_zone_init(zoneid_t zoneid)
 	(void) nfssrv_stats_alloc_data(&nfsstatsp->ns_stats, KM_SLEEP);
 	nfssrv_stats_clear_data(&nfsstatsp->ns_stats);
 	if ((nfssrv_stats_flags & SRV_STATS) != 0) {
-		nfssrv_stats_init(&nfsstatsp->ns_stats, getzoneid(), 0, NULL,
-		    NULL, &nfsstatsp->ns_procio_lock);
+		nfssrv_stats_init(&nfsstatsp->ns_stats, getzoneid(), 0, 0,
+		    &nfsstatsp->ns_procio_lock);
 	}
 	if (zoneid == GLOBAL_ZONEID) {
 		aclprocio_v2_ptr = nfsstatsp->ns_stats.aclprocio_v2_data;
@@ -1742,8 +1736,7 @@ nfssrv_stat_zone_init(zoneid_t zoneid)
 	} else {
 		nfsstatsp->ns_agg =
 		    nfssrv_kstat_aggregates_create(&nfsstatsp->ns_stats,
-		    &nfsstatsp->ns_procio_lock, "nfs", 0, "aggregates", "misc",
-		    zoneid);
+		    &nfsstatsp->ns_procio_lock, 0, 0, zoneid);
 	}
 
 	return (nfsstatsp);
@@ -1986,15 +1979,42 @@ nfssrv_kstat_aggregates_update(kstat_t *ksp, int rw)
  */
 static kstat_t *
 nfssrv_kstat_aggregates_create(struct nfssrv_stats *s, kmutex_t *lock,
-    const char *module, int instance, const char *name, const char *class,
-    zoneid_t zoneid)
+    int share_id, int client_id, zoneid_t zoneid)
 {
 	int i;
 	kstat_t *ksp;
 	kstat_named_t *ks_data;
 
-	ksp = kstat_create_zone(module, instance, name, class, KSTAT_TYPE_NAMED,
-	    NFSSRV_KSTAT_AGGREGATES_COUNT, 0, zoneid);
+	char module_buffer[KSTAT_STRLEN];
+	const char *module = "nfssrv";
+	const char *name = "aggregates";
+
+	/*
+	 * If this is going to be per-client or per-client/per-exportinfo we
+	 * need to adjust the module name
+	 */
+	if (client_id > 0) {
+		int r = snprintf(module_buffer, sizeof (module_buffer),
+		    "nfssrv_client%d", client_id);
+		if (r < 0 || r >= sizeof (module_buffer)) {
+			zcmn_err(zoneid, CE_WARN,
+			    "nfssrv_kstat_aggregates_create: snprintf() failed "
+			    "for client%d", client_id);
+			return (NULL);
+		}
+		module = module_buffer;
+	}
+
+	/*
+	 * Adjust the kstat name for per-exportinfo and per-client aggregates
+	 */
+	if (client_id == 0 && share_id > 0)
+		name = "share_aggregates";
+	if (share_id == 0 && client_id > 0)
+		name = "client_aggregates";
+
+	ksp = kstat_create_zone(module, share_id, name, "aggregates",
+	    KSTAT_TYPE_NAMED, NFSSRV_KSTAT_AGGREGATES_COUNT, 0, zoneid);
 	if (ksp == NULL)
 		return (NULL);
 
