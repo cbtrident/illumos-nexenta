@@ -1380,7 +1380,8 @@ sa_handle_get_from_db(objset_t *os, dmu_buf_t *db, void *userp,
 		sa_handle_t *winner = NULL;
 
 		handle = kmem_cache_alloc(sa_cache, KM_SLEEP);
-		handle->sa_dbu.dbu_evict_func = NULL;
+		handle->sa_dbu.dbu_evict_func_sync = NULL;
+		handle->sa_dbu.dbu_evict_func_async = NULL;
 		handle->sa_userp = userp;
 		handle->sa_bonus = db;
 		handle->sa_os = os;
@@ -1391,7 +1392,8 @@ sa_handle_get_from_db(objset_t *os, dmu_buf_t *db, void *userp,
 		error = sa_build_index(handle, SA_BONUS);
 
 		if (hdl_type == SA_HDL_SHARED) {
-			dmu_buf_init_user(&handle->sa_dbu, sa_evict, NULL);
+			dmu_buf_init_user(&handle->sa_dbu, NULL, sa_evict,
+			    NULL);
 			winner = dmu_buf_set_user_ie(db, &handle->sa_dbu);
 		}
 
