@@ -1652,6 +1652,7 @@ smb_server_listener(smb_thread_t *thread, void *arg)
 		case ECONNABORTED:
 			continue;
 		case EINTR:
+		case EBADF:	/* libfakekernel */
 			goto out;
 		default:
 			cmn_err(CE_WARN,
