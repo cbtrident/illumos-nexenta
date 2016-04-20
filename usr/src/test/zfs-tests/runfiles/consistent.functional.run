@@ -331,7 +331,7 @@ tests = ['ctime_001_pos' ]
 tests = ['zfs_allow_001_pos', 'zfs_allow_002_pos',
     'zfs_allow_004_pos', 'zfs_allow_005_pos', 'zfs_allow_006_pos',
     'zfs_allow_007_pos', 'zfs_allow_008_pos', 'zfs_allow_009_neg',
-    'zfs_allow_011_neg', 'zfs_allow_012_neg',
+    'zfs_allow_010_pos', 'zfs_allow_011_neg', 'zfs_allow_012_neg',
     'zfs_unallow_001_pos', 'zfs_unallow_002_pos', 'zfs_unallow_003_pos',
     'zfs_unallow_004_pos', 'zfs_unallow_005_pos', 'zfs_unallow_006_pos',
     'zfs_unallow_007_neg', 'zfs_unallow_008_neg']
@@ -347,6 +347,11 @@ tests = ['async_destroy_001_pos']
 
 [/opt/zfs-tests/tests/functional/grow_pool]
 tests = ['grow_pool_001_pos']
+
+[/opt/zfs-tests/tests/functional/grow_replicas]
+tests = ['grow_replicas_001_pos']
+pre =
+post =
 
 [/opt/zfs-tests/tests/functional/history]
 tests = ['history_001_pos', 'history_002_pos', 'history_003_pos',
