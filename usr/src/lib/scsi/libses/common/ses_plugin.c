@@ -23,7 +23,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <scsi/libses.h>
@@ -280,7 +280,7 @@ ses_plugin_load_dir(ses_target_t *tp, const char *pluginroot)
 	char path[PATH_MAX];
 	DIR *dirp;
 	struct dirent64 *dp;
-	char *vendor, *product, *revision, *lid, *usn;
+	char *vendor, *product, *revision;
 	char isa[257];
 
 	(void) snprintf(path, sizeof (path), "%s/%s",
@@ -340,26 +340,6 @@ ses_plugin_load_dir(ses_target_t *tp, const char *pluginroot)
 	    LIBSES_PLUGIN_VENDOR, isa, vendor, product,
 	    revision, LIBSES_PLUGIN_EXT);
 	if (ses_plugin_loadone(tp, path, 3) != 0)
-		return (-1);
-
-	if (libscsi_lid(tp->st_target) == NULL)
-		return (0);
-	lid = strdupa(libscsi_lid(tp->st_target));
-	ses_plugin_cleanstr(lid);
-	(void) snprintf(path, sizeof (path), "%s/%s/%s/%s-%s-%s-%s%s",
-	    pluginroot, LIBSES_PLUGIN_VENDOR, isa, vendor, product,
-	    revision, lid, LIBSES_PLUGIN_EXT);
-	if (ses_plugin_loadone(tp, path, 4) != 0)
-		return (-1);
-
-	if (libscsi_usn(tp->st_target) == NULL)
-		return (0);
-	usn = strdupa(libscsi_usn(tp->st_target));
-	ses_plugin_cleanstr(usn);
-	(void) snprintf(path, sizeof (path), "%s/%s/%s/%s-%s-%s-%s-%s%s",
-	    pluginroot, LIBSES_PLUGIN_VENDOR, isa, vendor, product,
-	    revision, lid, usn, LIBSES_PLUGIN_EXT);
-	if (ses_plugin_loadone(tp, path, 5) != 0)
 		return (-1);
 
 	return (0);

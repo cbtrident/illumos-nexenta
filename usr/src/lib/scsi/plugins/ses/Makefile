@@ -23,6 +23,8 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+#
 
 SUBDIRS = 			\
 	libses			\
@@ -30,7 +32,8 @@ SUBDIRS = 			\
 	LSILOGIC-SASX28-A.0	\
 	SUN			\
 	SUN-Storage-J4400	\
-	SUN-Storage-J4500
+	SUN-Storage-J4500	\
+	HP
 
 .KEEP_STATE:
 
