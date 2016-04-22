@@ -1078,8 +1078,8 @@ smb_ofile_should_save(smb_ofile_t *of)
 	ASSERT(MUTEX_HELD(&of->f_mutex));
 
 	if (of->dh_vers == SMB2_NOT_DURABLE ||
-	    of->f_user->preserve_opens == SMB2_DONT_PRESERVE &&
-	    of->f_session->conn_lost == B_FALSE)
+	    (of->f_user->preserve_opens == SMB2_DONT_PRESERVE &&
+	    of->f_session->conn_lost == B_FALSE))
 		return (B_FALSE);
 
 	/*

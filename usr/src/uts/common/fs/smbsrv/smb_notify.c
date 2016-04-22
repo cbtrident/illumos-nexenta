@@ -724,7 +724,7 @@ smb_notify_encode_action(smb_ofile_t *of,
 	 * Layout is: 3 DWORDS, Unicode string, pad(4).
 	 */
 	mbc = &nc->nc_buffer;
-	totlen = 12 + (namelen + 3) & ~3;
+	totlen = (12 + namelen + 3) & ~3;
 	if (MBC_ROOM_FOR(mbc, totlen) == 0) {
 		nc->nc_events |= FILE_NOTIFY_CHANGE_EV_OVERFLOW;
 		return;
