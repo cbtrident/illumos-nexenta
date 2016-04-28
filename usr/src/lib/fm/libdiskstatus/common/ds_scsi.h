@@ -170,7 +170,7 @@ typedef struct scsi_ssm_log_param {
 
 #define	LOGPARAM_PRCNT_USED		0x0001
 #define	LOGPARAM_PRCNT_USED_PARAM_LEN	0x04
-#define	PRCNT_USED_FAULT_THRSH		95
+#define	PRCNT_USED_FAULT_THRSH		90
 
 /*
  * Mode sense/select page header information
