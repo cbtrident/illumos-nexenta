@@ -72,6 +72,7 @@ SUBDIRS = acl \
 	truncate \
 	userquota \
 	utils_test \
+	vdev_zaps \
 	wbc \
 	write_dirs \
 	xattr \

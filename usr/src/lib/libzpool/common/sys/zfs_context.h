@@ -181,7 +181,7 @@ typedef struct kthread kthread_t;
 typedef uint64_t kt_did_t;
 
 #define	thread_create(stk, stksize, func, arg, len, pp, state, pri)	\
-	zk_thread_create(func, arg)
+	zk_thread_create(func, arg, len)
 #define	thread_exit() thr_exit(NULL)
 #define	thread_join(t)	panic("libzpool cannot join threads")
 
@@ -197,7 +197,7 @@ extern struct proc p0;
 
 #define	PS_NONE		-1
 
-extern kthread_t *zk_thread_create(void (*func)(), void *arg);
+extern kthread_t *zk_thread_create(void (*func)(), void *arg, uint64_t len);
 
 #define	issig(why)	(FALSE)
 #define	ISSIG(thr, why)	(FALSE)

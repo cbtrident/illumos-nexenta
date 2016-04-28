@@ -16,12 +16,21 @@
 include $(SRC)/Makefile.master
 
 ROOTOPTPKG = $(ROOT)/opt/zfs-tests
-TESTDIR = $(ROOTOPTPKG)/tests/functional/cli_root/zdb
+TESTDIR = $(ROOTOPTPKG)/tests/functional/vdev_zaps
 
-PROGS = zdb_001_neg \
-	zdb_002_pos
+PROGS = setup \
+	vdev_zaps_001_pos \
+	vdev_zaps_002_pos \
+	vdev_zaps_003_pos \
+	vdev_zaps_004_pos \
+	vdev_zaps_005_pos \
+	vdev_zaps_006_pos \
+	vdev_zaps_007_pos \
+	cleanup
 
-CMDS = $(PROGS:%=$(TESTDIR)/%)
+FILES = vdev_zaps.kshlib
+
+CMDS = $(PROGS:%=$(TESTDIR)/%) $(FILES:%=$(TESTDIR)/%)
 $(CMDS) := FILEMODE = 0555
 
 all lint clean clobber:
@@ -33,8 +42,8 @@ $(CMDS): $(TESTDIR)
 $(TESTDIR):
 	$(INS.dir)
 
-$(TESTDIR)/%: %
-	$(INS.file)
-
 $(TESTDIR)/%: %.ksh
 	$(INS.rename)
+
+$(TESTDIR)/%: %
+	$(INS.file)

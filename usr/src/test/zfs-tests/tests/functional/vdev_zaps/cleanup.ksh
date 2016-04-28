@@ -1,3 +1,5 @@
+#!/usr/bin/ksh -p
+
 #
 # This file and its contents are supplied under the terms of the
 # Common Development and Distribution License ("CDDL"), version 1.0.
@@ -13,28 +15,6 @@
 # Copyright (c) 2015 by Delphix. All rights reserved.
 #
 
-include $(SRC)/Makefile.master
+. $STF_SUITE/include/libtest.shlib
 
-ROOTOPTPKG = $(ROOT)/opt/zfs-tests
-TESTDIR = $(ROOTOPTPKG)/tests/functional/cli_root/zdb
-
-PROGS = zdb_001_neg \
-	zdb_002_pos
-
-CMDS = $(PROGS:%=$(TESTDIR)/%)
-$(CMDS) := FILEMODE = 0555
-
-all lint clean clobber:
-
-install: $(CMDS)
-
-$(CMDS): $(TESTDIR)
-
-$(TESTDIR):
-	$(INS.dir)
-
-$(TESTDIR)/%: %
-	$(INS.file)
-
-$(TESTDIR)/%: %.ksh
-	$(INS.rename)
+default_cleanup

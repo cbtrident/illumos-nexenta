@@ -224,7 +224,8 @@ struct vdev {
 	uint64_t	vdev_deflate_ratio; /* deflation ratio (x512)	*/
 	uint64_t	vdev_islog;	/* is an intent log device	*/
 	uint64_t	vdev_removing;	/* device is being removed?	*/
-	boolean_t	vdev_ishole;	/* is a hole in the namespace	*/
+	boolean_t	vdev_ishole;	/* is a hole in the namespace 	*/
+	uint64_t	vdev_top_zap;
 	uint64_t	vdev_isspecial;	/* is a special device	*/
 
 	uint64_t	vdev_trim_prog;	/* trim progress in bytes	*/
@@ -270,6 +271,7 @@ struct vdev {
 	spa_aux_vdev_t	*vdev_aux;	/* for l2cache and spares vdevs	*/
 	zio_t		*vdev_probe_zio; /* root of current probe	*/
 	vdev_aux_t	vdev_label_aux;	/* on-disk aux state		*/
+	uint64_t	vdev_leaf_zap;
 	boolean_t	vdev_is_ssd;	/* is solid state device	*/
 
 	char		*vdev_spare_group; /* spare group name */

@@ -357,6 +357,15 @@ extern void dnode_smartcomp_result_cb(void *userinfo, const zio_t *zio);
 extern void dnode_setup_zio_smartcomp(struct dmu_buf_impl *db,
     zio_smartcomp_info_t *sc);
 
+#define	DNODE_IS_CACHEABLE(_dn)						\
+	((_dn)->dn_objset->os_primary_cache == ZFS_CACHE_ALL ||		\
+	(DMU_OT_IS_METADATA((_dn)->dn_type) &&				\
+	(_dn)->dn_objset->os_primary_cache == ZFS_CACHE_METADATA))
+
+#define	DNODE_META_IS_CACHEABLE(_dn)					\
+	((_dn)->dn_objset->os_primary_cache == ZFS_CACHE_ALL ||		\
+	(_dn)->dn_objset->os_primary_cache == ZFS_CACHE_METADATA)
+
 #ifdef ZFS_DEBUG
 
 /*
