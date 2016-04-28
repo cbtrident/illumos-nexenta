@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_SYS_DSL_PROP_H
@@ -35,6 +35,9 @@
 #ifdef	__cplusplus
 extern "C" {
 #endif
+
+#define	ZPROP_INHERIT_SUFFIX "$inherit"
+#define	ZPROP_RECVD_SUFFIX "$recvd"
 
 struct dsl_dataset;
 struct dsl_dir;

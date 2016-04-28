@@ -7,6 +7,7 @@
 #include <sys/dmu_tx.h>
 #include <sys/dsl_dir.h>
 #include <sys/dsl_pool.h>
+#include <sys/dsl_prop.h>
 #include <sys/spa.h>
 #include <zfs_fletcher.h>
 #include <sys/zap.h>
@@ -203,8 +204,56 @@ zfs_send_collect_props(objset_t *mos, uint64_t zapobj, nvlist_t *props)
 	while (zap_cursor_retrieve(&zc, &za) == 0) {
 		uint64_t cnt, el;
 		zfs_prop_t prop;
+		const char *suffix, *prop_name;
+		char buf[ZAP_MAXNAMELEN];
 
-		prop = zfs_name_to_prop(za.za_name);
+		suffix = strchr(za.za_name, '$');
+		prop_name = za.za_name;
+		if (suffix != NULL) {
+			char *valstr;
+
+			/*
+			 * The following logic is similar to
+			 * dsl_prop_get_all_impl()
+			 * Skip props that have:
+			 * - suffix ZPROP_INHERIT_SUFFIX
+			 * - all unknown suffixes to be backward compatible
+			 */
+			if (strcmp(suffix, ZPROP_INHERIT_SUFFIX) == 0 ||
+			    strcmp(suffix, ZPROP_RECVD_SUFFIX) != 0) {
+				zap_cursor_advance(&zc);
+				continue;
+			}
+
+			(void) strncpy(buf, za.za_name, (suffix - za.za_name));
+			buf[suffix - za.za_name] = '\0';
+			prop_name = buf;
+
+			/* Skip if locally overridden. */
+			err = zap_contains(mos, zapobj, prop_name);
+			if (err == 0) {
+				zap_cursor_advance(&zc);
+				continue;
+			}
+
+			if (err != ENOENT)
+				break;
+
+			/* Skip if explicitly inherited. */
+			valstr = kmem_asprintf("%s%s", prop_name,
+			    ZPROP_INHERIT_SUFFIX);
+			err = zap_contains(mos, zapobj, valstr);
+			strfree(valstr);
+			if (err == 0) {
+				zap_cursor_advance(&zc);
+				continue;
+			}
+
+			if (err != ENOENT)
+				break;
+		}
+
+		prop = zfs_name_to_prop(prop_name);
 
 		/*
 		 * This property make sense only to this dataset,
@@ -226,16 +275,14 @@ zfs_send_collect_props(objset_t *mos, uint64_t zapobj, nvlist_t *props)
 				cmn_err(CE_WARN,
 				    "Error while looking up a prop"
 				    "zap : %d", err);
-			} else {
-				fnvlist_add_string(props, za.za_name, val);
+				break;
 			}
+
+			fnvlist_add_string(props, prop_name, val);
 		} else if (el == UINT64_PROP_EL_SIZE) {
-			fnvlist_add_uint64(props, za.za_name,
+			fnvlist_add_uint64(props, prop_name,
 			    za.za_first_integer);
 		}
-
-		if (err != 0)
-			break;
 
 		zap_cursor_advance(&zc);
 	}
@@ -1130,9 +1177,6 @@ final:
 }
 
 /* KRRP-RECV routines */
-
-#define	ZPROP_INHERIT_SUFFIX "$inherit"
-#define	ZPROP_RECVD_SUFFIX "$recvd"
 
 /*
  * Alternate props from the received steam
