@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/dmu_tx.h>
@@ -340,8 +340,8 @@ cos_sync_props(void *arg1, dmu_tx_t *tx)
 
 	if (spa->spa_cos_props_object == 0) {
 		VERIFY((spa->spa_cos_props_object =
-		    dmu_object_alloc(mos, DMU_OT_COS_PROPS, 0,
-		    DMU_OT_COS_PROPS_SIZE, 8, tx)) > 0);
+		    dmu_object_alloc(mos, DMU_OT_PACKED_NVLIST, 0,
+		    DMU_OT_PACKED_NVLIST_SIZE, 8, tx)) > 0);
 
 		VERIFY(zap_update(mos,
 		    DMU_POOL_DIRECTORY_OBJECT,

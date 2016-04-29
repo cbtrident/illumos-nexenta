@@ -26,9 +26,9 @@
  * Copyright 2013 DEY Storage Systems, Inc.
  * Copyright 2014 HybridCluster. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -212,8 +212,6 @@ typedef enum dmu_object_type {
 	 * of indexing into dmu_ot directly (this works for both DMU_OT_* types
 	 * and DMU_OTN_* types).
 	 */
-	DMU_OT_COS_PROPS,		/* UINT64 */
-	DMU_OT_COS_PROPS_SIZE,
 	DMU_OT_NUMTYPES,
 
 	/*

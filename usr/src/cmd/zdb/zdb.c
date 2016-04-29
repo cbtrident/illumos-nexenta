@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <stdio.h>
@@ -1789,8 +1789,6 @@ static object_viewer_t *object_viewer[DMU_OT_NUMTYPES + 1] = {
 	dump_none,		/* deadlist hdr			*/
 	dump_zap,		/* dsl clones			*/
 	dump_bpobj_subobjs,	/* bpobj subobjs		*/
-	dump_none,		/* cos props			*/
-	dump_packed_nvlist,	/* cos props size		*/
 	dump_unknown,		/* Unknown type, must be last	*/
 };
 
