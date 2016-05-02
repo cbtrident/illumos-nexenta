@@ -1603,7 +1603,7 @@ smb_ofile_get_quota_resume(smb_ofile_t *ofile, char *buf, int bufsize)
 }
 
 uint32_t
-smb2_fsctl_resiliency(smb_request_t *sr, smb_fsctl_t *fsctl)
+smb_ofile_set_resilient(smb_request_t *sr, smb_fsctl_t *fsctl)
 {
 	uint32_t timeout;
 	smb_ofile_t *of = sr->fid_ofile;

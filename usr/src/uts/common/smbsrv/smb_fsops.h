@@ -22,7 +22,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMBSRV_SMB_FSOPS_H
@@ -76,10 +76,11 @@ int smb_fsop_setattr(smb_request_t *, cred_t *, smb_node_t *, smb_attr_t *);
 int smb_fsop_set_data_length(smb_request_t *sr, cred_t *cr, smb_node_t *,
     offset_t);
 
-int smb_fsop_read(smb_request_t *, cred_t *, smb_node_t *, uio_t *);
+int smb_fsop_read(smb_request_t *, cred_t *, smb_node_t *, smb_ofile_t *,
+    uio_t *);
 
-int smb_fsop_write(smb_request_t *, cred_t *, smb_node_t *, uio_t *,
-    uint32_t *, int);
+int smb_fsop_write(smb_request_t *, cred_t *, smb_node_t *, smb_ofile_t *,
+    uio_t *, uint32_t *, int);
 
 int smb_fsop_statfs(cred_t *, smb_node_t *, struct statvfs64 *);
 

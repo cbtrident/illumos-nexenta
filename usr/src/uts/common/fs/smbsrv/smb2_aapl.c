@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -202,7 +202,7 @@ smb2_aapl_get_macinfo(smb_request_t *sr, smb_odir_t *od,
 		uio.uio_resid = sizeof (AfpInfo);
 		uio.uio_segflg = UIO_SYSSPACE;
 		uio.uio_extflg = UIO_COPY_DEFAULT;
-		rc = smb_fsop_read(sr, kcr, snode, &uio);
+		rc = smb_fsop_read(sr, kcr, snode, NULL, &uio);
 		if (rc == 0 && uio.uio_resid == 0) {
 			bcopy(&AfpInfo[4], &mi->mi_finderinfo,
 			    sizeof (mi->mi_finderinfo));

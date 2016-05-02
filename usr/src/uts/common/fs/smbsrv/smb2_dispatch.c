@@ -337,6 +337,7 @@ cmd_start:
 	 * already exhausted the output space, then this client is
 	 * trying something funny.  Log it and kill 'em.
 	 */
+	ASSERT((sr->reply.chain_offset & 7) == 0);
 	sr->smb2_reply_hdr = sr->reply.chain_offset;
 	if ((rc = smb2_encode_header(sr, B_FALSE)) != 0) {
 		cmn_err(CE_WARN, "clnt %s excessive reply",
@@ -665,13 +666,13 @@ cmd_start:
 
 cmd_done:
 	/*
-	 * Pad the reply to align(8) if necessary.
+	 * Pad the reply to align(8) if there will be another.
 	 */
-	if (sr->reply.chain_offset & 7) {
+	if (sr->smb2_next_command != 0 &&
+	    (sr->reply.chain_offset & 7) != 0) {
 		int padsz = 8 - (sr->reply.chain_offset & 7);
 		(void) smb_mbc_encodef(&sr->reply, "#.", padsz);
 	}
-	ASSERT((sr->reply.chain_offset & 7) == 0);
 
 	/*
 	 * Record some statistics:  latency, rx bytes, tx bytes
@@ -918,15 +919,6 @@ void
 smb2sr_finish_async(smb_request_t *sr)
 {
 	smb_disp_stats_t	*sds;
-
-	/*
-	 * Pad the reply to align(8) if necessary.
-	 */
-	if (sr->reply.chain_offset & 7) {
-		int padsz = 8 - (sr->reply.chain_offset & 7);
-		(void) smb_mbc_encodef(&sr->reply, "#.", padsz);
-	}
-	ASSERT((sr->reply.chain_offset & 7) == 0);
 
 	/*
 	 * Record some statistics: (just tx bytes here)

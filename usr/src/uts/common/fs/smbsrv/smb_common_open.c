@@ -176,39 +176,6 @@ smb_ofun_to_crdisposition(uint16_t  ofun)
 }
 
 /*
- * Retry opens to avoid spurious sharing violations, due to timing
- * issues between closes and opens.  The client that already has the
- * file open may be in the process of closing it.
- */
-uint32_t
-smb_common_open(smb_request_t *sr)
-{
-	smb_arg_open_t	*parg;
-	uint32_t	status = NT_STATUS_SUCCESS;
-	int		count;
-
-	parg = kmem_alloc(sizeof (*parg), KM_SLEEP);
-	bcopy(&sr->arg.open, parg, sizeof (*parg));
-
-	for (count = 0; count <= 4; count++) {
-		if (count != 0)
-			delay(MSEC_TO_TICK(400));
-
-		status = smb_open_subr(sr);
-		if (status != NT_STATUS_SHARING_VIOLATION)
-			break;
-
-		bcopy(parg, &sr->arg.open, sizeof (*parg));
-	}
-
-	if (status == NT_STATUS_NO_SUCH_FILE)
-		status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
-
-	kmem_free(parg, sizeof (*parg));
-	return (status);
-}
-
-/*
  * Requirements for ofile found during reconnect (MS-SMB2 3.3.5.9.7):
  * - security descriptor must match provided descriptor
  *
@@ -456,6 +423,39 @@ out1:
 	mutex_exit(&of->f_mutex);
 	smb_ofile_release(of);
 	return (rv);
+}
+
+/*
+ * Retry opens to avoid spurious sharing violations, due to timing
+ * issues between closes and opens.  The client that already has the
+ * file open may be in the process of closing it.
+ */
+uint32_t
+smb_common_open(smb_request_t *sr)
+{
+	smb_arg_open_t	*parg;
+	uint32_t	status = NT_STATUS_SUCCESS;
+	int		count;
+
+	parg = kmem_alloc(sizeof (*parg), KM_SLEEP);
+	bcopy(&sr->arg.open, parg, sizeof (*parg));
+
+	for (count = 0; count <= 4; count++) {
+		if (count != 0)
+			delay(MSEC_TO_TICK(400));
+
+		status = smb_open_subr(sr);
+		if (status != NT_STATUS_SHARING_VIOLATION)
+			break;
+
+		bcopy(parg, &sr->arg.open, sizeof (*parg));
+	}
+
+	if (status == NT_STATUS_NO_SUCH_FILE)
+		status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+
+	kmem_free(parg, sizeof (*parg));
+	return (status);
 }
 
 /*
@@ -1005,9 +1005,12 @@ create:
 			op->dattr |= FILE_ATTRIBUTE_ARCHIVE;
 			new_attr.sa_dosattr = op->dattr;
 			new_attr.sa_vattr.va_type = VREG;
-			new_attr.sa_vattr.va_mode = is_stream ? S_IRUSR :
-			    S_IRUSR | S_IRGRP | S_IROTH |
-			    S_IWUSR | S_IWGRP | S_IWOTH;
+			if (is_stream)
+				new_attr.sa_vattr.va_mode = S_IRUSR | S_IWUSR;
+			else
+				new_attr.sa_vattr.va_mode =
+				    S_IRUSR | S_IRGRP | S_IROTH |
+				    S_IWUSR | S_IWGRP | S_IWOTH;
 			new_attr.sa_mask |=
 			    SMB_AT_DOSATTR | SMB_AT_TYPE | SMB_AT_MODE;
 
