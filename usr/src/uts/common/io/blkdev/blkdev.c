@@ -109,7 +109,7 @@ struct bd_handle {
 	void		*h_private;
 	bd_t		*h_bd;
 	char		*h_name;
-	char		h_addr[20];	/* enough for %X,%X */
+	char		h_addr[30];	/* enough for w%0.16x,%X */
 };
 
 struct bd_xfer_impl {
@@ -587,6 +587,7 @@ bd_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 	rv = cmlb_attach(dip, &bd_tg_ops, DTYPE_DIRECT,
 	    bd->d_removable, bd->d_hotpluggable,
+	    drive.d_eui64 != 0 ? DDI_NT_BLOCK_BLKDEV :
 	    drive.d_lun >= 0 ? DDI_NT_BLOCK_CHAN : DDI_NT_BLOCK,
 	    CMLB_FAKE_LABEL_ONE_PARTITION, bd->d_cmlbh, 0);
 	if (rv != 0) {
@@ -1845,13 +1846,25 @@ bd_attach_handle(dev_info_t *dip, bd_handle_t hdl)
 	hdl->h_parent = dip;
 	hdl->h_name = "blkdev";
 
-	if (drive.d_lun >= 0) {
-		(void) snprintf(hdl->h_addr, sizeof (hdl->h_addr), "%X,%X",
-		    drive.d_target, drive.d_lun);
+	if (drive.d_eui64 != 0) {
+		if (drive.d_lun >= 0) {
+			(void) snprintf(hdl->h_addr, sizeof (hdl->h_addr),
+			    "w%016"PRIx64",%X",
+			    BE_64(drive.d_eui64), drive.d_lun);
+		} else {
+			(void) snprintf(hdl->h_addr, sizeof (hdl->h_addr),
+			    "w%016"PRIx64, BE_64(drive.d_eui64));
+		}
 	} else {
-		(void) snprintf(hdl->h_addr, sizeof (hdl->h_addr), "%X",
-		    drive.d_target);
+		if (drive.d_lun >= 0) {
+			(void) snprintf(hdl->h_addr, sizeof (hdl->h_addr),
+			    "%X,%X", drive.d_target, drive.d_lun);
+		} else {
+			(void) snprintf(hdl->h_addr, sizeof (hdl->h_addr),
+			    "%X", drive.d_target);
+		}
 	}
+
 	if (ndi_devi_alloc(dip, hdl->h_name, (pnode_t)DEVI_SID_NODEID,
 	    &child) != NDI_SUCCESS) {
 		cmn_err(CE_WARN, "%s%d: unable to allocate node %s@%s",
