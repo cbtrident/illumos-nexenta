@@ -278,7 +278,7 @@ typedef struct {
 		uint8_t rc_rsvd:1;
 	} id_rescap;
 	uint8_t id_rsvd1[120 - 32];
-	uint8_t	id_eui64[8];		/* IEEE Extended Unique Id (1.1) */
+	uint64_t id_eui64;		/* IEEE Extended Unique Id (1.1) */
 	nvme_idns_lbaf_t id_lbaf[16];	/* LBA Formats */
 
 	uint8_t id_rsvd2[192];

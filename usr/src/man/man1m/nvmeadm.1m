@@ -88,7 +88,8 @@ followed by an instance number.
 A namespace is specified by appending a single
 .Qq /
 followed by the namespace ID to the controller name.
-Namespace IDs are positive non-zero decimal numbers.
+The namespace ID is the EUI64 of the namespace, or a positive non-zero
+decimal number if the namespace doesn't have an EUI64 .
 .It Ar logpage
 Specifies the log page name for the
 .Cm get-logpage

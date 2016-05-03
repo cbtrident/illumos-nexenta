@@ -393,8 +393,8 @@ do_list_nsid(int fd, const nvme_process_arg_t *npa)
 {
 	_NOTE(ARGUNUSED(fd));
 
-	(void) printf("  %s/%lu: ", npa->npa_name,
-	    strtoul(di_minor_name(npa->npa_minor), NULL, 10));
+	(void) printf("  %s/%s: ",
+	    npa->npa_name, di_minor_name(npa->npa_minor));
 	nvme_print_nsid_summary(npa->npa_idns);
 
 	return (0);

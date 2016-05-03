@@ -225,7 +225,8 @@ struct nvme {
 
 struct nvme_namespace {
 	nvme_t *ns_nvme;
-	char	ns_name[11];
+	char	ns_name[17];
+	uint64_t ns_eui64;
 
 	bd_handle_t ns_bd_hdl;
 
@@ -242,13 +243,10 @@ struct nvme_namespace {
 	nvme_minor_state_t ns_minor;
 
 	/*
-	 * Section 7.7 of the spec describes how to get a unique ID for
-	 * the controller: the vendor ID, the model name and the serial
-	 * number shall be unique when combined.
-	 *
-	 * We add the hex namespace ID to get a unique ID for the namespace.
+	 * If a namespace has no EUI64, we create a devid in
+	 * nvme_prepare_devid().
 	 */
-	char ns_devid[4 + 1 + 20 + 1 + 40 + 1 + 8 + 1];
+	char *ns_devid;
 };
 
 struct nvme_task_arg {

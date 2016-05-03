@@ -17,6 +17,7 @@
  * functions for printing of NVMe data structures and their members
  */
 
+#include <sys/byteorder.h>
 #include <sys/types.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -629,12 +630,8 @@ nvme_print_identify_nsid(nvme_identify_nsid_t *idns, nvme_version_t *version)
 		nvme_print_bit(4, "Exclusive Access - All Registrants",
 		    idns->id_rescap.rc_excl_a, NULL, NULL);
 
-		nvme_print(2, "IEEE Extended Unique Identifier", 0,
-		    "%0.2X%0.2X%0.2X%0.2X%0.2X%0.2X%0.2X%0.2X",
-		    idns->id_eui64[0], idns->id_eui64[1],
-		    idns->id_eui64[2], idns->id_eui64[3],
-		    idns->id_eui64[4], idns->id_eui64[5],
-		    idns->id_eui64[6], idns->id_eui64[7]);
+		nvme_print_uint64(2, "IEEE Extended Unique Identifier",
+		    BE_64(idns->id_eui64), "%0.16"PRIX64, NULL);
 	}
 
 	for (i = 0; i <= idns->id_nlbaf; i++) {

@@ -16,9 +16,8 @@
 /*
  * blkdev driver for NVMe compliant storage devices
  *
- * This driver was written to conform to version 1.0e of the NVMe specification.
- * It may work with newer versions, but that is completely untested and disabled
- * by default.
+ * This driver was written to conform to version 1.1b of the NVMe specification.
+ * It may work with newer versions, but that is completely untested.
  *
  * The driver has only been tested on x86 systems and will not work on big-
  * endian systems without changes to the code accessing registers and data
@@ -155,11 +154,15 @@
  * - polled I/O support to support kernel core dumping
  * - FMA handling of media errors
  * - support for devices supporting very large I/O requests using chained PRPs
- * - support for querying log pages from user space
  * - support for configuring hardware parameters like interrupt coalescing
  * - support for media formatting and hard partitioning into namespaces
  * - support for big-endian systems
  * - support for fast reboot
+ * - support for firmware updates
+ * - support for NVMe Subsystem Reset (1.1)
+ * - support for Scatter/Gather lists (1.1)
+ * - support for Reservations (1.1)
+ * - support for power management
  */
 
 #include <sys/byteorder.h>
@@ -193,7 +196,7 @@
 
 /* NVMe spec version supported */
 static const int nvme_version_major = 1;
-static const int nvme_version_minor = 0;
+static const int nvme_version_minor = 1;
 
 static int nvme_attach(dev_info_t *, ddi_attach_cmd_t);
 static int nvme_detach(dev_info_t *, ddi_detach_cmd_t);
@@ -1937,6 +1940,14 @@ nvme_shutdown(nvme_t *nvme, int mode, boolean_t quiesce)
 static void
 nvme_prepare_devid(nvme_t *nvme, uint32_t nsid)
 {
+	/*
+	 * Section 7.7 of the spec describes how to get a unique ID for
+	 * the controller: the vendor ID, the model name and the serial
+	 * number shall be unique when combined.
+	 *
+	 * If a namespace has no EUI64 we use the above and add the hex
+	 * namespace ID to get a unique ID for the namespace.
+	 */
 	char model[sizeof (nvme->n_idctl->id_model) + 1];
 	char serial[sizeof (nvme->n_idctl->id_serial) + 1];
 
@@ -1947,8 +1958,7 @@ nvme_prepare_devid(nvme_t *nvme, uint32_t nsid)
 	model[sizeof (nvme->n_idctl->id_model)] = '\0';
 	serial[sizeof (nvme->n_idctl->id_serial)] = '\0';
 
-	(void) snprintf(nvme->n_ns[nsid - 1].ns_devid,
-	    sizeof (nvme->n_ns[0].ns_devid), "%4X-%s-%s-%X",
+	nvme->n_ns[nsid - 1].ns_devid = kmem_asprintf("%4X-%s-%s-%X",
 	    nvme->n_idctl->id_vid, model, serial, nsid);
 }
 
@@ -2259,8 +2269,6 @@ nvme_init(nvme_t *nvme)
 		nvme->n_ns[i].ns_nvme = nvme;
 		mutex_init(&nvme->n_ns[i].ns_minor.nm_mutex, NULL, MUTEX_DRIVER,
 		    NULL);
-		(void) snprintf(nvme->n_ns[i].ns_name,
-		    sizeof (nvme->n_ns[i].ns_name), "%d", i + 1);
 		nvme->n_ns[i].ns_idns = idns = nvme_identify(nvme, i + 1);
 
 		if (idns == NULL) {
@@ -2275,7 +2283,24 @@ nvme_init(nvme_t *nvme)
 		    1 << idns->id_lbaf[idns->id_flbas.lba_format].lbaf_lbads;
 		nvme->n_ns[i].ns_best_block_size = nvme->n_ns[i].ns_block_size;
 
-		nvme_prepare_devid(nvme, nvme->n_ns[i].ns_id);
+		/*
+		 * Get the EUI64 if present. Use it for devid and device node
+		 * names.
+		 */
+		if (NVME_VERSION_ATLEAST(&nvme->n_version, 1, 1))
+			nvme->n_ns[i].ns_eui64 = idns->id_eui64;
+
+		if (nvme->n_ns[i].ns_eui64 != 0) {
+			(void) snprintf(nvme->n_ns[i].ns_name,
+			    sizeof (nvme->n_ns[i].ns_name), "%016"PRIx64,
+			    BE_64(nvme->n_ns[i].ns_eui64));
+		} else {
+			(void) snprintf(nvme->n_ns[i].ns_name,
+			    sizeof (nvme->n_ns[i].ns_name), "%d",
+			    nvme->n_ns[i].ns_id);
+
+			nvme_prepare_devid(nvme, nvme->n_ns[i].ns_id);
+		}
 
 		/*
 		 * Find the LBA format with no metadata and the best relative
@@ -2804,6 +2829,8 @@ nvme_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 			if (nvme->n_ns[i].ns_idns)
 				kmem_free(nvme->n_ns[i].ns_idns,
 				    sizeof (nvme_identify_nsid_t));
+			if (nvme->n_ns[i].ns_devid)
+				strfree(nvme->n_ns[i].ns_devid);
 		}
 
 		kmem_free(nvme->n_ns, sizeof (nvme_namespace_t) *
@@ -3032,6 +3059,7 @@ nvme_bd_driveinfo(void *arg, bd_drive_t *drive)
 	drive->d_removable = B_FALSE;
 	drive->d_hotpluggable = B_FALSE;
 
+	drive->d_eui64 = ns->ns_eui64;
 	drive->d_target = ns->ns_id;
 	drive->d_lun = 0;
 
@@ -3135,8 +3163,13 @@ nvme_bd_devid(void *arg, dev_info_t *devinfo, ddi_devid_t *devid)
 {
 	nvme_namespace_t *ns = arg;
 
-	return (ddi_devid_init(devinfo, DEVID_ENCAP, strlen(ns->ns_devid),
-	    ns->ns_devid, devid));
+	if (ns->ns_eui64 != 0) {
+		return (ddi_devid_init(devinfo, DEVID_SCSI3_WWN,
+		    sizeof (ns->ns_eui64), &ns->ns_eui64, devid));
+	} else {
+		return (ddi_devid_init(devinfo, DEVID_ENCAP,
+		    strlen(ns->ns_devid), ns->ns_devid, devid));
+	}
 }
 
 static int
