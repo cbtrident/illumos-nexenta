@@ -817,149 +817,58 @@ nvme_print_fwslot_log(nvme_fwslot_log_t *fwlog)
 }
 
 /*
- * nvme_print_feat_common
+ * nvme_print_feat_*
  *
- * These function pretty-prints the data structures returned by GET FEATURES
- * for simple features.
- */
-void nvme_print_feat_common(int feat, uint64_t result,
-    nvme_identify_ctrl_t *idctl)
-{
-	switch (feat) {
-	case NVME_FEAT_ARBITRATION: {
-		nvme_arbitration_t arb;
-
-		arb.r = (uint32_t)result;
-		if (arb.b.arb_ab != 7)
-			nvme_print_uint64(2, "Arbitration Burst",
-			    1 << arb.b.arb_ab, NULL, NULL);
-		else
-			nvme_print_str(2, "Arbitration Burst", 0,
-			    "no limit", 0);
-		nvme_print_uint64(2, "Low Priority Weight",
-		    (uint16_t)arb.b.arb_lpw + 1, NULL, NULL);
-		nvme_print_uint64(2, "Medium Priority Weight",
-		    (uint16_t)arb.b.arb_mpw + 1, NULL, NULL);
-		nvme_print_uint64(2, "High Priority Weight",
-		    (uint16_t)arb.b.arb_hpw + 1, NULL, NULL);
-		break;
-	}
-	case NVME_FEAT_POWER_MGMT: {
-		nvme_power_mgmt_t pm;
-
-		pm.r = (uint32_t)result;
-		nvme_print_uint64(2, "Power State",
-		    (uint8_t)pm.b.pm_ps + 1, NULL, NULL);
-		break;
-	}
-	case NVME_FEAT_TEMPERATURE: {
-		nvme_temp_threshold_t tt;
-
-		tt.r = (uint32_t)result;
-		nvme_print_uint64(2, "Temperature Threshold",
-		    tt.b.tt_tmpth - 273, NULL, "C");
-		break;
-	}
-	case NVME_FEAT_ERROR: {
-		nvme_error_recovery_t er;
-
-		er.r = (uint32_t)result;
-		if (er.b.er_tler > 0)
-			nvme_print_uint64(2, "Time Limited Error Recovery",
-			    (uint32_t)er.b.er_tler * 100, NULL, "ms");
-		else
-			nvme_print_str(2, "Time Limited Error Recovery", 0,
-			    "no time limit", 0);
-		break;
-	}
-	case NVME_FEAT_WRITE_CACHE: {
-		nvme_write_cache_t wc;
-
-		wc.r = (uint32_t)result;
-		nvme_print_bit(2, "Volatile Write Cache",
-		    wc.b.wc_wce, "enabled", "disabled");
-		break;
-	}
-	case NVME_FEAT_NQUEUES: {
-		nvme_nqueues_t nq;
-
-		nq.r = (uint32_t)result;
-		nvme_print_uint64(2, "Number of Submission Queues",
-		    nq.b.nq_nsq + 1, NULL, NULL);
-		nvme_print_uint64(2, "Number of Completion Queues",
-		    nq.b.nq_ncq + 1, NULL, NULL);
-		break;
-	}
-	case NVME_FEAT_INTR_COAL: {
-		nvme_intr_coal_t ic;
-
-		ic.r = (uint32_t)result;
-		nvme_print_uint64(2, "Aggregation Threshold",
-		    ic.b.ic_thr + 1, NULL, NULL);
-		nvme_print_uint64(2, "Aggregation Time",
-		    (uint16_t)ic.b.ic_time * 100, NULL, "us");
-		break;
-	}
-	case NVME_FEAT_INTR_VECT: {
-		nvme_intr_vect_t iv;
-		char *tmp;
-
-		iv.r = (uint32_t)result;
-		if (asprintf(&tmp, "Vector %d Coalescing Disable", iv.b.iv_iv)
-		    < 0)
-			err(-1, "nvme_print_feat_common()");
-
-		nvme_print_bit(2, tmp, iv.b.iv_cd, "yes", "no");
-		break;
-	}
-	case NVME_FEAT_WRITE_ATOM: {
-		nvme_write_atomicity_t wa;
-
-		wa.r = (uint32_t)result;
-		nvme_print_bit(2, "Disable Normal", wa.b.wa_dn, "yes", "no");
-		break;
-	}
-	case NVME_FEAT_ASYNC_EVENT: {
-		nvme_async_event_conf_t aec;
-
-		aec.r = (uint32_t)result;
-		nvme_print_bit(2, "Available Space below threshold",
-		    aec.b.aec_avail, "enabled", "disabled");
-		nvme_print_bit(2, "Temperature above threshold",
-		    aec.b.aec_temp, "enabled", "disabled");
-		nvme_print_bit(2, "Device Reliability compromised",
-		    aec.b.aec_reliab, "enabled", "disabled");
-		nvme_print_bit(2, "Media read-only",
-		    aec.b.aec_readonly, "enabled", "disabled");
-		if (idctl->id_vwc.vwc_present != 0)
-			nvme_print_bit(2, "Volatile Memory Backup failed",
-			    aec.b.aec_volatile, "enabled", "disabled");
-		break;
-	}
-	case NVME_FEAT_PROGRESS: {
-		nvme_software_progress_marker_t spm;
-
-		spm.r = (uint32_t)result;
-		nvme_print_uint64(2, "Pre-Boot Software Load Count",
-		    spm.b.spm_pbslc, NULL, NULL);
-		break;
-	}
-	}
-}
-
-/*
- * nvme_print_feat_lba_range
- *
- * This function pretty-prints the data structures returned by the GET FEATURES
- * command for the LBA Range Type feature.
+ * These functions pretty-print the data structures returned by GET FEATURES.
  */
 void
-nvme_print_feat_lba_range(nvme_lba_range_type_t lrt, nvme_lba_range_t *lr)
+nvme_print_feat_arbitration(uint64_t res, void *b, nvme_identify_ctrl_t *id)
 {
+	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(id));
+	nvme_arbitration_t arb;
+
+	arb.r = (uint32_t)res;
+	if (arb.b.arb_ab != 7)
+		nvme_print_uint64(2, "Arbitration Burst",
+		    1 << arb.b.arb_ab, NULL, NULL);
+	else
+		nvme_print_str(2, "Arbitration Burst", 0,
+		    "no limit", 0);
+	nvme_print_uint64(2, "Low Priority Weight",
+	    (uint16_t)arb.b.arb_lpw + 1, NULL, NULL);
+	nvme_print_uint64(2, "Medium Priority Weight",
+	    (uint16_t)arb.b.arb_mpw + 1, NULL, NULL);
+	nvme_print_uint64(2, "High Priority Weight",
+	    (uint16_t)arb.b.arb_hpw + 1, NULL, NULL);
+}
+
+void
+nvme_print_feat_power_mgmt(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+{
+	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(id));
+	nvme_power_mgmt_t pm;
+
+	pm.r = (uint32_t)res;
+	nvme_print_uint64(2, "Power State", (uint8_t)pm.b.pm_ps + 1,
+	    NULL, NULL);
+}
+
+void
+nvme_print_feat_lba_range(uint64_t res, void *buf, nvme_identify_ctrl_t *id)
+{
+	_NOTE(ARGUNUSED(id));
+
+	nvme_lba_range_type_t lrt;
+	nvme_lba_range_t *lr;
 	int i;
 
-	if (lr == NULL)
+	if (buf == NULL)
 		return;
+
+	lrt.r = res;
+	lr = buf;
 
 	nvme_print_uint64(2, "Number of LBA Ranges",
 	    (uint8_t)lrt.b.lr_num + 1, NULL, NULL);
@@ -998,18 +907,134 @@ nvme_print_feat_lba_range(nvme_lba_range_type_t lrt, nvme_lba_range_t *lr)
 	}
 }
 
-/*
- * nvme_print_feat_auto_pst
- *
- * This function pretty-prints the data structures returned by the GET FEATURES
- * command for the Autonomous Power State Transition feature.
- */
 void
-nvme_print_feat_auto_pst(nvme_auto_power_state_trans_t apst,
-    nvme_auto_power_state_t *aps)
+nvme_print_feat_temperature(uint64_t res, void *b, nvme_identify_ctrl_t *id)
 {
+	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(id));
+	nvme_temp_threshold_t tt;
+
+	tt.r = (uint32_t)res;
+	nvme_print_uint64(2, "Temperature Threshold", tt.b.tt_tmpth - 273,
+	    NULL, "C");
+}
+
+void
+nvme_print_feat_error(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+{
+	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(id));
+	nvme_error_recovery_t er;
+
+	er.r = (uint32_t)res;
+	if (er.b.er_tler > 0)
+		nvme_print_uint64(2, "Time Limited Error Recovery",
+		    (uint32_t)er.b.er_tler * 100, NULL, "ms");
+	else
+		nvme_print_str(2, "Time Limited Error Recovery", 0,
+		    "no time limit", 0);
+}
+
+void
+nvme_print_feat_write_cache(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+{
+	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(id));
+	nvme_write_cache_t wc;
+
+	wc.r = (uint32_t)res;
+	nvme_print_bit(2, "Volatile Write Cache",
+	    wc.b.wc_wce, "enabled", "disabled");
+}
+
+void
+nvme_print_feat_nqueues(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+{
+	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(id));
+	nvme_nqueues_t nq;
+
+	nq.r = (uint32_t)res;
+	nvme_print_uint64(2, "Number of Submission Queues",
+	    nq.b.nq_nsq + 1, NULL, NULL);
+	nvme_print_uint64(2, "Number of Completion Queues",
+	    nq.b.nq_ncq + 1, NULL, NULL);
+}
+
+void
+nvme_print_feat_intr_coal(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+{
+	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(id));
+	nvme_intr_coal_t ic;
+
+	ic.r = (uint32_t)res;
+	nvme_print_uint64(2, "Aggregation Threshold",
+	    ic.b.ic_thr + 1, NULL, NULL);
+	nvme_print_uint64(2, "Aggregation Time",
+	    (uint16_t)ic.b.ic_time * 100, NULL, "us");
+}
+void
+nvme_print_feat_intr_vect(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+{
+	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(id));
+	nvme_intr_vect_t iv;
+	char *tmp;
+
+	iv.r = (uint32_t)res;
+	if (asprintf(&tmp, "Vector %d Coalescing Disable", iv.b.iv_iv) < 0)
+		err(-1, "nvme_print_feat_common()");
+
+	nvme_print_bit(2, tmp, iv.b.iv_cd, "yes", "no");
+}
+
+void
+nvme_print_feat_write_atom(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+{
+	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(id));
+	nvme_write_atomicity_t wa;
+
+	wa.r = (uint32_t)res;
+	nvme_print_bit(2, "Disable Normal", wa.b.wa_dn, "yes", "no");
+}
+
+void
+nvme_print_feat_async_event(uint64_t res, void *b, nvme_identify_ctrl_t *idctl)
+{
+	_NOTE(ARGUNUSED(b));
+	nvme_async_event_conf_t aec;
+
+	aec.r = (uint32_t)res;
+	nvme_print_bit(2, "Available Space below threshold",
+	    aec.b.aec_avail, "enabled", "disabled");
+	nvme_print_bit(2, "Temperature above threshold",
+	    aec.b.aec_temp, "enabled", "disabled");
+	nvme_print_bit(2, "Device Reliability compromised",
+	    aec.b.aec_reliab, "enabled", "disabled");
+	nvme_print_bit(2, "Media read-only",
+	    aec.b.aec_readonly, "enabled", "disabled");
+	if (idctl->id_vwc.vwc_present != 0)
+		nvme_print_bit(2, "Volatile Memory Backup failed",
+		    aec.b.aec_volatile, "enabled", "disabled");
+}
+
+void
+nvme_print_feat_auto_pst(uint64_t res, void *buf, nvme_identify_ctrl_t *id)
+{
+	_NOTE(ARGUNUSED(id));
+
+	nvme_auto_power_state_trans_t apst;
+	nvme_auto_power_state_t *aps;
 	int i;
 	int cnt = NVME_AUTO_PST_BUFSIZE / sizeof (nvme_auto_power_state_t);
+
+	if (buf == NULL)
+		return;
+
+	apst.r = res;
+	aps = buf;
 
 	nvme_print_bit(2, "Autonomous Power State Transition",
 	    apst.b.apst_apste, "enabled", "disabled");
@@ -1023,4 +1048,16 @@ nvme_print_feat_auto_pst(nvme_auto_power_state_trans_t apst,
 		nvme_print_uint64(4, "Idle Time Prior to Transition",
 		    aps[i].apst_itpt, NULL, "ms");
 	}
+}
+
+void
+nvme_print_feat_progress(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+{
+	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(id));
+	nvme_software_progress_marker_t spm;
+
+	spm.r = (uint32_t)res;
+	nvme_print_uint64(2, "Pre-Boot Software Load Count",
+	    spm.b.spm_pbslc, NULL, NULL);
 }

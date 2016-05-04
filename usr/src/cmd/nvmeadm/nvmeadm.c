@@ -68,8 +68,15 @@ struct nvme_feature {
 	char *f_name;
 	char *f_short;
 	uint8_t f_feature;
-	boolean_t f_neednsid;
+	size_t f_bufsize;
+	uint_t f_getflags;
+	int (*f_get)(int, const nvme_feature_t *, nvme_identify_ctrl_t *);
+	void (*f_print)(uint64_t, void *, nvme_identify_ctrl_t *);
 };
+
+#define	NVMEADM_CTRL	1
+#define	NVMEADM_NS	2
+#define	NVMEADM_BOTH	(NVMEADM_CTRL | NVMEADM_NS)
 
 struct nvmeadm_cmd {
 	char *c_name;
@@ -92,11 +99,8 @@ static int do_get_logpage_fwslot(int, uint32_t);
 static int do_get_logpage(int, const nvme_process_arg_t *);
 static int do_get_feat_common(int, const nvme_feature_t *,
     nvme_identify_ctrl_t *);
-static int do_get_feat_lba_range(int, const nvme_feature_t *);
-static int do_get_feat_intr_vect(int, const nvme_feature_t *);
-static int do_get_feat_auto_pst(int, const nvme_feature_t *);
-static int do_get_feature_helper(int, const nvme_feature_t *,
-    const nvme_process_arg_t *);
+static int do_get_feat_intr_vect(int, const nvme_feature_t *,
+    nvme_identify_ctrl_t *);
 static int do_get_feature(int, const nvme_process_arg_t *);
 static int do_get_features(int, const nvme_process_arg_t *);
 
@@ -120,23 +124,46 @@ static const nvmeadm_cmd_t nvmeadm_cmds[] = {
 };
 
 static const nvme_feature_t features[] = {
-	{ "Arbitration", NULL, NVME_FEAT_ARBITRATION, B_FALSE },
-	{ "Power Management", NULL, NVME_FEAT_POWER_MGMT, B_FALSE },
-	{ "LBA Range Type", "range", NVME_FEAT_LBA_RANGE, B_TRUE },
-	{ "Temperature Threshold", NULL, NVME_FEAT_TEMPERATURE, B_FALSE },
-	{ "Error Recovery", NULL, NVME_FEAT_ERROR, B_FALSE, },
-	{ "Volatile Write Cache", "cache", NVME_FEAT_WRITE_CACHE, B_FALSE },
-	{ "Number of Queues", "queues", NVME_FEAT_NQUEUES, B_FALSE },
-	{ "Interrupt Coalescing", "coalescing", NVME_FEAT_INTR_COAL, B_FALSE },
-	{ "Interrupt Vector Configuration", "vector", NVME_FEAT_INTR_VECT,
-	    B_FALSE },
-	{ "Write Atomicity", "atomicity", NVME_FEAT_WRITE_ATOM, B_FALSE },
-	{ "Asynchronous Event Configuration", "event", NVME_FEAT_ASYNC_EVENT,
-	    B_FALSE },
-	{ "Autonomous Power State Transition", NULL, NVME_FEAT_AUTO_PST,
-	    B_FALSE },
-	{ "Software Progress Marker", "progress", NVME_FEAT_PROGRESS, B_FALSE },
-	{ NULL, NULL, 0, B_FALSE }
+	{ "Arbitration", "",
+	    NVME_FEAT_ARBITRATION, 0, NVMEADM_CTRL,
+	    do_get_feat_common, nvme_print_feat_arbitration },
+	{ "Power Management", "",
+	    NVME_FEAT_POWER_MGMT, 0, NVMEADM_CTRL,
+	    do_get_feat_common, nvme_print_feat_power_mgmt },
+	{ "LBA Range Type", "range",
+	    NVME_FEAT_LBA_RANGE, NVME_LBA_RANGE_BUFSIZE, NVMEADM_NS,
+	    do_get_feat_common, nvme_print_feat_lba_range },
+	{ "Temperature Threshold", "",
+	    NVME_FEAT_TEMPERATURE, 0, NVMEADM_CTRL,
+	    do_get_feat_common, nvme_print_feat_temperature },
+	{ "Error Recovery", "",
+	    NVME_FEAT_ERROR, 0, NVMEADM_CTRL,
+	    do_get_feat_common, nvme_print_feat_error },
+	{ "Volatile Write Cache", "cache",
+	    NVME_FEAT_WRITE_CACHE, 0, NVMEADM_CTRL,
+	    do_get_feat_common, nvme_print_feat_write_cache },
+	{ "Number of Queues", "queues",
+	    NVME_FEAT_NQUEUES, 0, NVMEADM_CTRL,
+	    do_get_feat_common, nvme_print_feat_nqueues },
+	{ "Interrupt Coalescing", "coalescing",
+	    NVME_FEAT_INTR_COAL, 0, NVMEADM_CTRL,
+	    do_get_feat_common, nvme_print_feat_intr_coal },
+	{ "Interrupt Vector Configuration", "vector",
+	    NVME_FEAT_INTR_VECT, 0, NVMEADM_CTRL,
+	    do_get_feat_intr_vect, nvme_print_feat_intr_vect },
+	{ "Write Atomicity", "atomicity",
+	    NVME_FEAT_WRITE_ATOM, 0, NVMEADM_CTRL,
+	    do_get_feat_common, nvme_print_feat_write_atom },
+	{ "Asynchronous Event Configuration", "event",
+	    NVME_FEAT_ASYNC_EVENT, 0, NVMEADM_CTRL,
+	    do_get_feat_common, nvme_print_feat_async_event },
+	{ "Autonomous Power State Transition", "",
+	    NVME_FEAT_AUTO_PST, NVME_AUTO_PST_BUFSIZE, NVMEADM_CTRL,
+	    do_get_feat_common, nvme_print_feat_auto_pst },
+	{ "Software Progress Marker", "progress",
+	    NVME_FEAT_PROGRESS, 0, NVMEADM_CTRL,
+	    do_get_feat_common, nvme_print_feat_progress },
+	{ NULL, NULL, 0, 0, B_FALSE, NULL }
 };
 
 
@@ -541,38 +568,22 @@ do_get_feat_common(int fd, const nvme_feature_t *feat,
     nvme_identify_ctrl_t *idctl)
 {
 	uint64_t res;
+	void *buf = NULL;
 
-	if (nvme_get_feature(fd, feat->f_feature, 0, &res, 0, NULL) == B_FALSE)
+	if (nvme_get_feature(fd, feat->f_feature, 0, &res, feat->f_bufsize,
+	    &buf) == B_FALSE)
 		return (EINVAL);
 
 	nvme_print(0, feat->f_name, 0, NULL);
-	nvme_print_feat_common(feat->f_feature, res, idctl);
+	feat->f_print(res, buf, idctl);
+	free(buf);
 
 	return (0);
 }
 
 static int
-do_get_feat_lba_range(int fd, const nvme_feature_t *feat)
-{
-	uint64_t res;
-	nvme_lba_range_type_t lrt;
-	nvme_lba_range_t *lr;
-
-	if (nvme_get_feature(fd, feat->f_feature, 0, &res,
-	    NVME_LBA_RANGE_BUFSIZE, (void **)&lr) == B_FALSE)
-		return (EINVAL);
-
-	lrt.r = res;
-
-	nvme_print(0, feat->f_name, 0, NULL);
-	nvme_print_feat_lba_range(lrt, lr);
-	free(lr);
-
-	return (0);
-}
-
-static int
-do_get_feat_intr_vect(int fd, const nvme_feature_t *feat)
+do_get_feat_intr_vect(int fd, const nvme_feature_t *feat,
+    nvme_identify_ctrl_t *idctl)
 {
 	uint64_t res;
 	uint64_t arg;
@@ -590,66 +601,10 @@ do_get_feat_intr_vect(int fd, const nvme_feature_t *feat)
 		    == B_FALSE)
 			return (EINVAL);
 
-		nvme_print_feat_common(feat->f_feature, res, NULL);
+		feat->f_print(res, NULL, idctl);
 	}
 
 	return (0);
-}
-
-static int
-do_get_feat_auto_pst(int fd, const nvme_feature_t *feat)
-{
-	uint64_t res;
-	nvme_auto_power_state_trans_t apst;
-	nvme_auto_power_state_t *aps;
-
-	if (nvme_get_feature(fd, feat->f_feature, 0, &res,
-	    NVME_AUTO_PST_BUFSIZE, (void **)&aps) == B_FALSE)
-		return (EINVAL);
-
-	apst.r = res;
-
-	nvme_print(0, feat->f_name, 0, NULL);
-	nvme_print_feat_auto_pst(apst, aps);
-	free(aps);
-
-	return (0);
-}
-
-static int
-do_get_feature_helper(int fd, const nvme_feature_t *feat,
-    const nvme_process_arg_t *npa)
-{
-	int ret;
-
-	switch (feat->f_feature) {
-	case NVME_FEAT_LBA_RANGE:
-		ret = do_get_feat_lba_range(fd, feat);
-		break;
-
-	case NVME_FEAT_WRITE_CACHE:
-		if (npa->npa_idctl->id_vwc.vwc_present == 0)
-			return (EINVAL);
-		ret = do_get_feat_common(fd, feat, npa->npa_idctl);
-		break;
-
-	case NVME_FEAT_INTR_VECT:
-		ret = do_get_feat_intr_vect(fd, feat);
-		break;
-
-	case NVME_FEAT_AUTO_PST:
-		if (!NVME_VERSION_ATLEAST(npa->npa_version, 1, 1) ||
-		    npa->npa_idctl->id_apsta.ap_sup == 0)
-			return (EINVAL);
-		ret = do_get_feat_auto_pst(fd, feat);
-		break;
-
-	default:
-		ret = do_get_feat_common(fd, feat, npa->npa_idctl);
-		break;
-	}
-
-	return (ret);
 }
 
 static int
@@ -663,12 +618,20 @@ do_get_feature(int fd, const nvme_process_arg_t *npa)
 		    "  Print the specified feature of a NVMe controller or a "
 		    "namespace. Supported\n  features are:\n");
 		(void) fprintf(stderr, "    %-35s %-14s %s\n",
-		    "FEATURE NAME", "SHORT NAME", "CONTROLLER OR NAMESPACE");
-		for (feat = &features[0]; feat->f_feature != 0; feat++)
-			(void) fprintf(stderr, "    %-35s %-14s %s only\n",
-			    feat->f_name,
-			    feat->f_short != NULL ? feat->f_short : "",
-			    feat->f_neednsid ? "namespace" : "controller");
+		    "FEATURE NAME", "SHORT NAME", "CONTROLLER/NAMESPACE");
+		for (feat = &features[0]; feat->f_feature != 0; feat++) {
+			char *type;
+
+			if ((feat->f_getflags & NVMEADM_BOTH) == NVMEADM_BOTH)
+				type = "both";
+			else if ((feat->f_getflags & NVMEADM_CTRL) != 0)
+				type = "controller only";
+			else
+				type = "namespace only";
+
+			(void) fprintf(stderr, "    %-35s %-14s %s\n",
+			    feat->f_name, feat->f_short, type);
+		}
 
 		return (0);
 	}
@@ -682,22 +645,21 @@ do_get_feature(int fd, const nvme_process_arg_t *npa)
 	for (feat = &features[0]; feat->f_feature != 0; feat++) {
 		if (strncasecmp(feat->f_name, npa->npa_argv[0],
 		    strlen(npa->npa_argv[0])) == 0 ||
-		    (feat->f_short != NULL &&
 		    strncasecmp(feat->f_short, npa->npa_argv[0],
-		    strlen(npa->npa_argv[0])) == 0))
+		    strlen(npa->npa_argv[0])) == 0)
 			break;
 	}
 
 	if (feat->f_feature == 0)
 		errx(-1, "unknown feature %s", npa->npa_argv[0]);
 
-	if ((npa->npa_nsid != 0 && feat->f_neednsid == B_FALSE) ||
-	    (npa->npa_nsid == 0 && feat->f_neednsid == B_TRUE))
+	if ((npa->npa_nsid != 0 && (feat->f_getflags & NVMEADM_NS) == 0) ||
+	    (npa->npa_nsid == 0 && (feat->f_getflags & NVMEADM_CTRL) == 0))
 		errx(-1, "feature %s %s supported for "
 		    "namespaces", feat->f_name,
-		    feat->f_neednsid ? "only" : "not");
+		    (feat->f_getflags & NVMEADM_NS) != 0 ? "only" : "not");
 
-	if (do_get_feature_helper(fd, feat, npa) != 0)
+	if (feat->f_get(fd, feat, npa->npa_idctl) != 0)
 		errx(-1, "unsupported feature: %s", feat->f_name);
 
 	return (0);
@@ -720,11 +682,13 @@ do_get_features(int fd, const nvme_process_arg_t *npa)
 		errx(-1, "unexpected arguments");
 
 	for (feat = &features[0]; feat->f_feature != 0; feat++) {
-		if ((npa->npa_nsid != 0 && feat->f_neednsid == B_FALSE) ||
-		    (npa->npa_nsid == 0 && feat->f_neednsid == B_TRUE))
+		if ((npa->npa_nsid != 0 &&
+		    (feat->f_getflags & NVMEADM_NS) == 0) ||
+		    (npa->npa_nsid == 0 &&
+		    (feat->f_getflags & NVMEADM_CTRL) == 0))
 			continue;
 
-		(void) do_get_feature_helper(fd, feat, npa);
+		(void) feat->f_get(fd, feat, npa->npa_idctl);
 	}
 
 	return (0);
