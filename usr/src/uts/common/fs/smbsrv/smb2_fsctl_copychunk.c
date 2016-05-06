@@ -403,17 +403,12 @@ smb2_fsctl_copychunk_aapl(smb_request_t *sr, smb_ofile_t *src_of,
  * with offsets and length from chunk *cc
  */
 static uint32_t
-smb2_fsctl_copychunk_1(smb_request_t *sr, smb_ofile_t *src_of,
+smb2_fsctl_copychunk_1(smb_request_t *sr, smb_ofile_t *src_ofile,
     struct chunk *cc)
 {
-	iovec_t iov;
-	uio_t uio;
 	copychunk_args_t *args = sr->arg.other;
-	smb_ofile_t *dst_of = sr->fid_ofile;
-	ssize_t rsize;
+	smb_ofile_t *dst_ofile = sr->fid_ofile;
 	uint32_t status;
-	uint32_t xfer;
-	int rc;
 
 	if (cc->length > args->bufsize)
 		return (NT_STATUS_INTERNAL_ERROR);
@@ -421,66 +416,25 @@ smb2_fsctl_copychunk_1(smb_request_t *sr, smb_ofile_t *src_of,
 	/*
 	 * Check for lock conflicting with the read.
 	 */
-	status = smb_lock_range_access(sr, src_of->f_node, cc->src_off,
-	    cc->length, B_FALSE);
+	status = smb_lock_range_access(sr, src_ofile->f_node,
+	    cc->src_off, cc->length, B_FALSE);
 	if (status != 0)
 		return (status);
-
-	/*
-	 * Read from src_of into args->buffer
-	 */
-	iov.iov_base = args->buffer;
-	iov.iov_len  = cc->length;
-	bzero(&uio, sizeof (uio));
-	uio.uio_iov = &iov;
-	uio.uio_iovcnt = 1;
-	uio.uio_resid = cc->length;
-	uio.uio_loffset = (offset_t)cc->src_off;
-	uio.uio_segflg = UIO_SYSSPACE;
-	uio.uio_extflg = UIO_COPY_DEFAULT;
-
-	rc = smb_fsop_read(sr, src_of->f_cr, src_of->f_node, src_of, &uio);
-	if (rc != 0) {
-		status = smb_errno2status(rc);
-		return (status);
-	}
-	/* Note: Could be partial read. */
-	rsize = cc->length - uio.uio_resid;
 
 	/*
 	 * Check for lock conflicting with the write.
 	 */
-	status = smb_lock_range_access(sr, dst_of->f_node, cc->dst_off,
-	    cc->length, B_TRUE);
+	status = smb_lock_range_access(sr, dst_ofile->f_node,
+	    cc->dst_off, cc->length, B_TRUE);
 	if (status != 0)
 		return (status);
 
 	/*
-	 * Write args->buffer to dst_of
+	 * Copy src to dst for cc->length
 	 */
-	iov.iov_base = args->buffer;
-	iov.iov_len  = rsize;
-	bzero(&uio, sizeof (uio));
-	uio.uio_iov = &iov;
-	uio.uio_iovcnt = 1;
-	uio.uio_resid = rsize;
-	uio.uio_loffset = (offset_t)cc->dst_off;
-	uio.uio_segflg = UIO_SYSSPACE;
-	uio.uio_extflg = UIO_COPY_DEFAULT;
+	status = smb2_sparse_copy(sr, src_ofile, dst_ofile,
+	    cc->src_off, cc->dst_off, &cc->length,
+	    args->buffer, args->bufsize);
 
-	rc = smb_fsop_write(sr, dst_of->f_cr, dst_of->f_node, dst_of,
-	    &uio, &xfer, 0);
-	if (rc != 0) {
-		status = smb_errno2status(rc);
-		return (status);
-	}
-
-	/*
-	 * The write might have transferred < rsize.
-	 * Caller expects chunk length set to
-	 * the residual count (amt. not copied)
-	 */
-	cc->length -= xfer;
-
-	return (0);
+	return (status);
 }

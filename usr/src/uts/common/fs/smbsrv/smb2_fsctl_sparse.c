@@ -277,3 +277,142 @@ smb2_fsctl_query_alloc_ranges(smb_request_t *sr, smb_fsctl_t *fsctl)
 
 	return (0);
 }
+
+/*
+ * Copy a segment of a file, preserving sparseness.
+ * Uses a caller-provided buffer for read/write.
+ * Caller should already have checked for locks.
+ *
+ * On entry, *residp is the length to copy.
+ * On return, it's the "resid" (amount not copied)
+ *
+ * If this gets an error from any I/O, return it, even if some data
+ * have already been copied.  The caller should normally ignore an
+ * error when some data have been copied.
+ */
+uint32_t
+smb2_sparse_copy(
+	smb_request_t *sr,
+	smb_ofile_t *src_ofile, smb_ofile_t *dst_ofile,
+	off64_t src_off, off64_t dst_off, uint32_t *residp,
+	void *buffer, size_t bufsize)
+{
+	iovec_t iov;
+	uio_t uio;
+	off64_t data, hole;
+	uint32_t xfer;
+	uint32_t status = 0;
+	int rc;
+
+	while (*residp > 0) {
+
+		data = src_off;
+		rc = smb_fsop_next_alloc_range(src_ofile->f_cr,
+		    src_ofile->f_node, &data, &hole);
+		switch (rc) {
+		case 0:
+			/* Found data, hole */
+			break;
+		case ENXIO:
+			/* No data after here (will skip below). */
+			data = hole = (src_off + *residp);
+			break;
+		default:
+			cmn_err(CE_NOTE,
+			    "smb_fsop_next_alloc_range: rc=%d", rc);
+			/* FALLTHROUGH */
+		case ENOSYS:	/* FS does not support VOP_IOCTL... */
+		case ENOTTY:	/* ... or _FIO_SEEK_DATA, _HOLE */
+			data = src_off;
+			hole = src_off + *residp;
+			break;
+		}
+
+		/*
+		 * Don't try to go past (src_off + *residp)
+		 */
+		if (hole > (src_off + *residp))
+			hole = src_off + *residp;
+		if (data > hole)
+			data = hole;
+
+		/*
+		 * If there's a gap (src_off .. data)
+		 * skip in src_ofile, zero in dst_ofile
+		 */
+		if (src_off < data) {
+			off64_t skip = data - src_off;
+			rc = smb_fsop_freesp(sr, dst_ofile->f_cr,
+			    dst_ofile, dst_off, skip);
+			if (rc == 0) {
+				src_off += skip;
+				dst_off += skip;
+				*residp -= (uint32_t)skip;
+			} else {
+				/* Fall back to regular copy */
+				data = src_off;
+			}
+		}
+		ASSERT(src_off == data);
+
+		/*
+		 * Copy this segment: src_off .. hole
+		 */
+		while (src_off < hole) {
+			ssize_t tsize = hole - src_off;
+			if (tsize > bufsize)
+				tsize = bufsize;
+
+			/*
+			 * Read src_ofile into buffer
+			 */
+			iov.iov_base = buffer;
+			iov.iov_len  = tsize;
+			bzero(&uio, sizeof (uio));
+			uio.uio_iov = &iov;
+			uio.uio_iovcnt = 1;
+			uio.uio_resid = tsize;
+			uio.uio_loffset = src_off;
+			uio.uio_segflg = UIO_SYSSPACE;
+			uio.uio_extflg = UIO_COPY_DEFAULT;
+
+			rc = smb_fsop_read(sr, src_ofile->f_cr,
+			    src_ofile->f_node, src_ofile, &uio);
+			if (rc != 0) {
+				status = smb_errno2status(rc);
+				return (status);
+			}
+			/* Note: Could be partial read. */
+			tsize -= uio.uio_resid;
+			ASSERT(tsize > 0);
+
+			/*
+			 * Write buffer to dst_ofile
+			 */
+			iov.iov_base = buffer;
+			iov.iov_len  = tsize;
+			bzero(&uio, sizeof (uio));
+			uio.uio_iov = &iov;
+			uio.uio_iovcnt = 1;
+			uio.uio_resid = tsize;
+			uio.uio_loffset = dst_off;
+			uio.uio_segflg = UIO_SYSSPACE;
+			uio.uio_extflg = UIO_COPY_DEFAULT;
+
+			rc = smb_fsop_write(sr, dst_ofile->f_cr,
+			    dst_ofile->f_node, dst_ofile, &uio, &xfer, 0);
+			if (rc != 0) {
+				status = smb_errno2status(rc);
+				return (status);
+			}
+			ASSERT(xfer <= tsize);
+
+			src_off += xfer;
+			dst_off += xfer;
+			*residp -= xfer;
+		}
+		ASSERT(src_off == hole);
+	}
+
+	return (status);
+}
