@@ -2974,7 +2974,7 @@ static int
 props_override(char *dsname, nvlist_t *props, nvlist_t *exprops,
     nvlist_t **merged_propsp, recvflags_t *flags, libzfs_handle_t *hdl,
     zfs_type_t type, uint64_t zoned, zfs_handle_t *zhp,
-    const char *errbuf)
+    zpool_handle_t *zpool_hdl, const char *errbuf)
 {
 	nvlist_t *goprops, *gxprops, *merged_props, *vprops;
 	nvpair_t *pair;
@@ -3011,7 +3011,7 @@ props_override(char *dsname, nvlist_t *props, nvlist_t *exprops,
 
 	/* convert override properties e.g. strings to native */
 	if ((vprops = zfs_valid_proplist(hdl, type, goprops, zoned, zhp,
-	    zhp->zpool_hdl, errbuf)) == NULL)
+	    zpool_hdl, errbuf)) == NULL)
 		goto error;
 
 	nvlist_free(goprops);
@@ -3355,7 +3355,8 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 		/* convert override properties e.g. strings to native */
 		if (!nvlist_empty(exprops) && props_override(dsname, props,
 		    exprops, &merged_props, flags, hdl, zhp->zfs_type,
-		    zfs_prop_get_int(zhp, ZFS_PROP_ZONED), zhp, errbuf) != 0) {
+		    zfs_prop_get_int(zhp, ZFS_PROP_ZONED), zhp, zhp->zpool_hdl,
+		    errbuf) != 0) {
 			zfs_close(zhp);
 			zcmd_free_nvlists(&zc);
 			return (-1);
@@ -3406,6 +3407,8 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 		if (!nvlist_empty(exprops)) {
 			/* Create an override set of properties if needed */
 			uint64_t zoned = 0;
+			char zp_name[MAXNAMELEN];
+			zpool_handle_t *zp_handle;
 			if (flags->isprefix && !flags->istail &&
 			    !flags->dryrun) {
 				/* Check if we're zoned or not */
@@ -3416,12 +3419,21 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 				}
 			}
 
-			if (props_override(dsname, props, exprops,
+			(void) strlcpy(zp_name, zc.zc_name, sizeof (zp_name));
+			cp = strchr(zp_name, '/');
+			if (cp != NULL)
+				*cp = '\0';
+			zp_handle = zpool_open(hdl, zp_name);
+			if (zp_handle != NULL &&
+			    props_override(dsname, props,exprops,
 			    &merged_props, flags, hdl, ZFS_TYPE_DATASET,
-			    zoned, NULL, errbuf) != 0) {
+			    zoned, NULL, zp_handle, errbuf) != 0) {
 				zcmd_free_nvlists(&zc);
+				zpool_close(zp_handle);
 				return (-1);
 			}
+			if (zp_handle != NULL)
+				zpool_close(zp_handle);
 		}
 	}
 
