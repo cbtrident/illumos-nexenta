@@ -633,6 +633,7 @@ rfs4_init_compound_state(struct compound_state *cs)
 	cs->deleg = FALSE;
 	cs->mandlock = FALSE;
 	cs->fh.nfs_fh4_val = cs->fhbuf;
+	cs->statusp = NULL;
 }
 
 void
@@ -5902,10 +5903,12 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			 */
 			switch (rfsv4disptab[op].op_type) {
 			case NFS4_OP_CFH:
-				exp_stats = cs.exi->exi_stats;
+				if (cs.exi != NULL)
+					exp_stats = cs.exi->exi_stats;
 				break;
 			case NFS4_OP_SFH:
-				exp_stats = cs.saved_exi->exi_stats;
+				if (cs.saved_exi != NULL)
+					exp_stats = cs.saved_exi->exi_stats;
 				break;
 			default:
 				break;
