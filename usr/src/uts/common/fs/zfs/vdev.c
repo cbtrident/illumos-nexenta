@@ -441,6 +441,8 @@ vdev_alloc(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent, uint_t id,
 	 * Determine whether we're a special vdev.
 	 */
 	(void) nvlist_lookup_uint64(nv, ZPOOL_CONFIG_IS_SPECIAL, &isspecial);
+	if (isspecial && spa_version(spa) < SPA_VERSION_FEATURES)
+		return (SET_ERROR(ENOTSUP));
 
 	if (ops == &vdev_hole_ops && spa_version(spa) < SPA_VERSION_HOLES)
 		return (SET_ERROR(ENOTSUP));

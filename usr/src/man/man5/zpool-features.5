@@ -490,6 +490,30 @@ from storage management standpoint. This feature will be
 .sp
 .ne 2
 .na
+\fB\fBmeta_devices\fR\fR
+.ad
+.RS 4n
+.TS
+l l .
+GUID	com.nexenta:meta_devices
+READ\-ONLY COMPATIBLE	yes
+DEPENDENCIES	none
+.TE
+
+This feature flag indicates presence of special-vdev in the pool. Special
+vdev is used to speed-up read and write operations and can be used to store
+ZFS metadata and/or write log (ZIL). In addition, special vdev can function
+as a writeback cache (WBC) within the pool, accelerating ZFS writes via
+underlying fast media (typically, write-optimized SSD). 
+
+Note that unlike the first two functions the WBC function is configurable 
+on a per-dataset tree basis.
+
+.RE
+
+.sp
+.ne 2
+.na
 \fB\fBwbc\fR\fR
 .ad
 .RS 4n

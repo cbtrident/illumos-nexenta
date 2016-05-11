@@ -505,7 +505,7 @@ tests = ['utils_test_001_pos', 'utils_test_002_pos', 'utils_test_003_pos',
 [/opt/zfs-tests/tests/functional/wbc]
 tests = ['wbc_001_pos', 'wbc_002_pos', 'wbc_003_pos', 'wbc_004_pos', 'wbc_005_neg',
     'wbc_006_neg', 'wbc_007_neg', 'wbc_008_pos', 'wbc_009_pos', 'wbc_010_neg',
-    'wbc_011_neg', 'wbc_012_pos']
+    'wbc_011_neg', 'wbc_012_pos', 'wbc_013_neg']
 
 [/opt/zfs-tests/tests/functional/write_dirs]
 tests = ['write_dirs_001_pos', 'write_dirs_002_pos']
