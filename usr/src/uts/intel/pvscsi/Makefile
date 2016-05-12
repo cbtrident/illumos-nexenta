@@ -10,31 +10,29 @@
 #
 
 #
-# Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.
 #
 
-UTSBASE=	../..
+UTSBASE=	$(SRC)/uts
 
 MODULE=		pvscsi
 OBJECTS=	$(PVSCSI_OBJS:%=$(OBJS_DIR)/%)
 LINTS=		$(PVSCSI_OBJS:%.o=$(LINTS_DIR)/%.ln)
 ROOTMODULE=	$(ROOT_DRV_DIR)/$(MODULE)
-CONF_SRCDIR=	$(UTSBASE)/intel/io/scsi/adapters/pvscsi
 
 include		$(UTSBASE)/intel/Makefile.intel
 
-ALL_TARGET=	$(BINARY) $(CONFMOD)
+ALL_TARGET=	$(BINARY)
 LINT_TARGET=	$(MODULE).lint
-INSTALL_TARGET=	$(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
+INSTALL_TARGET=	$(BINARY) $(ROOTMODULE)
 
-CERRWARN +=	-_gcc=-Wno-parentheses
-
-LDFLAGS	+=	-dy -N misc/scsi -N drv/scsi_vhci
+LDFLAGS	+=	-dy -N misc/scsi
 
 LINTTAGS +=	-erroff=E_BAD_PTR_CAST_ALIGN
-LINTTAGS +=	-erroff=E_CONSTANT_CONDITION
 
 .KEEP_STATE:
+
+def:		$(DEF_DEPS)
 
 all:		$(ALL_DEPS)
 
@@ -43,8 +41,6 @@ clean.lint:	$(CLEAN_LINT_DEPS)
 clean:		$(CLEAN_DEPS)
 
 clobber:	$(CLOBBER_DEPS)
-
-def:		$(DEF_DEPS)
 
 install:	$(INSTALL_DEPS)
 
