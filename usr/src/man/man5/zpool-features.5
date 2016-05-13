@@ -521,14 +521,14 @@ on a per-dataset tree basis.
 l l .
 GUID	com.nexenta:wbc
 READ\-ONLY COMPATIBLE	no
-DEPENDENCIES	none
+DEPENDENCIES	com.nexenta:meta_devices
 .TE
 
-This feature indicates that the pool includes on-disk format changes that
-support persistent Write Back Cache properties. This feature will be
-\fBactive\fR when the first \fBwbc_mode\fR property is set. This feature
-will be \fBdisabled\fR while the pool does not have special-vdev.
-This feature will never return from \fBactive\fR to \fBenabled\fR
+When enabled, this feature indicates that the pool supports writeback caching.
+The latter can be activated on a specific filesystem (and all its children) or
+a volume (zvol) within the pool by setting the corresponding  \fBwbc_mode\fR
+property to 'on'. This feature will show up as \fBdisabled\fR if the pool does
+not contain special-vdev.
 
 .RE
 
