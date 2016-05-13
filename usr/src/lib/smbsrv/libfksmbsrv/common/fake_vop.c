@@ -32,6 +32,7 @@
 #include <sys/debug.h>
 #include <sys/atomic.h>
 #include <sys/acl.h>
+#include <sys/filio.h>
 #include <sys/flock.h>
 #include <sys/nbmlock.h>
 #include <sys/fcntl.h>
@@ -217,7 +218,29 @@ fop_ioctl(
 	int *rvalp,
 	caller_context_t *ct)
 {
-	return (ENOSYS);
+	off64_t off;
+	int rv, whence;
+
+	switch (cmd) {
+	case _FIO_SEEK_DATA:
+	case _FIO_SEEK_HOLE:
+		whence = (cmd == _FIO_SEEK_DATA) ? SEEK_DATA : SEEK_HOLE;
+		bcopy((void *)arg, &off, sizeof (off));
+		off = lseek(vp->v_fd, off, whence);
+		if (off == (off64_t)-1) {
+			rv = errno;
+		} else {
+			bcopy(&off, (void *)arg, sizeof (off));
+			rv = 0;
+		}
+		break;
+
+	default:
+		rv = ENOTTY;
+		break;
+	}
+
+	return (rv);
 }
 
 /* ARGSUSED */

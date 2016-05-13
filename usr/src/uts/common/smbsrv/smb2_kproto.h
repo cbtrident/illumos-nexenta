@@ -59,6 +59,10 @@ void smb2_sign_reply(smb_request_t *);
 uint32_t smb2_fsctl_fs(smb_request_t *, smb_fsctl_t *);
 uint32_t smb2_fsctl_netfs(smb_request_t *, smb_fsctl_t *);
 uint32_t smb2_fsctl_copychunk(smb_request_t *, smb_fsctl_t *);
+uint32_t smb2_fsctl_set_sparse(smb_request_t *, smb_fsctl_t *);
+uint32_t smb2_fsctl_set_zero_data(smb_request_t *, smb_fsctl_t *);
+uint32_t smb2_fsctl_query_alloc_ranges(smb_request_t *, smb_fsctl_t *);
+
 uint32_t smb2_nego_validate(smb_request_t *, smb_fsctl_t *);
 
 smb_sdrc_t smb2_negotiate(smb_request_t *);

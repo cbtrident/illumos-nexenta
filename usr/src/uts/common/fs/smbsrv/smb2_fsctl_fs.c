@@ -127,6 +127,15 @@ smb2_fsctl_fs(smb_request_t *sr, smb_fsctl_t *fsctl)
 	case FSCTL_CREATE_OR_GET_OBJECT_ID:	/* 48 */
 		func = smb2_fsctl_notsup;
 		break;
+	case FSCTL_SET_SPARSE:			/* 49 */
+		func = smb2_fsctl_set_sparse;
+		break;
+	case FSCTL_SET_ZERO_DATA:		/* 50 */
+		func = smb2_fsctl_set_zero_data;
+		break;
+	case FSCTL_QUERY_ALLOCATED_RANGES:	/* 51 */
+		func = smb2_fsctl_query_alloc_ranges;
+		break;
 	case FSCTL_FILE_LEVEL_TRIM:		/* 130 */
 		func = smb2_fsctl_notsup;
 		break;

@@ -29,6 +29,7 @@
 #include <smbsrv/smb_kproto.h>
 #include <acl/acl_common.h>
 #include <sys/fcntl.h>
+#include <sys/filio.h>
 #include <sys/flock.h>
 #include <fs/fs_subr.h>
 
@@ -1313,21 +1314,18 @@ smb_fsop_setattr(
 
 /*
  * Support for SMB2 setinfo FileValidDataLengthInformation.
- * Free data from the specified offset to EoF.
- *
- * This can effectively truncate data.  It truncates the data
- * leaving the file size as it was, leaving zeros after the
- * offset specified here.  That is effectively modifying the
- * file content, so for access control this is a write.
+ * Free (zero out) data in the range off, off+len
  */
 int
-smb_fsop_set_data_length(
+smb_fsop_freesp(
     smb_request_t	*sr,
     cred_t		*cr,
-    smb_node_t		*node,
-    offset_t		end_of_data)
+    smb_ofile_t		*ofile,
+    off64_t		off,
+    off64_t		len)
 {
 	flock64_t flk;
+	smb_node_t *node = ofile->f_node;
 	uint32_t status;
 	uint32_t access = FILE_WRITE_DATA;
 	int rc;
@@ -1355,13 +1353,8 @@ smb_fsop_set_data_length(
 	 * READONLY flag was set in the node (or the FS) are
 	 * immune to that change, and remain writable.
 	 */
-	if (sr->fid_ofile) {
-		if (SMB_OFILE_IS_READONLY(sr->fid_ofile))
-			return (EACCES);
-	} else {
-		/* This requires an open file. */
+	if (SMB_OFILE_IS_READONLY(ofile))
 		return (EACCES);
-	}
 
 	/*
 	 * SMB checks access on open and retains an access granted
@@ -1377,7 +1370,8 @@ smb_fsop_set_data_length(
 		return (EACCES);
 
 	bzero(&flk, sizeof (flk));
-	flk.l_start = end_of_data;
+	flk.l_start = off;
+	flk.l_len = len;
 
 	rc = smb_vop_space(node->vp, F_FREESP, &flk, FWRITE, 0LL, cr);
 	return (rc);
@@ -1585,6 +1579,30 @@ smb_fsop_write(
 	smb_node_end_crit(snode);
 
 	return (rc);
+}
+
+/*
+ * Find the next allocated range starting at or after
+ * the offset (*datap), returning the start/end of
+ * that range in (*datap, *holep)
+ */
+int
+smb_fsop_next_alloc_range(
+    cred_t *cr,
+    smb_node_t *node,
+    off64_t *datap,
+    off64_t *holep)
+{
+	int err;
+
+	err = smb_vop_ioctl(node->vp, _FIO_SEEK_DATA, datap, cr);
+	if (err != 0)
+		return (err);
+
+	*holep = *datap;
+	err = smb_vop_ioctl(node->vp, _FIO_SEEK_HOLE, holep, cr);
+
+	return (err);
 }
 
 /*
