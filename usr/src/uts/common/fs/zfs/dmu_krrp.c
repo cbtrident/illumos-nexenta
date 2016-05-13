@@ -1296,7 +1296,7 @@ zfs_recv_one_ds(char *ds, dmu_replay_record_t *drr, nvlist_t *fs_props,
 	 * If receive has been successfully finished
 	 * we can apply received snapshot properties
 	 */
-	if (err == 0) {
+	if (err == 0 && snap_props != NULL) {
 		char *full_snap_name;
 
 		full_snap_name = kmem_asprintf("%s@%s", ds, tosnap);

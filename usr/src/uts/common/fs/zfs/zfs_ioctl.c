@@ -2965,6 +2965,8 @@ zfs_ioc_set_prop_impl(char *name, nvlist_t *props,
 	zprop_source_t source = (received ? ZPROP_SRC_RECEIVED :
 	    ZPROP_SRC_LOCAL);
 
+	ASSERT(props != NULL);
+
 	if (received) {
 		nvlist_t *origprops;
 
