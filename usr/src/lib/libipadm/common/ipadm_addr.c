@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -2671,7 +2672,13 @@ i_ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t ipaddr, uint32_t flags)
 	}
 
 	if (flags & IPADM_OPT_UP) {
-		if (i_ipadm_is_under_ipmp(iph, lifr.lifr_name))
+		/*
+		 * Verify this is both:
+		 *   an interface under ipmp control and
+		 *   not the ipmp interface or a virtual ipmp interface
+		 */
+		if ((i_ipadm_is_under_ipmp(iph, lifr.lifr_name)) &&
+		    !(i_ipadm_is_ipmp(iph, lifr.lifr_name)))
 			iff_flags |= IFF_NOFAILOVER;
 		status = i_ipadm_set_flags(iph, lifr.lifr_name,
 		    af, iff_flags, 0);
