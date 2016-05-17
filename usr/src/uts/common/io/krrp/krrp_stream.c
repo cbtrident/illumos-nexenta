@@ -405,6 +405,7 @@ krrp_stream_stop(krrp_stream_t *stream)
 	    stream->state == KRRP_STRMS_IN_ERROR);
 
 	stream->state = KRRP_STRMS_STOPPED;
+	krrp_stream_cv_broadcast(stream);
 
 	if (!stream->non_continuous)
 		krrp_autosnap_deactivate(stream->autosnap);
@@ -425,14 +426,18 @@ krrp_stream_send_stop(krrp_stream_t *stream)
 
 		/*
 		 * To deactivate autosnap-logic need to be sure
-		 * that an autosnap created
+		 * that an autosnap has been created
 		 *
 		 * Autosnap-service may delay creation of snapshot,
 		 * so here we may wait for some time (1-2 transactions)
 		 */
 		krrp_stream_lock(stream);
+
 		stream->wait_for_snap = B_TRUE;
-		krrp_stream_cv_wait(stream);
+		while (stream->wait_for_snap &&
+		    stream->state == KRRP_STRMS_ACTIVE)
+			krrp_stream_cv_wait(stream);
+
 		krrp_stream_unlock(stream);
 
 		krrp_autosnap_deactivate(stream->autosnap);
