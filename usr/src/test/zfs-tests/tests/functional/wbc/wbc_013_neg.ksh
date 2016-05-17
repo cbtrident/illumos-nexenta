@@ -57,16 +57,6 @@ for special_type in "stripe" "mirror" ; do
 	fi
 
 	log_mustnot $ZPOOL create -f -o version=28 $TESTPOOL $HDD_DISKS special $special_type $SSD_DISKS
-	
-	log_must display_status $TESTPOOL
-	log_must $SYNC
-	log_must $ZPOOL scrub $TESTPOOL
-	while is_pool_scrubbing $TESTPOOL ; do
-		$SLEEP 1
-	done
-
-	log_must check_pool_errors $TESTPOOL
-	log_must destroy_pool $TESTPOOL
 done
 
 log_pass "Special vdev cannot be added to the old-version pools"
