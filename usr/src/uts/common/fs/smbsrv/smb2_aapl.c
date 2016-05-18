@@ -113,6 +113,8 @@ smb2_aapl_srv_query(smb_request_t *sr,
 			server_caps |= kAAPL_SUPPORTS_READ_DIR_ATTR;
 			sr->session->s_flags |= SMB_SSN_AAPL_READDIR;
 		}
+		if (client_caps & kAAPL_SUPPORTS_OSX_COPYFILE)
+			server_caps |= kAAPL_SUPPORTS_OSX_COPYFILE;
 		if (client_caps & kAAPL_UNIX_BASED)
 			server_caps |= kAAPL_UNIX_BASED;
 		(void) smb_mbc_encodef(mbcout, "q", server_caps);
