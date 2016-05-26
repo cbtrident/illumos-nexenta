@@ -1024,6 +1024,14 @@ zfs_send_ds(dmu_krrp_task_t *krrp_task, list_t *ds_to_send)
 		if (err != 0)
 			break;
 
+		/*
+		 * resume_snap_name needs to be NULL for the datasets,
+		 * that are on the "right" side of the resume-token,
+		 * because need to process all their snapshots
+		 */
+		if (resume_snap_name != NULL)
+			resume_snap_name = NULL;
+
 		fs_el = list_next(ds_to_send, fs_el);
 	}
 
