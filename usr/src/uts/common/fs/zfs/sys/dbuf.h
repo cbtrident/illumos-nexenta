@@ -124,6 +124,9 @@ typedef struct dbuf_dirty_record {
 	/* How much space was changed to dsl_pool_dirty_space() for this? */
 	unsigned int dr_accounted;
 
+	/* A copy of the bp that points to us */
+	blkptr_t dr_bp_copy;
+
 	/* use special class of dirty entry */
 	boolean_t dr_usesc;
 

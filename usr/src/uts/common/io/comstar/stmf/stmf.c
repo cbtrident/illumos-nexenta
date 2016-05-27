@@ -3288,8 +3288,7 @@ stmf_deregister_lu(stmf_lu_t *lu)
 		return (STMF_BUSY);
 	}
 	if (ilu->ilu_kstat_info) {
-		kmem_free(ilu->ilu_kstat_info->ks_data,
-		    STMF_KSTAT_LU_SZ);
+		kmem_free(ilu->ilu_kstat_info->ks_data, STMF_KSTAT_LU_SZ);
 		kstat_delete(ilu->ilu_kstat_info);
 	}
 	if (ilu->ilu_kstat_io) {

@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2012 Pawel Jakub Dawidek. All rights reserved.
  * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
@@ -133,9 +134,12 @@ zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 	return ((ret < 0) ? ret : 0);
 }
 
-static int
-zfs_iter_snapshots_internal(zfs_handle_t *zhp, zfs_iter_f func,
-    void *data, boolean_t autosnaps)
+/*
+ * Iterate over all snapshots
+ */
+int
+zfs_iter_snapshots_internal(zfs_handle_t *zhp, boolean_t simple,
+    zfs_iter_f func, void *data, boolean_t autosnaps)
 {
 	zfs_cmd_t zc = { 0 };
 	int ret;
@@ -145,6 +149,8 @@ zfs_iter_snapshots_internal(zfs_handle_t *zhp, zfs_iter_f func,
 	    zhp->zfs_type == ZFS_TYPE_AUTOSNAP)
 		return (0);
 
+	zc.zc_simple = simple;
+
 	if (zcmd_alloc_dst_nvlist(zhp->zfs_hdl, &zc, 0) != 0)
 		return (-1);
 
@@ -152,10 +158,12 @@ zfs_iter_snapshots_internal(zfs_handle_t *zhp, zfs_iter_f func,
 	    &zc)) == 0) {
 		zfs_handle_t *nzhp;
 
-		if ((nzhp = make_dataset_handle_zc(zhp->zfs_hdl,
-		    &zc)) == NULL) {
+		if (simple)
+			nzhp = make_dataset_simple_handle_zc(zhp, &zc);
+		else
+			nzhp = make_dataset_handle_zc(zhp->zfs_hdl, &zc);
+		if (nzhp == NULL)
 			continue;
-		}
 
 		if (autosnaps) {
 			if (zfs_get_type(nzhp) != ZFS_TYPE_AUTOSNAP) {
@@ -183,15 +191,17 @@ zfs_iter_snapshots_internal(zfs_handle_t *zhp, zfs_iter_f func,
  * Iterate over all snapshots
  */
 int
-zfs_iter_snapshots(zfs_handle_t *zhp, zfs_iter_f func, void *data)
+zfs_iter_snapshots(zfs_handle_t *zhp, boolean_t simple, zfs_iter_f func,
+    void *data)
 {
-	return (zfs_iter_snapshots_internal(zhp, func, data, B_FALSE));
+	return (zfs_iter_snapshots_internal(zhp, simple, func, data, B_FALSE));
 }
 
 int
-zfs_iter_autosnapshots(zfs_handle_t *zhp, zfs_iter_f func, void *data)
+zfs_iter_autosnapshots(zfs_handle_t *zhp, boolean_t simple, zfs_iter_f func,
+    void *data)
 {
-	return (zfs_iter_snapshots_internal(zhp, func, data, B_TRUE));
+	return (zfs_iter_snapshots_internal(zhp, simple, func, data, B_TRUE));
 }
 
 /*
@@ -314,7 +324,7 @@ zfs_iter_snapshots_sorted(zfs_handle_t *zhp, zfs_iter_f callback, void *data)
 	avl_create(&avl, zfs_snapshot_compare,
 	    sizeof (zfs_node_t), offsetof(zfs_node_t, zn_avlnode));
 
-	ret = zfs_iter_snapshots(zhp, zfs_sort_snaps, &avl);
+	ret = zfs_iter_snapshots(zhp, B_FALSE, zfs_sort_snaps, &avl);
 
 	for (node = avl_first(&avl); node != NULL; node = AVL_NEXT(&avl, node))
 		ret |= callback(node->zn_handle, data);
@@ -459,7 +469,7 @@ zfs_iter_children(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 	if ((ret = zfs_iter_filesystems(zhp, func, data)) != 0)
 		return (ret);
 
-	return (zfs_iter_snapshots(zhp, func, data));
+	return (zfs_iter_snapshots(zhp, B_FALSE, func, data));
 }
 
 
@@ -520,11 +530,13 @@ iter_dependents_cb(zfs_handle_t *zhp, void *arg)
 		isf.next = ida->stack;
 		ida->stack = &isf;
 		err = zfs_iter_filesystems(zhp, iter_dependents_cb, ida);
-		if (err == 0)
-			err = zfs_iter_snapshots(zhp, iter_dependents_cb, ida);
+		if (err == 0) {
+			err = zfs_iter_snapshots(zhp, B_FALSE,
+			    iter_dependents_cb, ida);
+		}
 
 		if (err == 0) {
-			err = zfs_iter_autosnapshots(zhp,
+			err = zfs_iter_autosnapshots(zhp, B_FALSE,
 			    iter_dependents_cb, ida);
 		}
 

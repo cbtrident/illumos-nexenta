@@ -24,6 +24,7 @@
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright (c) 2012 Pawel Jakub Dawidek. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright 2015, OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
@@ -470,11 +471,16 @@ out:
 typedef struct send_data {
 	/*
 	 * assigned inside every recursive call,
-	 * restored from *_save on return
+	 * restored from *_save on return:
+	 *
+	 * guid of fromsnap snapshot in parent dataset
+	 * txg of fromsnap snapshot in current dataset
+	 * txg of tosnap snapshot in current dataset
 	 */
+
 	uint64_t parent_fromsnap_guid;
-	uint64_t parent_fromsnap_txg;
-	uint64_t parent_tosnap_txg;
+	uint64_t fromsnap_txg;
+	uint64_t tosnap_txg;
 
 	/* the nvlists get accumulated during depth-first traversal */
 	nvlist_t *parent_snaps;
@@ -526,12 +532,12 @@ send_iterate_snap(zfs_handle_t *zhp, void *arg)
 
 	snapname = strrchr(zhp->zfs_name, '@')+1;
 
-	if (sd->parent_tosnap_txg != 0 && txg > sd->parent_tosnap_txg) {
+	if (sd->tosnap_txg != 0 && txg > sd->tosnap_txg) {
 		if (sd->verbose) {
 			(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
-			    "skipping snapshot %s: destination snapshot "
-			    "%s is created earlier than %s\n"),
-			    zhp->zfs_name, sd->tosnap, snapname);
+			    "skipping snapshot %s because it was created "
+			    "after the destination snapshot (%s)\n"),
+			    zhp->zfs_name, sd->tosnap);
 		}
 		zfs_close(zhp);
 		return (0);
@@ -673,8 +679,8 @@ send_iterate_fs(zfs_handle_t *zhp, void *arg)
 	nvlist_t *nvfs, *nv;
 	int rv = 0;
 	uint64_t parent_fromsnap_guid_save = sd->parent_fromsnap_guid;
-	uint64_t parent_fromsnap_txg_save = sd->parent_fromsnap_txg;
-	uint64_t parent_tosnap_txg_save = sd->parent_tosnap_txg;
+	uint64_t fromsnap_txg_save = sd->fromsnap_txg;
+	uint64_t tosnap_txg_save = sd->tosnap_txg;
 	uint64_t txg = zhp->zfs_dmustats.dds_creation_txg;
 	uint64_t guid = zhp->zfs_dmustats.dds_guid;
 	uint64_t fromsnap_txg, tosnap_txg;
@@ -682,11 +688,11 @@ send_iterate_fs(zfs_handle_t *zhp, void *arg)
 
 	fromsnap_txg = get_snap_txg(zhp->zfs_hdl, zhp->zfs_name, sd->fromsnap);
 	if (fromsnap_txg != 0)
-		sd->parent_fromsnap_txg = fromsnap_txg;
+		sd->fromsnap_txg = fromsnap_txg;
 
 	tosnap_txg = get_snap_txg(zhp->zfs_hdl, zhp->zfs_name, sd->tosnap);
 	if (tosnap_txg != 0)
-		sd->parent_tosnap_txg = tosnap_txg;
+		sd->tosnap_txg = tosnap_txg;
 
 	/*
 	 * on the send side, if the current dataset does not have tosnap,
@@ -698,7 +704,7 @@ send_iterate_fs(zfs_handle_t *zhp, void *arg)
 	 *   the parent tosnap
 	 */
 	if (sd->tosnap != NULL && tosnap_txg == 0) {
-		if (sd->parent_tosnap_txg != 0 && txg > sd->parent_tosnap_txg) {
+		if (sd->tosnap_txg != 0 && txg > sd->tosnap_txg) {
 			if (sd->verbose) {
 				(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
 				    "skipping dataset %s: snapshot %s does "
@@ -748,7 +754,7 @@ send_iterate_fs(zfs_handle_t *zhp, void *arg)
 	sd->parent_fromsnap_guid = 0;
 	VERIFY(0 == nvlist_alloc(&sd->parent_snaps, NV_UNIQUE_NAME, 0));
 	VERIFY(0 == nvlist_alloc(&sd->snapprops, NV_UNIQUE_NAME, 0));
-	(void) zfs_iter_snapshots(zhp, send_iterate_snap, sd);
+	(void) zfs_iter_snapshots(zhp, B_FALSE, send_iterate_snap, sd);
 	VERIFY(0 == nvlist_add_nvlist(nvfs, "snaps", sd->parent_snaps));
 	VERIFY(0 == nvlist_add_nvlist(nvfs, "snapprops", sd->snapprops));
 	nvlist_free(sd->parent_snaps);
@@ -766,8 +772,8 @@ send_iterate_fs(zfs_handle_t *zhp, void *arg)
 
 out:
 	sd->parent_fromsnap_guid = parent_fromsnap_guid_save;
-	sd->parent_fromsnap_txg = parent_fromsnap_txg_save;
-	sd->parent_tosnap_txg = parent_tosnap_txg_save;
+	sd->fromsnap_txg = fromsnap_txg_save;
+	sd->tosnap_txg = tosnap_txg_save;
 
 	zfs_close(zhp);
 	return (rv);
