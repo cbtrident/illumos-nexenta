@@ -121,8 +121,10 @@ smb_nt_transact_notify_change(smb_request_t *sr, struct smb_xa *xa)
 	}
 
 	if (status != 0) {
-		smbsr_error(sr, status, 0, 0);
-		return (SDRC_ERROR);
+		smbsr_status(sr, status, 0, 0);
+		if (NT_SC_SEVERITY(status) == NT_STATUS_SEVERITY_ERROR)
+			return (SDRC_ERROR);
+		/* Else continue with NT_STATUS_NOTIFY_ENUM_DIR etc. */
 	}
 
 	/*
@@ -169,10 +171,13 @@ smb_nt_transact_notify_finish(void *arg)
 	}
 
 	if (status != 0) {
-		smbsr_error(sr, status, 0, 0);
-		(void) smb_mbc_encodef(&sr->reply, "bwbw",
-		    (short)0, 0L, (short)0, 0L);
-		goto sendit;
+		smbsr_status(sr, status, 0, 0);
+		if (NT_SC_SEVERITY(status) == NT_STATUS_SEVERITY_ERROR) {
+			(void) smb_mbc_encodef(&sr->reply, "bwbw",
+			    (short)0, 0L, (short)0, 0L);
+			goto sendit;
+		}
+		/* Else continue with NT_STATUS_NOTIFY_ENUM_DIR etc. */
 	}
 
 	/*

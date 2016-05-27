@@ -309,12 +309,8 @@ smb_notify_act2(smb_request_t *sr)
 
 	mutex_exit(&of->f_mutex);
 
-	/*
-	 * See: About NT_STATUS_NOTIFY_ENUM_DIR (above)
-	 */
-	if (status == NT_STATUS_NOTIFY_ENUM_DIR &&
-	    smb_notify_enum_dir_delay > 0)
-		delay(MSEC_TO_TICK(smb_notify_enum_dir_delay));
+	/* Note: Never NT_STATUS_NOTIFY_ENUM_DIR here. */
+	ASSERT(status != NT_STATUS_NOTIFY_ENUM_DIR);
 
 	return (status);
 }
@@ -698,7 +694,7 @@ unlock_out:
  */
 static void
 smb_notify_encode_action(smb_ofile_t *of,
-	uint32_t action, const char *fname)
+    uint32_t action, const char *fname)
 {
 	smb_notify_t *nc = &of->f_notify;
 	mbuf_chain_t *mbc;

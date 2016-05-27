@@ -30,6 +30,9 @@
 
 #include <smbsrv/smb2_kproto.h>
 
+/* For the output DataOffset fields in here. */
+#define	DATA_OFF	(SMB2_HDR_SIZE + 8)
+
 static smb_sdrc_t smb2_change_notify_async(smb_request_t *);
 
 smb_sdrc_t
@@ -81,13 +84,14 @@ smb2_change_notify(smb_request_t *sr)
 		status = smb2sr_go_async(sr, smb2_change_notify_async);
 	}
 
-	if (status == 0) {
-		uint16_t DataOff = SMB2_HDR_SIZE + 8;
+	if (status == 0 || status == NT_STATUS_NOTIFY_ENUM_DIR) {
+		sr->smb2_status = status;
+
 		oBufLength = sr->raw_data.chain_offset;
 		(void) smb_mbc_encodef(
 		    &sr->reply, "wwlC",
 		    9,	/* StructSize */	/* w */
-		    DataOff,			/* w */
+		    DATA_OFF,			/* w */
 		    oBufLength,			/* l */
 		    &sr->raw_data);		/* C */
 	} else {
@@ -113,6 +117,9 @@ smb2_change_notify_async(smb_request_t *sr)
 		return (SDRC_SR_KEPT);
 	}
 
+	/* Note: Never NT_STATUS_NOTIFY_ENUM_DIR here. */
+	ASSERT(status != NT_STATUS_NOTIFY_ENUM_DIR);
+
 	if (status != 0)
 		smb2sr_put_error(sr, status);
 
@@ -130,7 +137,6 @@ smb2_change_notify_finish(void *arg)
 	smb_request_t	*sr = arg;
 	uint32_t status;
 	uint32_t oBufLength;
-	uint16_t DataOff;
 
 	SMB_REQ_VALID(sr);
 
@@ -138,17 +144,18 @@ smb2_change_notify_finish(void *arg)
 	 * Common part of notify, puts data in sr->raw_data
 	 */
 	status = smb_notify_act3(sr);
-	if (status != 0) {
-		smb2sr_put_error(sr, status);
-	} else {
-		DataOff = SMB2_HDR_SIZE + 8;
+	if (status == 0 || status == NT_STATUS_NOTIFY_ENUM_DIR) {
+		sr->smb2_status = status;
+
 		oBufLength = sr->raw_data.chain_offset;
 		(void) smb_mbc_encodef(
 		    &sr->reply, "wwlC",
 		    9,	/* StructSize */	/* w */
-		    DataOff,			/* w */
+		    DATA_OFF,			/* w */
 		    oBufLength,			/* l */
 		    &sr->raw_data);		/* C */
+	} else {
+		smb2sr_put_error(sr, status);
 	}
 
 	smb2sr_finish_async(sr);
