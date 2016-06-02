@@ -251,6 +251,12 @@ zfs_send_collect_props(objset_t *mos, uint64_t zapobj, nvlist_t *props)
 
 			if (err != ENOENT)
 				break;
+
+			/*
+			 * zero out to make sure ENOENT is not returned
+			 * if the loop breaks in this iteration
+			 */
+			err = 0;
 		}
 
 		prop = zfs_name_to_prop(prop_name);
