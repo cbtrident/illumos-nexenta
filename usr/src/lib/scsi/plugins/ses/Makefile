@@ -29,6 +29,7 @@
 SUBDIRS = 			\
 	libses			\
 	ses2			\
+	DELL-MD3060e		\
 	LSILOGIC-SASX28-A.0	\
 	SUN			\
 	SUN-Storage-J4400	\
