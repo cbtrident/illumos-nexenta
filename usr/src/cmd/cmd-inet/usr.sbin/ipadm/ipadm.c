@@ -18,10 +18,12 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <getopt.h>
@@ -55,18 +57,17 @@
 #define	LIFC_DEFAULT	(LIFC_NOXMIT | LIFC_TEMPORARY | LIFC_ALLZONES |\
 			LIFC_UNDER_IPMP)
 
-static void do_create_if_common(int, char **, const char *, uint32_t);
+static void do_create_ip_common(int, char **, const char *, uint32_t);
 
 typedef void cmdfunc_t(int, char **, const char *);
+static cmdfunc_t do_create_ip, do_delete_ip;
 static cmdfunc_t do_create_ipmp, do_add_ipmp, do_remove_ipmp;
-static cmdfunc_t do_create_if, do_delete_if, do_enable_if, do_disable_if;
-static cmdfunc_t do_show_if;
-static cmdfunc_t do_set_prop, do_show_prop, do_set_ifprop;
-static cmdfunc_t do_show_ifprop, do_reset_ifprop, do_reset_prop;
-static cmdfunc_t do_show_addrprop, do_set_addrprop, do_reset_addrprop;
-static cmdfunc_t do_create_addr, do_delete_addr, do_show_addr;
-static cmdfunc_t do_enable_addr, do_disable_addr;
-static cmdfunc_t do_up_addr, do_down_addr, do_refresh_addr;
+static cmdfunc_t do_disable_if, do_enable_if, do_show_if;
+static cmdfunc_t do_set_ifprop, do_reset_ifprop, do_show_ifprop;
+static cmdfunc_t do_create_addr, do_delete_addr, do_show_addr, do_refresh_addr;
+static cmdfunc_t do_disable_addr, do_enable_addr, do_down_addr, do_up_addr;
+static cmdfunc_t do_set_addrprop, do_reset_addrprop, do_show_addrprop;
+static cmdfunc_t do_set_prop, do_reset_prop, do_show_prop;
 
 typedef struct	cmd {
 	char		*c_name;
@@ -76,20 +77,27 @@ typedef struct	cmd {
 
 static cmd_t	cmds[] = {
 	/* interface management related sub-commands */
-	{ "create-ipmp", do_create_ipmp, "\tcreate-ipmp\t[-t] <ipmp-group>"},
-	{ "delete-ipmp", do_delete_if, "\tdelete-ipmp\t[-t] <ipmp-group>"},
-	{ "add-ipmp", do_add_ipmp, "\tadd-ipmp\t[-t] -i"
-	    " <ipmp-member-interface> "
-	    "[-i <ipmp-member-interface>] <ipmp-group-interface>"},
-	{ "remove-ipmp", do_remove_ipmp, "\tremove-ipmp\t[-t] -i"
-	    " <ipmp-member-interface> "
-	    "[-i <ipmp-member-interface>] <ipmp-group-interface>"},
-	{ "create-if",	do_create_if,	"\tcreate-if\t[-t] <interface>"	},
-	{ "disable-if",	do_disable_if,	"\tdisable-if\t-t <interface>"	},
-	{ "enable-if",	do_enable_if,	"\tenable-if\t-t <interface>"	},
-	{ "delete-if",	do_delete_if,	"\tdelete-if\t<interface>"	},
-	{ "show-if",	do_show_if,
+	{ "create-ip", do_create_ip, "\tcreate-ip\t[-t] <interface>"	},
+	{ "create-if", do_create_ip, NULL				},
+	{ "delete-ip", do_delete_ip, "\tdelete-ip\t<interface>\n"	},
+	{ "delete-if", do_delete_ip, NULL				},
+
+	{ "create-ipmp", do_create_ipmp,
+	    "\tcreate-ipmp\t[-t] <ipmp-interface>"			},
+	{ "delete-ipmp", do_delete_ip,
+	    "\tdelete-ipmp\t<ipmp-interface>"				},
+	{ "add-ipmp", do_add_ipmp,
+	    "\tadd-ipmp\t[-t] -i <interface> ... "
+	    "<ipmp-interface>"						},
+	{ "remove-ipmp", do_remove_ipmp,
+	    "\tremove-ipmp\t[-t] -i <interface> ... "
+	    "<ipmp-interface>\n"					},
+
+	{ "disable-if", do_disable_if, "\tdisable-if\t-t <interface>"	},
+	{ "enable-if", do_enable_if, "\tenable-if\t-t <interface>"	},
+	{ "show-if", do_show_if,
 	    "\tshow-if\t\t[[-p] -o <field>,...] [<interface>]\n"	},
+
 	{ "set-ifprop",	do_set_ifprop,
 	    "\tset-ifprop\t[-t] -p <prop>=<value[,...]> -m <protocol> "
 	    "<interface>" 						},
@@ -97,7 +105,7 @@ static cmd_t	cmds[] = {
 	    "\treset-ifprop\t[-t] -p <prop> -m <protocol> <interface>"	},
 	{ "show-ifprop", do_show_ifprop,
 	    "\tshow-ifprop\t[[-c] -o <field>,...] [-p <prop>,...]\n"
-	    "\t\t\t[-m <protocol>] [interface]\n" 			},
+	    "\t\t\t[-m <protocol>] [interface]\n"			},
 
 	/* address management related sub-commands */
 	{ "create-addr", do_create_addr,
@@ -106,14 +114,15 @@ static cmd_t	cmds[] = {
 	    "\tcreate-addr\t[-t] -T dhcp [-w <seconds> | forever] <addrobj>\n"
 	    "\tcreate-addr\t[-t] -T addrconf [-i interface-id]\n"
 	    "\t\t\t[-p {stateful|stateless}={yes|no}] <addrobj>" },
-	{ "down-addr",	do_down_addr,	"\tdown-addr\t[-t] <addrobj>"	},
-	{ "up-addr",	do_up_addr,	"\tup-addr\t\t[-t] <addrobj>"	},
-	{ "disable-addr", do_disable_addr, "\tdisable-addr\t-t <addrobj>" },
-	{ "enable-addr", do_enable_addr, "\tenable-addr\t-t <addrobj>"	},
-	{ "refresh-addr", do_refresh_addr, "\trefresh-addr\t[-i] <addrobj>" },
 	{ "delete-addr", do_delete_addr, "\tdelete-addr\t[-r] <addrobj>" },
-	{ "show-addr",	do_show_addr,
-	    "\tshow-addr\t[[-p] -o <field>,...] [<addrobj>]\n"		},
+	{ "show-addr", do_show_addr,
+	    "\tshow-addr\t[[-p] -o <field>,...] [<addrobj>]"		},
+	{ "refresh-addr", do_refresh_addr, "\trefresh-addr\t[-i] <addrobj>" },
+	{ "down-addr", do_down_addr, "\tdown-addr\t[-t] <addrobj>"	},
+	{ "up-addr", do_up_addr, "\tup-addr\t\t[-t] <addrobj>"	},
+	{ "disable-addr", do_disable_addr, "\tdisable-addr\t-t <addrobj>" },
+	{ "enable-addr", do_enable_addr, "\tenable-addr\t-t <addrobj>\n" },
+
 	{ "set-addrprop", do_set_addrprop,
 	    "\tset-addrprop\t[-t] -p <prop>=<value[,...]> <addrobj>"	},
 	{ "reset-addrprop", do_reset_addrprop,
@@ -123,11 +132,11 @@ static cmd_t	cmds[] = {
 	    "<addrobj>\n" 						},
 
 	/* protocol properties related sub-commands */
-	{ "set-prop",	do_set_prop,
+	{ "set-prop", do_set_prop,
 	    "\tset-prop\t[-t] -p <prop>[+|-]=<value[,...]> <protocol>"	},
-	{ "reset-prop",	do_reset_prop,
+	{ "reset-prop", do_reset_prop,
 	    "\treset-prop\t[-t] -p <prop> <protocol>"			},
-	{ "show-prop",	do_show_prop,
+	{ "show-prop", do_show_prop,
 	    "\tshow-prop\t[[-c] -o <field>,...] [-p <prop>,...]"
 	    " [protocol]"						}
 };
@@ -424,7 +433,7 @@ main(int argc, char *argv[])
  * Create regular IP interface or IPMP group interface
  */
 static void
-do_create_if_common(int argc, char *argv[], const char *use, uint32_t flags)
+do_create_ip_common(int argc, char *argv[], const char *use, uint32_t flags)
 {
 	ipadm_status_t	status;
 	int		option;
@@ -444,8 +453,12 @@ do_create_if_common(int argc, char *argv[], const char *use, uint32_t flags)
 			die_opterr(optopt, option, use);
 		}
 	}
-	if (optind != (argc - 1))
-		die("Usage: %s", use);
+	if (optind != (argc - 1)) {
+		if (use != NULL)
+			die("usage: %s", use);
+		else
+			die(NULL);
+	}
 	status = ipadm_create_if(iph, argv[optind], AF_UNSPEC, flags);
 	if (status != IPADM_SUCCESS) {
 		die("Could not create %s : %s",
@@ -477,7 +490,7 @@ do_create_ipmp(int argc, char *argv[], const char *use)
 		die("Cannot ping in.mpathd: %s", ipmp_errmsg(retval));
 	}
 
-	do_create_if_common(argc, argv, use, flags);
+	do_create_ip_common(argc, argv, use, flags);
 }
 
 static void
@@ -494,7 +507,7 @@ do_remove_ipmp(int argc, char *argv[], const char *use)
 
 static void
 do_action_ipmp(int argc, char *argv[], const char *use,
-	ipmp_action_t action)
+    ipmp_action_t action)
 {
 	int	option;
 	ipadm_status_t  status;
@@ -538,8 +551,8 @@ do_action_ipmp(int argc, char *argv[], const char *use,
 				if ((status = ipadm_add_ipmp_member(iph,
 				    argv[optind], ipmp_member->if_name, flags))
 				    != IPADM_SUCCESS)
-					die("Cannot add '%s' interface to"
-					    "'%s': %s",
+					die("Cannot add interface '%s' to "
+					    "IPMP interface '%s': %s",
 					    ipmp_member->if_name, argv[optind],
 					    ipadm_status2str(status));
 				break;
@@ -547,8 +560,8 @@ do_action_ipmp(int argc, char *argv[], const char *use,
 				if ((status = ipadm_remove_ipmp_member(iph,
 				    argv[optind], ipmp_member->if_name, flags))
 				    != IPADM_SUCCESS)
-					die("Cannot remove '%s' interface from "
-					    "'%s': %s",
+					die("Cannot remove interface '%s' from "
+					    "IPMP interface '%s': %s",
 					    ipmp_member->if_name, argv[optind],
 					    ipadm_status2str(status));
 				break;
@@ -565,9 +578,9 @@ do_action_ipmp(int argc, char *argv[], const char *use,
  * persistent store.
  */
 static void
-do_create_if(int argc, char *argv[], const char *use)
+do_create_ip(int argc, char *argv[], const char *use)
 {
-	do_create_if_common(argc, argv, use,
+	do_create_ip_common(argc, argv, use,
 	    IPADM_OPT_PERSIST | IPADM_OPT_ACTIVE);
 }
 
@@ -598,7 +611,7 @@ do_enable_if(int argc, char *argv[], const char *use)
  * Remove an IP interface from both active and persistent configuration.
  */
 static void
-do_delete_if(int argc, char *argv[], const char *use)
+do_delete_ip(int argc, char *argv[], const char *use)
 {
 	ipadm_status_t	status;
 	uint32_t	flags = IPADM_OPT_ACTIVE|IPADM_OPT_PERSIST;
@@ -1193,14 +1206,16 @@ die(const char *format, ...)
 {
 	va_list alist;
 
-	format = gettext(format);
-	(void) fprintf(stderr, "%s: ", progname);
+	if (format != NULL) {
+		format = gettext(format);
+		(void) fprintf(stderr, "%s: ", progname);
 
-	va_start(alist, format);
-	(void) vfprintf(stderr, format, alist);
-	va_end(alist);
+		va_start(alist, format);
+		(void) vfprintf(stderr, format, alist);
+		va_end(alist);
 
-	(void) putchar('\n');
+		(void) putchar('\n');
+	}
 
 	ipadm_destroy_addrobj(ipaddr);
 	ipadm_close(iph);
