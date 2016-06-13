@@ -20,9 +20,8 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2014 by Delphix. All rights reserved.
  */
 
@@ -1123,7 +1122,7 @@ mount_task_q_init(int argc, zfs_handle_t **handles, const char *mntopts,
 	if (task_q == NULL)
 		return (ENOMEM);
 
-	if (error = pthread_mutex_init(&task_q->q_lock, NULL)) {
+	if ((error = pthread_mutex_init(&task_q->q_lock, NULL)) != 0) {
 		free(task_q);
 		return (error);
 	}
@@ -1163,7 +1162,7 @@ umount_task_q_init(int argc, const char **argv, int flags,
 	if (task_q == NULL)
 		return (ENOMEM);
 
-	if (error = pthread_mutex_init(&task_q->q_lock, NULL)) {
+	if ((error = pthread_mutex_init(&task_q->q_lock, NULL)) != 0) {
 		free(task_q);
 		return (error);
 	}
@@ -1275,7 +1274,7 @@ unmounter(void *arg)
 		mount_task_t *task;
 		int i, t, umount_err, flags, q_error;
 
-		if (error = pthread_mutex_lock(&task_q->q_lock))
+		if ((error = pthread_mutex_lock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
 
 		if (task_q->error || task_q->n_tasks == 0) {
@@ -1322,7 +1321,7 @@ unmounter(void *arg)
 		umount_err = umount2(task->mp, flags);
 		q_error = errno;
 
-		if (error = pthread_mutex_lock(&task_q->q_lock))
+		if ((error = pthread_mutex_lock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
 
 		/* done processing */
@@ -1345,7 +1344,7 @@ unmounter(void *arg)
 			done = 1;
 		}
 
-		if (error = pthread_mutex_unlock(&task_q->q_lock))
+		if ((error = pthread_mutex_unlock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
 	}
 }
@@ -1365,7 +1364,7 @@ mounter(void *arg)
 		int i, t, mount_err, flags, q_error;
 		const char *mntopts;
 
-		if (error = pthread_mutex_lock(&task_q->q_lock))
+		if ((error = pthread_mutex_lock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
 
 		if (task_q->error || task_q->n_tasks == 0) {
@@ -1413,7 +1412,7 @@ mounter(void *arg)
 		mount_err = zfs_mount(task->zh, mntopts, flags);
 		q_error = errno;
 
-		if (error = pthread_mutex_lock(&task_q->q_lock))
+		if ((error = pthread_mutex_lock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
 
 		/* done processing */
@@ -1431,7 +1430,7 @@ mounter(void *arg)
 			done = 1;
 		}
 
-		if (error = pthread_mutex_unlock(&task_q->q_lock))
+		if ((error = pthread_mutex_unlock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
 	}
 }
@@ -1447,7 +1446,8 @@ int parallel_unmount(libzfs_handle_t *hdl, int argc, const char **argv,
 	if (argc == 0)
 		return (0);
 
-	if (error = umount_task_q_init(argc, argv, flags, hdl, &task_queue)) {
+	if ((error = umount_task_q_init(argc, argv, flags, hdl, &task_queue))
+	    != 0) {
 		assert(task_queue == NULL);
 		return (error);
 	}
@@ -1495,8 +1495,8 @@ int parallel_mount(get_all_cb_t *cb, int *good, const char *mntopts,
 	if (n_threads > cb->cb_used)
 		n_threads = cb->cb_used;
 
-	if (error = mount_task_q_init(cb->cb_used, cb->cb_handles,
-	    mntopts, flags, &task_queue)) {
+	if ((error = mount_task_q_init(cb->cb_used, cb->cb_handles,
+	    mntopts, flags, &task_queue)) != 0) {
 		assert(task_queue == NULL);
 		return (error);
 	}
