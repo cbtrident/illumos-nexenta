@@ -76,9 +76,13 @@ typedef enum dmu_objset_type {
 	(ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME |\
     ZFS_TYPE_SNAPSHOT | ZFS_TYPE_AUTOSNAP)
 
+/*
+ * All of these include the terminating NUL byte.
+ */
 #define	ZAP_MAXNAMELEN 256
 #define	ZAP_MAXVALUELEN (1024 * 8)
 #define	ZAP_OLDMAXVALUELEN 1024
+#define	ZFS_MAX_DATASET_NAME_LEN 256
 
 /*
  * Dataset properties are identified by these constants and must be added to

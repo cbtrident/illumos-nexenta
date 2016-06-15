@@ -23,6 +23,7 @@
 # Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2013 Nexenta Systems, Inc. All rights reserved.
 # Copyright (c) 2013, Joyent, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.
 #
 
 #
@@ -239,11 +240,6 @@ ACPICA_OBJS +=	utaddress.o utalloc.o utcache.o utclib.o utcopy.o	\
 		utstate.o utstring.o uttrack.o utxface.o utxferror.o	\
 		utxfinit.o utxfmutex.o
 
-#
-#	PVSCSI module
-#
-PVSCSI_OBJS=	pvscsi.o
-
 AGP_OBJS += agpmaster.o
 FBT_OBJS += fbt.o
 SDT_OBJS += sdt.o
@@ -347,3 +343,8 @@ VMXNET3S_OBJS =	vmxnet3_main.o \
 		vmxnet3_rx.o \
 		vmxnet3_tx.o \
 		vmxnet3_utils.o
+
+#
+# VMware PVSCSI SCSI Controller
+#
+PVSCSI_OBJS =	pvscsi.o

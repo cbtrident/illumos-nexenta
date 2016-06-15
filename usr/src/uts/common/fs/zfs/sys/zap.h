@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
@@ -81,6 +81,7 @@
  */
 
 #include <sys/dmu.h>
+#include <sys/refcount.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -212,7 +213,7 @@ int zap_prefetch_uint64(objset_t *os, uint64_t zapobj, const uint64_t *key,
     int key_numints);
 
 int zap_count_write(objset_t *os, uint64_t zapobj, const char *name,
-    int add, uint64_t *towrite, uint64_t *tooverwrite);
+    int add, refcount_t *towrite, refcount_t *tooverwrite);
 
 /*
  * Create an attribute with the given name and value.
@@ -338,7 +339,7 @@ typedef struct {
 	boolean_t za_normalization_conflict;
 	uint64_t za_num_integers;
 	uint64_t za_first_integer;	/* no sign extension for <8byte ints */
-	char za_name[MAXNAMELEN];
+	char za_name[ZAP_MAXNAMELEN];
 } zap_attribute_t;
 
 /*
