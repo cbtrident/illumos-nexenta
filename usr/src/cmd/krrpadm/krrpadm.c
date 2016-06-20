@@ -241,14 +241,14 @@ krrp_usage_sess(int rc, krrp_cmd_t *cmd, boolean_t use_return)
 		break;
 	case KRRP_CMD_SESS_CREATE_READ_STREAM:
 		fprintf_msg("Usage: %s sess-create-read-stream "
-		    "<-s sess_id> [-d <src dataset>] [-z <src snapshot>] "
+		    "<-s sess_id> -d <src dataset> [-z <src snapshot>] "
 		    "[-c <common snapshot>] [-I] [-r] [-p] [-e] [-k] "
 		    "[-f <fake_data_sz>] [-t <resume_token>] "
 		    "[-n <keep snaps>]\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_CREATE_WRITE_STREAM:
 		fprintf_msg("Usage: %s sess-create-write-stream "
-		    "<-s sess_id> [-d <dst dataset>] [-c <common snapshot>] "
+		    "<-s sess_id> -d <dst dataset> [-c <common snapshot>] "
 		    "[-F] [-e] [-k] [-l | -x] [-i <prop_name>] "
 		    "[-o <prop_name=value>] [-t <resume_token>] "
 		    "[-n <keep snaps>]\n", tool_name);
@@ -917,6 +917,11 @@ krrp_do_sess_create_read_stream(int argc, char **argv, krrp_cmd_t *cmd)
 		cmd->usage_func(1, cmd, B_FALSE);
 	}
 
+	if (dataset == NULL) {
+		fprintf_err("Source dataset must be specified\n");
+		cmd->usage_func(1, cmd, B_FALSE);
+	}
+
 	if (keep_snaps == 0)
 		keep_snaps = UINT32_MAX;
 
@@ -1090,6 +1095,11 @@ krrp_do_sess_create_write_stream(int argc, char **argv, krrp_cmd_t *cmd)
 
 	if (uuid_is_null(sess_id) == 1) {
 		krrp_print_err_no_sess_id();
+		cmd->usage_func(1, cmd, B_FALSE);
+	}
+
+	if (dataset == NULL) {
+		fprintf_err("Destination dataset must be specified\n");
 		cmd->usage_func(1, cmd, B_FALSE);
 	}
 
