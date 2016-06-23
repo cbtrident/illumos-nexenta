@@ -56,6 +56,7 @@ static uint32_t smb2_fsctl_copychunk_aapl(smb_request_t *, smb_ofile_t *,
 	struct copychunk_resp *);
 static uint32_t smb2_fsctl_copychunk_1(smb_request_t *, smb_ofile_t *,
 	struct chunk *);
+static int smb2_fsctl_copychunk_meta(smb_request_t *, smb_ofile_t *);
 
 /*
  * FSCTL_SRV_COPYCHUNK
@@ -183,9 +184,13 @@ smb2_fsctl_copychunk(smb_request_t *sr, smb_fsctl_t *fsctl)
 	}
 
 	/*
-	 * Need the source file size.
+	 * Normally need just the source file size, etc.  If doing
+	 * Apple server-side copy, we want all the attributes.
 	 */
-	args->src_attr.sa_mask = SMB_AT_STANDARD;
+	if (aapl_copyfile)
+		args->src_attr.sa_mask = SMB_AT_ALL;
+	else
+		args->src_attr.sa_mask = SMB_AT_STANDARD;
 	status = smb2_ofile_getattr(sr, src_of, &args->src_attr);
 	if (status != 0)
 		goto out;
@@ -395,7 +400,65 @@ smb2_fsctl_copychunk_aapl(smb_request_t *sr, smb_ofile_t *src_of,
 		off += xfer;
 	}
 
+	/*
+	 * MacOS servers also copy meta-data from the old to new file.
+	 * We need to do this because Finder does not set the meta-data
+	 * when copying a file with this interface.  If we fail to copy
+	 * the meta-data, just log.  We'd rather not fail the entire
+	 * copy job if this fails.
+	 */
+	if (status == 0) {
+		int rc = smb2_fsctl_copychunk_meta(sr, src_of);
+		if (rc != 0) {
+			cmn_err(CE_NOTE, "smb2 copychunk meta, rc=%d", rc);
+		}
+	}
+
 	return (status);
+}
+
+/*
+ * Helper for Apple copychunk, to copy meta-data
+ */
+static int
+smb2_fsctl_copychunk_meta(smb_request_t *sr, smb_ofile_t *src_of)
+{
+	smb_fssd_t fs_sd;
+	copychunk_args_t *args = sr->arg.other;
+	smb_ofile_t *dst_of = sr->fid_ofile;
+	uint32_t sd_flags = 0;
+	uint32_t secinfo = SMB_DACL_SECINFO;
+	int error;
+
+	/*
+	 * Copy attributes.  We obtained SMB_AT_ALL above.
+	 * Now correct the mask for what's settable.
+	 */
+	args->src_attr.sa_mask = SMB_AT_MODE | SMB_AT_SIZE |
+	    SMB_AT_ATIME | SMB_AT_MTIME | SMB_AT_CTIME |
+	    SMB_AT_DOSATTR | SMB_AT_ALLOCSZ;
+	error = smb_node_setattr(sr, dst_of->f_node, sr->user_cr,
+	    dst_of, &args->src_attr);
+	if (error != 0)
+		return (error);
+
+	/*
+	 * Copy the ACL.  Unfortunately, the ofiles used by the Mac
+	 * here don't generally have WRITE_DAC access (sigh) so we
+	 * have to bypass ofile access checks for this operation.
+	 * The file-system level still does its access checking.
+	 */
+	smb_fssd_init(&fs_sd, secinfo, sd_flags);
+	sr->fid_ofile = NULL;
+	error = smb_fsop_sdread(sr, sr->user_cr, src_of->f_node, &fs_sd);
+	if (error == 0) {
+		error = smb_fsop_sdwrite(sr, sr->user_cr, dst_of->f_node,
+		    &fs_sd, 1);
+	}
+	sr->fid_ofile = dst_of;
+	smb_fssd_term(&fs_sd);
+
+	return (error);
 }
 
 /*
