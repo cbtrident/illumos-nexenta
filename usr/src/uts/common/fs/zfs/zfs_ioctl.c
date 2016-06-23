@@ -4057,6 +4057,37 @@ zfs_ioc_destroy(zfs_cmd_t *zc)
 			spa_close(spa, FTAG);
 		} else {
 			err = dsl_destroy_head(zc->zc_name);
+			if (err == EEXIST) {
+				/*
+				 * It is possible that the given DS may have
+				 * hidden child (%recv) datasets - "leftovers"
+				 * resulting from the previously interrupted
+				 * 'zfs receive'.
+				 */
+				char namebuf[MAXNAMELEN];
+
+				(void) snprintf(namebuf, sizeof (namebuf),
+				    "%s/%%recv", zc->zc_name);
+
+				/* Try to remove the hidden child (%recv) */
+				err = dsl_destroy_head(namebuf);
+				if (err == 0) {
+					/*
+					 * Now the given DS should not have
+					 * children, so we can try to remove
+					 * it again
+					 */
+					err = dsl_destroy_head(zc->zc_name);
+				} else if (err == ENOENT) {
+					/*
+					 * The hidden child (%recv) does not
+					 * exist, so need to restore original
+					 * error
+					 */
+					err = EEXIST;
+				}
+
+			}
 		}
 	}
 	if (zc->zc_objset_type == DMU_OST_ZVOL && err == 0)
