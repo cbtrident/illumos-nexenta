@@ -17,5 +17,6 @@ MODULE =	HP
 SRCS =		hp.c
 SRCDIR =	../common
 PLUGINTYPE =	vendor
+ALIASES =	HGST
 
 include ../../Makefile.lib

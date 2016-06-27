@@ -15,6 +15,6 @@
 
 include ../Makefile.com
 
-install: all $(ROOTPROG)
+install: all $(ROOTPROG) $(ROOTALIASES)
 
 include ../../Makefile.targ
