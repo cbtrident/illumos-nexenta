@@ -20,12 +20,9 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
- */
-
-/*
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #ifndef	_MOUNTD_H
@@ -37,8 +34,6 @@
 #ifdef	__cplusplus
 extern "C" {
 #endif
-
-#define	MAXIPADDRLEN	512
 
 struct nd_hostservlist;
 extern void rmtab_load(void);
@@ -78,7 +73,7 @@ struct cln {
 	struct netconfig *nconf;
 	struct netbuf *nbuf;
 	struct nd_hostservlist *clnames;
-	char *host;
+	char host[INET6_ADDRSTRLEN];
 	int flags;
 };
 
@@ -87,7 +82,6 @@ extern void cln_init_lazy(struct cln *, char *, struct netbuf *);
 extern void cln_fini(struct cln *);
 extern struct netbuf *cln_getnbuf(struct cln *);
 extern struct nd_hostservlist *cln_getclientsnames(struct cln *);
-extern boolean_t cln_havehost(struct cln *);
 extern char *cln_gethost(struct cln *);
 
 /*

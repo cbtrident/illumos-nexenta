@@ -20,12 +20,9 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
- */
-
-/*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #include <stdio.h>
@@ -90,19 +87,16 @@ nfsauth_access(auth_req *argp, auth_res *result)
 	sharefree(sh);
 
 	if (result->auth_perm == NFSAUTH_DENIED) {
-		char *host = cln_gethost(&cln);
-		if (host != NULL)
-			syslog(LOG_ERR, "%s denied access to %s", host,
-			    argp->req_path);
+		syslog(LOG_ERR, "%s denied access to %s", cln_gethost(&cln),
+		    argp->req_path);
 	}
 
 	cln_fini(&cln);
 }
 
 void
-nfsauth_func(void *cookie, char *dataptr, size_t arg_size,
-	door_desc_t *dp, uint_t n_desc)
-
+nfsauth_func(void *cookie, char *dataptr, size_t arg_size, door_desc_t *dp,
+    uint_t n_desc)
 {
 	nfsauth_arg_t	*ap;
 	nfsauth_res_t	 res = {0};

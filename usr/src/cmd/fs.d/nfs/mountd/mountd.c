@@ -20,8 +20,8 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -983,8 +983,6 @@ log_cant_reply_cln(struct cln *cln)
 	saverrno = errno;	/* save error code */
 
 	host = cln_gethost(cln);
-	if (host == NULL)
-		return;
 
 	errno = saverrno;
 	if (errno == 0)
@@ -1288,7 +1286,6 @@ cleanup:
 
 
 #define	CLN_CLNAMES	(1 << 0)
-#define	CLN_HOST	(1 << 1)
 
 static void
 cln_init_common(struct cln *cln, SVCXPRT *transp, char *netid,
@@ -1303,11 +1300,30 @@ cln_init_common(struct cln *cln, SVCXPRT *transp, char *netid,
 		cln->nbuf = nbuf;
 	}
 
-	cln->nconf = NULL;
 	cln->clnames = NULL;
-	cln->host = NULL;
-
 	cln->flags = 0;
+
+	bzero(cln->host, sizeof (cln->host));
+
+	if (cln->netid != NULL && cln->nbuf != NULL &&
+	    (cln->nconf = getnetconfigent(cln->netid)) != NULL) {
+		if (strcmp(cln->nconf->nc_protofmly, NC_INET) == 0) {
+			struct sockaddr_in *sa;
+			/* LINTED pointer alignment */
+			sa = (struct sockaddr_in *)(cln->nbuf->buf);
+			(void) inet_ntop(AF_INET, &sa->sin_addr.s_addr,
+			    cln->host, sizeof (cln->host));
+		} else if (strcmp(cln->nconf->nc_protofmly, NC_INET6) == 0) {
+			struct sockaddr_in6 *sa;
+			/* LINTED pointer alignment */
+			sa = (struct sockaddr_in6 *)(cln->nbuf->buf);
+			(void) inet_ntop(AF_INET6, &sa->sin6_addr.s6_addr,
+			    cln->host, sizeof (cln->host));
+		}
+	}
+
+	if (strlen(cln->host) == 0)
+		(void) strlcpy(cln->host, "(unknown)", sizeof (cln->host));
 }
 
 void
@@ -1330,8 +1346,6 @@ cln_fini(struct cln *cln)
 
 	if (cln->clnames != NULL)
 		netdir_free(cln->clnames, ND_HOSTSERVLIST);
-
-	free(cln->host);
 }
 
 struct netbuf *
@@ -1344,35 +1358,14 @@ struct nd_hostservlist *
 cln_getclientsnames(struct cln *cln)
 {
 	if ((cln->flags & CLN_CLNAMES) == 0) {
-		/*
-		 * nconf is not needed if we do not have nbuf (see
-		 * cln_gethost() too), so we check for nbuf and in a case it is
-		 * NULL we do not try to get nconf.
-		 */
-		if (cln->netid != NULL && cln->nbuf != NULL) {
-			cln->nconf = getnetconfigent(cln->netid);
-			if (cln->nconf == NULL)
-				syslog(LOG_ERR, "%s: getnetconfigent failed",
-				    cln->netid);
-		}
-
-		if (cln->nconf != NULL && cln->nbuf != NULL)
+		if (cln->nconf != NULL && cln->nbuf != NULL) {
 			(void) __netdir_getbyaddr_nosrv(cln->nconf,
 			    &cln->clnames, cln->nbuf);
-
+		}
 		cln->flags |= CLN_CLNAMES;
 	}
 
 	return (cln->clnames);
-}
-
-/*
- * Return B_TRUE if the host is already available at no cost
- */
-boolean_t
-cln_havehost(struct cln *cln)
-{
-	return ((cln->flags & (CLN_CLNAMES | CLN_HOST)) != 0);
 }
 
 char *
@@ -1380,42 +1373,6 @@ cln_gethost(struct cln *cln)
 {
 	if (cln_getclientsnames(cln) != NULL)
 		return (cln->clnames->h_hostservs[0].h_host);
-
-	if ((cln->flags & CLN_HOST) == 0) {
-		if (cln->nconf == NULL || cln->nbuf == NULL) {
-			cln->host = strdup("(anon)");
-		} else {
-			char host[MAXIPADDRLEN];
-
-			if (strcmp(cln->nconf->nc_protofmly, NC_INET) == 0) {
-				struct sockaddr_in *sa;
-
-				/* LINTED pointer alignment */
-				sa = (struct sockaddr_in *)(cln->nbuf->buf);
-				(void) inet_ntoa_r(sa->sin_addr, host);
-
-				cln->host = strdup(host);
-			} else if (strcmp(cln->nconf->nc_protofmly,
-			    NC_INET6) == 0) {
-				struct sockaddr_in6 *sa;
-
-				/* LINTED pointer alignment */
-				sa = (struct sockaddr_in6 *)(cln->nbuf->buf);
-				(void) inet_ntop(AF_INET6,
-				    sa->sin6_addr.s6_addr,
-				    host, INET6_ADDRSTRLEN);
-
-				cln->host = strdup(host);
-			} else {
-				syslog(LOG_ERR, gettext("Client's address is "
-				    "neither IPv4 nor IPv6"));
-
-				cln->host = strdup("(anon)");
-			}
-		}
-
-		cln->flags |= CLN_HOST;
-	}
 
 	return (cln->host);
 }
@@ -1463,16 +1420,7 @@ mount(struct svc_req *rqstp)
 	 */
 	if (verbose) {
 		DTRACE_PROBE(mountd, name_by_verbose);
-		if ((host = cln_gethost(&cln)) == NULL) {
-			/*
-			 * We failed to get a name for the client, even
-			 * 'anon', probably because we ran out of memory.
-			 * In this situation it doesn't make sense to
-			 * allow the mount to succeed.
-			 */
-			error = EACCES;
-			goto reply;
-		}
+		host = cln_gethost(&cln);
 	}
 
 	/*
@@ -1678,40 +1626,30 @@ reply:
 		break;
 	}
 
-	if (cln_havehost(&cln))
+	if (host == NULL)
 		host = cln_gethost(&cln);
 
 	if (verbose)
-		syslog(LOG_NOTICE, "MOUNT: %s %s %s",
-		    (host == NULL) ? "unknown host" : host,
+		syslog(LOG_NOTICE, "MOUNT: %s %s %s", host,
 		    error ? "denied" : "mounted", path);
 
-	/*
-	 * If we can not create a queue entry, go ahead and do it
-	 * in the context of this thread.
-	 */
 	if (mountd_bsm_audit) {
+		/*
+		 * If we can not create a queue entry, go ahead and do it
+		 * in the context of this thread.
+		 */
 		enqueued = enqueue_logging_data(host, transp, path, rpath,
 		    audit_status, error);
 
 		if (enqueued == FALSE) {
-			if (host == NULL) {
-				DTRACE_PROBE(mountd, name_by_in_thread);
-				host = cln_gethost(&cln);
-			}
-
 			DTRACE_PROBE(mountd, logged_in_thread);
 			audit_mountd_mount(host, path, audit_status); /* BSM */
-
-			if (!error)		/* add entry to mount list */
-				mntlist_new(host, rpath);
 		}
-	} else {
-		if (host == NULL)
-			host = cln_gethost(&cln);
+	}
 
-		if (!error)
-			mntlist_new(host, rpath); /* add entry to mount list */
+	if (enqueued == FALSE && !error) {
+		/* Add entry to mount list */
+		mntlist_new(host, rpath);
 	}
 
 	if (path != NULL)
@@ -3368,14 +3306,6 @@ umount(struct svc_req *rqstp)
 		log_cant_reply_cln(&cln);
 
 	host = cln_gethost(&cln);
-	if (host == NULL) {
-		/*
-		 * Without the hostname we can't do audit or delete
-		 * this host from the mount entries.
-		 */
-		svc_freeargs(transp, xdr_dirpath, (caddr_t)&path);
-		return;
-	}
 
 	if (verbose)
 		syslog(LOG_NOTICE, "UNMOUNT: %s unmounted %s", host, path);
@@ -3423,10 +3353,6 @@ umountall(struct svc_req *rqstp)
 	cln_init(&cln, transp);
 
 	host = cln_gethost(&cln);
-	if (host == NULL) {
-		/* Can't do anything without the name of the client */
-		return;
-	}
 
 	/*
 	 * Remove all hosts entries from mount list
