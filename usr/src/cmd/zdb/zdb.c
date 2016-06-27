@@ -2697,7 +2697,8 @@ dump_block_stats(spa_t *spa)
 
 	zcb.zcb_totalasize = metaslab_class_get_alloc(spa_normal_class(spa));
 	zcb.zcb_start = zcb.zcb_lastprint = gethrtime();
-	zcb.zcb_haderrors |= traverse_pool(spa, 0, UINT64_MAX, flags, zdb_blkptr_cb, &zcb, NULL);
+	zcb.zcb_haderrors |= traverse_pool(spa, 0, UINT64_MAX,
+	    flags, zdb_blkptr_cb, &zcb, NULL);
 
 	/*
 	 * If we've traversed the data blocks then we need to wait for those
@@ -2962,7 +2963,8 @@ dump_simulated_ddt(spa_t *spa)
 
 	spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 
-	(void) traverse_pool(spa, 0, UINT64_MAX, TRAVERSE_PRE | TRAVERSE_PREFETCH_METADATA,
+	(void) traverse_pool(spa, 0, UINT64_MAX,
+	    TRAVERSE_PRE | TRAVERSE_PREFETCH_METADATA,
 	    zdb_ddt_add_cb, &t, NULL);
 
 	spa_config_exit(spa, SCL_CONFIG, FTAG);

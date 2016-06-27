@@ -31,10 +31,10 @@ static void krrp_dblk_alloc_by_kmem_cache_alloc(krrp_dblk_engine_t *,
 
 int
 krrp_dblk_engine_create(krrp_dblk_engine_t **result_engine,
-	boolean_t prealloc, size_t max_dblk_cnt, size_t dblk_head_sz,
+    boolean_t prealloc, size_t max_dblk_cnt, size_t dblk_head_sz,
     size_t dblk_data_sz, size_t notify_free_value,
     krrp_dblk_free_notify_cb_t *notify_free_cb, void *notify_free_cb_arg,
-	krrp_error_t *error)
+    krrp_error_t *error)
 {
 	krrp_dblk_engine_t *dblk_engine;
 
