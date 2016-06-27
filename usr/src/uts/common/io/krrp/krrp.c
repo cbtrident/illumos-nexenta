@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -99,9 +99,6 @@ _init(void)
 
 	krrp_svc_init();
 
-	cmn_err(CE_NOTE, "KRRP in-kernel service has been "
-	    "initialized: [v. %u]", version);
-
 	return (0);
 }
 
@@ -120,9 +117,6 @@ _fini(void)
 	ldi_ident_release(krrp_svc->li);
 
 	krrp_svc_fini();
-
-	cmn_err(CE_NOTE, "KRRP in-kernel service has "
-	    "been finalized: [v. %u]", version);
 
 	return (0);
 }
