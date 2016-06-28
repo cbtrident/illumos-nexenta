@@ -2056,6 +2056,13 @@ in_access_list(struct cln *cln,
 		}
 
 		/*
+		 * Before doing clients names lookup, check if it's individual
+		 * IP address specified without @ prefix.
+		 */
+		if (strcmp(gr, cln->host) == 0)
+			return (response);
+
+		/*
 		 * No other checks can be performed if client address
 		 * can't be resolved.
 		 */
