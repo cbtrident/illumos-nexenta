@@ -166,7 +166,7 @@ zpool_prop_init(void)
 	    boolean_table);
 	zprop_register_index(ZPOOL_PROP_SYNC_TO_SPECIAL, "sync_to_special",
 	    SYNC_TO_SPECIAL_STANDARD, PROP_DEFAULT, ZFS_TYPE_POOL,
-	    "never | standard | balanced | always", "SYNC_TO_SPECIAL",
+	    "disabled | standard | balanced | always", "SYNC_TO_SPECIAL",
 	    sync_to_special_table);
 	zprop_register_index(ZPOOL_PROP_DDT_META_TO_METADEV,
 	    "ddt_meta_to_metadev", META_PLACEMENT_OFF, PROP_DEFAULT,

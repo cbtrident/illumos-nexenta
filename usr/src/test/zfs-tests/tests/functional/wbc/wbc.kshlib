@@ -523,3 +523,69 @@ function check_pool_errors # <pool> [<vdev>]
 	return $errnum
 }
 
+function get_pool_prop # <property> <pool>
+{
+	typeset property=$1
+	typeset pool=$2
+	typeset value
+
+	if [[ -z $property ]]; then
+		log_fail "The property name is not defined."
+	fi
+
+	if [[ -z $pool ]]; then
+		log_fail "The pool name is not defined."
+	fi
+
+	if ! poolexists $pool; then
+		log_fail "Pool '$pool' does not exist."
+	fi
+
+	value=$($ZPOOL get -H -o value $property $pool)
+
+	if [[ $? != 0 ]]; then
+		log_fail "Unable to get property '$property' for pool '$pool'."
+	fi
+
+	$ECHO $value
+
+	return 0
+}
+
+function set_pool_prop # <property> <value> <pool>
+{
+	typeset property=$1
+	typeset value=$2
+	typeset pool=$3
+	typeset check
+
+	if [[ -z $property ]]; then
+		log_fail "The property name is not defined."
+	fi
+
+	if [[ -z $value ]]; then
+		log_fail "The '$property' property value is not defined."
+	fi
+
+	if [[ -z $pool ]]; then
+		log_fail "The pool name is not defined."
+	fi
+
+	$ZPOOL set $property=$value $pool
+
+	if [[ $? != 0 ]]; then
+		log_note "Unable to set '$property' property to" \
+			"'$value' for pool '$pool'."
+		return 1
+	fi
+
+	check=$(get_pool_prop $property $pool)
+
+	if [[ "$check" != "$value" ]]; then
+		log_note "Unexpected '$property' property value:" \
+			"'$check' (expected '$value')."
+		return 1
+	fi
+
+	return 0
+}

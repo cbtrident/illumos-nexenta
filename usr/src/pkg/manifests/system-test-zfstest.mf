@@ -2231,6 +2231,8 @@ file path=opt/zfs-tests/tests/functional/wbc/wbc_010_neg mode=0555
 file path=opt/zfs-tests/tests/functional/wbc/wbc_011_neg mode=0555
 file path=opt/zfs-tests/tests/functional/wbc/wbc_012_pos mode=0555
 file path=opt/zfs-tests/tests/functional/wbc/wbc_013_neg mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_014_pos mode=0555
+file path=opt/zfs-tests/tests/functional/wbc/wbc_015_neg mode=0555
 file path=opt/zfs-tests/tests/functional/write_dirs/cleanup mode=0555
 file path=opt/zfs-tests/tests/functional/write_dirs/setup mode=0555
 file path=opt/zfs-tests/tests/functional/write_dirs/write_dirs_001_pos \
