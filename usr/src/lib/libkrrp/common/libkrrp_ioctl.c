@@ -13,6 +13,12 @@
 #include "libkrrp.h"
 #include "libkrrp_impl.h"
 
+/*
+ * The initial size of buffer that will be
+ * passed to kernel when a KRRP_IOCTL is called
+ */
+#define	LIBKRRP_INIT_BUF_SIZE 4096
+
 static int krrp_ioctl_call(libkrrp_handle_t *, krrp_ioctl_cmd_t,
     krrp_ioctl_data_t *);
 static int krrp_ioctl_alloc_data(libkrrp_handle_t *,
@@ -28,19 +34,48 @@ krrp_ioctl_perform(libkrrp_handle_t *hdl, krrp_ioctl_cmd_t cmd,
     nvlist_t *in_params, nvlist_t **out_params)
 {
 	int rc;
+	size_t buf_sz, attempt = 0;
 	krrp_ioctl_data_t *ioctl_data = NULL;
 	nvlist_t *result_nvl = NULL;
 
 	VERIFY(hdl != NULL);
 
 	hdl->libkrrp_last_cmd = cmd;
-	rc = krrp_ioctl_data_from_nvl(hdl, &ioctl_data, in_params, 2 * 1024);
-	if (rc != 0)
-		return (-1);
 
-	rc = krrp_ioctl_call(hdl, cmd, ioctl_data);
-	if (rc != 0)
-		goto fini;
+	/*
+	 * To get result from kernel we pass to it a buffer.
+	 * If kernel has more data than the size of the buffer
+	 * then it returns ENOSPC. In this case IOCTL will be
+	 * called no more than 10 times and on each iteration
+	 * the size of the buffer will be doubled.
+	 */
+	buf_sz = LIBKRRP_INIT_BUF_SIZE;
+	for (;;) {
+		rc = krrp_ioctl_data_from_nvl(hdl,
+		    &ioctl_data, in_params, buf_sz);
+		if (rc != 0)
+			return (-1);
+
+		rc = krrp_ioctl_call(hdl, cmd, ioctl_data);
+		if (rc != 0) {
+			const libkrrp_error_t *err = libkrrp_error(hdl);
+			if (err->unix_errno == ENOSPC) {
+				if (++attempt > 10)
+					goto fini;
+
+				krrp_ioctl_free_data(ioctl_data);
+				ioctl_data = NULL;
+				buf_sz *= 2;
+				continue;
+			}
+
+			goto fini;
+		}
+
+		break;
+	}
+
+	VERIFY0(rc);
 
 	rc = krrp_ioctl_data_to_nvl(hdl, ioctl_data, &result_nvl);
 	if (rc != 0)

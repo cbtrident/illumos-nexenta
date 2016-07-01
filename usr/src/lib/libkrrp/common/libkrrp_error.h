@@ -27,7 +27,7 @@ typedef enum {
 
 #define	SET_ERROR_DESCR(X) (void) (X(LIBKRRP_ERRDESCR_EXPAND) B_FALSE)
 
-#define	LIBKRRP_EMSG_IOCTLFAIL "ioctl failed"
+#define	LIBKRRP_EMSG_IOCTLFAIL "ioctl failed (%s)"
 #define	LIBKRRP_EMSG_SVCACTIVE "Service is already enabled"
 #define	LIBKRRP_EMSG_SVCNOTACTIVE "Service is not enabled"
 #define	LIBKRRP_EMSG_NOTSUP "Operation is not supported"
@@ -175,7 +175,8 @@ typedef enum {
 #define	LIBKRRP_ERRDESCR_MAP(X) \
 	X(SVCNOTACTIVE, 0, LIBKRRP_EMSG_SVCNOTACTIVE) \
 	X(SVCACTIVE, 0, LIBKRRP_EMSG_SVCACTIVE) \
-	X(IOCTLFAIL, 0, LIBKRRP_EMSG_IOCTLFAIL) \
+	X(IOCTLFAIL, 0, LIBKRRP_EMSG_IOCTLFAIL, \
+	    krrp_unix_errno_to_str(unix_errno)) \
 	X(NOTSUP, 0, LIBKRRP_EMSG_NOTSUP) \
 	X(IOCTLDATAFAIL, 0, LIBKRRP_EMSG_IOCTLDATAFAIL) \
 	X(KSTATID, EINVAL, LIBKRRP_EMSG_KSTATID_INVAL, \
