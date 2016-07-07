@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -1001,6 +1001,12 @@ ddt_load(spa_t *spa)
 	}
 	zfs_ddts_msize = ddt_get_ddts_size(B_FALSE);
 
+	if (spa_enable_dedup_cap(spa) && spa->spa_ddt_capped == 0) {
+		/* notify that dedup cap is now active */
+		spa->spa_ddt_capped = 1;
+		spa_event_notify(spa, NULL, ESC_ZFS_DEDUP_OFF);
+	}
+
 	return (0);
 }
 
@@ -1306,6 +1312,16 @@ ddt_sync_table(ddt_t *ddt, dmu_tx_t *tx, uint64_t txg)
 	DTRACE_PROBE4(ddt__synced__obj, char *, spa->spa_name,
 	    uint64_t, num_dbytes, uint64_t, num_mbytes, uint64_t,
 	    zfs_ddts_msize);
+
+	if (spa_enable_dedup_cap(spa) && spa->spa_ddt_capped == 0) {
+		/* notify that dedup cap is now active */
+		spa->spa_ddt_capped = 1;
+		spa_event_notify(spa, NULL, ESC_ZFS_DEDUP_OFF);
+	} else if (!spa_enable_dedup_cap(spa) && spa->spa_ddt_capped == 1) {
+		/* notify that dedup cap is now inactive */
+		spa->spa_ddt_capped = 0;
+		spa_event_notify(spa, NULL, ESC_ZFS_DEDUP_ON);
+	}
 
 	/* update the cached stats with the values calculated above */
 	bcopy(ddt->ddt_histogram, &ddt->ddt_histogram_cache,

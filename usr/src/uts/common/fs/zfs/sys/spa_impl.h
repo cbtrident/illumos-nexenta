@@ -469,6 +469,9 @@ struct spa {
 	zbookmark_phys_t spa_lszb;
 };
 
+/* possible in core size of all DDTs  */
+extern uint64_t zfs_ddts_msize;
+
 /* spa sysevent taskq */
 extern taskq_t *spa_sysevent_taskq;
 

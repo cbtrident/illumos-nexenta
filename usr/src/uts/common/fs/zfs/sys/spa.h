@@ -755,6 +755,7 @@ extern void spa_config_update(spa_t *spa, int what);
 /* dedup ceiling helper functions */
 extern uint64_t spa_get_ddts_size(spa_t *spa, boolean_t phys);
 extern int spa_get_l2arc_ddt_utilization(spa_t *spa);
+extern boolean_t spa_enable_dedup_cap(spa_t *spa);
 
 /* Namespace manipulation */
 extern spa_t *spa_lookup(const char *name);

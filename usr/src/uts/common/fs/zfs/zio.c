@@ -2549,8 +2549,6 @@ zio_ddt_ditto_write_done(zio_t *zio)
 	dde_exit(dde);
 }
 
-extern uint64_t zfs_ddts_msize;
-
 static int
 zio_ddt_write(zio_t *zio)
 {
@@ -2578,35 +2576,11 @@ zio_ddt_write(zio_t *zio)
 	 */
 	if ((dde->dde_state & DDE_NEW) && !spa->spa_usesc &&
 	    (zfs_ddt_limit_type != DDT_NO_LIMIT || zfs_ddt_byte_ceiling != 0)) {
-		if (zfs_ddt_byte_ceiling != 0) {
-			if (zfs_ddts_msize > zfs_ddt_byte_ceiling) {
-				/* need to limit DDT to an in core bytecount */
-				dde->dde_state |= DDE_DONT_SYNC;
-			}
-		} else if (zfs_ddt_limit_type == DDT_LIMIT_TO_ARC) {
-			/* need to limit DDT to fit into ARC */
-			if (zfs_ddts_msize > *arc_ddt_evict_threshold) {
-				dde->dde_state |= DDE_DONT_SYNC;
-			}
-		} else if (zfs_ddt_limit_type == DDT_LIMIT_TO_L2ARC) {
-			/* need to limit DDT to fit into L2ARC DDT dev */
-			if (spa->spa_l2arc_ddt_devs_size != 0) {
-				if (spa_get_ddts_size(spa, B_TRUE) >
-				    spa->spa_l2arc_ddt_devs_size) {
-					dde->dde_state |= DDE_DONT_SYNC;
-				}
-			} else if (zfs_ddts_msize > *arc_ddt_evict_threshold) {
-				/* no L2ARC DDT dev - keep DDT in ARC */
-				dde->dde_state |= DDE_DONT_SYNC;
-			}
-		}
-
 		/* turn off dedup if we need to stop DDT growth */
-		if (dde->dde_state & DDE_DONT_SYNC) {
-			/*
-			 * do ordinary write by switching to the
-			 * regular write pipeline by disabling dedup
-			 */
+		if (spa_enable_dedup_cap(spa)) {
+			dde->dde_state |= DDE_DONT_SYNC;
+
+			/* disable dedup and use the ordinary write pipeline */
 			zio_pop_transforms(zio);
 			zp->zp_dedup = zp->zp_dedup_verify = B_FALSE;
 			zio->io_stage = ZIO_STAGE_OPEN;
@@ -2614,22 +2588,8 @@ zio_ddt_write(zio_t *zio)
 			zio->io_bp_override = NULL;
 			BP_ZERO(bp);
 			dde_exit(dde);
-			/* notify that dedup is off */
-			if (spa->spa_ddt_capped == 0) {
-				spa->spa_ddt_capped = 1;
-				spa_event_notify(spa, NULL, ESC_ZFS_DEDUP_OFF);
-			}
 
 			return (ZIO_PIPELINE_CONTINUE);
-		}
-
-		/*
-		 * dedup is still on:
-		 * check if we need to notify that it's back on
-		 */
-		if (spa->spa_ddt_capped == 1) {
-			spa->spa_ddt_capped = 0;
-			spa_event_notify(spa, NULL, ESC_ZFS_DEDUP_ON);
 		}
 	}
 	ASSERT(!(dde->dde_state & DDE_DONT_SYNC));

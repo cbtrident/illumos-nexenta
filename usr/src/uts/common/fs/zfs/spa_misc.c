@@ -1707,6 +1707,38 @@ spa_get_ddts_size(spa_t *spa, boolean_t phys)
 }
 
 /*
+ * Check to see if we need to stop DDT growth to stay within some limit
+ */
+boolean_t
+spa_enable_dedup_cap(spa_t *spa)
+{
+	if (zfs_ddt_byte_ceiling != 0) {
+		if (zfs_ddts_msize > zfs_ddt_byte_ceiling) {
+			/* need to limit DDT to an in core bytecount */
+			return (B_TRUE);
+		}
+	} else if (zfs_ddt_limit_type == DDT_LIMIT_TO_ARC) {
+		if (zfs_ddts_msize > *arc_ddt_evict_threshold) {
+			/* need to limit DDT to fit into ARC */
+			return (B_TRUE);
+		}
+	} else if (zfs_ddt_limit_type == DDT_LIMIT_TO_L2ARC) {
+		if (spa->spa_l2arc_ddt_devs_size != 0) {
+			if (spa_get_ddts_size(spa, B_TRUE) >
+			    spa->spa_l2arc_ddt_devs_size) {
+				/* limit DDT to fit into L2ARC DDT dev */
+				return (B_TRUE);
+			}
+		} else if (zfs_ddts_msize > *arc_ddt_evict_threshold) {
+			/* no L2ARC DDT dev - limit DDT to fit into ARC */
+			return (B_TRUE);
+		}
+	}
+
+	return (B_FALSE);
+}
+
+/*
  * Return the amount of slop space in bytes.  It is 1/32 of the pool (3.2%),
  * or at least 32MB.
  *
