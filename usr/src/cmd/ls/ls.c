@@ -23,6 +23,8 @@
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright 2015 Gary Mills
+ *
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -236,6 +238,7 @@ static int	quantn = 64;	/* allocation growth quantum */
 static struct lbuf	*nxtlbf;	/* ptr to next lbuf to be assigned */
 static struct lbuf	**flist;	/* ptr to list of lbuf pointers */
 static struct lbuf	*gstat(char *, int, struct ditem *);
+static char		*get_sid_name(uid_t, boolean_t, boolean_t);
 static char		*getname(uid_t);
 static char		*getgroup(gid_t);
 static char		*makename(char *, char *);
@@ -786,12 +789,14 @@ main(int argc, char *argv[])
 			continue;
 		case 'n':
 			nflg++;
-			lflg++;
-			statreq++;
-			Cflg = 0;
-			xflg = 0;
-			mflg = 0;
-			atflg = 0;
+			if (nflg == 1) {
+				lflg++;
+				statreq++;
+				Cflg = 0;
+				xflg = 0;
+				mflg = 0;
+				atflg = 0;
+			}
 			continue;
 		case 'o':
 			oflg++;
@@ -1251,6 +1256,7 @@ pem(struct lbuf **slp, struct lbuf **lp, int tot_flag)
  * file(passwd/group), then print uid/gid instead of
  * user/group name;
  */
+#define		DUMP_EPHEMERAL(x)	printf("%-8lu ", (ulong_t)(x))
 static void
 pentry(struct lbuf *ap)
 {
@@ -1281,6 +1287,8 @@ pentry(struct lbuf *ap)
 		    p->lblocks : 0LL);
 	}
 	if (lflg) {
+		boolean_t	res;
+
 		(void) putchar(p->ltype);
 		curcol++;
 		pmode(p->lflags);
@@ -1291,18 +1299,52 @@ pentry(struct lbuf *ap)
 
 		curcol += printf("%3lu ", (ulong_t)p->lnl);
 		if (oflg) {
-			if (!nflg) {
-				cp = getname(p->luid);
+			boolean_t	usr = B_TRUE;
+
+			if (nflg == 0) {	/* -n not specified; resolve */
+				if (p->luid > MAXUID) {
+					res = B_FALSE;
+					cp = get_sid_name(p->luid, usr, res);
+				} else {
+					cp = getname(p->luid);
+				}
 				curcol += printf("%-8s ", cp);
-			} else
-				curcol += printf("%-8lu ", (ulong_t)p->luid);
+
+			} else if (nflg == 1) {	/* -n specified; force SID's */
+				if (p->luid > MAXUID) {
+					res = B_TRUE;
+
+					cp = get_sid_name(p->luid, usr, res);
+					curcol += printf("%-8s ", cp);
+				} else {
+					curcol += DUMP_EPHEMERAL(p->luid);
+				}
+			} else		/* -nn specified; force ephemerals */
+				curcol += DUMP_EPHEMERAL(p->luid);
 		}
 		if (gflg) {
-			if (!nflg) {
-				cp = getgroup(p->lgid);
+			boolean_t	usr = B_FALSE;
+
+			if (nflg == 0) {	/* -n not specified; resolve */
+				if (p->lgid > MAXUID) {
+					res = B_FALSE;
+					cp = get_sid_name(p->lgid, usr, res);
+				} else {
+					cp = getgroup(p->lgid);
+				}
 				curcol += printf("%-8s ", cp);
-			} else
-				curcol += printf("%-8lu ", (ulong_t)p->lgid);
+
+			} else if (nflg == 1) {	/* -n specified; force SID's */
+				if (p->lgid > MAXUID) {
+					res = B_TRUE;
+
+					cp = get_sid_name(p->lgid, usr, res);
+					curcol += printf("%-8s ", cp);
+				} else {
+					curcol += DUMP_EPHEMERAL(p->lgid);
+				}
+			} else		/* -nn specified; force ephemerals */
+				curcol += DUMP_EPHEMERAL(p->lgid);
 		}
 		if (p->ltype == 'b' || p->ltype == 'c') {
 			curcol += printf("%3u, %2u",
@@ -1433,7 +1475,13 @@ pentry(struct lbuf *ap)
 	if (vflg) {
 		new_line();
 		if (p->aclp) {
-			acl_printacl(p->aclp, num_cols, Vflg);
+			int flgs = ACL_SID_FMT;
+
+			flgs |= Vflg ? ACL_COMPACT_FMT : 0;
+			flgs |= (nflg == 1) ? ACL_NORESOLVE : 0;
+			flgs |= (nflg >= 2) ? ACL_EPHEMERAL : 0;
+
+			acl_printacl(p->aclp, num_cols, flgs);
 		}
 	}
 	/* Free extended system attribute lists */
@@ -2219,6 +2267,34 @@ findincache(struct cachenode **head, long val)
 	*parent = c;
 	c->val = val;
 	return (c);
+}
+
+/*
+ * SID MAX String Length: "http://stackoverflow.com/questions/1140528/"
+ */
+#define	SID_STR_MAX	185			/* +1 for null char */
+static char *
+get_sid_name(uid_t id, boolean_t user, boolean_t res)
+{
+	static char	*sid = NULL;
+	char		*p = NULL;
+
+	if (sid_string_by_id(id, user, &sid, res)) {
+		if ((p = getname(id)) == NULL) {
+			/*
+			 * getname() already converts to ephemeral if id
+			 * is not found in passwd or group file(s). This
+			 * should be an extreme case.
+			 */
+			static char	 buf[SID_STR_MAX] = {'\0'};
+
+			(void) sprintf(buf, "%-8u", (int)id);
+			p = buf;
+		}
+	} else
+		p = sid;
+
+	return (p);
 }
 
 /*

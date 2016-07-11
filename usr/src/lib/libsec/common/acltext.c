@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*LINTLIBRARY*/
@@ -170,6 +170,15 @@ getsidname(uid_t who, boolean_t user, char **sidp, boolean_t noresolve)
 	free(domain);
 
 	return (*sidp ? 0 : 1);
+}
+
+/*
+ * sid_string_by_id() is an exposed interface via -lsec
+ */
+int
+sid_string_by_id(uid_t who, boolean_t user, char **sidp, boolean_t noresolve)
+{
+	return (getsidname(who, user, sidp, noresolve));
 }
 
 static void
@@ -416,7 +425,8 @@ ace_type_txt(dynaclstr_t *dynstr, ace_t *acep, int flags)
 		break;
 
 	case 0:
-		if ((flags & ACL_SID_FMT) && acep->a_who > MAXUID) {
+		if ((flags & ACL_SID_FMT) && acep->a_who > MAXUID &&
+		    (flags & ACL_EPHEMERAL) == 0) {
 			if (error = str_append(dynstr, USERSID_TXT))
 				break;
 			if (error = getsidname(acep->a_who, B_TRUE,
@@ -424,6 +434,7 @@ ace_type_txt(dynaclstr_t *dynstr, ace_t *acep, int flags)
 				break;
 			error = str_append(dynstr, sidp);
 		} else {
+			flags &= ~ACL_NORESOLVE;
 			if (error = str_append(dynstr, USER_TXT))
 				break;
 			error = str_append(dynstr, pruname(acep->a_who, idp,
@@ -1028,7 +1039,7 @@ acl_parse(const char *acltextp, acl_t **aclp)
 }
 
 static void
-ace_compact_printacl(acl_t *aclp)
+ace_compact_printacl(acl_t *aclp, int flgs)
 {
 	int cnt;
 	ace_t *acep;
@@ -1050,7 +1061,7 @@ ace_compact_printacl(acl_t *aclp)
 		dstr->d_aclexport[0] = '\0';
 		dstr->d_pos = 0;
 
-		if (ace_type_txt(dstr, acep, 0))
+		if (ace_type_txt(dstr, acep, flgs))
 			break;
 		len = strlen(&dstr->d_aclexport[0]);
 		if (ace_perm_txt(dstr, acep->a_access_mask, acep->a_flags,
@@ -1070,18 +1081,18 @@ ace_compact_printacl(acl_t *aclp)
 }
 
 static void
-ace_printacl(acl_t *aclp, int cols, int compact)
+ace_printacl(acl_t *aclp, int cols, int flgs)
 {
 	int  slot = 0;
 	char *token;
 	char *acltext;
 
-	if (compact) {
-		ace_compact_printacl(aclp);
+	if (flgs & ACL_COMPACT_FMT) {
+		ace_compact_printacl(aclp, flgs);
 		return;
 	}
 
-	acltext = acl_totext(aclp, 0);
+	acltext = acl_totext(aclp, flgs);
 
 	if (acltext == NULL)
 		return;
@@ -1111,7 +1122,7 @@ ace_printacl(acl_t *aclp, int cols, int compact)
  * print a "slot" number.
  */
 void
-acl_printacl(acl_t *aclp, int cols, int compact)
+acl_printacl(acl_t *aclp, int cols, int flgs)
 {
 
 	switch (aclp->acl_type) {
@@ -1119,7 +1130,7 @@ acl_printacl(acl_t *aclp, int cols, int compact)
 		aclent_printacl(aclp);
 		break;
 	case ACE_T:
-		ace_printacl(aclp, cols, compact);
+		ace_printacl(aclp, cols, flgs);
 		break;
 	}
 }

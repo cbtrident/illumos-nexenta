@@ -24,7 +24,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SYS_ACL_H
@@ -251,10 +251,11 @@ typedef struct ace_object {
  * Flags to control acl_totext()
  */
 
-#define	ACL_APPEND_ID	0x1 	/* append uid/gid to user/group entries */
-#define	ACL_COMPACT_FMT	0x2 	/* build ACL in ls -V format */
-#define	ACL_NORESOLVE	0x4	/* don't do name service lookups */
-#define	ACL_SID_FMT	0x8	/* use usersid/groupsid when appropriate */
+#define	ACL_APPEND_ID	0x01	/* append uid/gid to user/group entries */
+#define	ACL_COMPACT_FMT	0x02	/* build ACL in ls -V format */
+#define	ACL_NORESOLVE	0x04	/* don't do name service lookups */
+#define	ACL_SID_FMT	0x08	/* use usersid/groupsid when appropriate */
+#define	ACL_EPHEMERAL	0x10	/* Print raw ephemeral id */
 
 /*
  * Legacy aclcheck errors for aclent_t ACLs

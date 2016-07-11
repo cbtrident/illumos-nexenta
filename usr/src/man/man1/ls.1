@@ -1,5 +1,5 @@
 '\" te
-.\" Copyright 2014 Nexenta Systems, Inc.  All Rights Reserved.
+.\" Copyright 2016 Nexenta Systems, Inc.  All Rights Reserved.
 .\" Copyright 1989 AT&T
 .\" Copyright (c) 2009, Sun Microsystems, Inc. All Rights Reserved
 .\" Portions Copyright (c) 1992, X/Open Company Limited All Rights Reserved
@@ -11,7 +11,7 @@
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License"). You may not use this file except in compliance with the License. You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.
 .\"  See the License for the specific language governing permissions and limitations under the License. When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE. If applicable, add the following below this CDDL HEADER, with the
 .\" fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.TH LS 1 "Nov 24, 2014"
+.TH LS 1 "Jul 01, 2016"
 .SH NAME
 ls \- list contents of directory
 .SH SYNOPSIS
@@ -1154,7 +1154,12 @@ Streams output format. Files are listed across the page, separated by commas.
 .sp .6
 .RS 4n
 The same as \fB-l\fR, except that the owner's \fBUID\fR and group's \fBGID\fR
-numbers are printed, rather than the associated character strings.
+numbers are printed, rather than the associated character strings. Files for
+which owner and/or group is a Windows Security Identifier (\fBSID\fR), \fB-n\fR
+suppresses any lookups for the Windows Name string and prints only the raw SID.
+Moreover, a second instance of this flag (\fB-nn\fR) can be used to further
+suppress \fBidmapd\fR(1M) lookups of the file's owner and/or group SID, thus
+forcing \fBls\fR into printing the raw ephemeral numeric identifiers.
 .RE
 
 .sp
@@ -2783,7 +2788,8 @@ For all options except \fB-A\fR, \fB-b\fR, \fB-e\fR, \fB-E,\fR \fB-h\fR,
 .LP
 \fBchmod\fR(1), \fBcp\fR(1), \fBsetfacl\fR(1), \fBfgetattr\fR(3C),
 \fBstrftime\fR(3C), \fBterminfo\fR(4), \fBacl\fR(5), \fBattributes\fR(5),
-\fBenviron\fR(5), \fBfsattr\fR(5), \fBlargefile\fR(5), \fBstandards\fR(5)
+\fBenviron\fR(5), \fBfsattr\fR(5), \fBlargefile\fR(5), \fBstandards\fR(5),
+\fBidmapd\fR(1M)
 .SH NOTES
 .LP
 Unprintable characters in file names can confuse the columnar output options.
@@ -2798,3 +2804,8 @@ overridden by the \fBLC_COLLATE\fR environment variable. For example, if
 beginning with upper-case letters, then followed by names beginning with
 lower-case letters. But if \fBLC_COLLATE\fR equals \fBen_US.ISO8859-1\fR, then
 leading dots as well as case are ignored in determining the sort order.
+.sp
+.LP
+For additional information regarding Windows Security Identifiers, consult
+Microsoft support document, \fIWell-known security identifiers in Windows
+operating systems\fR, which can be found at Microsoft's support site: https://support.microsoft.com/en-us/kb/243330/.
