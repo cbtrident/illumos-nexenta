@@ -712,6 +712,11 @@ typedef struct smb_node {
 
 #define	SMB_SHARE_MAGIC		0x4B534852	/* KSHR */
 
+typedef struct _smb_named_stats {
+	kstat_named_t	kn[KSTAT_STRLEN];
+	char		name[MAXNAMELEN];
+} smb_named_stats_t;
+
 typedef struct smb_kshare {
 	uint32_t	shr_magic;
 	char		*shr_name;
@@ -731,6 +736,10 @@ typedef struct smb_kshare {
 	avl_node_t	shr_link;
 	kmutex_t	shr_mutex;
 	kstat_t		*shr_ksp;
+	struct {
+		kstat_t			*ksns;
+		smb_named_stats_t	ks_data;
+	} stats;
 	smb_disp_stats_t	shr_stats[SMBSRV_CLSH__NREQ];
 } smb_kshare_t;
 

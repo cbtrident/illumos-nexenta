@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -42,4 +42,14 @@ kstat_install(kstat_t *ksp)
 /*ARGSUSED*/
 void
 kstat_delete(kstat_t *ksp)
+{}
+
+/*ARGSUSED*/
+void
+kstat_named_init(kstat_named_t *knp, const char *name, uchar_t data_type)
+{}
+
+/*ARGSUSED*/
+void
+kstat_named_setstr(kstat_named_t *knp, const char *src)
 {}
