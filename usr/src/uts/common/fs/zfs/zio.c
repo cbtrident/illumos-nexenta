@@ -292,7 +292,7 @@ zio_data_buf_free(void *buf, size_t size)
  * Push and pop I/O transform buffers
  * ==========================================================================
  */
-static void
+void
 zio_push_transform(zio_t *zio, void *data, uint64_t size, uint64_t bufsize,
     zio_transform_func_t *transform)
 {
@@ -310,7 +310,7 @@ zio_push_transform(zio_t *zio, void *data, uint64_t size, uint64_t bufsize,
 	zio->io_size = size;
 }
 
-static void
+void
 zio_pop_transforms(zio_t *zio)
 {
 	zio_transform_t *zt;
@@ -1118,8 +1118,8 @@ zio_write_phys(zio_t *pio, vdev_t *vd, uint64_t offset, uint64_t size,
  */
 zio_t *
 zio_vdev_child_io(zio_t *pio, blkptr_t *bp, vdev_t *vd, uint64_t offset,
-	void *data, uint64_t size, int type, zio_priority_t priority,
-	enum zio_flag flags, zio_done_func_t *done, void *private)
+    void *data, uint64_t size, int type, zio_priority_t priority,
+    enum zio_flag flags, zio_done_func_t *done, void *private)
 {
 	enum zio_stage pipeline = ZIO_VDEV_CHILD_PIPELINE;
 	zio_t *zio;
@@ -1940,7 +1940,7 @@ zio_rewrite_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
 			 * drop the error code
 			 */
 			(void) zio_checksum_compute(zio, BP_GET_CHECKSUM(bp),
-			    data, BP_GET_PSIZE(bp), 0);
+			    data, BP_GET_PSIZE(bp), B_FALSE);
 		}
 		/*
 		 * If we are here to damage data for testing purposes,
@@ -2465,7 +2465,7 @@ zio_ddt_collision(zio_t *zio, ddt_t *ddt, ddt_entry_t *dde)
 				    bcmp(abuf->b_data, zio->io_orig_data,
 				    zio->io_orig_size) != 0)
 					error = SET_ERROR(EEXIST);
-				VERIFY(arc_buf_remove_ref(abuf, &abuf));
+				arc_buf_destroy(abuf, &abuf);
 			}
 
 			dde_enter(dde);
@@ -3252,7 +3252,7 @@ zio_checksum_generate(zio_t *zio)
 	}
 
 	return (zio_checksum_compute(zio, checksum, zio->io_data,
-	    zio->io_size, 1));
+	    zio->io_size, B_TRUE));
 }
 
 static int

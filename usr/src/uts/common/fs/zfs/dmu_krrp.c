@@ -1914,10 +1914,18 @@ dmu_krrp_lend_recv_buffer(void *krrp_task_void, kreplication_buffer_t *buffer)
 	return (dmu_krrp_lend_buffer(krrp_task_void, buffer, B_TRUE));
 }
 
+/*
+ * FIXME: Temporary disabled because this logic
+ * needs to be adjusted according to ARC-Compression changes
+ */
+/* ARGSUSED */
 int
 dmu_krrp_direct_arc_read(spa_t *spa, dmu_krrp_task_t *krrp_task,
     zio_cksum_t *zc, const blkptr_t *bp)
 {
+	return (ENODATA);
+
+#if 0
 	int error;
 	dmu_krrp_arc_bypass_t bypass = {
 	    .krrp_task = krrp_task,
@@ -1939,6 +1947,7 @@ dmu_krrp_direct_arc_read(spa_t *spa, dmu_krrp_task_t *krrp_task,
 	}
 
 	return (error);
+#endif
 }
 
 static int

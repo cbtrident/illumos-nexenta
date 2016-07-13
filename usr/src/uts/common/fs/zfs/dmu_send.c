@@ -362,7 +362,7 @@ dump_write(dmu_sendarg_t *dsp, dmu_object_type_t type,
 		    &aflags, zb) != 0) {
 			if (zfs_send_corrupt_data) {
 			/* Send a block filled with 0x"zfs badd bloc" */
-				abuf = arc_buf_alloc(dsp->dsa_os->os_spa,
+				abuf = arc_alloc_buf(dsp->dsa_os->os_spa,
 				    blksz, &abuf,
 				    ARC_BUFC_DATA);
 				uint64_t *ptr;
@@ -376,7 +376,7 @@ dump_write(dmu_sendarg_t *dsp, dmu_object_type_t type,
 			}
 		}
 		rc = dump_bytes_with_checksum(dsp, abuf->b_data, blksz);
-		(void) arc_buf_remove_ref(abuf, &abuf);
+		arc_buf_destroy(abuf, &abuf);
 	} else {
 		rc = dump_bytes(dsp, NULL, blksz);
 	}
@@ -471,7 +471,7 @@ dump_spill(dmu_sendarg_t *dsp, uint64_t object, int blksz,
 		return (SET_ERROR(EIO));
 
 	rc = dump_bytes_with_checksum(dsp, abuf->b_data, blksz);
-	(void) arc_buf_remove_ref(abuf, &abuf);
+	arc_buf_destroy(abuf, &abuf);
 	if (rc != 0)
 		return (SET_ERROR(EINTR));
 
@@ -728,11 +728,19 @@ do_dump(dmu_sendarg_t *dsa, struct send_block_record *data)
 			if (err != 0)
 				break;
 		}
-		(void) arc_buf_remove_ref(abuf, &abuf);
+		arc_buf_destroy(abuf, &abuf);
 	} else if (type == DMU_OT_SA) {
+		arc_flags_t aflags = ARC_FLAG_WAIT;
+		arc_buf_t *abuf;
 		int blksz = BP_GET_LSIZE(bp);
 
-		err = dump_spill(dsa, zb->zb_object, blksz, bp, zb);
+		if (arc_read(NULL, spa, bp, arc_getbuf_func, &abuf,
+		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL,
+		    &aflags, zb) != 0)
+			return (SET_ERROR(EIO));
+
+		err = dump_spill(dsa, zb->zb_object, blksz, abuf->b_data, zb);
+		arc_buf_destroy(abuf, &abuf);
 	} else if (backup_do_embed(dsa, bp)) {
 		/* it's an embedded level-0 block of a regular object */
 		int blksz = dblkszsec << SPA_MINBLOCKSHIFT;

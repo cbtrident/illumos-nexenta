@@ -559,7 +559,12 @@ wbc_arc_bypass_cb(void *buf, int len, void *arg)
 	return (0);
 }
 
-uint64_t wbc_arc_enabled = 1;
+/*
+ * FIXME: Temporary disabled because this logic
+ * needs to be adjusted according to ARC-Compression changes
+ */
+uint64_t wbc_arc_enabled = 0;
+
 /*
  * Moves blocks from a special device to other devices in a pool.
  */

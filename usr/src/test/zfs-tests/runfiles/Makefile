@@ -18,6 +18,7 @@
 include $(SRC)/Makefile.master
 
 SRCS = delphix.run openindiana.run omnios.run consistent.run \
+    perf-regression.run \
     consistent.functional.run consistent.functional.cli_root.run \
     consistent.stress.run functional.run functional.cli_root.run \
     nexenta.run stress.run 

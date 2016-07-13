@@ -137,7 +137,7 @@ zio_parallel_checksum(zio_parallel_checksum_t pll_checksum)
  */
 int
 zio_parallel_checksum_fsm(zio_t *zio, enum zio_checksum checksum,
-    void *data, uint64_t size, int can_accumulate, zio_cksum_t *result,
+    void *data, uint64_t size, boolean_t can_accumulate, zio_cksum_t *result,
     int *zio_progress)
 {
 	zio_parallel_checksum_t pll_checksum = ZIO_PARALLEL_CHECKSUM_SHA256;
