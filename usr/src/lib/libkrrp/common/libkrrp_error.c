@@ -224,6 +224,7 @@ static size_t unix_errnos_sz = sizeof (unix_errnos) / sizeof (unix_errnos[0]);
 
 #define	KRRP_ERRDESCR_SESS_STATUS_MAP(X) \
 	X(SESS, EBUSY, LIBKRRP_EMSG_SESS_BUSY) \
+	X(SESS, ENOENT, LIBKRRP_EMSG_SESS_NOENT) \
 
 #define	KRRP_ERRDESCR_SVC_STATE_MAP(X)
 #define	KRRP_ERRDESCR_SESS_LIST_MAP(X)
