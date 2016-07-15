@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 /*
  * lib/krb5/krb/get_in_tkt.c
@@ -1472,14 +1472,21 @@ cleanup:
 		char *c_name = NULL;
 		char stimestring[17];
 		char fill = ' ';
-		krb5_error_code c_err, s_err, s_time;
+		krb5_error_code c_err;
+		krb5_error_code s_err = -1;
+		krb5_error_code s_time = -1;
+		int skew = 0;
 
-		s_err = krb5_unparse_name(context,
+		/* Note: may have err_reply=NULL */
+		if (err_reply != NULL) {
+			s_err = krb5_unparse_name(context,
 					err_reply->server, &s_name);
-		s_time = krb5_timestamp_to_sfstring(err_reply->stime,
+			s_time = krb5_timestamp_to_sfstring(err_reply->stime,
 						    stimestring,
 						    sizeof (stimestring),
 						    &fill);
+			skew = abs(err_reply->stime - time_now);
+		}
 		c_err = krb5_unparse_name(context, client, &c_name);
 		krb5_set_error_message(context, ret,
 				    dgettext(TEXT_DOMAIN,
@@ -1488,8 +1495,7 @@ cleanup:
 				    s_err == 0 ? s_name : "unknown",
 				    hostname_used ? hostname_used : "unknown",
 				    s_time == 0 ? stimestring : "unknown",
-				    (s_time != 0) ? 0 :
-				      (abs(err_reply->stime - time_now) / 60));
+				    (skew / 60));
 		if (s_name)
 			krb5_free_unparsed_name(context, s_name);
 		if (c_name)
