@@ -550,9 +550,12 @@ static void
 pvscsi_handle_msg(void *arg)
 {
 	pvscsi_msg_t	*msg = (pvscsi_msg_t *)arg;
+	dev_info_t	*dip = msg->msg_pvs->dip;
+	int		circ;
 
-	(void) pvscsi_config_one(msg->msg_pvs->dip, msg->msg_pvs, msg->target,
-	    NULL);
+	ndi_devi_enter(dip, &circ);
+	(void) pvscsi_config_one(dip, msg->msg_pvs, msg->target, NULL);
+	ndi_devi_exit(dip, circ);
 
 	kmem_free(msg, sizeof (pvscsi_msg_t));
 }
@@ -2280,7 +2283,7 @@ pvscsi_bus_config(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
 	switch (op) {
 	case BUS_CONFIG_ONE:
 		if ((p = strrchr((char *)arg, '@')) != NULL &&
-		    ddi_strtol(p + 1, NULL, 10, &target) == 0)
+		    ddi_strtol(p + 1, NULL, 16, &target) == 0)
 			ret = pvscsi_config_one(pdip, pvs, (int)target, childp);
 		break;
 	case BUS_CONFIG_DRIVER:
