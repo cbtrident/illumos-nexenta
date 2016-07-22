@@ -99,7 +99,9 @@ krrp_dblk_engine_destroy_impl(void *arg)
 void
 krrp_dblk_engine_destroy(krrp_dblk_engine_t *engine)
 {
+	mutex_enter(&engine->mtx);
 	engine->destroying = B_TRUE;
+	mutex_exit(&engine->mtx);
 
 	/*
 	 * Destroy DBLK Engine asynchronously, because TCP/IP
