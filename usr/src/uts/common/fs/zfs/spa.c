@@ -1089,35 +1089,6 @@ spa_create_zio_taskqs(spa_t *spa)
 	}
 }
 
-static void
-spa_create_krrp_taskq(spa_t *spa)
-{
-	char name[MAXPATHLEN];
-	(void) strcpy(name, spa->spa_name);
-	(void) strcat(name, "_zfs_krrp");
-
-	spa->spa_krrp_taskq =
-	    taskq_create(name, 2, minclsyspri, 2, 4, TASKQ_PREPOPULATE);
-}
-
-taskqid_t
-spa_dispatch_krrp_task(const char *dataset, task_func_t func, void *args)
-{
-	taskqid_t res = NULL;
-	spa_t *spa = NULL;
-
-	mutex_enter(&spa_namespace_lock);
-	spa = spa_lookup(dataset);
-	if (spa) {
-		res = taskq_dispatch(spa->spa_krrp_taskq, func, args, TQ_SLEEP);
-	} else {
-		cmn_err(CE_WARN, "KRRP: Can't find a pool for : %s", dataset);
-	}
-	mutex_exit(&spa_namespace_lock);
-
-	return (res);
-}
-
 #ifdef _KERNEL
 static void
 spa_thread(void *arg)
@@ -1165,7 +1136,6 @@ spa_thread(void *arg)
 	spa->spa_did = curthread->t_did;
 
 	spa_create_zio_taskqs(spa);
-	spa_create_krrp_taskq(spa);
 
 	mutex_enter(&spa->spa_proc_lock);
 	ASSERT(spa->spa_proc_state == SPA_PROC_CREATED);
@@ -1235,7 +1205,6 @@ spa_activate(spa_t *spa, int mode)
 	/* If we didn't create a process, we need to create our taskqs. */
 	if (spa->spa_proc == &p0) {
 		spa_create_zio_taskqs(spa);
-		spa_create_krrp_taskq(spa);
 	}
 
 	list_create(&spa->spa_config_dirty_list, sizeof (vdev_t),
@@ -1282,7 +1251,6 @@ spa_deactivate(spa_t *spa)
 		}
 	}
 
-	taskq_destroy(spa->spa_krrp_taskq);
 	metaslab_class_destroy(spa->spa_normal_class);
 	spa->spa_normal_class = NULL;
 

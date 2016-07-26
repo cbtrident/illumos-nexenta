@@ -462,8 +462,6 @@ struct spa {
 	uint64_t spa_dedup_lo_best_effort;
 	uint64_t spa_dedup_hi_best_effort;
 
-	taskq_t *spa_krrp_taskq;
-
 	zfs_autosnap_t spa_autosnap;
 
 	zbookmark_phys_t spa_lszb;

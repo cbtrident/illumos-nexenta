@@ -49,7 +49,6 @@ typedef struct kreplication_zfs_args {
 	nvlist_t *resume_info;
 	boolean_t strip_head;
 	boolean_t leave_tail;
-	boolean_t force_thread;
 	boolean_t force_cksum;
 	boolean_t embedok;
 	void *stream_handler;
@@ -66,13 +65,18 @@ typedef enum {
 	SBS_NUMTYPES
 } dmu_krrp_state_t;
 
+typedef struct dmu_krrp_task dmu_krrp_task_t;
+
 typedef struct dmu_krrp_stream {
-	void *custom_recv_buffer;
-	int custom_recv_buffer_size;
-	int stream_affinity;
+	kmutex_t mtx;
+	kcondvar_t cv;
+	boolean_t running;
+	kthread_t *work_thread;
+	void (*task_executor)(void *);
+	dmu_krrp_task_t *task;
 } dmu_krrp_stream_t;
 
-typedef struct dmu_krrp_task {
+struct dmu_krrp_task {
 	kmutex_t buffer_state_lock;
 	kcondvar_t buffer_state_cv;
 	kcondvar_t buffer_destroy_cv;
@@ -82,12 +86,10 @@ typedef struct dmu_krrp_task {
 	boolean_t is_full;
 	dmu_krrp_state_t buffer_state;
 	int buffer_error;
-	kthread_t *buffer_user_thread;
-	taskqid_t buffer_user_task;
 	dmu_krrp_stream_t *stream_handler;
 	kreplication_zfs_args_t buffer_args;
 	char cookie[MAXNAMELEN];
-} dmu_krrp_task_t;
+};
 
 typedef int (*arc_bypass_io_func)(void *, int, void *);
 

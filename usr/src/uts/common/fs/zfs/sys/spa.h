@@ -949,9 +949,6 @@ extern void spa_configfile_set(spa_t *, nvlist_t *, boolean_t);
 /* asynchronous event notification */
 extern void spa_event_notify(spa_t *spa, vdev_t *vdev, const char *name);
 
-/* krrp */
-extern taskqid_t spa_dispatch_krrp_task(const char *dataset,
-    task_func_t func, void *args);
 extern int spa_wbc_mode(const char *name);
 
 typedef enum spa_wbc_mode {

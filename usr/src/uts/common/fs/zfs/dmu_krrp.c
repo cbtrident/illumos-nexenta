@@ -24,6 +24,7 @@ extern int wbc_check_dataset(const char *name);
 int zfs_send_timeout = 5;
 uint64_t krrp_debug = 0;
 
+static void dmu_krrp_work_thread(void *arg);
 static void dmu_set_send_recv_error(void *krrp_task_void, int err);
 static int dmu_krrp_get_buffer(void *krrp_task_void);
 static int dmu_krrp_put_buffer(void *krrp_task_void);
@@ -41,18 +42,29 @@ typedef struct {
 
 /*
  * Stream is a sequence of snapshots considered to be related
- * init/fini initialize and deinitialize structures which are persistent for a
- * stream. Currently, only recv buffer is shared. It needs to be shared as
- * constant allocations and frees are expensive
+ * init/fini initialize and deinitialize structures which are
+ * persistent for a stream.
+ * Here we initialize a work-thread and all required locks.
+ * The work-thread is used to execute stream-tasks, that are
+ * used to process one ZFS-stream.
  */
 void *
 dmu_krrp_stream_init()
 {
 	dmu_krrp_stream_t *stream =
-	    kmem_alloc(sizeof (dmu_krrp_stream_t), KM_SLEEP);
+	    kmem_zalloc(sizeof (dmu_krrp_stream_t), KM_SLEEP);
 
-	stream->custom_recv_buffer_size = RECV_BUFFER_SIZE;
-	stream->custom_recv_buffer = kmem_alloc(RECV_BUFFER_SIZE, KM_SLEEP);
+	mutex_init(&stream->mtx, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&stream->cv, NULL, CV_DEFAULT, NULL);
+
+	mutex_enter(&stream->mtx);
+	stream->work_thread = thread_create(NULL, 32 << 10,
+	    dmu_krrp_work_thread, stream, 0, &p0, TS_RUN, minclsyspri);
+
+	while (!stream->running)
+		cv_wait(&stream->cv, &stream->mtx);
+
+	mutex_exit(&stream->mtx);
 
 	return (stream);
 }
@@ -60,13 +72,64 @@ dmu_krrp_stream_init()
 void
 dmu_krrp_stream_fini(void *handler)
 {
+	uint64_t t_did = UINT64_MAX;
 	dmu_krrp_stream_t *stream = handler;
 
 	if (stream == NULL)
 		return;
 
-	kmem_free(stream->custom_recv_buffer, stream->custom_recv_buffer_size);
+	mutex_enter(&stream->mtx);
+	if (stream->work_thread != NULL) {
+		stream->running = B_FALSE;
+		cv_broadcast(&stream->cv);
+		t_did = stream->work_thread->t_did;
+	}
+
+	mutex_exit(&stream->mtx);
+	if (t_did != UINT64_MAX)
+		thread_join(t_did);
+
+	mutex_destroy(&stream->mtx);
+	cv_destroy(&stream->cv);
 	kmem_free(stream, sizeof (dmu_krrp_stream_t));
+}
+
+/*
+ * Work-thread executes stream-tasks.
+ */
+static void
+dmu_krrp_work_thread(void *arg)
+{
+	dmu_krrp_stream_t *stream = arg;
+	dmu_krrp_task_t *task;
+	void (*task_executor)(void *);
+
+	mutex_enter(&stream->mtx);
+	stream->running = B_TRUE;
+	cv_broadcast(&stream->cv);
+
+	while (stream->running) {
+		if (stream->task == NULL) {
+			cv_wait(&stream->cv, &stream->mtx);
+			continue;
+		}
+
+		ASSERT(stream->task_executor != NULL);
+
+		task = stream->task;
+		task_executor = stream->task_executor;
+		stream->task = NULL;
+		stream->task_executor = NULL;
+
+		mutex_exit(&stream->mtx);
+
+		task_executor(task);
+
+		mutex_enter(&stream->mtx);
+	}
+
+	stream->work_thread = NULL;
+	mutex_exit(&stream->mtx);
 }
 
 /*
@@ -1094,13 +1157,12 @@ zfs_send_thread(void *krrp_task_void)
 	kreplication_zfs_args_t *buffer_args = &krrp_task->buffer_args;
 	list_t ds_to_send;
 	int err = 0;
-	boolean_t separate_thread, a_locked = B_FALSE;
+	boolean_t a_locked = B_FALSE;
 	spa_t *spa;
 	void *owner = krrp_task;
 
 	ASSERT(krrp_task != NULL);
 
-	separate_thread = krrp_task->buffer_user_thread != NULL;
 	list_create(&ds_to_send, sizeof (zfs_ds_collector_entry_t),
 	    offsetof(zfs_ds_collector_entry_t, node));
 
@@ -1186,8 +1248,6 @@ final:
 	}
 
 	(void) dmu_krrp_fini_task(krrp_task);
-	if (separate_thread)
-		thread_exit();
 }
 
 /* KRRP-RECV routines */
@@ -1355,13 +1415,11 @@ zfs_recv_thread(void *krrp_task_void)
 	zio_cksum_t zcksum = { 0 };
 	int err;
 	int baselen;
-	boolean_t separate_thread;
 	spa_t *spa;
 	char latest_snap[MAXNAMELEN] = { 0 };
 	char to_ds[MAXNAMELEN];
 
 	ASSERT(krrp_task != NULL);
-	separate_thread = krrp_task->buffer_user_thread != NULL;
 
 	mutex_enter(&spa_namespace_lock);
 	spa = spa_lookup(krrp_task->buffer_args.to_ds);
@@ -1638,8 +1696,6 @@ out:
 	}
 
 	(void) dmu_krrp_fini_task(krrp_task);
-	if (separate_thread)
-		thread_exit();
 }
 
 /* Common send/recv entry point */
@@ -1648,38 +1704,31 @@ dmu_krrp_init_send_recv(void (*func)(void *), kreplication_zfs_args_t *args)
 {
 	dmu_krrp_task_t *krrp_task =
 	    kmem_zalloc(sizeof (dmu_krrp_task_t), KM_SLEEP);
+	dmu_krrp_stream_t *stream = args->stream_handler;
 
-	if (krrp_task == NULL) {
-		cmn_err(CE_WARN, "Can not allocate send buffer");
-		return (NULL);
-	}
-
-	krrp_task->stream_handler = args->stream_handler;
+	krrp_task->stream_handler = stream;
 	krrp_task->buffer_args = *args;
 	cv_init(&krrp_task->buffer_state_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&krrp_task->buffer_destroy_cv, NULL, CV_DEFAULT, NULL);
 	mutex_init(&krrp_task->buffer_state_lock, NULL,
 	    MUTEX_DEFAULT, NULL);
 
-	if (args->force_thread) {
-		krrp_task->buffer_user_thread =
-		    thread_create(NULL, 32 << 10, func,
-		    krrp_task, 0, &p0, TS_RUN, minclsyspri);
-	} else {
-		krrp_task->buffer_user_task = spa_dispatch_krrp_task(
-		    *args->to_ds ? args->to_ds : args->from_ds,
-		    func, krrp_task);
-	}
-
-	if (krrp_task->buffer_user_thread == NULL &&
-	    krrp_task->buffer_user_task == NULL) {
-		cmn_err(CE_WARN, "Can not create send/recv thread");
+	mutex_enter(&stream->mtx);
+	if (!stream->running) {
+		cmn_err(CE_WARN, "Cannot dispatch send/recv task");
 		mutex_destroy(&krrp_task->buffer_state_lock);
 		cv_destroy(&krrp_task->buffer_state_cv);
 		cv_destroy(&krrp_task->buffer_destroy_cv);
 		kmem_free(krrp_task, sizeof (dmu_krrp_task_t));
+
+		mutex_exit(&stream->mtx);
 		return (NULL);
 	}
+
+	stream->task = krrp_task;
+	stream->task_executor = func;
+	cv_broadcast(&stream->cv);
+	mutex_exit(&stream->mtx);
 
 	return (krrp_task);
 }
