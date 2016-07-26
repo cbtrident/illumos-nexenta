@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
 set name=pkg.fmri value=pkg:/service/network/ftp@$(PKGVERS)
@@ -68,7 +68,6 @@ file path=usr/share/man/man1m/ftpconfig.1m
 file path=usr/share/man/man1m/ftprestart.1m
 file path=usr/share/man/man1m/ftpshut.1m
 file path=usr/share/man/man1m/in.ftpd.1m
-file path=usr/share/man/man4/ftp.4
 file path=usr/share/man/man4/ftpaccess.4
 file path=usr/share/man/man4/ftpconversions.4
 file path=usr/share/man/man4/ftpgroups.4
