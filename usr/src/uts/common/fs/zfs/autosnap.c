@@ -15,6 +15,11 @@ static void autosnap_notify_created(const char *name, uint64_t txg,
 static void autosnap_reject_snap(const char *name, uint64_t txg,
     zfs_autosnap_t *autosnap);
 
+typedef struct {
+	autosnap_zone_t *azone;
+	dsl_sync_task_t *dst;
+} autosnap_commit_cb_arg_t;
+
 /* AUTOSNAP-recollect routines */
 
 /* Collect orphaned snapshots after reboot */
@@ -933,6 +938,8 @@ autosnap_error_snap(autosnap_zone_t *zone, uint64_t txg, int err)
 {
 	autosnap_handler_t *hdl;
 
+	ASSERT(MUTEX_HELD(&zone->autosnap->autosnap_lock));
+
 	for (hdl = list_head(&zone->listeners);
 	    hdl != NULL;
 	    hdl = list_next(&zone->listeners, hdl)) {
@@ -1345,12 +1352,49 @@ autosnap_check_name(const char *snap_name)
 	return (B_TRUE);
 }
 
+/*
+ * This function will called upon TX-group commit.
+ * Here we free allocated structures and notify
+ * the listeners of the corresponding autosnap-zone
+ * about error
+ */
+static void
+autosnap_commit_cb(void *dcb_data, int error)
+{
+	autosnap_commit_cb_arg_t *cb_arg = dcb_data;
+	autosnap_zone_t *azone = cb_arg->azone;
+	zfs_autosnap_t *autosnap = azone->autosnap;
+	dsl_sync_task_t *dst = cb_arg->dst;
+	dsl_dataset_snapshot_arg_t *ddsa = dst->dst_arg;
+
+	VERIFY(ddsa->ddsa_autosnap);
+
+	/*
+	 * TX-group was processed, but some error
+	 * occured on check-stage. This means that
+	 * the requested autosnaps were not created
+	 * and we need inform listeners about this
+	 */
+	if (error == 0 && dst->dst_error != 0) {
+		mutex_enter(&autosnap->autosnap_lock);
+		autosnap_error_snap(azone, dst->dst_txg, dst->dst_error);
+		mutex_exit(&autosnap->autosnap_lock);
+	}
+
+	spa_close(dst->dst_pool->dp_spa, cb_arg);
+
+	nvlist_free(ddsa->ddsa_snaps);
+	kmem_free(ddsa, sizeof (dsl_dataset_snapshot_arg_t));
+	kmem_free(dst, sizeof (dsl_sync_task_t));
+	kmem_free(cb_arg, sizeof (autosnap_commit_cb_arg_t));
+}
+
 /* Collect datasets with a given param and create a snapshoting synctask */
 #define	AUTOSNAP_COLLECTOR_BUSY_LIMIT (1000)
 static int
 dsl_pool_collect_ds_for_autosnap(dsl_pool_t *dp, uint64_t txg,
     const char *root_ds, const char *snap_name, boolean_t recursive,
-    dmu_tx_t *tx)
+    dmu_tx_t *tx, dsl_sync_task_t **dst_res)
 {
 	spa_t *spa = dp->dp_spa;
 	dsl_dataset_t *ds;
@@ -1419,8 +1463,10 @@ dsl_pool_collect_ds_for_autosnap(dsl_pool_t *dp, uint64_t txg,
 		dst->dst_syncfunc = dsl_dataset_snapshot_sync;
 		dst->dst_arg = ddsa;
 		dst->dst_error = 0;
-		dst->dst_nowaiter = B_TRUE;
-		(void) txg_list_add_tail(&dp->dp_sync_tasks, dst, dst->dst_txg);
+		dst->dst_nowaiter = B_FALSE;
+		VERIFY(txg_list_add_tail(&dp->dp_sync_tasks,
+		    dst, dst->dst_txg));
+		*dst_res = dst;
 	} else {
 		nvlist_free(nv_auto);
 	}
@@ -1441,14 +1487,37 @@ autosnap_create_snapshot(autosnap_zone_t *azone, char *snap,
 {
 	int err;
 	boolean_t recurs;
+	dsl_sync_task_t *dst = NULL;
+
+	ASSERT(MUTEX_HELD(&azone->autosnap->autosnap_lock));
 
 	recurs = !!(azone->flags & AUTOSNAP_RECURSIVE);
 	err = dsl_pool_collect_ds_for_autosnap(dp, txg,
-	    azone->dataset, snap, recurs, tx);
+	    azone->dataset, snap, recurs, tx, &dst);
 	if (err == 0) {
+		autosnap_commit_cb_arg_t *cb_arg;
+
 		azone->created = B_TRUE;
 		azone->delayed = B_FALSE;
 		azone->dirty = B_FALSE;
+
+		/*
+		 * Autosnap service works asynchronously, so to free
+		 * allocated memory and delivery sync-task errors we register
+		 * TX-callback that will be called after sync of the whole
+		 * TX-group
+		 */
+		cb_arg = kmem_alloc(sizeof (autosnap_commit_cb_arg_t),
+		    KM_SLEEP);
+		cb_arg->azone = azone;
+		cb_arg->dst = dst;
+		dmu_tx_callback_register(tx, autosnap_commit_cb, cb_arg);
+
+		/*
+		 * To avoid early spa_fini increase spa_refcount,
+		 * because TX-commit callbacks are executed asynchronously.
+		 */
+		spa_open_ref(dp->dp_spa, cb_arg);
 	} else {
 		autosnap_error_snap(azone, txg, err);
 	}

@@ -1505,15 +1505,6 @@ dsl_dataset_snapshot_sync(void *arg, dmu_tx_t *tx)
 		}
 		dsl_dataset_rele(ds, FTAG);
 	}
-
-	if (ddsa->ddsa_autosnap) {
-		/*
-		 * This sync-task was initiated by Autosnap,
-		 * so the structures are not required anymore.
-		 */
-		nvlist_free(ddsa->ddsa_snaps);
-		kmem_free(ddsa, sizeof (dsl_dataset_snapshot_arg_t));
-	}
 }
 
 /*
