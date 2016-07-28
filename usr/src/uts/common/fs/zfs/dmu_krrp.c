@@ -72,22 +72,18 @@ dmu_krrp_stream_init()
 void
 dmu_krrp_stream_fini(void *handler)
 {
-	uint64_t t_did = UINT64_MAX;
 	dmu_krrp_stream_t *stream = handler;
 
 	if (stream == NULL)
 		return;
 
 	mutex_enter(&stream->mtx);
-	if (stream->work_thread != NULL) {
-		stream->running = B_FALSE;
-		cv_broadcast(&stream->cv);
-		t_did = stream->work_thread->t_did;
-	}
+	stream->running = B_FALSE;
+	cv_broadcast(&stream->cv);
+	while (stream->work_thread != NULL)
+		cv_wait(&stream->cv, &stream->mtx);
 
 	mutex_exit(&stream->mtx);
-	if (t_did != UINT64_MAX)
-		thread_join(t_did);
 
 	mutex_destroy(&stream->mtx);
 	cv_destroy(&stream->cv);
@@ -129,7 +125,9 @@ dmu_krrp_work_thread(void *arg)
 	}
 
 	stream->work_thread = NULL;
+	cv_broadcast(&stream->cv);
 	mutex_exit(&stream->mtx);
+	thread_exit();
 }
 
 /*
