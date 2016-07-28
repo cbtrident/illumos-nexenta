@@ -22,6 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Portions Copyright 2011 Martin Matuska
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -103,6 +104,15 @@
  * the root of the tree of blocks that comprise all state stored on the ZFS
  * pool. Finally, if there is a quiesced txg waiting, we signal that it can
  * now transition to the syncing state.
+ *
+ * It is possible to register a callback for a TX, so the callback will be
+ * called after sync of the corresponding TX-group to disk.
+ * Required callback and its optional argument can registered by using
+ * dmu_tx_callback_register().
+ * All callback are executed async via taskq (see txg_dispatch_callbacks).
+ * There are 2 possible cases when a registered callback is called:
+ *  1) the corresponding TX is commited to disk (the first arg is 0)
+ *  2) the corresponding TX is aborted (the first arg is ECANCELED)
  */
 
 static void txg_sync_thread(dsl_pool_t *dp);
@@ -326,6 +336,22 @@ txg_register_callbacks(txg_handle_t *th, list_t *tx_callbacks)
 	mutex_enter(&tc->tc_lock);
 	list_move_tail(&tc->tc_callbacks[g], tx_callbacks);
 	mutex_exit(&tc->tc_lock);
+}
+
+/* This register function can be called only from sync-context */
+void
+txg_register_callbacks_sync(dsl_pool_t *dp, uint64_t txg, list_t *tx_callbacks)
+{
+	tx_state_t *tx = &dp->dp_tx;
+	tx_cpu_t *tc = &tx->tx_cpu[CPU_SEQID];
+	txg_handle_t th;
+
+	VERIFY3U(tx->tx_syncing_txg, ==, txg);
+
+	th.th_cpu = tc;
+	th.th_txg = txg;
+
+	txg_register_callbacks(&th, tx_callbacks);
 }
 
 void

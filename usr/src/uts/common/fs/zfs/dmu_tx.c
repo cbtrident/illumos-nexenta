@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  */
@@ -1489,8 +1489,15 @@ dmu_tx_commit(dmu_tx_t *tx)
 	if (tx->tx_tempreserve_cookie)
 		dsl_dir_tempreserve_clear(tx->tx_tempreserve_cookie, tx);
 
-	if (!list_is_empty(&tx->tx_callbacks))
-		txg_register_callbacks(&tx->tx_txgh, &tx->tx_callbacks);
+	if (!list_is_empty(&tx->tx_callbacks)) {
+		if (dmu_tx_is_syncing(tx)) {
+			txg_register_callbacks_sync(tx->tx_pool,
+			    tx->tx_txg, &tx->tx_callbacks);
+		} else {
+			txg_register_callbacks(&tx->tx_txgh,
+			    &tx->tx_callbacks);
+		}
+	}
 
 	if (tx->tx_anyobj == FALSE)
 		txg_rele_to_sync(&tx->tx_txgh);

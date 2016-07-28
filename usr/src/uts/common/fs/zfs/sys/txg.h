@@ -24,6 +24,7 @@
  */
 /*
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SYS_TXG_H
@@ -73,6 +74,8 @@ extern uint64_t txg_hold_open(struct dsl_pool *dp, txg_handle_t *txghp);
 extern void txg_rele_to_quiesce(txg_handle_t *txghp);
 extern void txg_rele_to_sync(txg_handle_t *txghp);
 extern void txg_register_callbacks(txg_handle_t *txghp, list_t *tx_callbacks);
+extern void txg_register_callbacks_sync(struct dsl_pool *dp,
+    uint64_t txg, list_t *tx_callbacks);
 
 extern void txg_delay(struct dsl_pool *dp, uint64_t txg, hrtime_t delta,
     hrtime_t resolution);
