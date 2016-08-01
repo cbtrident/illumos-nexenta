@@ -67,6 +67,9 @@
   <service name='system/hal' version='1' type='service'>
     <instance name='default' enabled='true'/>
   </service>
+  <service name='system/hotplug' version='1' type='service'>
+    <instance name='default' enabled='true'/>
+  </service>
   <service name='system/identity' version='1' type='service'>
     <instance name='domain' enabled='true'/>
   </service>
