@@ -47,6 +47,9 @@ typedef struct mirror_child {
 	uint8_t		mc_tried;
 	uint8_t		mc_skipped;
 	uint8_t		mc_speculative;
+	int		mc_index;	/* index in mirror_map_t */
+	avl_node_t	mc_node;	/* used for sorting based on weight */
+	int64_t		mc_weight;	/* thread-local copy of vdev_weight */
 } mirror_child_t;
 
 typedef struct mirror_map {
@@ -109,6 +112,9 @@ vdev_mirror_map_alloc(zio_t *zio)
 
 			mc->mc_vd = vdev_lookup_top(spa, DVA_GET_VDEV(&dva[c]));
 			mc->mc_offset = DVA_GET_OFFSET(&dva[c]);
+			mc->mc_index = c;
+			mc->mc_weight = (mc->mc_vd != NULL ?
+			    mc->mc_vd->vdev_weight : 0);
 		}
 	} else {
 		c = vd->vdev_children;
@@ -125,6 +131,9 @@ vdev_mirror_map_alloc(zio_t *zio)
 			mc = &mm->mm_child[c];
 			mc->mc_vd = vd->vdev_child[c];
 			mc->mc_offset = zio->io_offset;
+			mc->mc_index = c;
+			mc->mc_weight = (mc->mc_vd != NULL ?
+			    mc->mc_vd->vdev_weight : 0);
 		}
 	}
 
@@ -211,6 +220,59 @@ vdev_mirror_scrub_done(zio_t *zio)
 	mc->mc_skipped = 0;
 }
 
+static int
+vdev_weight_compar(const void *mc_a, const void *mc_b)
+{
+	const mirror_child_t *a = mc_a, *b = mc_b;
+
+	/*
+	 * 1) if a's weight is less than b's, a goes right in the tree
+	 * 2) if a's weight is greater than b's, a goes left
+	 * 3) if a's and b's weights are equal, lower map index goes left
+	 * 4) if weight and map index are equal, it's the same object
+	 */
+	if (a->mc_weight < b->mc_weight)
+		return (1);
+	if (a->mc_weight > b->mc_weight)
+		return (-1);
+	if (a->mc_index > b->mc_index)
+		return (1);
+	if (a->mc_index < b->mc_index)
+		return (-1);
+	ASSERT3P(a->mc_vd, ==, b->mc_vd);
+	return (0);
+}
+
+static boolean_t
+child_select_mc(mirror_child_t *mc, uint64_t txg)
+{
+	if (mc->mc_tried || mc->mc_skipped)
+		return (B_FALSE);
+	if (!vdev_readable(mc->mc_vd)) {
+		mc->mc_error = SET_ERROR(ENXIO);
+		mc->mc_tried = 1;	/* don't even try */
+		mc->mc_skipped = 1;
+		return (B_FALSE);
+	}
+	if (!vdev_dtl_contains(mc->mc_vd, DTL_MISSING, txg, 1)) {
+		mc->mc_weight--;
+		mc->mc_vd->vdev_weight = mc->mc_weight;
+		return (B_TRUE);
+	}
+	mc->mc_error = SET_ERROR(ESTALE);
+	mc->mc_skipped = 1;
+	mc->mc_speculative = 1;
+	return (B_FALSE);
+}
+
+static void
+child_select_cleanup(mirror_map_t *mm, avl_tree_t *vdevs_by_weight)
+{
+	for (int i = 0; i < mm->mm_children; i++)
+		avl_remove(vdevs_by_weight, &mm->mm_child[i]);
+	avl_destroy(vdevs_by_weight);
+}
+
 /*
  * Try to find a child whose DTL doesn't contain the block we want to read.
  * If we can't, try the read on any vdev we haven't already tried.
@@ -219,9 +281,7 @@ static int
 vdev_mirror_child_select(zio_t *zio)
 {
 	mirror_map_t *mm = zio->io_vsd;
-	mirror_child_t *mc;
 	uint64_t txg = zio->io_txg;
-	int i, c;
 	/*
 	 * Look at the weights of the vdevs in the mirror; the weights help
 	 * decide which vdev to read from; the highest-weight suitable child
@@ -229,71 +289,67 @@ vdev_mirror_child_select(zio_t *zio)
 	 * creating "hot" devices; once all the vdevs' weights are zero, the
 	 * weights are set back to the ones configured in vdev props
 	 */
-	uint64_t max_weight = 0;
+	int64_t max_weight = 0;
 
 	ASSERT(zio->io_bp == NULL || BP_PHYSICAL_BIRTH(zio->io_bp) == txg);
 
-	for (c = 0; c < mm->mm_children; c++) {
-		mc = &mm->mm_child[c];
+	for (int c = 0; c < mm->mm_children; c++) {
+		mirror_child_t *mc = &mm->mm_child[c];
 		if (mc->mc_vd == NULL)
 			continue;
-		if (max_weight < mc->mc_vd->vdev_weight)
-			max_weight = mc->mc_vd->vdev_weight;
+		max_weight = MAX(max_weight, mc->mc_weight);
 	}
 
 	/*
 	 * Recalculate weights
 	 */
-	if (!max_weight) {
-		for (c = 0; c < mm->mm_children; c++) {
-			mc = &mm->mm_child[c];
+	if (max_weight == 0) {
+		for (int c = 0; c < mm->mm_children; c++) {
+			mirror_child_t *mc = &mm->mm_child[c];
 			if (mc->mc_vd == NULL)
 				continue;
-			mc->mc_vd->vdev_weight =
+			mc->mc_weight =
 			    vdev_queue_get_prop_uint64(&mc->mc_vd->vdev_queue,
-				VDEV_PROP_PREFERRED_READ) + 1;
-			if (max_weight < mc->mc_vd->vdev_weight)
-				max_weight = mc->mc_vd->vdev_weight;
+			    VDEV_PROP_PREFERRED_READ) + 1;
+			mc->mc_vd->vdev_weight = mc->mc_weight;
 		}
 	}
 
-	if (max_weight == 1)
-		c = mm->mm_preferred;
-	else
-		c = 0;
-	/*
-	 * Try to find a child whose DTL doesn't contain the block to read.
-	 * If a child is known to be completely inaccessible (indicated by
-	 * vdev_readable() returning B_FALSE), don't even try.
-	 */
-	for (i = 0; i < mm->mm_children; i++, c++) {
-		if (c >= mm->mm_children)
-			c = 0;
-		mc = &mm->mm_child[c];
-		if (mc->mc_tried || mc->mc_skipped)
-			continue;
-		if (!vdev_readable(mc->mc_vd)) {
-			mc->mc_error = SET_ERROR(ENXIO);
-			mc->mc_tried = 1;	/* don't even try */
-			mc->mc_skipped = 1;
-			continue;
-		}
-		if (!vdev_dtl_contains(mc->mc_vd, DTL_MISSING, txg, 1)) {
-			if (mc->mc_vd->vdev_weight == max_weight) {
-				mc->mc_vd->vdev_weight--;
-				return (c);
+	if (mm->mm_children > 1) {
+		avl_tree_t vdevs_by_weight;
+
+		avl_create(&vdevs_by_weight, vdev_weight_compar,
+		    sizeof (mirror_child_t), offsetof(mirror_child_t, mc_node));
+
+		/*
+		 * Sort the weighted list
+		 */
+		for (int i = 0; i < mm->mm_children; i++)
+			avl_add(&vdevs_by_weight, &mm->mm_child[i]);
+
+		/*
+		 * Try to find a child whose DTL doesn't contain the block to
+		 * read. If a child is known to be completely inaccessible
+		 * (vdev_readable() returning B_FALSE), don't even try.
+		 */
+		for (mirror_child_t *mc = avl_first(&vdevs_by_weight);
+		    mc != NULL; mc = AVL_NEXT(&vdevs_by_weight, mc)) {
+			if (child_select_mc(mc, txg)) {
+				child_select_cleanup(mm, &vdevs_by_weight);
+				return (mc->mc_index);
 			}
 		}
-		mc->mc_error = SET_ERROR(ESTALE);
-		mc->mc_skipped = 1;
-		mc->mc_speculative = 1;
+		child_select_cleanup(mm, &vdevs_by_weight);
+	} else {
+		if (child_select_mc(&mm->mm_child[0], txg))
+			return (0);
 	}
 
 	/*
 	 * Every device is either missing or has this txg in its DTL.
 	 * Look for any child we haven't already tried before giving up.
 	 */
-	for (c = 0; c < mm->mm_children; c++)
+	for (int c = 0; c < mm->mm_children; c++)
 		if (!mm->mm_child[c].mc_tried && mm->mm_child[c].mc_vd != NULL)
 			return (c);
 

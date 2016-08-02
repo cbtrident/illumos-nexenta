@@ -250,7 +250,7 @@ struct vdev {
 	char		*vdev_devid;	/* vdev devid (if any)		*/
 	char		*vdev_physpath;	/* vdev device path (if any)	*/
 	char		*vdev_fru;	/* physical FRU location	*/
-	uint64_t	vdev_weight;	/* dynamic weight */
+	int64_t		vdev_weight;	/* dynamic weight */
 	uint64_t	vdev_not_present; /* not present during import	*/
 	uint64_t	vdev_unspare;	/* unspare when resilvering done */
 	boolean_t	vdev_nowritecache; /* true if flushwritecache failed */
