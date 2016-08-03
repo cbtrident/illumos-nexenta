@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_SPC3_TYPES_H
@@ -878,7 +878,7 @@ typedef struct spc3_dev_id_vpd_page_impl {
  */
 typedef struct spc3_usn_vpd_page_impl {
 	struct vpd_hdr uvpi_hdr;
-	uint64_t uvpi_usn[2]; /* Flexible */
+	uint64_t uvpi_usn[3]; /* Flexible */
 } spc3_usn_vpd_page_impl_t;
 
 /*
