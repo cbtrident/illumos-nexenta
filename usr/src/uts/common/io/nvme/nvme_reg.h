@@ -113,7 +113,7 @@ typedef union {
 		uint32_t csts_cfs:1;	/* Controller Fatal Status */
 		uint32_t csts_shst:2;	/* Shutdown Status */
 		uint32_t csts_nssro:1;	/* NVM Subsystem Reset Occured */
-		uint32_t csts_rsvd:28;
+		uint32_t csts_rsvd:27;
 	} b;
 	uint32_t r;
 } nvme_reg_csts_t;
