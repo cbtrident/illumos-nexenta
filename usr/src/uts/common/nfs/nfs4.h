@@ -129,13 +129,16 @@ extern void		rfs4_database_destroy(rfs4_database_t *);
 extern void		rfs4_database_destroy(rfs4_database_t *);
 
 extern rfs4_table_t	*rfs4_table_create(rfs4_database_t *, char *,
-    time_t, uint32_t, bool_t (*)(rfs4_entry_t, void *),
-    void (*)(rfs4_entry_t), bool_t (*)(rfs4_entry_t),
-    uint32_t, uint32_t, uint32_t, id_t);
+				time_t, uint32_t,
+				bool_t (*create)(rfs4_entry_t, void *),
+				void (*destroy)(rfs4_entry_t),
+				bool_t (*expiry)(rfs4_entry_t),
+				uint32_t, uint32_t, uint32_t, id_t);
 extern void		rfs4_table_destroy(rfs4_database_t *, rfs4_table_t *);
 extern rfs4_index_t	*rfs4_index_create(rfs4_table_t *, char *,
-    uint32_t (*)(void *), bool_t (*)(rfs4_entry_t, void *),
-    void *(*)(rfs4_entry_t), bool_t);
+				uint32_t (*hash)(void *),
+				bool_t (compare)(rfs4_entry_t, void *),
+				void *(*mkkey)(rfs4_entry_t), bool_t);
 extern void		rfs4_index_destroy(rfs4_index_t *);
 
 /* Type used to direct rfs4_dbsearch() in what types of records to inspect */
@@ -162,7 +165,7 @@ extern void		rfs4_dbe_unhide(rfs4_dbe_t *);
 extern bool_t		rfs4_dbe_islocked(rfs4_dbe_t *);
 #endif
 extern void		rfs4_dbe_walk(rfs4_table_t *,
-    void (*)(rfs4_entry_t, void *), void *);
+			void (*callout)(rfs4_entry_t, void *), void *);
 
 /*
  * Minimal server stable storage.
@@ -744,7 +747,7 @@ extern kmutex_t		rfs4_servinst_lock;	/* protects linked list */
 extern void		rfs4_servinst_create(int, int, char **);
 extern void		rfs4_servinst_destroy_all(void);
 extern void		rfs4_servinst_assign(rfs4_client_t *,
-    rfs4_servinst_t *);
+			    rfs4_servinst_t *);
 extern rfs4_servinst_t	*rfs4_servinst(rfs4_client_t *);
 extern int		rfs4_clnt_in_grace(rfs4_client_t *);
 extern int		rfs4_servinst_in_grace(rfs4_servinst_t *);
@@ -770,8 +773,7 @@ typedef enum {
 
 extern srv_deleg_policy_t rfs4_deleg_policy;
 extern kmutex_t rfs4_deleg_lock;
-extern void rfs4_disable_delegation(void);
-extern void rfs4_enable_delegation(void);
+extern void rfs4_disable_delegation(void), rfs4_enable_delegation(void);
 
 /*
  * Request types for delegation. These correspond with
@@ -798,7 +800,7 @@ extern	void		rfs4_copy_reply(nfs_resop4 *, nfs_resop4 *);
 
 /* rfs4_client_t handling */
 extern	rfs4_client_t	*rfs4_findclient(nfs_client_id4 *,
-    bool_t *, rfs4_client_t *);
+					bool_t *, rfs4_client_t *);
 extern	rfs4_client_t	*rfs4_findclient_by_id(clientid4, bool_t);
 extern	rfs4_client_t	*rfs4_findclient_by_addr(struct sockaddr *);
 extern	void		rfs4_client_rele(rfs4_client_t *);
@@ -817,7 +819,7 @@ extern	void		rfs4_invalidate_clntip(struct sockaddr *);
 extern	rfs4_openowner_t *rfs4_findopenowner(open_owner4 *, bool_t *, seqid4);
 extern	void		rfs4_update_open_sequence(rfs4_openowner_t *);
 extern	void		rfs4_update_open_resp(rfs4_openowner_t *,
-    nfs_resop4 *, nfs_fh4 *);
+					nfs_resop4 *, nfs_fh4 *);
 extern	void		rfs4_openowner_rele(rfs4_openowner_t *);
 extern	void		rfs4_free_opens(rfs4_openowner_t *, bool_t, bool_t);
 
@@ -828,40 +830,41 @@ extern	void		rfs4_lockowner_rele(rfs4_lockowner_t *);
 
 /* rfs4_state_t handling */
 extern	rfs4_state_t	*rfs4_findstate_by_owner_file(rfs4_openowner_t *,
-    rfs4_file_t *, bool_t *);
+					rfs4_file_t *, bool_t *);
 extern	void		rfs4_state_rele(rfs4_state_t *);
 extern	void		rfs4_state_close(rfs4_state_t *, bool_t,
-    bool_t, cred_t *);
+					bool_t, cred_t *);
 extern	void		rfs4_release_share_lock_state(rfs4_state_t *,
-    cred_t *, bool_t);
+					cred_t *, bool_t);
 extern	void		rfs4_close_all_state(rfs4_file_t *);
 
 /* rfs4_lo_state_t handling */
 extern	rfs4_lo_state_t *rfs4_findlo_state_by_owner(rfs4_lockowner_t *,
-    rfs4_state_t *, bool_t *);
+						rfs4_state_t *, bool_t *);
 extern	void		rfs4_lo_state_rele(rfs4_lo_state_t *, bool_t);
 extern	void		rfs4_update_lock_sequence(rfs4_lo_state_t *);
 extern	void		rfs4_update_lock_resp(rfs4_lo_state_t *,
-    nfs_resop4 *);
+					nfs_resop4 *);
 
 /* rfs4_file_t handling */
 extern	rfs4_file_t	*rfs4_findfile(vnode_t *, nfs_fh4 *, bool_t *);
 extern	rfs4_file_t	*rfs4_findfile_withlock(vnode_t *, nfs_fh4 *,
-    bool_t *);
+						bool_t *);
 extern	void		rfs4_file_rele(rfs4_file_t *);
 
 /* General collection of "get state" functions */
 extern	nfsstat4	rfs4_get_state(stateid4 *, rfs4_state_t **,
-    rfs4_dbsearch_type_t);
+					rfs4_dbsearch_type_t);
 extern	nfsstat4	rfs4_get_deleg_state(stateid4 *,
-    rfs4_deleg_state_t **);
+					rfs4_deleg_state_t **);
 extern	nfsstat4	rfs4_get_lo_state(stateid4 *, rfs4_lo_state_t **,
-    bool_t);
+					bool_t);
 extern	nfsstat4	rfs4_check_stateid(int, vnode_t *, stateid4 *,
-    bool_t, bool_t *, bool_t, caller_context_t *);
+					bool_t, bool_t *, bool_t,
+					caller_context_t *);
 extern	int		rfs4_check_stateid_seqid(rfs4_state_t *, stateid4 *);
 extern	int		rfs4_check_lo_stateid_seqid(rfs4_lo_state_t *,
-    stateid4 *);
+					stateid4 *);
 
 /* return values for rfs4_check_stateid_seqid() */
 #define	NFS4_CHECK_STATEID_OKAY	1
@@ -881,7 +884,7 @@ extern	int		rfs4_check_lo_stateid_seqid(rfs4_lo_state_t *,
  */
 extern	void		rfs4_cbinfo_free(rfs4_cbinfo_t *);
 extern	void		rfs4_client_setcb(rfs4_client_t *, cb_client4 *,
-    uint32_t);
+					uint32_t);
 extern	void		rfs4_deleg_cb_check(rfs4_client_t *);
 extern	nfsstat4	rfs4_vop_getattr(vnode_t *, vattr_t *, int, cred_t *);
 
@@ -890,18 +893,19 @@ extern	rfs4_deleg_state_t *rfs4_finddeleg(rfs4_state_t *, bool_t *);
 extern	rfs4_deleg_state_t *rfs4_finddelegstate(stateid_t *);
 extern	bool_t		rfs4_check_recall(rfs4_state_t *, uint32_t);
 extern	void		rfs4_recall_deleg(rfs4_file_t *,
-    bool_t, rfs4_client_t *);
+				bool_t, rfs4_client_t *);
 extern	int		rfs4_get_deleg(rfs4_state_t *,  open_delegation_type4,
-    open_delegation_type4 (*)(rfs4_state_t *, open_delegation_type4));
+			open_delegation_type4 (*policy)(rfs4_state_t *,
+				open_delegation_type4 dtype));
 extern	rfs4_deleg_state_t *rfs4_grant_delegation(delegreq_t, rfs4_state_t *,
-    int *);
+				int *);
 extern	void		rfs4_set_deleg_response(rfs4_deleg_state_t *,
-    open_delegation4 *, nfsace4 *, int);
+				open_delegation4 *, nfsace4 *, int);
 extern	void		rfs4_return_deleg(rfs4_deleg_state_t *, bool_t);
 extern	bool_t		rfs4_is_deleg(rfs4_state_t *);
 extern	void		rfs4_deleg_state_rele(rfs4_deleg_state_t *);
 extern	bool_t		rfs4_check_delegated_byfp(int, rfs4_file_t *,
-    bool_t, bool_t, bool_t, clientid4 *);
+					bool_t, bool_t, bool_t, clientid4 *);
 extern	void		rfs4_clear_dont_grant(rfs4_file_t *);
 
 /*
@@ -910,29 +914,29 @@ extern	void		rfs4_clear_dont_grant(rfs4_file_t *);
 extern int deleg_rd_open(femarg_t *, int, cred_t *, caller_context_t *);
 extern int deleg_wr_open(femarg_t *, int, cred_t *, caller_context_t *);
 extern int deleg_wr_read(femarg_t *, uio_t *, int, cred_t *,
-    caller_context_t *);
+	    caller_context_t *);
 extern int deleg_rd_write(femarg_t *, uio_t *, int, cred_t *,
-    caller_context_t *);
+	    caller_context_t *);
 extern int deleg_wr_write(femarg_t *, uio_t *, int, cred_t *,
-    caller_context_t *);
+	    caller_context_t *);
 extern int deleg_rd_setattr(femarg_t *, vattr_t *, int, cred_t *,
-    caller_context_t *);
+		caller_context_t *);
 extern int deleg_wr_setattr(femarg_t *, vattr_t *, int, cred_t *,
-    caller_context_t *);
+		caller_context_t *);
 extern int deleg_rd_rwlock(femarg_t *, int, caller_context_t *);
 extern int deleg_wr_rwlock(femarg_t *, int, caller_context_t *);
 extern int deleg_rd_space(femarg_t *, int, flock64_t *, int, offset_t, cred_t *,
-    caller_context_t *);
+		caller_context_t *);
 extern int deleg_wr_space(femarg_t *, int, flock64_t *, int, offset_t, cred_t *,
-    caller_context_t *);
+		caller_context_t *);
 extern int deleg_rd_setsecattr(femarg_t *, vsecattr_t *, int, cred_t *,
-    caller_context_t *);
+		caller_context_t *);
 extern int deleg_wr_setsecattr(femarg_t *, vsecattr_t *, int, cred_t *,
-    caller_context_t *);
+		caller_context_t *);
 extern int deleg_rd_vnevent(femarg_t *, vnevent_t, vnode_t *, char *,
-    caller_context_t *);
+		caller_context_t *);
 extern int deleg_wr_vnevent(femarg_t *, vnevent_t, vnode_t *, char *,
-    caller_context_t *);
+		caller_context_t *);
 
 extern void rfs4_mon_hold(void *);
 extern void rfs4_mon_rele(void *);
@@ -1234,7 +1238,7 @@ typedef struct lookup4_param {
 #define	NFS4_FATTR4_FINISH	-1	/* fattr4 index indicating finish */
 
 typedef int (*nfs4attr_to_os_t)(int, union nfs4_attr_u *,
-    struct nfs4attr_to_osattr *);
+		struct nfs4attr_to_osattr *);
 
 /*
  * The nfs4_error_t is the basic structure to return error values
@@ -1263,14 +1267,14 @@ typedef struct {
  * Shared functions
  */
 extern void	rfs4_op_readdir(nfs_argop4 *, nfs_resop4 *,
-    struct svc_req *, struct compound_state *);
+			struct svc_req *, struct compound_state *);
 extern void	nfs_fh4_copy(nfs_fh4 *, nfs_fh4 *);
 
 extern void	nfs4_fattr4_free(fattr4 *);
 
 extern int	nfs4lookup_setup(char *, lookup4_param_t *, int);
 extern void	nfs4_getattr_otw_norecovery(vnode_t *,
-    nfs4_ga_res_t *, nfs4_error_t *, cred_t *, int);
+			nfs4_ga_res_t *, nfs4_error_t *, cred_t *, int);
 extern int	nfs4_getattr_otw(vnode_t *, nfs4_ga_res_t *, cred_t *, int);
 extern int	nfs4cmpfh(const nfs_fh4 *, const nfs_fh4 *);
 extern int	nfs4cmpfhandle(nfs4_fhandle_t *, nfs4_fhandle_t *);
@@ -1344,7 +1348,7 @@ extern struct nfs4_ntov_map nfs4_ntov_map[];
 extern uint_t nfs4_ntov_map_size;
 
 extern kstat_named_t	*rfsproccnt_v4_ptr;
-extern kstat_io_t	*rfsprocio_v4_ptr;
+extern kstat_t		**rfsprocio_v4_ptr;
 extern struct vfsops	*nfs4_vfsops;
 extern struct vnodeops	*nfs4_vnodeops;
 extern const struct	fs_operation_def nfs4_vnodeops_template[];
@@ -1355,9 +1359,9 @@ extern uint_t nfs4_tsize(struct knetconfig *);
 extern uint_t rfs4_tsize(struct svc_req *);
 
 extern bool_t	xdr_inline_decode_nfs_fh4(uint32_t *, nfs_fh4_fmt_t *,
-    uint32_t);
+			uint32_t);
 extern bool_t	xdr_inline_encode_nfs_fh4(uint32_t **, uint32_t *,
-    nfs_fh4_fmt_t *);
+			nfs_fh4_fmt_t *);
 
 #ifdef DEBUG
 extern int		rfs4_do_pre_op_attr;
@@ -1374,14 +1378,11 @@ extern stateid4 clnt_special1;
  */
 
 extern void	rfs4_compound(COMPOUND4args *, COMPOUND4res *,
-    struct exportinfo *, struct svc_req *, cred_t *, int *,
-    struct nfssrv_clnt_stats *);
+			struct exportinfo *, struct svc_req *, cred_t *, int *);
 extern void	rfs4_compound_free(COMPOUND4res *);
 extern void	rfs4_compound_flagproc(COMPOUND4args *, int *);
-extern void	rfs4_compound_kstat_args(COMPOUND4args *,
-    struct nfssrv_clnt_stats *);
-extern void	rfs4_compound_kstat_res(COMPOUND4res *,
-    struct nfssrv_clnt_stats *);
+extern void	rfs4_compound_kstat_args(COMPOUND4args *);
+extern void	rfs4_compound_kstat_res(COMPOUND4res *);
 
 extern int	rfs4_srvrinit(void);
 extern void	rfs4_srvrfini(void);

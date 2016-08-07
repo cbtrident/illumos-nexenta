@@ -20,12 +20,12 @@
 #
 
 #
-# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 # Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2011, 2014 by Delphix. All rights reserved.
 # Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
 # Copyright 2016 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Joyent, Inc.
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -1173,8 +1173,7 @@ NFSSRV_OBJS +=	nfs_server.o	nfs_srv.o	nfs3_srv.o \
 		nfs_export.o	nfs_log.o	nfs_log_xdr.o \
 		nfs4_srv.o	nfs4_state.o	nfs4_srv_attr.o \
 		nfs4_srv_ns.o	nfs4_db.o	nfs4_srv_deleg.o \
-		nfs4_deleg_ops.o nfs4_srv_readdir.o nfs4_dispatch.o \
-		nfs_srvstats.o
+		nfs4_deleg_ops.o nfs4_srv_readdir.o nfs4_dispatch.o
 
 SMBSRV_SHARED_OBJS += \
 		smb_door_legacy.o \

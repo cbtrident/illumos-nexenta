@@ -72,6 +72,21 @@ treenode_t *ns_root;
 struct exportinfo *exptable_path_hash[PKP_HASH_SIZE];
 struct exportinfo *exptable[EXPTABLESIZE];
 
+/*
+ * exi_id support
+ *
+ * exi_id_next		The next exi_id available.
+ * exi_id_overflow	The exi_id_next already overflowed, so we should
+ *			thoroughly check for duplicates.
+ * exi_id_tree		AVL tree indexed by exi_id.
+ *
+ * All exi_id_next, exi_id_overflow, and exi_id_tree are protected by
+ * exported_lock.
+ */
+static int exi_id_next;
+static bool_t exi_id_overflow;
+avl_tree_t exi_id_tree;
+
 static int	unexport(exportinfo_t *);
 static void	exportfree(exportinfo_t *);
 static int	loadindex(exportdata_t *);
@@ -796,6 +811,48 @@ export_link(exportinfo_t *exi)
 }
 
 /*
+ * Helper functions for exi_id handling
+ */
+static int
+exi_id_compar(const void *v1, const void *v2)
+{
+	const struct exportinfo *e1 = v1;
+	const struct exportinfo *e2 = v2;
+
+	if (e1->exi_id < e2->exi_id)
+		return (-1);
+	if (e1->exi_id > e2->exi_id)
+		return (1);
+
+	return (0);
+}
+
+int
+exi_id_get_next(void)
+{
+	struct exportinfo e;
+	int ret = exi_id_next;
+
+	ASSERT(RW_WRITE_HELD(&exported_lock));
+
+	do {
+		exi_id_next++;
+		if (exi_id_next == 0)
+			exi_id_overflow = TRUE;
+
+		if (!exi_id_overflow)
+			break;
+
+		if (exi_id_next == ret)
+			cmn_err(CE_PANIC, "exi_id exhausted");
+
+		e.exi_id = exi_id_next;
+	} while (avl_find(&exi_id_tree, &e, NULL) != NULL);
+
+	return (ret);
+}
+
+/*
  * Initialization routine for export routines. Should only be called once.
  */
 int
@@ -805,6 +862,14 @@ nfs_exportinit(void)
 	int i;
 
 	rw_init(&exported_lock, NULL, RW_DEFAULT, NULL);
+
+	/*
+	 * exi_id handling initialization
+	 */
+	exi_id_next = 0;
+	exi_id_overflow = FALSE;
+	avl_create(&exi_id_tree, exi_id_compar, sizeof (struct exportinfo),
+	    offsetof(struct exportinfo, exi_id_link));
 
 	/*
 	 * Allocate the place holder for the public file handle, which
@@ -851,17 +916,22 @@ nfs_exportinit(void)
 	    exi_rootfid.fid_len);
 	exi_root->exi_fh.fh_len = sizeof (exi_root->exi_fh.fh_data);
 
-	/*
-	 * Initialize exi_stats
-	 */
-	exi_root->exi_stats = nfssrv_get_exp_stats(exi_root->exi_export.ex_path,
-	    exi_root->exi_export.ex_pathlen, FALSE);
+	rw_enter(&exported_lock, RW_WRITER);
 
 	/*
 	 * Publish the exportinfo in the hash table
 	 */
-	rw_enter(&exported_lock, RW_WRITER);
 	export_link(exi_root);
+
+	/*
+	 * Initialize exi_id and exi_kstats
+	 */
+	exi_root->exi_id = exi_id_get_next();
+	avl_add(&exi_id_tree, exi_root);
+	exi_root->exi_kstats = exp_kstats_init(getzoneid(), exi_root->exi_id,
+	    exi_root->exi_export.ex_path, exi_root->exi_export.ex_pathlen,
+	    FALSE);
+
 	rw_exit(&exported_lock);
 
 	nfslog_init();
@@ -880,7 +950,11 @@ nfs_exportfini(void)
 	int i;
 
 	rw_enter(&exported_lock, RW_WRITER);
+
+	exp_kstats_delete(exi_root->exi_kstats);
+	avl_remove(&exi_id_tree, exi_root);
 	export_unlink(exi_root);
+
 	rw_exit(&exported_lock);
 
 	/*
@@ -896,9 +970,14 @@ nfs_exportfini(void)
 		kmem_free(exi_root->exi_cache[i], sizeof (avl_tree_t));
 	}
 
-	nfssrv_exp_stats_rele(exi_root->exi_stats);
+	exp_kstats_fini(exi_root->exi_kstats);
 
 	kmem_free(exi_root, sizeof (*exi_root));
+
+	/*
+	 * exi_id handling cleanup
+	 */
+	avl_destroy(&exi_id_tree);
 
 	rw_destroy(&exported_lock);
 }
@@ -1476,12 +1555,6 @@ exportfs(struct exportfs_args *args, model_t model, cred_t *cr)
 	}
 
 	/*
-	 * Initialize exi_stats
-	 */
-	exi->exi_stats = nfssrv_get_exp_stats(kex->ex_path, kex->ex_pathlen,
-	    FALSE);
-
-	/*
 	 * Insert the new entry at the front of the export list
 	 */
 	rw_enter(&exported_lock, RW_WRITER);
@@ -1496,6 +1569,7 @@ exportfs(struct exportfs_args *args, model_t model, cred_t *cr)
 	 */
 	for (ex = exi->fid_hash.next; ex != NULL; ex = ex->fid_hash.next) {
 		if (ex != exi_root && VN_CMP(ex->exi_vp, vp)) {
+			avl_remove(&exi_id_tree, ex);
 			export_unlink(ex);
 			break;
 		}
@@ -1591,6 +1665,22 @@ exportfs(struct exportfs_args *args, model_t model, cred_t *cr)
 		ex->exi_visible = NULL;
 	}
 
+	/*
+	 * Initialize exi_id and exi_kstats
+	 */
+	if (ex != NULL) {
+		exi->exi_id = ex->exi_id;
+		exi->exi_kstats = ex->exi_kstats;
+		ex->exi_kstats = NULL;
+		exp_kstats_reset(exi->exi_kstats, kex->ex_path,
+		    kex->ex_pathlen, FALSE);
+	} else {
+		exi->exi_id = exi_id_get_next();
+		exi->exi_kstats = exp_kstats_init(getzoneid(), exi->exi_id,
+		    kex->ex_path, kex->ex_pathlen, FALSE);
+	}
+	avl_add(&exi_id_tree, exi);
+
 	DTRACE_PROBE(nfss__i__exported_lock3_stop);
 	rw_exit(&exported_lock);
 
@@ -1679,6 +1769,8 @@ unexport(struct exportinfo *exi)
 		return (EINVAL);
 	}
 
+	exp_kstats_delete(exi->exi_kstats);
+	avl_remove(&exi_id_tree, exi);
 	export_unlink(exi);
 
 	/*
@@ -1915,9 +2007,9 @@ nfs_getfh(struct nfs_getfh_args *args, model_t model, cred_t *cr)
  * once up the vp and try again, until the root of the
  * filesystem is reached.
  */
-struct exportinfo *
-nfs_vptoexi(vnode_t *dvp, vnode_t *vp, cred_t *cr, int *walk, int *err,
-    bool_t v4srv)
+struct   exportinfo *
+nfs_vptoexi(vnode_t *dvp, vnode_t *vp, cred_t *cr, int *walk,
+	int *err,  bool_t v4srv)
 {
 	fid_t fid;
 	int error;
@@ -2600,7 +2692,7 @@ exportfree(struct exportinfo *exi)
 		kmem_free(exi->exi_cache[i], sizeof (avl_tree_t));
 	}
 
-	nfssrv_exp_stats_rele(exi->exi_stats);
+	exp_kstats_fini(exi->exi_kstats);
 
 	kmem_free(exi, sizeof (*exi));
 }

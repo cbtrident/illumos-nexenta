@@ -1514,8 +1514,9 @@ struct nfs_resop4 {
 	size_t opsize;		/* the number of bytes occupied by the */
 				/* particular operation in the XDR stream */
 				/* (set during the encode only) */
-	struct nfssrv_exp_stats *nses;	/* the per-exportinfo stats where */
-				/* the operation should be counted */
+	struct exportinfo *exi;	/* the exportinfo where the operation should */
+				/* be counted in (support for per-exportinfo */
+				/* kstats) */
 };
 typedef struct nfs_resop4 nfs_resop4;
 
@@ -1561,9 +1562,6 @@ struct COMPOUND4res {
 	utf8string tag;
 	uint_t array_len;
 	nfs_resop4 *array;
-
-	struct nfssrv_exp_stats *nses;	/* the per-exportinfo stats where */
-					/* this compound should be counted */
 };
 typedef struct COMPOUND4res COMPOUND4res;
 

@@ -973,7 +973,7 @@ extern kstat_named_t	*global_svstat_ptr[];
 extern krwlock_t	rroklock;
 extern vtype_t		nf_to_vt[];
 extern kstat_named_t	*rfsproccnt_v2_ptr;
-extern kstat_io_t	*rfsprocio_v2_ptr;
+extern kstat_t		**rfsprocio_v2_ptr;
 extern kmutex_t		nfs_minor_lock;
 extern int		nfs_major;
 extern int		nfs_minor;
@@ -990,8 +990,12 @@ extern int		(*nfs_srv_dss_func)(char *, size_t);
 struct nfs_version_stats {
 	kstat_named_t	*aclreqcnt_ptr;		/* nfs_acl:0:aclreqcnt_v? */
 	kstat_named_t	*aclproccnt_ptr;	/* nfs_acl:0:aclproccnt_v? */
+	kstat_t		**aclprocio_ptr;	/* nfs_acl:0:aclprocio_v?_* */
+	kmutex_t	aclprocio_lock;		/* protects aclprocio */
 	kstat_named_t	*rfsreqcnt_ptr;		/* nfs:0:rfsreqcnt_v? */
 	kstat_named_t	*rfsproccnt_ptr;	/* nfs:0:rfsproccnt_v? */
+	kstat_t		**rfsprocio_ptr;	/* nfs:0:rfsprocio_v?_* */
+	kmutex_t	rfsprocio_lock;		/* protects rfsprocio */
 };
 
 /*
@@ -1005,20 +1009,6 @@ struct nfs_stats {
 };
 
 /*
- * Templates for NFS kstats
- */
-extern const kstat_named_t aclproccnt_v2_tmpl[];
-extern const int aclproccnt_v2_count;
-extern const kstat_named_t aclproccnt_v3_tmpl[];
-extern const int aclproccnt_v3_count;
-extern const kstat_named_t rfsproccnt_v2_tmpl[];
-extern const int rfsproccnt_v2_count;
-extern const kstat_named_t rfsproccnt_v3_tmpl[];
-extern const int rfsproccnt_v3_count;
-extern const kstat_named_t rfsproccnt_v4_tmpl[];
-extern const int rfsproccnt_v4_count;
-
-/*
  * Key used to retrieve counters.
  */
 extern zone_key_t nfsstat_zone_key;
@@ -1030,211 +1020,28 @@ extern void	*nfsstat_zone_init(zoneid_t);
 extern void	nfsstat_zone_fini(zoneid_t, void *);
 
 /*
- * The NFS server stats subsystem initialization and deinitialization.
+ * Per-exportinfo stats
  */
-extern void nfssrv_stat_init(void);
-extern void nfssrv_stat_fini(void);
-
-/*
- * The NFS server ID generator for NFS kstats.
- */
-struct nfssrv_idgen {
-	const char	*nsig_name;	/* generator's name */
-	int		nsig_lastgen;	/* the last ID generated */
-	list_t		nsig_list;	/* list sorted by ID */
-	void		*nsig_next;	/* the next entry with ID higher than */
-					/* nsig_lastgen */
-	size_t		nsig_offset;	/* offset in the entry where the ID */
-					/* is stored */
-	kmutex_t	nsig_lock;	/* protects all nsig_* fields here */
-					/* and all IDs at nsig_offset offset */
-					/* in the entries */
-};
-
-/*
- * The lock for detailed stats in the global zone
- */
-extern kmutex_t *nfssrv_stat_procio_lock;
-
-/*
- * Detailed NFS server stats
- */
-typedef struct nfssrv_stats {
-	kstat_io_t	*aclprocio_v2_data;	/* NFS_ACL version 2 data */
-	kstat_t		**aclprocio_v2_ptr;	/* NFS_ACL version 2 kstats */
-	kstat_io_t	*aclprocio_v3_data;	/* NFS_ACL version 3 data */
-	kstat_t		**aclprocio_v3_ptr;	/* NFS_ACL version 3 kstats */
-	kstat_io_t	*rfsprocio_v2_data;	/* NFS version 2 data */
-	kstat_t		**rfsprocio_v2_ptr;	/* NFS version 2 kstats */
-	kstat_io_t	*rfsprocio_v3_data;	/* NFS version 3 data */
-	kstat_t		**rfsprocio_v3_ptr;	/* NFS version 3 kstats */
-	kstat_io_t	*rfsprocio_v4_data;	/* NFS version 4 data */
-	kstat_t		**rfsprocio_v4_ptr;	/* NFS version 4 kstats */
-} nfssrv_stats;
-
-/*
- * Per zone NFS server stats
- */
-struct nfssrv_zone_stats {
-	nfssrv_stats	ns_stats;		/* detailed NFS server stats */
-	kmutex_t	ns_procio_lock;		/* protects ns_stats */
-
-	avl_tree_t	ns_exp_stats;		/* per-exportinfo stats */
-	ulong_t		ns_exp_stats_cnt;
-	krwlock_t	ns_exp_stats_lock;	/* protects the */
-						/* ns_exp_stats AVL tree */
-	struct nfssrv_idgen	ns_exp_idgen;	/* ID generator for */
-						/* per-exportinfo stats */
-
-	avl_tree_t	ns_clnt_stats;		/* per-client stats */
-	ulong_t		ns_clnt_stats_cnt;
-	krwlock_t	ns_clnt_stats_lock;	/* protects the */
-						/* ns_clnt_stats AVL tree */
-	struct nfssrv_idgen	ns_clnt_idgen;	/* ID generator for */
-						/* per-client stats */
-
-	kmutex_t	ns_reaper_lock;
-	kcondvar_t	ns_reaper_cv;		/* for waking up the reapers */
-	kcondvar_t	ns_reaper_ss_cv;	/* used for synchronization */
-						/* of the start/stop events */
-						/* for the reaper threads */
-	bool_t		ns_reaper_terminate;	/* should reapers terminate? */
-	int		ns_reaper_threads;	/* number of active reaper */
-						/* threads */
-
-	kstat_t		*ns_agg;		/* aggregated kstat */
-};
-
-/*
- * Per-exportinfo NFS server stats
- */
-struct nfssrv_exp_stats {
-	avl_node_t	nses_link;
-
-	uchar_t		nses_state;
-	uint_t		nses_count;		/* reference counter */
-
-	int		nses_id;		/* unique ID; if less than */
-						/* zero, no kstats for this */
-						/* nses are created */
-	list_node_t	nses_id_node;		/* used for the ID generator */
-
-	kstat_t		*nses_share_kstat;	/* generic share kstat */
+struct exp_kstats {
+	kstat_t		*share_kstat;		/* Generic share kstat */
 	struct {
-		kstat_named_t	path;		/* shared path */
+		kstat_named_t	path;		/* Shared path */
 		kstat_named_t	filesystem;	/* pseudo|real */
-	}		nses_share_kstat_data;	/* generic share kstat data */
-	char		*nses_path;		/* shared path string */
-	bool_t		nses_pseudo;
-
-	nfssrv_stats	nses_stats;		/* the NFS server stats */
-	kmutex_t	nses_procio_lock;	/* protects nses_state, all */
-						/* nses_stats, and */
-						/* nses_share_kstat */
-	kcondvar_t	nses_cv;		/* used for synchronization */
-						/* during the structure setup */
-
-	avl_tree_t	nses_clnt_stats;	/* per-client stats for this */
-						/* exportinfo */
-	krwlock_t	nses_clnt_stats_lock;	/* protects nses_clnt_stats */
-						/* AVL tree */
-
-	kstat_t		*nses_agg;		/* aggregated kstat */
+	}		share_kstat_data;	/* Generic share kstat data */
+	char		*share_path;		/* Shared path string */
+	kstat_t		**aclprocio_v2_ptr;	/* NFS_ACL version 2 */
+	kstat_t		**aclprocio_v3_ptr;	/* NFS_ACL version 3 */
+	kstat_t		**rfsprocio_v2_ptr;	/* NFS version 2 */
+	kstat_t		**rfsprocio_v3_ptr;	/* NFS version 3 */
+	kstat_t		**rfsprocio_v4_ptr;	/* NFS version 4 */
+	kmutex_t	procio_lock;		/* protects all exp_kstats */
 };
 
-#define	nfssrv_exp_stats_hold(e)	atomic_inc_uint(&(e)->nses_count)
-extern void nfssrv_exp_stats_rele(struct nfssrv_exp_stats *);
-extern struct nfssrv_exp_stats *nfssrv_get_exp_stats(const char *, size_t,
+extern struct exp_kstats *exp_kstats_init(zoneid_t, int, const char *, size_t,
     bool_t);
-
-/*
- * Per-client NFS server stats
- */
-struct nfssrv_clnt_stats {
-	avl_node_t	nscs_link;
-
-	uchar_t		nscs_state;
-	uint_t		nscs_count;		/* reference counter */
-	time_t		nscs_ts;		/* last used timestamp */
-
-	int		nscs_id;		/* unique ID; if less than */
-						/* zero, no kstats for this */
-						/* nscs are created */
-	list_node_t	nscs_id_node;		/* used for the ID generator */
-
-	kstat_t		*nscs_clnt_kstat;	/* generic client kstat */
-	struct {
-		kstat_named_t	addr_family;
-		kstat_named_t	address;
-	}		nscs_clnt_kstat_data;	/* generic client kstat data */
-	sa_family_t	nscs_clnt_addr_family;
-	char		*nscs_clnt_addr_str;	/* printable representation */
-						/* of client's address */
-	struct netbuf	nscs_clnt_addr;		/* client's address */
-
-	nfssrv_stats	nscs_stats;		/* the NFS server stats */
-	kmutex_t	nscs_procio_lock;	/* protects nscs_state, all */
-						/* nscs_stats, nscs_ts, and */
-						/* nscs_clnt_kstat */
-	kcondvar_t	nscs_cv;		/* used for synchronization */
-						/* during the structure setup */
-
-	kstat_t		*nscs_agg;		/* aggregated kstat */
-};
-
-#define	nfssrv_clnt_stats_hold(c)	atomic_inc_uint(&(c)->nscs_count)
-extern void nfssrv_clnt_stats_rele(struct nfssrv_clnt_stats *);
-extern struct nfssrv_clnt_stats *nfssrv_get_clnt_stats(SVCXPRT *);
-
-/*
- * Per-client/per-exportinfo NFS server stats
- */
-struct nfssrv_clnt_exp_stats {
-	avl_node_t	nsces_link;
-
-	uchar_t		nsces_state;
-	uint_t		nsces_count;		/* reference counter */
-	time_t		nsces_ts;		/* last used timestamp */
-
-	struct nfssrv_exp_stats	*nsces_exp_stats;
-	struct nfssrv_clnt_stats *nsces_clnt_stats;
-
-	nfssrv_stats	nsces_stats;		/* the NFS server stats */
-	kmutex_t	nsces_procio_lock;	/* protects nsces_state, */
-						/* nsces_ts, and all */
-						/* nsces_stats */
-	kcondvar_t	nsces_cv;		/* used for synchronization */
-						/* during the structure setup */
-
-	kstat_t		*nsces_agg;		/* aggregated kstat */
-};
-
-extern void nfssrv_clnt_exp_stats_hold(struct nfssrv_clnt_exp_stats *);
-extern void nfssrv_clnt_exp_stats_rele(struct nfssrv_clnt_exp_stats *);
-extern struct nfssrv_clnt_exp_stats *nfssrv_get_clnt_exp_stats(
-    struct nfssrv_clnt_stats *, struct nfssrv_exp_stats *);
-
-/*
- * nfssrv_kstat_do_io
- */
-
-#define	NFSSRV_KST_ENTER	(1 << 0)
-#define	NFSSRV_KST_EXIT		(1 << 1)
-#define	NFSSRV_KST_WRITE	(1 << 2)
-#define	NFSSRV_KST_READ		(1 << 3)
-
-#define	NFSSRV_KSTAT_DO_IO_ENTER(kiop, l)	\
-    nfssrv_kstat_do_io((kiop), (l), NFSSRV_KST_ENTER, 0, 0)
-#define	NFSSRV_KSTAT_DO_IO_EXIT(kiop, l)	\
-    nfssrv_kstat_do_io((kiop), (l), NFSSRV_KST_EXIT, 0, 0)
-#define	NFSSRV_KSTAT_DO_IO_WRITE(kiop, l, w)	\
-    nfssrv_kstat_do_io((kiop), (l), NFSSRV_KST_WRITE, (w), 0)
-#define	NFSSRV_KSTAT_DO_IO_READ(kiop, l, r)	\
-    nfssrv_kstat_do_io((kiop), (l), NFSSRV_KST_READ, 0, (r))
-#define	NFSSRV_KSTAT_DO_IO(kiop, l, f, w, r)	\
-    nfssrv_kstat_do_io((kiop), (l), (f), (w), (r))
-
-extern void nfssrv_kstat_do_io(kstat_io_t *, kmutex_t *, int, size_t, size_t);
+extern void exp_kstats_delete(struct exp_kstats *);
+extern void exp_kstats_fini(struct exp_kstats *);
+extern void exp_kstats_reset(struct exp_kstats *, const char *, size_t, bool_t);
 
 #endif	/* _KERNEL */
 
@@ -2503,7 +2310,7 @@ extern int	rfs_climb_crossmnt(vnode_t **, struct exportinfo **, cred_t *);
 
 extern vtype_t		nf3_to_vt[];
 extern kstat_named_t	*rfsproccnt_v3_ptr;
-extern kstat_io_t	*rfsprocio_v3_ptr;
+extern kstat_t		**rfsprocio_v3_ptr;
 extern vfsops_t		*nfs3_vfsops;
 extern struct vnodeops	*nfs3_vnodeops;
 extern const struct fs_operation_def nfs3_vnodeops_template[];

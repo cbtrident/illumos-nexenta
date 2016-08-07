@@ -116,8 +116,6 @@ _init(void)
 {
 	int status;
 
-	nfssrv_stat_init();
-
 	if ((status = nfs_srvinit()) != 0) {
 		cmn_err(CE_WARN, "_init: nfs_srvinit failed");
 		return (status);
@@ -130,8 +128,6 @@ _init(void)
 		 * initialization work.
 		 */
 		nfs_srvfini();
-
-		nfssrv_stat_fini();
 
 		return (status);
 	}
@@ -277,7 +273,7 @@ static	kcondvar_t nfs_server_upordown_cv;
 nvlist_t *rfs4_dss_paths, *rfs4_dss_oldpaths;
 
 int rfs4_dispatch(struct rpcdisp *, struct svc_req *, SVCXPRT *, char *,
-    size_t *, struct nfssrv_clnt_stats *, struct nfssrv_exp_stats **);
+    size_t *);
 bool_t rfs4_minorvers_mismatch(struct svc_req *, SVCXPRT *, void *);
 
 /*
@@ -328,12 +324,11 @@ nfs_srv_quiesce_all(void)
 }
 
 static void
-nfs_srv_shutdown_all(int quiesce)
-{
+nfs_srv_shutdown_all(int quiesce) {
 	mutex_enter(&nfs_server_upordown_lock);
 	if (quiesce) {
 		if (nfs_server_upordown == NFS_SERVER_RUNNING ||
-		    nfs_server_upordown == NFS_SERVER_OFFLINE) {
+			nfs_server_upordown == NFS_SERVER_OFFLINE) {
 			nfs_server_upordown = NFS_SERVER_QUIESCED;
 			cv_signal(&nfs_server_upordown_cv);
 
@@ -360,7 +355,7 @@ nfs_srv_shutdown_all(int quiesce)
 
 static int
 nfs_srv_set_sc_versions(struct file *fp, SVC_CALLOUT_TABLE **sctpp,
-    rpcvers_t versmin, rpcvers_t versmax)
+			rpcvers_t versmin, rpcvers_t versmax)
 {
 	struct strioctl strioc;
 	struct T_info_ack tinfo;
@@ -1066,7 +1061,7 @@ static struct rpcdisp rfsdisptab_v4[] = {
 	    xdr_void, NULL_xdrproc_t, 0,
 	    nullfree, RPC_IDEMPOTENT, 0},
 
-	/* RFS4_COMPOUND = 1 */
+	/* RFS4_compound = 1 */
 	{rfs4_compound,
 	    xdr_COMPOUND4args_srv, NULL_xdrproc_t, sizeof (COMPOUND4args),
 	    xdr_COMPOUND4res_srv, NULL_xdrproc_t, sizeof (COMPOUND4res),
@@ -1479,7 +1474,8 @@ auth_tooweak(struct svc_req *req, char *res)
 
 static void
 common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
-    rpcvers_t max_vers, char *pgmname, struct rpc_disptable *disptable)
+		rpcvers_t max_vers, char *pgmname,
+		struct rpc_disptable *disptable)
 {
 	int which;
 	rpcvers_t vers;
@@ -1512,17 +1508,11 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 	char **procnames;
 	char cbuf[INET6_ADDRSTRLEN];	/* to hold both IPv4 and IPv6 addr */
 	bool_t ro = FALSE;
-	size_t pos = XDR_GETPOS(&xprt->xp_xdrin);	/* request size calc */
-	size_t rlen = 0;				/* reply size */
-	int kstat_io_flags = NFSSRV_KST_WRITE;
-
-	kstat_io_t *kiop = NULL;
-	struct nfssrv_clnt_stats *clnt_stats = NULL;
-	kstat_io_t *clnt_kiop;
-	struct nfssrv_exp_stats *exp_stats = NULL;
-	kstat_io_t *exp_kiop;
-	struct nfssrv_clnt_exp_stats *clnt_exp_stats = NULL;
-	kstat_io_t *clnt_exp_kiop;
+	kstat_t *ksp = NULL;
+	kstat_t *exi_ksp = NULL;
+	size_t pos;			/* request size */
+	size_t rlen;			/* reply size */
+	bool_t rsent = FALSE;		/* reply was sent successfully */
 
 	vers = req->rq_vers;
 
@@ -1543,34 +1533,13 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 
 	(*(disptable[(int)vers].dis_proccntp))[which].value.ui64++;
 
-	kiop = &(*(disptable[(int)vers].dis_prociop))[which];
-	NFSSRV_KSTAT_DO_IO_ENTER(kiop, nfssrv_stat_procio_lock);
-
-	clnt_stats = nfssrv_get_clnt_stats(req->rq_xprt);
-	ASSERT(clnt_stats != NULL);
-
-	switch (req->rq_vers) {
-	case NFS_VERSION:
-		clnt_kiop = (disptable == rfs_disptable) ?
-		    &clnt_stats->nscs_stats.rfsprocio_v2_data[which] :
-		    &clnt_stats->nscs_stats.aclprocio_v2_data[which];
-		break;
-	case NFS_V3:
-		clnt_kiop = (disptable == rfs_disptable) ?
-		    &clnt_stats->nscs_stats.rfsprocio_v3_data[which] :
-		    &clnt_stats->nscs_stats.aclprocio_v3_data[which];
-		break;
-	case NFS_V4:
-		ASSERT(disptable == rfs_disptable);
-		clnt_kiop = &clnt_stats->nscs_stats.rfsprocio_v4_data[which];
-		break;
-	default:
-		ASSERT(0);
-		break;
+	ksp = (*(disptable[(int)vers].dis_prociop))[which];
+	if (ksp != NULL) {
+		mutex_enter(ksp->ks_lock);
+		kstat_runq_enter(KSTAT_IO_PTR(ksp));
+		mutex_exit(ksp->ks_lock);
 	}
-
-	ASSERT(clnt_kiop != NULL);
-	NFSSRV_KSTAT_DO_IO_ENTER(clnt_kiop, &clnt_stats->nscs_procio_lock);
+	pos = XDR_GETPOS(&xprt->xp_xdrin);
 
 	disp = &disptable[(int)vers].dis_table[which];
 	procnames = disptable[(int)vers].dis_procnames;
@@ -1615,23 +1584,9 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 	 * If Version 4 use that specific dispatch function.
 	 */
 	if (req->rq_vers == 4) {
-		ASSERT(exp_stats == NULL);
-		error += rfs4_dispatch(disp, req, xprt, args, &rlen,
-		    clnt_stats, &exp_stats);
+		error += rfs4_dispatch(disp, req, xprt, args, &rlen);
 		if (error == 0)
-			kstat_io_flags |= NFSSRV_KST_READ;
-
-		if (exp_stats != NULL) {
-			exp_kiop = &exp_stats->
-			    nses_stats.rfsprocio_v4_data[which];
-
-			clnt_exp_stats = nfssrv_get_clnt_exp_stats(clnt_stats,
-			    exp_stats);
-			ASSERT(clnt_exp_stats != NULL);
-			clnt_exp_kiop = &clnt_exp_stats->
-			    nsces_stats.rfsprocio_v4_data[which];
-		}
-
+			rsent = TRUE;
 		goto done;
 	}
 
@@ -1710,48 +1665,31 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 		exi = checkexport(fsid, xfid);
 
 		if (exi != NULL) {
-			nfssrv_stats *nses_st;
-			nfssrv_stats *nsces_st;
-
-			exp_stats = exi->exi_stats;
-			ASSERT(exp_stats != NULL);
-			nfssrv_exp_stats_hold(exp_stats);
-			nses_st = &exp_stats->nses_stats;
-
-			clnt_exp_stats = nfssrv_get_clnt_exp_stats(clnt_stats,
-			    exp_stats);
-			ASSERT(clnt_exp_stats != NULL);
-			nsces_st = &clnt_exp_stats->nsces_stats;
+			rw_enter(&exported_lock, RW_READER);
 
 			switch (req->rq_vers) {
 			case NFS_VERSION:
-				exp_kiop = (disptable == rfs_disptable) ?
-				    &nses_st->rfsprocio_v2_data[which] :
-				    &nses_st->aclprocio_v2_data[which];
-				clnt_exp_kiop = (disptable == rfs_disptable) ?
-				    &nsces_st->rfsprocio_v2_data[which] :
-				    &nsces_st->aclprocio_v2_data[which];
+				exi_ksp = (disptable == rfs_disptable) ?
+				    exi->exi_kstats->rfsprocio_v2_ptr[which] :
+				    exi->exi_kstats->aclprocio_v2_ptr[which];
 				break;
 			case NFS_V3:
-				exp_kiop = (disptable == rfs_disptable) ?
-				    &nses_st->rfsprocio_v3_data[which] :
-				    &nses_st->aclprocio_v3_data[which];
-				clnt_exp_kiop = (disptable == rfs_disptable) ?
-				    &nsces_st->rfsprocio_v3_data[which] :
-				    &nsces_st->aclprocio_v3_data[which];
+				exi_ksp = (disptable == rfs_disptable) ?
+				    exi->exi_kstats->rfsprocio_v3_ptr[which] :
+				    exi->exi_kstats->aclprocio_v3_ptr[which];
 				break;
 			default:
 				ASSERT(0);
 				break;
 			}
 
-			ASSERT(exp_kiop != NULL);
-			NFSSRV_KSTAT_DO_IO_ENTER(exp_kiop,
-			    &exp_stats->nses_procio_lock);
-			ASSERT(clnt_exp_kiop != NULL);
-			NFSSRV_KSTAT_DO_IO_ENTER(clnt_exp_kiop,
-			    &clnt_exp_stats->nsces_procio_lock);
-			kstat_io_flags |= NFSSRV_KST_EXIT;
+			if (exi_ksp != NULL) {
+				mutex_enter(exi_ksp->ks_lock);
+				kstat_runq_enter(KSTAT_IO_PTR(exi_ksp));
+				mutex_exit(exi_ksp->ks_lock);
+			} else {
+				rw_exit(&exported_lock);
+			}
 
 			publicfh_ok = PUBLICFH_CHECK(disp, exi, fsid, xfid);
 
@@ -1905,7 +1843,7 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 			error++;
 		} else {
 			rlen = xdr_sizeof(disp->dis_fastxdrres, res);
-			kstat_io_flags |= NFSSRV_KST_READ;
+			rsent = TRUE;
 		}
 	} else {
 		if (!svc_sendreply(xprt, disp->dis_xdrres, res)) {
@@ -1914,7 +1852,7 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 			error++;
 		} else {
 			rlen = xdr_sizeof(disp->dis_xdrres, res);
-			kstat_io_flags |= NFSSRV_KST_READ;
+			rsent = TRUE;
 		}
 	}
 
@@ -1937,7 +1875,9 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 	}
 
 done:
-	pos = XDR_GETPOS(&xprt->xp_xdrin) - pos;
+	if (ksp != NULL || exi_ksp != NULL) {
+		pos = XDR_GETPOS(&xprt->xp_xdrin) - pos;
+	}
 
 	/*
 	 * Free arguments struct
@@ -1954,33 +1894,33 @@ done:
 		}
 	}
 
+	if (exi_ksp != NULL) {
+		mutex_enter(exi_ksp->ks_lock);
+		KSTAT_IO_PTR(exi_ksp)->nwritten += pos;
+		KSTAT_IO_PTR(exi_ksp)->writes++;
+		if (rsent) {
+			KSTAT_IO_PTR(exi_ksp)->nread += rlen;
+			KSTAT_IO_PTR(exi_ksp)->reads++;
+		}
+		kstat_runq_exit(KSTAT_IO_PTR(exi_ksp));
+		mutex_exit(exi_ksp->ks_lock);
+
+		rw_exit(&exported_lock);
+	}
+
 	if (exi != NULL)
 		exi_rele(exi);
 
-	/*
-	 * Update and release kstats
-	 */
-	if (kiop != NULL)
-		NFSSRV_KSTAT_DO_IO(kiop, nfssrv_stat_procio_lock,
-		    kstat_io_flags | NFSSRV_KST_EXIT, pos, rlen);
-	if (clnt_stats != NULL) {
-		ASSERT(clnt_kiop != NULL);
-		NFSSRV_KSTAT_DO_IO(clnt_kiop, &clnt_stats->nscs_procio_lock,
-		    kstat_io_flags | NFSSRV_KST_EXIT, pos, rlen);
-		nfssrv_clnt_stats_rele(clnt_stats);
-	}
-	if (exp_stats != NULL) {
-		ASSERT(exp_kiop != NULL);
-		NFSSRV_KSTAT_DO_IO(exp_kiop, &exp_stats->nses_procio_lock,
-		    kstat_io_flags, pos, rlen);
-		nfssrv_exp_stats_rele(exp_stats);
-	}
-	if (clnt_exp_stats != NULL) {
-		ASSERT(clnt_exp_kiop != NULL);
-		NFSSRV_KSTAT_DO_IO(clnt_exp_kiop,
-		    &clnt_exp_stats->nsces_procio_lock, kstat_io_flags, pos,
-		    rlen);
-		nfssrv_clnt_exp_stats_rele(clnt_exp_stats);
+	if (ksp != NULL) {
+		mutex_enter(ksp->ks_lock);
+		KSTAT_IO_PTR(ksp)->nwritten += pos;
+		KSTAT_IO_PTR(ksp)->writes++;
+		if (rsent) {
+			KSTAT_IO_PTR(ksp)->nread += rlen;
+			KSTAT_IO_PTR(ksp)->reads++;
+		}
+		kstat_runq_exit(KSTAT_IO_PTR(ksp));
+		mutex_exit(ksp->ks_lock);
 	}
 
 	global_svstat_ptr[req->rq_vers][NFS_BADCALLS].value.ui64 += error;
