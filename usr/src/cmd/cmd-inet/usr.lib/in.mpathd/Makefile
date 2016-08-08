@@ -28,10 +28,13 @@ ROOTFS_PROG	= $(PROG)
 OBJS		= mpd_tables.o mpd_main.o mpd_probe.o
 SRCS		= $(OBJS:%.o=%.c)
 DEFAULTFILES	= mpathd.dfl
+SVCMETHOD	= net-ipmp
+MANIFEST	= network-ipmp.xml
 
 include ../../../Makefile.cmd
 
 ROOTCMDDIR	= $(ROOT)/lib/inet
+ROOTMANIFESTDIR	= $(ROOTSVCNETWORK)
 
 POFILE		= $(PROG).po
 POFILES		= $(SRCS:%.c=%.po)
@@ -63,15 +66,9 @@ $(PROG):	$(OBJS)
 		$(LINK.c) -o $@ $(OBJS) $(LDLIBS) $(CTFMERGE_HOOK)
 		$(POST_PROCESS)
 
-include ../Makefile.lib
+check:		$(CHKMANIFEST)
 
-$(ROOTLIBINETPROG):
-		$(RM) $@; $(SYMLINK) ../../../lib/inet/$(PROG) $@
-
-$(ROOTSBINPROG):
-		$(RM) $@; $(SYMLINK) ../lib/inet/$(PROG) $@
-
-install:	all $(ROOTLIBINETPROG) $(ROOTSBINPROG) $(ROOTCMD) \
+install:	all $(ROOTCMD) $(ROOTMANIFEST) $(ROOTSVCMETHOD) \
 		$(ROOTETCDEFAULTFILES)
 
 clean:
