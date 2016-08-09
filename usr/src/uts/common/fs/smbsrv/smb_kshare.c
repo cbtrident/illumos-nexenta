@@ -776,7 +776,7 @@ kshare_stats_init(smb_server_t *sv, smb_kshare_t *ks)
 	 */
 	if (strlen(ks->shr_name) > 24) {
 		(void) snprintf(ks_name, sizeof (ks_name), "sh/:%p",
-		    (void *)&ks);
+		    (void *)ks);
 	} else {
 		(void) snprintf(ks_name, sizeof (ks_name), "sh/%s",
 		    ks->shr_name);
