@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Tegile Systems, Inc. All rights reserved.
  */
 
 /*
@@ -829,7 +830,7 @@ nvme_check_vendor_cmd_status(nvme_cmd_t *cmd)
 	    "sc = %x, sct = %x, dnr = %d, m = %d", cmd->nc_sqe.sqe_opc,
 	    cqe->cqe_sqid, cqe->cqe_cid, cqe->cqe_sf.sf_sc, cqe->cqe_sf.sf_sct,
 	    cqe->cqe_sf.sf_dnr, cqe->cqe_sf.sf_m);
-	if (cmd->nc_nvme->n_ignore_unknown_vendor_status) {
+	if (!cmd->nc_nvme->n_ignore_unknown_vendor_status) {
 		cmd->nc_nvme->n_dead = B_TRUE;
 		ddi_fm_service_impact(cmd->nc_nvme->n_dip, DDI_SERVICE_LOST);
 	}
@@ -1461,7 +1462,7 @@ nvme_get_logpage(nvme_t *nvme, uint8_t logpage, ...)
 {
 	nvme_cmd_t *cmd = nvme_alloc_cmd(nvme, KM_SLEEP);
 	void *buf = NULL;
-	nvme_getlogpage_t getlogpage;
+	nvme_getlogpage_t getlogpage = { 0 };
 	size_t bufsize;
 	va_list ap;
 
@@ -1799,7 +1800,7 @@ nvme_set_nqueues(nvme_t *nvme, uint16_t nqueues)
 {
 	nvme_nqueues_t nq = { 0 };
 
-	nq.b.nq_nsq = nq.b.nq_ncq = nqueues;
+	nq.b.nq_nsq = nq.b.nq_ncq = nqueues - 1;
 
 	if (!nvme_set_features(nvme, 0, NVME_FEAT_NQUEUES, nq.r, &nq.r)) {
 		return (0);
@@ -2077,11 +2078,13 @@ nvme_init(nvme_t *nvme)
 	nvme_put64(nvme, NVME_REG_ASQ, asq);
 	nvme_put64(nvme, NVME_REG_ACQ, acq);
 
-	cc.b.cc_ams = 0; /* use Round-Robin arbitration */
-	cc.b.cc_css = 0; /* use NVM command set */
+	cc.b.cc_ams = 0;	/* use Round-Robin arbitration */
+	cc.b.cc_css = 0;	/* use NVM command set */
 	cc.b.cc_mps = nvme->n_pageshift - 12;
-	cc.b.cc_shn = 0; /* no shutdown in progress */
-	cc.b.cc_en = 1;  /* enable controller */
+	cc.b.cc_shn = 0;	/* no shutdown in progress */
+	cc.b.cc_en = 1;		/* enable controller */
+	cc.b.cc_iosqes = 6;	/* default minimum of 2^6 = 64 bytes */
+	cc.b.cc_iocqes = 4;	/* default minimum of 2^4 = 16 bytes */
 
 	nvme_put32(nvme, NVME_REG_CC, cc.r);
 
@@ -2386,8 +2389,8 @@ nvme_init(nvme_t *nvme)
 	if (nvme->n_ioq_count < nqueues) {
 		nvme_release_interrupts(nvme);
 
-		if (nvme_setup_interrupts(nvme, nvme->n_intr_type, nqueues)
-		    != DDI_SUCCESS) {
+		if (nvme_setup_interrupts(nvme, nvme->n_intr_type,
+		    nvme->n_ioq_count) != DDI_SUCCESS) {
 			dev_err(nvme->n_dip, CE_WARN,
 			    "!failed to reduce number of interrupts");
 			goto fail;
