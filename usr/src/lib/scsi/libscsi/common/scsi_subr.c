@@ -450,6 +450,9 @@ libscsi_get_inquiry_dev_id(libscsi_hdl_t *hp, libscsi_target_t *tp)
 	return (libscsi_set_errno(hp, ESCSI_NOTSUP));
 }
 
+/*
+ * Execute inquiry for VPD page 0x80 (unit serial #) and extract the USN
+ */
 int
 libscsi_get_inquiry_usn(libscsi_hdl_t *hp, libscsi_target_t *tp)
 {
@@ -488,12 +491,12 @@ libscsi_get_inquiry_usn(libscsi_hdl_t *hp, libscsi_target_t *tp)
 
 	/* check for USN truncation */
 	len = ((data.uvpi_hdr.page_len)[0] << 8 | (data.uvpi_hdr.page_len)[1]);
-	if (len > sizeof (data.uvpi_usn))
+	if (len == 0 || len > sizeof (data.uvpi_usn))
 		return (libscsi_set_errno(hp, ESCSI_BADLENGTH));
 
-	/* USN is ASCI encoded */
+	/* USN is ASCII encoded */
 	if ((tp->lst_usn = libscsi_process_inquiry_string(hp,
-	    (char *)data.uvpi_usn, sizeof (data.uvpi_usn))) == NULL)
+	    (char *)data.uvpi_usn, len)) == NULL)
 	    return (libscsi_set_errno(hp, ESCSI_NOMEM));
 
 	return (0);
