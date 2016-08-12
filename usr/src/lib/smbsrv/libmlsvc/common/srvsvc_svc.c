@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -1002,11 +1002,11 @@ srvsvc_s_NetShareGetInfo(void *arg, ndr_xa_t *mxa)
 
 		status = srvsvc_share_getsd(mxa, &si, &sd);
 		if (status == ERROR_SUCCESS) {
-			info503->shi503_reserved = sd.sd_size;
-			info503->shi503_security_descriptor = sd.sd_buf;
+			info1501->shi1501_reserved = sd.sd_size;
+			info1501->shi1501_security_descriptor = sd.sd_buf;
 		} else {
-			info503->shi503_reserved = 0;
-			info503->shi503_security_descriptor = NULL;
+			info1501->shi1501_reserved = 0;
+			info1501->shi1501_security_descriptor = NULL;
 		}
 
 		param->result.ru.info1501 = info1501;
