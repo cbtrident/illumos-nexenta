@@ -1810,7 +1810,7 @@ nvme_set_nqueues(nvme_t *nvme, uint16_t nqueues)
 	 * Always use the same number of submission and completion queues, and
 	 * never use more than the requested number of queues.
 	 */
-	return (MIN(nqueues, MIN(nq.b.nq_nsq, nq.b.nq_ncq)));
+	return (MIN(nqueues, MIN(nq.b.nq_nsq, nq.b.nq_ncq) + 1));
 }
 
 static int
