@@ -1993,7 +1993,7 @@ nvme_init(nvme_t *nvme)
 	dev_err(nvme->n_dip, CE_CONT, "?NVMe spec version %d.%d",
 	    nvme->n_version.v_major, nvme->n_version.v_minor);
 
-	if (!NVME_VERSION_HIGHER(&nvme->n_version,
+	if (NVME_VERSION_HIGHER(&nvme->n_version,
 	    nvme_version_major, nvme_version_minor)) {
 		dev_err(nvme->n_dip, CE_WARN, "!no support for version > %d.%d",
 		    nvme_version_major, nvme_version_minor);
