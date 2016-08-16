@@ -1,7 +1,6 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2015 by Delphix. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -40,7 +39,6 @@
 
 #include <sys/param.h>
 #include <sys/types.h>
-#include <sys/fs/zfs.h>
 #include <syslog.h>
 #include <ctype.h>
 #include <errno.h>

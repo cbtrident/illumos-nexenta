@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2014 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -1075,6 +1075,8 @@ get_date_token_v3(ndmpd_module_params_t *params, ndmp_lbr_params_t *nlp,
 
 	tstamp = tok & 0xffffffff;
 	seq = (tok >> 32) & 0xffffffff;
+	syslog(LOG_DEBUG, "basedate \"%s\" %lld seq %u tstamp %u",
+	    basedate, tok, seq, tstamp);
 
 	if ((int)seq > ndmp_get_max_tok_seq()) {
 		rv = NDMP_ILLEGAL_ARGS_ERR;
@@ -1295,6 +1297,8 @@ save_date_token_v3(ndmpd_module_params_t *params, ndmp_lbr_params_t *nlp)
 	nlp->nlp_tokseq++;
 	tok = ((u_longlong_t)nlp->nlp_tokseq << 32) | nlp->nlp_cdate;
 	(void) snprintf(val, sizeof (val), "%llu", tok);
+
+	syslog(LOG_DEBUG, "tok: %lld %s", tok, val);
 
 	if (MOD_SETENV(params, "DUMP_DATE", val) != 0) {
 		MOD_LOGV3(params, NDMP_LOG_ERROR,
@@ -1935,8 +1939,11 @@ ischngd(struct stat64 *stp, time_t t, ndmp_lbr_params_t *nlp)
 		 * need not to be reported.
 		 */
 		rv = TRUE;
+		syslog(LOG_DEBUG, "p(%lu)", (u_longlong_t)stp->st_ino);
 	} else if (stp->st_mtime > t) {
 		rv = TRUE;
+		syslog(LOG_DEBUG, "m(%lu): %lu > %lu",
+		    (uint_t)stp->st_ino, (uint_t)stp->st_mtime, (uint_t)t);
 	} else if (stp->st_ctime > t) {
 		if (NLP_IGNCTIME(nlp)) {
 			rv = FALSE;
@@ -2284,7 +2291,6 @@ backup_reader_v3(backup_reader_arg_t *argp)
 		MOD_LOGV3(nlp->nlp_params, NDMP_LOG_ERROR,
 		    "Unknown backup type.\n");
 	}
-
 	ft.ft_arg = &bp;
 	ft.ft_logfp = (ft_log_t)syslog;
 	ft.ft_flags = FST_VERBOSE | FST_STOP_ONERR;
@@ -2322,7 +2328,6 @@ backup_reader_v3(backup_reader_arg_t *argp)
 	lcmd->tc_writer = TLM_STOP;
 	tlm_release_reader_writer_ipc(lcmd);
 	tlm_un_ref_job_stats(jname);
-
 	return (rv);
 
 }
@@ -2357,17 +2362,15 @@ tar_backup_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 	int err;
 	int rc;
 
-	if (ndmp_get_bk_dir_ino(nlp)) {
-		syslog(LOG_ERR, "Couldn't get backup directory inode");
+	if (ndmp_get_bk_dir_ino(nlp))
 		return (-1);
-	}
 
 	result = err = 0;
 
 	/* exit as if there was an internal error */
-	if (session->ns_eof) {
+	if (session->ns_eof)
 		return (-1);
-	}
+
 	if (!session->ns_data.dd_abort) {
 		if (backup_alloc_structs_v3(session, jname) < 0) {
 			nlp->nlp_bkmap = -1;
@@ -2501,13 +2504,10 @@ backup_out:
 void
 get_backup_size(ndmp_bkup_size_arg_t *sarg)
 {
-	const char* units[] = {"B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
 	fs_traverse_t ft;
 	u_longlong_t bk_size;
-	double size;
 	char spath[PATH_MAX];
 	int rv;
-	int i;
 
 	bk_size = 0;
 	if (fs_is_chkpntvol(sarg->bs_path)) {
@@ -2525,17 +2525,11 @@ get_backup_size(ndmp_bkup_size_arg_t *sarg)
 	ft.ft_flags = FST_VERBOSE;
 
 	if ((rv = traverse_level(&ft)) != 0) {
-		syslog(LOG_ERR, "Couldn't get backup size err=%d", rv);
+		syslog(LOG_DEBUG, "bksize err=%d", rv);
 		bk_size = 0;
 	} else {
-		i = 0;
-		size = bk_size;
-		while (size > 1024) {
-			size /= 1024;
-			i++;
-		}
-		syslog(LOG_DEBUG, "[%s] backup size is [%.*f %s]\n",
-		    sarg->bs_jname, i, size, units[i]);
+		syslog(LOG_DEBUG, "bksize %lld, %lldKB, %lldMB\n",
+		    bk_size, bk_size / 1024, bk_size /(1024 * 1024));
 	}
 	sarg->bs_session->ns_data.dd_data_size = bk_size;
 }
@@ -3003,8 +2997,7 @@ static char *ndmpd_dar_tar_init_v3(ndmpd_session_t *session,
 	if (!jname)
 		return (NULL);
 
-	if (ndmp_new_job_name(jname, TLM_MAX_BACKUP_JOB_NAME) == NULL)
-		return (NULL);
+	(void) ndmp_new_job_name(jname);
 
 	if (!nlp) {
 		free(jname);
@@ -3515,13 +3508,10 @@ ndmpd_rs_sar_tar_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 	ndmp_context_t nctx;
 
 	result = err = 0;
-	if (ndmp_new_job_name(jname, TLM_MAX_BACKUP_JOB_NAME) == NULL)
+	(void) ndmp_new_job_name(jname);
+	if (restore_alloc_structs_v3(session, jname) < 0)
 		return (-1);
 
-	if (restore_alloc_structs_v3(session, jname) < 0)
-	{
-		return (-1);
-	}
 	sels = setupsels(session, params, nlp, 0);
 	if (!sels) {
 		free_structs_v3(session, jname);
@@ -3755,18 +3745,12 @@ ndmpd_tar_backup_starter_v3(void *arg)
 	char jname[TLM_MAX_BACKUP_JOB_NAME];
 	ndmp_bkup_size_arg_t sarg;
 
+	syslog(LOG_DEBUG,"BACKUP STARTED");
 
 	session = (ndmpd_session_t *)(params->mp_daemon_cookie);
 	*(params->mp_module_cookie) = nlp = ndmp_get_nlp(session);
 	ndmp_session_ref(session);
-	if (ndmp_new_job_name(jname, TLM_MAX_BACKUP_JOB_NAME) == NULL)
-		return (-1);
-
-	sarg.bs_session = session;
-	sarg.bs_jname = jname;
-	sarg.bs_path = nlp->nlp_backup_path;
-
-	pthread_cleanup_push(ndmp_remove_snapshot, &sarg);
+	(void) ndmp_new_job_name(jname);
 
 	err = 0;
 	if (!NLP_ISCHKPNTED(nlp) &&
@@ -3777,9 +3761,14 @@ ndmpd_tar_backup_starter_v3(void *arg)
 		err = -1;
 	}
 
-	syslog(LOG_DEBUG,"BACKUP STARTED [%s]", jname);
+	syslog(LOG_DEBUG, "err %d, chkpnted %c",
+	    err, NDMP_YORN(NLP_ISCHKPNTED(nlp)));
 
 	if (err == 0) {
+		sarg.bs_session = session;
+		sarg.bs_jname = jname;
+		sarg.bs_path = nlp->nlp_backup_path;
+
 		/* Get an estimate of the data size */
 		(void) get_backup_size(&sarg);
 
@@ -3792,7 +3781,11 @@ ndmpd_tar_backup_starter_v3(void *arg)
 		}
 	}
 
-	pthread_cleanup_pop(!NLP_ISCHKPNTED(nlp));
+	if (!NLP_ISCHKPNTED(nlp))
+		(void) ndmp_remove_snapshot(nlp->nlp_backup_path, jname);
+
+	syslog(LOG_DEBUG, "err %d, update %c",
+	    err, NDMP_YORN(NLP_SHOULD_UPDATE(nlp)));
 
 	if (err == 0)
 		save_backup_date_v3(params, nlp);
@@ -3805,8 +3798,9 @@ ndmpd_tar_backup_starter_v3(void *arg)
 
 	NS_DEC(nbk);
 	ndmp_session_unref(session);
-	syslog(LOG_DEBUG,"BACKUP COMPLETE [%s]", jname);
+	syslog(LOG_DEBUG,"BACKUP COMPLETE");
 	return (err);
+
 }
 
 
