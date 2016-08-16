@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2014 Nexenta Systems, Inc.  All rights reserved. */
+/* Copyright 2016 Nexenta Systems, Inc.  All rights reserved. */
 
 #include <sys/ioctl.h>
 #include <sys/types.h>
@@ -187,7 +187,7 @@ ndmpd_mover_listen_v2(ndmp_connection_t *connection, void *body)
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE ||
 	    session->ns_data.dd_state != NDMP_DATA_STATE_IDLE) {
-		syslog(LOG_DEBUG, "Invalid state");
+		syslog(LOG_DEBUG, "Illegal state: listen when MOVER/DATA not IDLE");
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
 		    "sending mover_listen reply");
@@ -246,7 +246,7 @@ ndmpd_mover_continue_v2(ndmp_connection_t *connection, void *body)
 	ndmpd_session_t *session = ndmp_get_client_data(connection);
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_PAUSED) {
-		syslog(LOG_DEBUG, "Invalid state");
+		syslog(LOG_DEBUG, "Illegal state: continue when MOVER not PAUSED");
 
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
@@ -281,7 +281,7 @@ ndmpd_mover_abort_v2(ndmp_connection_t *connection, void *body)
 
 	if (session->ns_mover.md_state == NDMP_MOVER_STATE_IDLE ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_HALTED) {
-		syslog(LOG_DEBUG, "Invalid state");
+		syslog(LOG_DEBUG, "Illegal state: abort when IDLE/HALTED");
 
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
@@ -318,7 +318,7 @@ ndmpd_mover_stop_v2(ndmp_connection_t *connection, void *body)
 	ndmpd_session_t *session = ndmp_get_client_data(connection);
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_HALTED) {
-		syslog(LOG_DEBUG, "Invalid state");
+		syslog(LOG_DEBUG, "Illegal state: stop when not HALTED");
 
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
@@ -371,12 +371,12 @@ ndmpd_mover_set_window_v2(ndmp_connection_t *connection, void *body)
 	    session->ns_mover.md_state != NDMP_MOVER_STATE_PAUSED &&
 	    session->ns_mover.md_state != NDMP_MOVER_STATE_LISTEN) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid state %d",
+		syslog(LOG_DEBUG, "Illegal state %d",
 		    session->ns_mover.md_state);
 	} else {
 		if (quad_to_long_long(request->length) == 0) {
 			reply.error = NDMP_ILLEGAL_ARGS_ERR;
-			syslog(LOG_DEBUG, "Invalid window size %d",
+			syslog(LOG_DEBUG, "Illegal window size %d",
 			    quad_to_long_long(request->length));
 		} else {
 			reply.error = NDMP_NO_ERR;
@@ -423,7 +423,7 @@ ndmpd_mover_read_v2(ndmp_connection_t *connection, void *body)
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_ACTIVE ||
 	    session->ns_mover.md_bytes_left_to_read != 0 ||
 	    session->ns_mover.md_mode != NDMP_MOVER_MODE_WRITE) {
-		syslog(LOG_DEBUG, "Invalid state");
+		syslog(LOG_DEBUG, "Illegal state: read and not ACTIVE or WRITEABLE");
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, &reply,
 		    "sending mover_read reply");
@@ -481,7 +481,7 @@ ndmpd_mover_close_v2(ndmp_connection_t *connection, void *body)
 	ndmpd_session_t *session = ndmp_get_client_data(connection);
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_PAUSED) {
-		syslog(LOG_DEBUG, "Invalid state");
+		syslog(LOG_DEBUG, "Illegal state: close and not PAUSED");
 
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, &reply,
@@ -614,19 +614,19 @@ ndmpd_mover_listen_v3(ndmp_connection_t *connection, void *body)
 	if (request->mode != NDMP_MOVER_MODE_READ &&
 	    request->mode != NDMP_MOVER_MODE_WRITE) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid mode %d", request->mode);
+		syslog(LOG_DEBUG, "Illegal mode %d", request->mode);
 	} else if (!ndmp_valid_v3addr_type(request->addr_type)) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
+		syslog(LOG_DEBUG, "Illegal address type %d",
 		    request->addr_type);
 	} else if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		syslog(LOG_DEBUG,
-		    "Invalid mover state to process listen request");
+		    "Illegal state: listen but mover not IDLE");
 	} else if (session->ns_data.dd_state != NDMP_DATA_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		syslog(LOG_DEBUG,
-		    "Invalid data state to process listen request");
+		    "Illegal state: listen but data not IDLE");
 	} else if (session->ns_tape.td_fd == -1) {
 		reply.error = NDMP_DEV_NOT_OPEN_ERR;
 		syslog(LOG_DEBUG, "No tape device open");
@@ -665,7 +665,7 @@ ndmpd_mover_listen_v3(ndmp_connection_t *connection, void *body)
 		break;
 	default:
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type: %d",
+		syslog(LOG_DEBUG, "Illegal address type: %d",
 		    request->addr_type);
 	}
 
@@ -703,7 +703,7 @@ ndmpd_mover_continue_v3(ndmp_connection_t *connection, void *body)
 	(void) memset((void*)&reply, 0, sizeof (reply));
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_PAUSED) {
-		syslog(LOG_DEBUG, "Invalid state");
+		syslog(LOG_DEBUG, "Illegal state: continue but not PAUSED");
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
 		    "sending mover_continue reply");
@@ -797,7 +797,7 @@ ndmpd_mover_abort_v3(ndmp_connection_t *connection, void *body)
 
 	if (session->ns_mover.md_state == NDMP_MOVER_STATE_IDLE ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_HALTED) {
-		syslog(LOG_DEBUG, "Invalid state");
+		syslog(LOG_DEBUG, "Illegal state: abort but not IDLE/HALTED");
 
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
@@ -845,20 +845,19 @@ ndmpd_mover_set_window_v3(ndmp_connection_t *connection, void *body)
 	    session->ns_mover.md_state != NDMP_MOVER_STATE_LISTEN &&
 	    session->ns_mover.md_state != NDMP_MOVER_STATE_PAUSED) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid state %d",
-		    session->ns_mover.md_state);
+		syslog(LOG_DEBUG, "Illegal state: setwindow but not IDLE/LISTEN/PAUSED");
 	} else if (session->ns_mover.md_record_size == 0) {
 		if (session->ns_protocol_version == NDMPV4)
 			reply.error = NDMP_PRECONDITION_ERR;
 		else
 			reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid record size 0");
+		syslog(LOG_DEBUG, "Illegal record size 0");
 	} else
 		reply.error = NDMP_NO_ERR;
 
 	if (quad_to_long_long(request->length) == 0) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid window size %d",
+		syslog(LOG_DEBUG, "Illegal window size %d",
 		    quad_to_long_long(request->length));
 	}
 
@@ -926,7 +925,7 @@ ndmpd_mover_read_v3(ndmp_connection_t *connection, void *body)
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_ACTIVE ||
 	    session->ns_mover.md_mode != NDMP_MOVER_MODE_WRITE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid state");
+		syslog(LOG_DEBUG, "Illegal state: read but not ACTIVE/WRITEABLE");
 	} else if (session->ns_mover.md_bytes_left_to_read != 0) {
 		reply.error = NDMP_READ_IN_PROGRESS_ERR;
 		syslog(LOG_DEBUG, "In progress");
@@ -997,12 +996,11 @@ ndmpd_mover_set_record_size_v3(ndmp_connection_t *connection, void *body)
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid mover state %d",
-		    session->ns_mover.md_state);
+		syslog(LOG_DEBUG, "Illegal state: set record size not IDLE");
 	} else if (request->len > (unsigned int)ndmp_max_mover_recsize) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
 		syslog(LOG_DEBUG,
-		    "Invalid argument %d, should be > 0 and <= %d",
+		    "Illegal argument record length [%d], should be > 0 and <= %d",
 		    request->len, ndmp_max_mover_recsize);
 	} else if (request->len == session->ns_mover.md_record_size) {
 		reply.error = NDMP_NO_ERR;
@@ -1048,15 +1046,14 @@ ndmpd_mover_connect_v3(ndmp_connection_t *connection, void *body)
 	if (request->mode != NDMP_MOVER_MODE_READ &&
 	    request->mode != NDMP_MOVER_MODE_WRITE) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid mode %d", request->mode);
+		syslog(LOG_DEBUG, "Illegal mode: connect and mode is %d", request->mode);
 	} else if (!ndmp_valid_v3addr_type(request->addr.addr_type)) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
+		syslog(LOG_DEBUG, "Illegal address type %d",
 		    request->addr.addr_type);
 	} else if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid state %d: mover is not idle",
-		    session->ns_mover.md_state);
+		syslog(LOG_DEBUG, "Illegal state: connect but not IDLE");
 	} else if (session->ns_tape.td_fd == -1) {
 		reply.error = NDMP_DEV_NOT_OPEN_ERR;
 		syslog(LOG_DEBUG, "No tape device open");
@@ -1095,7 +1092,7 @@ ndmpd_mover_connect_v3(ndmp_connection_t *connection, void *body)
 
 	default:
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
+		syslog(LOG_DEBUG, "Illegal address type %d",
 		    request->addr.addr_type);
 	}
 
@@ -1199,25 +1196,25 @@ ndmpd_mover_listen_v4(ndmp_connection_t *connection, void *body)
 	if (request->mode != NDMP_MOVER_MODE_READ &&
 	    request->mode != NDMP_MOVER_MODE_WRITE) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid mode %d", request->mode);
+		syslog(LOG_DEBUG, "Illegal mode %d", request->mode);
 	} else if (!ndmp_valid_v3addr_type(request->addr_type)) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
+		syslog(LOG_DEBUG, "Illegal address type %d",
 		    request->addr_type);
 	} else if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		syslog(LOG_DEBUG,
-		    "Invalid mover state to process listen request");
+		    "Illegal mover state to process listen request");
 	} else if (session->ns_data.dd_state != NDMP_DATA_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		syslog(LOG_DEBUG,
-		    "Invalid data state to process listen request");
+		    "Illegal data state to process listen request");
 	} else if (session->ns_tape.td_fd == -1) {
 		reply.error = NDMP_DEV_NOT_OPEN_ERR;
 		syslog(LOG_DEBUG, "No tape device open");
 	} else if (session->ns_mover.md_record_size == 0) {
 		reply.error = NDMP_PRECONDITION_ERR;
-		syslog(LOG_DEBUG, "Invalid record size 0");
+		syslog(LOG_DEBUG, "Illegal record size 0");
 	} else if (request->mode == NDMP_MOVER_MODE_READ &&
 	    session->ns_tape.td_mode == NDMP_TAPE_READ_MODE) {
 		reply.error = NDMP_PERMISSION_ERR;
@@ -1263,7 +1260,7 @@ ndmpd_mover_listen_v4(ndmp_connection_t *connection, void *body)
 		break;
 	default:
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type: %d",
+		syslog(LOG_DEBUG, "Illegal address type: %d",
 		    request->addr_type);
 	}
 
@@ -1302,14 +1299,14 @@ ndmpd_mover_connect_v4(ndmp_connection_t *connection, void *body)
 	if (request->mode != NDMP_MOVER_MODE_READ &&
 	    request->mode != NDMP_MOVER_MODE_WRITE) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid mode %d", request->mode);
+		syslog(LOG_DEBUG, "Illegal mode %d", request->mode);
 	} else if (!ndmp_valid_v3addr_type(request->addr.addr_type)) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
+		syslog(LOG_DEBUG, "Illegal address type %d",
 		    request->addr.addr_type);
 	} else if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid state %d: mover is not idle",
+		syslog(LOG_DEBUG, "Illegal state %d: mover is not idle",
 		    session->ns_mover.md_state);
 	} else if (session->ns_tape.td_fd == -1) {
 		reply.error = NDMP_DEV_NOT_OPEN_ERR;
@@ -1320,7 +1317,7 @@ ndmpd_mover_connect_v4(ndmp_connection_t *connection, void *body)
 		syslog(LOG_ERR, "Write protected device.");
 	} else if (session->ns_mover.md_record_size == 0) {
 		reply.error = NDMP_PRECONDITION_ERR;
-		syslog(LOG_DEBUG, "Invalid record size 0");
+		syslog(LOG_DEBUG, "Illegal record size 0");
 	} else
 		reply.error = NDMP_NO_ERR;
 
@@ -1352,7 +1349,7 @@ ndmpd_mover_connect_v4(ndmp_connection_t *connection, void *body)
 
 	default:
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
+		syslog(LOG_DEBUG, "Illegal address type %d",
 		    request->addr.addr_type);
 	}
 
@@ -1973,7 +1970,7 @@ ndmpd_mover_connect(ndmpd_session_t *session, ndmp_mover_mode mover_mode)
 
 				syslog(LOG_DEBUG,
 				    "Not in active  state mover"
-				    "  state = %d or Invalid mover sock=%d",
+				    "  state = %d or Illegal mover sock=%d",
 				    session->ns_mover.md_state,
 				    session->ns_mover.md_sock);
 				return (NDMP_ILLEGAL_STATE_ERR);
@@ -3427,7 +3424,7 @@ mover_pause_v3(ndmpd_session_t *session, ndmp_mover_pause_reason reason)
 		    NDMP_ADDR_LOCAL) {
 			rv = ndmp_wait_for_mover(session);
 		} else {
-			syslog(LOG_DEBUG, "Invalid address type %d",
+			syslog(LOG_DEBUG, "Illegal address type %d",
 			    session->ns_mover.md_data_addr.addr_type);
 			rv = -1;
 		}
@@ -3578,7 +3575,7 @@ ndmpd_local_write_v3(ndmpd_session_t *session, char *data, ulong_t length)
 	if (session->ns_mover.md_state == NDMP_MOVER_STATE_IDLE ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_LISTEN ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_HALTED) {
-		syslog(LOG_DEBUG, "Invalid mover state to write data");
+		syslog(LOG_DEBUG, "Illegal mover state: write and not IDLE/LISTEN/HALTED");
 		return (-1);
 	}
 
@@ -4230,7 +4227,7 @@ ndmpd_local_read_v3(ndmpd_session_t *session, char *data, ulong_t length)
 	if (session->ns_mover.md_state == NDMP_MOVER_STATE_IDLE ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_LISTEN ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_HALTED) {
-		syslog(LOG_DEBUG, "Invalid mover state to read data");
+		syslog(LOG_DEBUG, "Illegal mover state: read and not IDLE/LISTEN/HALTED");
 		return (-1);
 	}
 

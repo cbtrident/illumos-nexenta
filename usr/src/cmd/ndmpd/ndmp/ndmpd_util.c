@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2015 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/types.h>
 #include <syslog.h>
@@ -156,9 +156,8 @@ static char *exls[] = {
 
 
 /*
- * The counter for creating unique names with "ndmp.%d" format.
+ * The counter for creating unique names with "NDMP_RCF_BASENAME.%d" format.
  */
-#define	NDMP_RCF_BASENAME	"ndmp."
 static int ndmp_job_cnt = 0;
 
 static int scsi_test_unit_ready(int dev_id);
@@ -403,8 +402,6 @@ ndmpd_select(ndmpd_session_t *session, boolean_t block, ulong_t class_mask)
 
 		if (errno == EINTR)
 			return (0);
-
-		syslog(LOG_DEBUG, "Select error: %m");
 
 		nlp = ndmp_get_nlp(session);
 		(void) mutex_lock(&nlp->nlp_mtx);
@@ -747,11 +744,6 @@ ndmpd_save_nlist_v3(ndmpd_session_t *session, ndmp_name_v3 *nlist,
 		tp->nm3_err = NDMP_NO_ERR;
 		session->ns_data.dd_nlist_len++;
 
-		syslog(LOG_DEBUG, "orig \"%s\"", tp->nm3_opath);
-		syslog(LOG_DEBUG, "dest \"%s\"", NDMP_SVAL(tp->nm3_dpath));
-		syslog(LOG_DEBUG, "name \"%s\"", NDMP_SVAL(tp->nm3_newnm));
-		syslog(LOG_DEBUG, "node %lld", tp->nm3_node);
-		syslog(LOG_DEBUG, "fh_info %lld", tp->nm3_fh_info);
 	}
 
 	if (rv != NDMP_NO_ERR)
@@ -1235,12 +1227,6 @@ ndmp_execute_cdb(ndmpd_session_t *session, char *adapter_name, int sid, int lun,
 	cmd.uscsi_cdb = (caddr_t)request->cdb.cdb_val;
 	cmd.uscsi_cdblen = request->cdb.cdb_len;
 
-	syslog(LOG_DEBUG, "cmd: 0x%x, len: %d, flags: %d, datain_len: %d",
-	    request->cdb.cdb_val[0] & 0xff, request->cdb.cdb_len,
-	    request->flags, request->datain_len);
-	syslog(LOG_DEBUG, "dataout_len: %d, timeout: %d",
-	    request->dataout.dataout_len, request->timeout);
-
 	if (request->cdb.cdb_len > 12) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
 		ndmp_send_reply(session->ns_connection, (void *) &reply,
@@ -1358,12 +1344,7 @@ ndmp_stop_remote_reader(ndmpd_session_t *session)
 void
 ndmp_wait_for_reader(tlm_commands_t *cmds)
 {
-	if (cmds == NULL) {
-		syslog(LOG_DEBUG, "cmds == NULL");
-	} else {
-		syslog(LOG_DEBUG,
-		    "reader_count: %d", cmds->tcs_reader_count);
-
+	if (cmds != NULL) {
 		while (cmds->tcs_reader_count > 0)
 			(void) sleep(1);
 	}
@@ -1390,7 +1371,6 @@ ndmp_open_list_find(char *dev, int sid, int lun)
 	struct open_list *olp;
 
 	if (dev == NULL || *dev == '\0') {
-		syslog(LOG_DEBUG, "Invalid argument");
 		return (NULL);
 	}
 
@@ -1431,11 +1411,8 @@ ndmp_open_list_add(ndmp_connection_t *conn, char *dev, int sid, int lun, int fd)
 	struct open_list *olp;
 
 	if (dev == NULL || *dev == '\0') {
-		syslog(LOG_DEBUG, "Invalid argument");
 		return (EINVAL);
 	}
-	syslog(LOG_DEBUG,
-	    "conn: 0x%08x, dev: %s, sid: %d, lun: %d", conn, dev, sid, lun);
 
 	err = 0;
 	olhp = &ol_head;
@@ -1505,8 +1482,6 @@ ndmp_open_list_del(char *dev, int sid, int lun)
 
 	(void) mutex_lock(&ol_mutex);
 	if (--olp->ol_nref <= 0) {
-		syslog(LOG_DEBUG,
-		    "Removed dev: %s, sid: %d, lun: %d", dev, sid, lun);
 		LIST_REMOVE(olp, ol_q);
 		free(olp->ol_devnm);
 		free(olp);
@@ -1540,9 +1515,6 @@ ndmp_open_list_release(ndmp_connection_t *conn)
 	while (olp != NULL) {
 		next = LIST_NEXT(olp, ol_q);
 		if (olp->cl_conn == conn) {
-			syslog(LOG_DEBUG,
-			    "Removed dev: %s, sid: %d, lun: %d",
-			    olp->ol_devnm, olp->ol_sid, olp->ol_lun);
 			LIST_REMOVE(olp, ol_q);
 			if (olp->ol_fd > 0)
 				(void) close(olp->ol_fd);
@@ -1709,8 +1681,6 @@ ndmp_waitfor_op(ndmpd_session_t *session)
 	if (session != NULL) {
 		while (session->ns_nref > 0) {
 			(void) sleep(1);
-			syslog(LOG_DEBUG,
-			    "waiting for session nref: %d", session->ns_nref);
 		}
 	}
 }
@@ -2056,26 +2026,38 @@ cctime(time_t *t)
 /*
  * ndmp_new_job_name
  *
- * Create a job name for each backup/restore to keep track
+ * Copy, at most, 'n' characters of the current backup
+ * job name to the buffer in parameter 's1'.
  *
  * Parameters:
- *   jname (output) - job name
+ *
+ *   s1 - pointer to a user supplied buffer
+ *
+ *   n  - number of bytes to copy
  *
  * Returns:
- *   jname
+ *   s1
  */
+
 char *
-ndmp_new_job_name(char *jname)
-{
-	if (jname != NULL) {
-		(void) snprintf(jname, TLM_MAX_BACKUP_JOB_NAME, "%s%d",
-		    NDMP_RCF_BASENAME, ndmp_job_cnt++);
-		syslog(LOG_DEBUG, "jname: \"%s\"", jname);
+ndmp_new_job_name(char *s1, size_t n) {
+
+	char jname[TLM_MAX_BACKUP_JOB_NAME];
+
+	if (n > 0 && n <= TLM_MAX_BACKUP_JOB_NAME) {
+		/*
+		 * TLM_MAX_BACKUP_JOB_NAME is the fixed length of  the encoded job
+		 * name in the format `NdmpBackup.nnnn`, where nnnn is a job sequence number.
+		 * A null byte is included.
+		 */
+		(void) sprintf(jname, "%10s.%04d", NDMP_RCF_BASENAME, ndmp_job_cnt++%1000);
+			jname[TLM_MAX_BACKUP_JOB_NAME - 1] = '\0';
+
+		return (strncpy(s1, jname, n));
+	} else {
+		return (NULL);
 	}
-
-	return (jname);
 }
-
 
 /*
  * fs_is_valid_logvol
@@ -2142,7 +2124,9 @@ ndmpd_mk_temp(char *buf)
 	}
 
 	rv = buf;
-	(void) ndmp_new_job_name(fname);
+	if (ndmp_new_job_name(fname, TLM_MAX_BACKUP_JOB_NAME) == NULL)
+		return (0);
+
 	(void) tlm_cat_path(buf, (char *)dir, fname);
 
 	return (rv);
@@ -2259,8 +2243,6 @@ ndmp_get_bk_dir_ino(ndmp_lbr_params_t *nlp)
 	} else {
 		rv = 0;
 		nlp->nlp_bkdirino = st.st_ino;
-		syslog(LOG_DEBUG, "Got inode # of \"%s\" which is [%lu]",
-			nlp->nlp_backup_path, (uint_t)nlp->nlp_bkdirino);
 	}
 
 	return (rv);
@@ -2338,7 +2320,8 @@ ndmp_get_cur_bk_time(ndmp_lbr_params_t *nlp, time_t *tp, char *jname)
 	if (err != 0) {
 		syslog(LOG_ERR, "Can't checkpoint time");
 	} else {
-		syslog(LOG_DEBUG, "%s", cctime(tp));
+		syslog(LOG_DEBUG, "Checkpoint time of [%s] is [%s]",
+		    nlp->nlp_backup_path, cctime(tp));
 	}
 
 	return (err);

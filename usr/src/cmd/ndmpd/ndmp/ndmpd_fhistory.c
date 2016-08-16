@@ -37,6 +37,7 @@
  */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
 
 /*
  * File history callback functions called by backup modules. NDMP file history
@@ -972,8 +973,6 @@ ndmpd_fhnode_v3_cb(lbr_fhlog_call_backs_t *cbp, char *dir, char *file,
 			off = 0LL;
 		if (stp->st_ino == nlp->nlp_bkdirino) {
 			ino = ROOT_INODE;
-			syslog(LOG_DEBUG,
-			    "bkroot %d -> %d", stp->st_ino, ROOT_INODE);
 		} else
 			ino = stp->st_ino;
 
@@ -1550,8 +1549,6 @@ ndmpd_file_history_node(lbr_fhlog_call_backs_t *cbp, char *dir, char *file,
 	if (fh_requested(cbp->fh_cookie) == TRUE) {
 		if (stp->st_ino == nlp->nlp_bkdirino) {
 			ino = ROOT_INODE;
-			syslog(LOG_DEBUG,
-			    "bkroot %d -> %d", stp->st_ino, ROOT_INODE);
 		} else {
 			ino = stp->st_ino;
 		}
