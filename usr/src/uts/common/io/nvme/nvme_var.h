@@ -43,7 +43,6 @@ extern "C" {
 #define	NVME_MIN_ASYNC_EVENT_LIMIT	1
 #define	NVME_DEFAULT_MIN_BLOCK_SIZE	4096
 
-#define	NVME_ADMIN_CMD_TIMEOUT		100000
 
 typedef struct nvme nvme_t;
 typedef struct nvme_namespace nvme_namespace_t;

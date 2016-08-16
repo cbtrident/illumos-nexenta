@@ -202,6 +202,9 @@
 static const int nvme_version_major = 1;
 static const int nvme_version_minor = 1;
 
+/* tunable for admin command timeout in us, default is 1s */
+static volatile int nvme_admin_cmd_timeout = 1;
+
 static int nvme_attach(dev_info_t *, ddi_attach_cmd_t);
 static int nvme_detach(dev_info_t *, ddi_detach_cmd_t);
 static int nvme_quiesce(dev_info_t *);
@@ -1138,7 +1141,7 @@ nvme_abort_cmd(nvme_cmd_t *abort_cmd)
 	 * Send the ABORT to the hardware. The ABORT command will return _after_
 	 * the aborted command has completed (aborted or otherwise).
 	 */
-	if (nvme_admin_cmd(cmd, NVME_ADMIN_CMD_TIMEOUT) != DDI_SUCCESS) {
+	if (nvme_admin_cmd(cmd, nvme_admin_cmd_timeout) != DDI_SUCCESS) {
 		sema_v(&nvme->n_abort_sema);
 		dev_err(nvme->n_dip, CE_WARN,
 		    "!nvme_admin_cmd failed for ABORT");
@@ -1172,9 +1175,9 @@ nvme_abort_cmd(nvme_cmd_t *abort_cmd)
  * will be declared dead and FMA will be notified.
  */
 static boolean_t
-nvme_wait_cmd(nvme_cmd_t *cmd, uint_t usec)
+nvme_wait_cmd(nvme_cmd_t *cmd, uint_t sec)
 {
-	clock_t timeout = ddi_get_lbolt() + drv_usectohz(usec);
+	clock_t timeout = ddi_get_lbolt() + drv_usectohz(sec * MICROSEC);
 	nvme_t *nvme = cmd->nc_nvme;
 	nvme_reg_csts_t csts;
 
@@ -1408,7 +1411,7 @@ nvme_async_event_task(void *arg)
 }
 
 static int
-nvme_admin_cmd(nvme_cmd_t *cmd, int usec)
+nvme_admin_cmd(nvme_cmd_t *cmd, int sec)
 {
 	int ret;
 
@@ -1424,7 +1427,7 @@ nvme_admin_cmd(nvme_cmd_t *cmd, int usec)
 		return (DDI_FAILURE);
 	}
 
-	if (nvme_wait_cmd(cmd, usec) == B_FALSE) {
+	if (nvme_wait_cmd(cmd, sec) == B_FALSE) {
 		/*
 		 * The command timed out. An abort command was posted that
 		 * will take care of the cleanup.
@@ -1527,7 +1530,7 @@ nvme_get_logpage(nvme_t *nvme, uint8_t logpage, ...)
 		    cmd->nc_dma->nd_cookie.dmac_laddress;
 	}
 
-	if (nvme_admin_cmd(cmd, NVME_ADMIN_CMD_TIMEOUT) != DDI_SUCCESS) {
+	if (nvme_admin_cmd(cmd, nvme_admin_cmd_timeout) != DDI_SUCCESS) {
 		dev_err(nvme->n_dip, CE_WARN,
 		    "!nvme_admin_cmd failed for GET LOG PAGE");
 		return (NULL);
@@ -1583,7 +1586,7 @@ nvme_identify(nvme_t *nvme, uint32_t nsid)
 		    cmd->nc_dma->nd_cookie.dmac_laddress;
 	}
 
-	if (nvme_admin_cmd(cmd, NVME_ADMIN_CMD_TIMEOUT) != DDI_SUCCESS) {
+	if (nvme_admin_cmd(cmd, nvme_admin_cmd_timeout) != DDI_SUCCESS) {
 		dev_err(nvme->n_dip, CE_WARN,
 		    "!nvme_admin_cmd failed for IDENTIFY");
 		return (NULL);
@@ -1634,7 +1637,7 @@ nvme_set_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t val,
 		goto fail;
 	}
 
-	if (nvme_admin_cmd(cmd, NVME_ADMIN_CMD_TIMEOUT) != DDI_SUCCESS) {
+	if (nvme_admin_cmd(cmd, nvme_admin_cmd_timeout) != DDI_SUCCESS) {
 		dev_err(nvme->n_dip, CE_WARN,
 		    "!nvme_admin_cmd failed for SET FEATURES");
 		return (ret);
@@ -1744,7 +1747,7 @@ nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
 		}
 	}
 
-	if (nvme_admin_cmd(cmd, NVME_ADMIN_CMD_TIMEOUT) != DDI_SUCCESS) {
+	if (nvme_admin_cmd(cmd, nvme_admin_cmd_timeout) != DDI_SUCCESS) {
 		dev_err(nvme->n_dip, CE_WARN,
 		    "!nvme_admin_cmd failed for GET FEATURES");
 		return (ret);
@@ -1836,7 +1839,7 @@ nvme_create_io_qpair(nvme_t *nvme, nvme_qpair_t *qp, uint16_t idx)
 	cmd->nc_sqe.sqe_cdw11 = c_dw11.r;
 	cmd->nc_sqe.sqe_dptr.d_prp[0] = qp->nq_cqdma->nd_cookie.dmac_laddress;
 
-	if (nvme_admin_cmd(cmd, NVME_ADMIN_CMD_TIMEOUT) != DDI_SUCCESS) {
+	if (nvme_admin_cmd(cmd, nvme_admin_cmd_timeout) != DDI_SUCCESS) {
 		dev_err(nvme->n_dip, CE_WARN,
 		    "!nvme_admin_cmd failed for CREATE CQUEUE");
 		return (DDI_FAILURE);
@@ -1863,7 +1866,7 @@ nvme_create_io_qpair(nvme_t *nvme, nvme_qpair_t *qp, uint16_t idx)
 	cmd->nc_sqe.sqe_cdw11 = s_dw11.r;
 	cmd->nc_sqe.sqe_dptr.d_prp[0] = qp->nq_sqdma->nd_cookie.dmac_laddress;
 
-	if (nvme_admin_cmd(cmd, NVME_ADMIN_CMD_TIMEOUT) != DDI_SUCCESS) {
+	if (nvme_admin_cmd(cmd, nvme_admin_cmd_timeout) != DDI_SUCCESS) {
 		dev_err(nvme->n_dip, CE_WARN,
 		    "!nvme_admin_cmd failed for CREATE SQUEUE");
 		return (DDI_FAILURE);
