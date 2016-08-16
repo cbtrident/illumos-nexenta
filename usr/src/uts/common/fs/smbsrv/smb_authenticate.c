@@ -713,7 +713,7 @@ smb_authsock_open(smb_request_t *sr)
 	mutex_enter(&user->u_mutex);
 	if (user->u_authsock != NULL) {
 		mutex_exit(&user->u_mutex);
-		ksocket_close(so, CRED());
+		(void) ksocket_close(so, CRED());
 		smb_threshold_exit(&sv->sv_ssetup_ct);
 		status = NT_STATUS_INTERNAL_ERROR;
 		goto errout;
