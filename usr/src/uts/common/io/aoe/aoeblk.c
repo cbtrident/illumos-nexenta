@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #include <sys/aoe.h>
@@ -38,6 +38,7 @@
 #include <sys/sunndi.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
+#include <sys/sata/sata_hba.h>
 
 static char *aoe_errlist[] =
 {
@@ -172,10 +173,10 @@ typedef struct aoedisk {
 	unsigned short		ad_mintimer;
 	off_t			ad_nsectors;
 	unsigned short		ad_nframes;
-	char			ad_model[40];
+	char			ad_vendor[40];
+	char			ad_product[40];
+	char			ad_revision[8];
 	char			ad_serial[20];
-	char			ad_version[8];
-	char			ad_ident[512];
 } aoedisk_t;
 
 typedef struct aoeblk_frame {
@@ -235,6 +236,15 @@ aoeblk_driveinfo(void *arg, bd_drive_t *drive)
 		drive->d_qsize = 64;
 		drive->d_maxxfer *= (d->ad_nframes / 64);
 	}
+
+	drive->d_vendor = d->ad_vendor;
+	drive->d_vendor_len = strlen(d->ad_vendor);
+	drive->d_product = d->ad_product;
+	drive->d_product_len = strlen(d->ad_product);
+	drive->d_serial = d->ad_serial;
+	drive->d_serial_len = strlen(d->ad_serial);
+	drive->d_revision = d->ad_revision;
+	drive->d_revision_len = strlen(d->ad_revision);
 }
 
 static int
@@ -252,92 +262,25 @@ aoeblk_mediainfo(void *arg, bd_media_t *media)
 }
 
 static int
-aoeblk_get_modser(char *buf, int len)
-{
-	char *s;
-	char ch;
-	boolean_t ret;
-	int tb = 0;
-	int i;
-
-	/*
-	 * valid model/serial string must contain a non-zero non-space
-	 * trim trailing spaces/NULL
-	 */
-	ret = B_FALSE;
-	s = buf;
-	for (i = 0; i < len; i++) {
-		ch = *s++;
-		if (ch != ' ' && ch != '\0')
-			tb = i + 1;
-		if (ch != ' ' && ch != '\0' && ch != '0')
-			ret = B_TRUE;
-	}
-
-	if (ret == B_FALSE)
-		return (0);
-
-	return (tb);
-}
-
-static int
 aoeblk_devid_init(void *arg, dev_info_t *dip, ddi_devid_t *devid)
 {
 	aoedisk_t *d = (aoedisk_t *)arg;
-	char *hwid;
-	int verlen, modlen, serlen, ret;
-	unsigned short *tmp_ptr;
+	char hwid[CMDK_HWIDLEN];
+	int ret;
 
-	/*
-	 * devid_init call will be executed upon successful bd_attach()
-	 * Lets store it in per-disk structure for future use.
-	 */
 	d->dev = dip;
 
-	/*
-	 * WORD 27 LEN 40: MODEL NAME
-	 * WORD 23 LEN  8: VERSION
-	 * WORD 10 LEN 20: SERIAL
-	 */
-	tmp_ptr = (unsigned short *)d->ad_ident;
+	(void) snprintf(hwid, sizeof (hwid), "%s %s=%s",
+	    d->ad_vendor, d->ad_product, d->ad_serial);
 
-	/*
-	 * Device ID is a concatenation of model number, '=', serial number.
-	 */
-	hwid = kmem_alloc(CMDK_HWIDLEN, KM_SLEEP);
-	bcopy(tmp_ptr + 27, hwid, 40);
-	modlen = aoeblk_get_modser(hwid, 40);
-	d->ad_model[modlen] = 0;
-	bcopy(hwid, d->ad_model, modlen + 1);
-
-	hwid[modlen++] = '=';
-
-	bcopy(tmp_ptr + 10, hwid + modlen, 20);
-	serlen = aoeblk_get_modser(hwid + modlen, 20);
-	hwid[modlen + serlen] = 0;
-	bcopy(hwid + modlen, d->ad_serial, serlen + 1);
-
-	bcopy(tmp_ptr + 23, d->ad_version, 8);
-	verlen = aoeblk_get_modser(d->ad_version, 8);
-	d->ad_version[verlen] = 0;
-
-	ret = ddi_devid_init(dip, DEVID_ATA_SERIAL,
-	    modlen + serlen, hwid, devid);
+	ret = ddi_devid_init(dip, DEVID_ATA_SERIAL, strlen(hwid), hwid, devid);
 	if (ret != DDI_SUCCESS) {
-		kmem_free(hwid, CMDK_HWIDLEN);
-		dev_err(dip, CE_WARN, "Cannot build devid for the device %d.%d",
+		dev_err(dip, CE_WARN,
+		    "!failed to build devid for the device %d.%d",
 		    d->ad_major, d->ad_minor);
-		return (ret);
 	}
 
-	cmn_err(CE_NOTE,
-	    "!%s%d/%s%d :\n    Model  : %s\n    Ver.   : %s\n    Serial : %s",
-	    ddi_driver_name(d->sc->dev), ddi_get_instance(d->sc->dev),
-	    ddi_driver_name(d->dev), ddi_get_instance(d->dev),
-	    d->ad_model, d->ad_version, d->ad_serial);
-
-	kmem_free(hwid, CMDK_HWIDLEN);
-	return (DDI_SUCCESS);
+	return (ret);
 }
 
 static aoedisk_t *
@@ -746,17 +689,51 @@ aoeblk_unwind(aoedisk_t *d)
 }
 
 static void
+aoeblk_trim_inqstr(char *buf, int len)
+{
+	boolean_t valid = B_FALSE;
+	char *p = buf;
+	int i, tb = 0;
+
+	/*
+	 * Valid model/serial string must contain non-zero non-space.
+	 * Trim trailing spaces/NULL.
+	 */
+	for (i = 0; i < len; i++) {
+		char c = *p++;
+		if (c != ' ' && c != '\0') {
+			tb = i + 1;
+			if (c != '0')
+				valid = B_TRUE;
+		}
+	}
+
+	if (!valid)
+		tb = 0;
+	buf[tb] = '\0';
+}
+
+static void
 aoeblk_ataid_rsp(aoedisk_t *d, aoe_frame_t *fin, char *id)
 {
+	char model[40];
+	char *vendor, *product;
 	int n;
 
-	(void *) memcpy(d->ad_ident, id, sizeof (d->ad_ident));
-	for (n = 0; n < 512; n += 2) {
-		unsigned char ch;
-		ch = d->ad_ident[n];
-		d->ad_ident[n] = d->ad_ident[n+1];
-		d->ad_ident[n+1] = ch;
-	}
+	swab(id + 54, model, sizeof (model));
+	aoeblk_trim_inqstr(model, sizeof (model));
+	swab(id + 46, d->ad_revision, sizeof (d->ad_revision));
+	aoeblk_trim_inqstr(d->ad_revision, sizeof (d->ad_revision));
+	swab(id + 20, d->ad_serial, sizeof (d->ad_serial));
+	aoeblk_trim_inqstr(d->ad_serial, sizeof (d->ad_serial));
+
+	/* Try parsing the model into vendor/product */
+	sata_split_model(model, &vendor, &product);
+	if (vendor == NULL)
+		(void) strlcpy(d->ad_vendor, "AoE", sizeof (d->ad_vendor));
+	else
+		(void) strlcpy(d->ad_vendor, vendor, sizeof (d->ad_vendor));
+	(void) strlcpy(d->ad_product, product, sizeof (d->ad_product));
 
 	n = lhget16((uchar_t *)(id + (83<<1)));	/* Command set supported. */
 	if (n & (1<<10)) {			/* LBA48 */
@@ -1388,7 +1365,6 @@ buffer_overflow:
 	return (DDI_FAILURE);
 }
 
-/* ARGSUSED ksp */
 static int
 aoeblk_ksupdate(kstat_t *ksp, int rw)
 {

@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.
 #
 
 # This makefile drives the production of the aoeblk driver
@@ -34,13 +34,15 @@ LINT_TARGET	= $(MODULE).lint
 INSTALL_TARGET	= $(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
 
 # Overrides and depends_on
-LDFLAGS		+= -r -dy -N drv/aoe -N drv/blkdev
+LDFLAGS		+= -r -dy -N drv/aoe -N drv/blkdev -N misc/sata
 
 LINTTAGS	+= -erroff=E_BAD_PTR_CAST_ALIGN
 
 .KEEP_STATE:
 
 # Default build targets.
+def:		$(DEF_DEPS)
+
 all:		$(ALL_DEPS)
 
 clean.lint:	$(CLEAN_LINT_DEPS)
@@ -48,8 +50,6 @@ clean.lint:	$(CLEAN_LINT_DEPS)
 clean:		$(CLEAN_DEPS)
 
 clobber:	$(CLOBBER_DEPS)
-
-def:		$(DEF_DEPS)
 
 install:	$(INSTALL_DEPS)
 
