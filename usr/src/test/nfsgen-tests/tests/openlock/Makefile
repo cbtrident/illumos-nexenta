@@ -11,25 +11,31 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
-# Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
-.PARALLEL:	$(SUBDIRS)
+#
+# Tests not in shell
+#
+BINDIR = tests/openlock
+PROGS = locktest opentest
 
-SUBDIRS=	comstar-tests	\
-		libc-tests	\
-		lofi-tests	\
-		os-tests	\
-		ndmp-tests	\
-		nfsgen-tests	\
-		nfssharemnt-tests \
-		nfsv4-tests	\
-		sharefs-tests	\
-		smbclient-tests	\
-		smf-tests	\
-		test-runner	\
-		util-tests	\
-		zfs-tests
+include ../../Makefile.src
 
-include		Makefile.com
+TSDIR = $(TESTBIN)
+
+STFDESC = LOCK.assertions OPEN.assertions stf_description
+SHS = cleanup mkassert runtests setup
+
+DESC = $(STFDESC:%=$(TESTBIN)/%)
+TS = $(SHS:%=$(TSDIR)/%)
+$(TS) := FILEMODE = 0555
+$(DESC) := FILEMODE = 0444
+
+all install: $(TS) $(DESC)
+
+$(DESC) : $(TESTBIN)
+$(TS): $(TSDIR)
+
+$(TSDIR)/%: %.ksh
+	$(INS.rename)

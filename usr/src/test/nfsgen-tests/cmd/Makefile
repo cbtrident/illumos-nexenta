@@ -11,25 +11,25 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
-# Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
-.PARALLEL:	$(SUBDIRS)
+#
+# Tools not in shell
+#
+BINDIR = bin
+PROGS = chg_usr_exec file_operator holdopenat mktree \
+	open_dg
 
-SUBDIRS=	comstar-tests	\
-		libc-tests	\
-		lofi-tests	\
-		os-tests	\
-		ndmp-tests	\
-		nfsgen-tests	\
-		nfssharemnt-tests \
-		nfsv4-tests	\
-		sharefs-tests	\
-		smbclient-tests	\
-		smf-tests	\
-		test-runner	\
-		util-tests	\
-		zfs-tests
+include ../Makefile.src
 
-include		Makefile.com
+SHS = nfsgentest
+TS = $(SHS:%=$(TESTBIN)/%)
+$(TS) := FILEMODE = 0555
+
+all install: $(TS)
+
+$(TS): $(TESTBIN)
+
+$(TESTBIN)/%: %.ksh
+	$(INS.rename)

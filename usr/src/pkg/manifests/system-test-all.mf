@@ -21,6 +21,7 @@ set name=info.classification \
 set name=variant.arch value=$(ARCH)
 depend fmri=system/test/comstar type=require
 depend fmri=system/test/lofitest type=require
+depend fmri=system/test/nfsgen type=require
 depend fmri=system/test/nfssharemnt type=require
 depend fmri=system/test/nfsv4 type=require
 depend fmri=system/test/sharefstest type=require

@@ -1,0 +1,54 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+#
+include $(SRC)/cmd/Makefile.cmd
+
+ROOTOPTPKG = $(ROOT)/opt/nfsgen-tests
+TESTBIN = $(ROOTOPTPKG)/$(BINDIR)
+
+SRCS = $(PROGS:%=%.c)
+OBJS = $(PROGS:%=%.o)
+
+BINS = $(PROGS:%=$(TESTBIN)/%)
+$(BINS) := FILEMODE = 0555
+
+LIBNFSGEN = $(ROOTOPTPKG)/lib
+NFSGENINC = $(SRC)/test/nfsgen-tests/include
+CFLAGS = -erroff=%all   # Ignore all lint msg now
+CFLAGS += -I$(NFSGENINC)
+LDLIBS += -L$(LIBNFSGEN) -lnfsgen
+
+$(PROGS): $(OBJS)
+	$(LINK.c) -o $@ $@.o $(LDLIBS)
+	$(POST_PROCESS)
+
+all install: $(BINS)
+
+$(BINS): $(TESTBIN)
+
+$(TESTBIN):
+	$(INS.dir)
+
+$(TESTBIN)/%: %
+	$(INS.file)
+
+lint:
+	for src in $(SRCS); \
+	do \
+	$(LINT.c) $(CFLAGS) $${src}; \
+	done
+	
+clobber clean:
+	-$(RM) $(OBJS) $(PROGS)

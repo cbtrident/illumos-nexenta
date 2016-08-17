@@ -1,0 +1,196 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+
+# OPEN nfsv4 C program assertions
+
+Note: cache invalidation is by means similar to those used in
+  Cthon - lock suite.
+
+Open Scenarios:
+The following test scenario is run with (exhaustive) combinations of
+parameters obtained from the following sets:
+
+mode={0600 0400 0200 000)
+oflags={O_EXCL|O_RDWR  O_RDWR  O_WRONLY  O_RDONLY}
+
+Scenario A)
+ prep) All done by the parent (before spawning a child)
+  - open file1 (fd_i) with mode 600 and oflags O_CREAT|O_TRUNC|O_RDWR
+  - using fd_i, write a test message, chmod to right mode
+
+ Assertions:
+ a) Parent open file1 (get fd1) with provided parameters oflag and mode.
+  Expect OK when mode=0600, {mode, oflags}={0400, O_RDONLY} |
+   {0200, O_WRONLY}. Else expect EACCES.
+ -prep) Parent use dup to get a second fd (fd2) on same file1. Expect
+  same results as previous assertion. If operation successful, then
+  forks a child, else finish this scenario (no fds available to continue).
+ b) close fd1 on parent (expect OK), then wait for child next step
+ c) child verifies if it can write & read using fd1 and fd2.
+  READ Expect OK when: mode = 0600 & oflags != O_WRONLY,
+   mode = 0400 & oflags = O_RDONLY. Else, expect EBADF
+  WRITE Expect OK when: mode = 0600 & oflags != O_RDONLY,
+   mode = 0200 & oflags = O_WRONLY. Else, expect EBADF
+ d) verify if parent can read fds 1 and 2 wait for child next step.
+  Expect EBADF for fd1, and same results as in previous step for fd2
+ e) close fds 1 & 2 on child and sleep for long time.
+ f) verify if parent can read fds 1 and 2, then kills child.
+  Expect same results as in step (d).
+ g) verify if parent can read fds 1 and 2, then close fd2.
+  Expect same results as in step (d).
+
+ clean) - close fd_i
+  - unlink file1
+
+Note 1) all writes and reads are preceded by lseek to offset 0,
+ unless specified
+Note 2) if environment var SYNCWRITE is defined, writes are followed
+ by fsync() and invalidating the cache and a read on fd_i to compare
+ data on server. And reads are preceded by invalidating the cache
+ to force read from server.
+
+To test hard links
+The following test scenario is run with (exhaustive) combinations of
+ parameters obtained from the following sets:
+
+mode={0600 0400 0200 000)
+oflags={O_EXCL|O_RDWR  O_RDWR  O_WRONLY  O_RDONLY}
+
+Scenario B)
+ prep) All done by the parent (before spawning a child)
+  - open file1 (fd_i) with mode 600 and oflags O_CREAT|O_TRUNC|O_RDWR
+  - using fd_i, write a test message
+  - link file1 to file2 (hard link)
+
+ Assertions:
+ a) Parent open file1 (get fd1) with provided parameters oflag and mode.
+  Expect OK when mode=0600, {mode, oflags}={0400, O_RDONLY} |
+   {0200, O_WRONLY}. Else expect EACCES.
+ b) Parent opens (fd2) file2 (hard link) with same parameters used in file1.
+  Expect same results as with file1
+  If operation successful, then forks a child,
+  else finish this scenario (no fds available to continue).
+ c) close fd1 on parent (expect OK), then wait for child next step
+ d) child verifies if it can write & read using fd1 and fd2.
+  READ Expect OK when: mode = 0600 & oflags != O_WRONLY,
+   mode = 0400 & oflags = O_RDONLY. Else, expect EBADF
+  WRITE Expect OK when: mode = 0600 & oflags != O_RDONLY,
+   mode = 0200 & oflags = O_WRONLY. Else, expect EBADF
+ e) verify if parent can read fds 1 and 2 wait for child next step.
+  Expect EBADF for fd1, and same results as in previous step for fd2
+ f) close fds 1 & 2 on child and sleep for long time.
+ g) verify if parent can read fds 1 and 2, then kills child.
+  Expect same results as in step (e).
+ h) verify if parent can read fds 1 and 2, then close fd2.
+  Expect same results as in step (e).
+
+ clean) - close fd_i
+  - unlink file1
+
+Note 1) all writes and reads are preceded by lseek to offset 0, unless
+ specified
+Note 2) if environment var SYNCWRITE is defined, writes are followed
+ by fsync() and invalidating the cache and a read on fd_i to compare
+ data on server. And reads are preceded by invalidating the cache
+ to force read from server.
+
+Scenario C)
+ change for mode={0660 0600 0440 0400 0220 0200 000)
+
+ prep) All done by the parent (before spawning a child)
+  - open file1 (fd_i) with mode 600 and oflags O_CREAT|O_TRUNC|O_RDWR
+  - using fd_i, write a test message
+  - link file1 to file2 (hard link)
+
+ Assertions:
+ a) Parent open file1 (get fd1) with provided parameters oflag and mode.
+  Expect OK when mode=0660, {mode, oflags}={0440, O_RDONLY} |
+   {0220, O_WRONLY}. Else expect EACCES.
+ b) Parent opens (fd2) file2 (hard link) with same parameters used in file1.
+  Expect same results as with file1
+ c) Parent use dup() to create fd3 to same file, expect OK when fd1 is
+valid,
+  else EBADF.
+  If operation successful, then forks a child,
+  else finish this scenario (no fds available to continue).
+ d) close fd1 on parent (expect OK), then wait for child next step
+ e) child verifies if it can write & read using fd1, fd2 and fd3, after
+  changing UID with setuid (GID is the same).
+  READ Expect EBADF when mode = 0X00,
+       Expect OK when: mode = 0660 & oflags != O_WRONLY,
+   mode = 0440 & oflags = O_RDONLY. Else, expect EBADF
+  WRITE Expect EBADF when mode = 0X00,
+        Expect OK when: mode = 0660 & oflags != O_RDONLY,
+   mode = 0220 & oflags = O_WRONLY. Else, expect EBADF
+ e) child verifies if it can write & read using fd1, fd2 and fd3, after
+  changing GID with setgid.
+  READ Expect EBADF
+  WRITE EBADF
+
+ clean) - close all remaining fds
+  - parent kills the child
+  - unlink file1
+
+Note 1) all writes and reads are preceded by lseek to offset 0, unless
+ specified
+Note 2) if environment var SYNCWRITE is defined, writes are followed
+ by fsync() and invalidating the cache and a read on fd_i to compare
+ data on server. And reads are preceded by invalidating the cache
+ to force read from server.
+
+Scenario D)
+ prep) All done by the parent (before spawning a child)
+  - open file1 (fd_i) with mode 600 and oflags O_CREAT|O_TRUNC|O_RDWR
+  - using fd_i, write a test message
+  - link file1 to file2 (hard link)
+
+ Assertions:
+ a) Parent changes file permissions for file1 to 000, then forks a file.
+ b) Child tries to open file1 (try O_RDWR | O_RDONLY | O_WRONLY), expect
+EACCES
+ c) Child tries to open file2 (try O_RDWR | O_RDONLY | O_WRONLY), expect
+EACCES
+
+ clean) - close all remaining fds
+  - parent kills the child
+  - unlink file1
+
+Note 1) all writes and reads are preceded by lseek to offset 0, unless
+ specified
+Note 2) if environment var SYNCWRITE is defined, writes are followed
+ by fsync() and invalidating the cache and a read on fd_i to compare
+ data on server. And reads are preceded by invalidating the cache
+ to force read from server.
+
+Scenario E)
+this is the single test case for bug  5092786 ,it is different from the other
+above.
+
+Assertions:
+ a) Parent open a file with O_CREAT option,then reopen it with O_TRUNC option.
+ this is to test client's OPEN upgrade. 
+The client should upgrade its OPEN modes for the open/truncate. 

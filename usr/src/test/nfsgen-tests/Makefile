@@ -8,28 +8,13 @@
 # source.  A copy of the CDDL is also available via the Internet at
 # http://www.illumos.org/license/CDDL.
 #
-
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
-# Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
-.PARALLEL:	$(SUBDIRS)
+.PARALLEL: $(SUBDIRS)
 
-SUBDIRS=	comstar-tests	\
-		libc-tests	\
-		lofi-tests	\
-		os-tests	\
-		ndmp-tests	\
-		nfsgen-tests	\
-		nfssharemnt-tests \
-		nfsv4-tests	\
-		sharefs-tests	\
-		smbclient-tests	\
-		smf-tests	\
-		test-runner	\
-		util-tests	\
-		zfs-tests
+SUBDIRS = lib .WAIT cmd include setup tests
 
-include		Makefile.com
+include $(SRC)/test/Makefile.com

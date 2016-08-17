@@ -1,0 +1,182 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+
+# LOCK nfsv4 C program assertions
+
+Note: cache invalidation is by means similar to those used in
+  Cthon - lock suite.
+
+Lock Scenarios:
+The following test scenario is run with (exhaustive) combinations of
+ parameters obtained from the following sets:
+Warning: I still need to adjust the expected values according to
+ parameters oflags and mode.
+
+Values shown are for:
+
+mode={0600 0400 0200 000)
+oflags={O_EXCL|O_RDWR  O_RDWR  O_WRONLY  O_RDONLY}
+
+Scenario A)
+ prep) All done by the parent (before spawning a child)
+  - open file1 (fd_i) with mode 600 and oflags O_CREAT|O_TRUNC|O_RDWR
+  - using fd_i, write a test message
+  - link file1 to file2 (hard link)
+
+ Assertions:
+ a) Parent open file1 (get fd1) with provided parameters oflag and mode.
+  Expect OK when mode=0600, {mode, oflags}={0400, O_RDONLY} |
+   {0200, O_WRONLY}. Else expect EACCES.
+ b) Parent opens (fd2) file2 (hard link) with same parameters used in file1.
+  Expect same results as with file1
+  If operation successful, then forks a child,
+  else finish this scenario (no fds available to continue).
+ c) fcntl F_SETLK-F_RDLCK on fd2 in parent (whole file), expect OK when
+  file is read enabled, else EBADF,  then wait for child next step
+ d) child fcntl F_SETLK-F_RDLCK fd1 (whole file) and verifies if it can
+  write & read using fds 1 & 2. Expect fcntl results as in assertion (c).
+  READ Expect OK when: mode = 0600 & oflags != O_WRONLY,
+   mode = 0400 & oflags = O_RDONLY. Else, expect EBADF
+  WRITE Expect OK when: mode = 0600 & oflags != O_RDONLY,
+   mode = 0200 & oflags = O_WRONLY. Else, expect EBADF
+ e) parent tries fcntl F_SETLK-F_WRLCK first 1K of file on fds 1 & 2,
+  wait for child next step. Expect EAGAIN on both fds, except when file is
+  O_RDONLY when it should be EBADF.
+ f) child tries fcntl F_SETLK-F_UNLCK first 1K of file on fds 1 & 2,
+  Expect OK on fd1 and fd2 (no previous lock).
+ g) parent tries fcntl F_SETLK-F_WRLCK first 1K of file on fds 1 & 2,
+  Expect OK on both fds.
+ h) parent tries read and write on fds 1 & 2. then waits for child tasks.
+  READ Expect OK when: mode = 0600 & oflags != O_WRONLY,
+   mode = 0400 & oflags = O_RDONLY. Else, expect EBADF
+  WRITE Expect OK when: mode = 0600 & oflags != O_RDONLY,
+   mode = 0200 & oflags = O_WRONLY. Else, expect EBADF
+ i) child tries fcntl F_SETLK-F_RDLCK first 1K on both fds. Expected EAGAIN
+  except when file was O_WRONLY when it should be EBADF.
+ j) child tries fcntl F_SETLK-F_WRLCK first 1K on both fds. Expected EAGAIN.
+ k) child tries fcntl F_SETLK-F_WRLCK from 1K+1 to 2k 1K on both fds.
+  Expected EAGAIN.
+ l) parent tries fcntl F_SETLK-F_UNLCK from 1K+1 to EOF and wait for child
+  Expected OK.
+ m) child tries fcntl F_SETLK-F_RDLCK from 1K+1 to 2k on both fds. Expected
+OK.
+ n) child tries fcntl F_SETLK-F_WRLCK from 1K+1 to 2k on both fds. Expected
+OK.
+ o) parent tries fcntl F_SETLK-F_RDLCK first 1K of file on fds 1 & 2,
+  wait for child. Expect OK on both fds.
+ p) child tries fcntl F_SETLK-F_WRLCK whole file on both fds. Expected
+EAGAIN.
+ q) child tries fcntl F_SETLK-F_RDLCK whole file on both fds. Expected OK.
+ r) parent tries fcntl F_SETLK-F_UNLCK whole file on fds 1 & 2,
+  wait for child. Expect OK on both fds.
+ s) child tries fcntl F_SETLK-F_WRLCK whole file on both fds. Expected OK.
+ t) parent tries fcntl F_SETLK-F_WRLCK whole file on fds 1 & 2,
+  expect EAGAIN on both fds. Then kills child.
+ u) parent tries fcntl F_SETLK-F_WRLCK whole file on fds 1 & 2,
+  expect OK on both fds. Then closes fds, expected OK.
+ v) parent opens file1 and file2, then tries fcntl F_SETLK-F_WRLCK whole
+file
+  on fds 1 & 2, expect OK on both fds. tries fcntl F_SETLK-F_UNLCK whole
+  file on fds 1 & 2, expect OK on both fds. Finally, close fds 1 & 2,
+  expects OK on both fds.
+
+ clean) - close fd_i
+  - unlink file1 and file2
+
+Note 1) all writes and reads are preceded by lseek to offset 0, unless
+ specified
+Note 2) if environment var SYNCWRITE is defined, writes are followed
+ by fsync() and invalidating the cache and a read on fd_i to compare
+ data on server. And reads are preceded by invalidating the cache
+ to force read from server.
+
+Scenario B) is same as A), but with child changing UID and GID before
+ tests start.
+
+  replace step (v) in scenario A with:
+ v) child opens a file3 (different from file1) same mode and oflags as
+  file1 and tries fcntl F_SETLK-F_RDLCK whole file. Expected OK.
+ w) parent opens same file, same permissions and tries fcntl
+  F_SETLK-F_WRLCK whole
+
+  file, expected EAGAIN. Then tries fcntl F_SETLK-F_RDLCK whole file,
+  expected OK. Then waits for child.
+ x) child tries fcntl F_SETLK-F_WRLCK whole file, expected EAGAIN.
+ y) parent tries fcntl F_SETLK-F_UNLCK whole file, expected OK. Wait
+  for child.
+ z) child tries fcntl F_SETLK-F_WRLCK whole file, expected OK. Sleep
+  for long time.
+ t) parent kills child, then tries fcntl F_SETLK-F_WRLCK whole file,
+  expect OK. Then closes fd, expected OK.
+ v) parent opens file3, then tries fcntl F_SETLK-F_WRLCK whole file,
+  expect OK. Then, tries fcntl F_SETLK-F_UNLCK whole file, expect OK.
+  Then closes fd, expected OK.
+
+ clean) - close fd_i
+  - unlink file1, file2 and file3
+
+Note 1) all writes and reads are preceded by lseek to offset 0, unless
+ specified
+Note 2) if environment var SYNCWRITE is defined, writes are followed
+ by fsync() and invalidating the cache and a read on fd_i to compare
+ data on server. And reads are preceded by invalidating the cache
+ to force read from server.
+
+Scenario C) Process A opens a file and forks process B, using mode 600.
+        Files are have flags O_CREAT|O_TRUNC|O_RDWR. N is a big number
+ say 10000.
+ a) child tries fcntl F_SETLK-F_RDLCK whole file, then fcntl
+  F_SETLK-F_UNLCK whole file for N times then waits. Expect OK.
+ b) concurrently to step (a) parent close and reopens the file N times,
+  then tries fcntl F_SETLK-F_RDLCK whole file and waits. Expect OK.
+ c) parent tries fcntl F_SETLK-F_WRLCK whole file, expect OK and waits
+ d) child tries fcntl F_SETLK-F_RDLCK whole file, expect EBADF and wait
+ e) parent tries fcntl F_SETLK-F_RDLCK whole file, then
+  tries fcntl F_SETLK-F_UNLCK whole file, then
+  tries fcntl F_SETLK-F_RDLCK whole file,
+  looping unlocking relocking file N times and waits expect OK
+ f) child tries fcntl F_SETLK-F_RDLCK whole file, then
+  tries fcntl F_SETLK-F_UNLCK whole file, then
+  tries fcntl F_SETLK-F_RDLCK whole file,
+  looping unlocking relocking file N times and waits expect OK
+ g) parent tries fcntl F_SETLK-F_UNLCK whole file, expect OK and waits
+ h) child tries fcntl F_SETLK-F_WRLCK whole file, expect OK and sleeps
+  3 minutes
+ i) parent tries fcntl F_SETLK-F_RDLCK whole file, expect EBADF and waits
+ j) child tries fcntl F_SETLK-F_UNLCK whole file, then waits. Expect OK.
+ k) parent kills child, then tries fcntl F_SETLK-F_WRLCK whole file,
+  expect OK.
+
+ clean) - close fd
+  - unlink file
+
+Note 1) all writes and reads are preceded by lseek to offset 0, unless
+ specified
+Note 2) if environment var SYNCWRITE is defined, writes are followed
+ by fsync() and invalidating the cache and a read on fd_i to compare
+ data on server. And reads are preceded by invalidating the cache
+ to force read from server.

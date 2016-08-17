@@ -11,25 +11,31 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
-# Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
-.PARALLEL:	$(SUBDIRS)
+#
+# Tests not in shell
+#
+BINDIR = tests/stress
+PROGS = stress_pos001 stress_pos002 stress_pos003
 
-SUBDIRS=	comstar-tests	\
-		libc-tests	\
-		lofi-tests	\
-		os-tests	\
-		ndmp-tests	\
-		nfsgen-tests	\
-		nfssharemnt-tests \
-		nfsv4-tests	\
-		sharefs-tests	\
-		smbclient-tests	\
-		smf-tests	\
-		test-runner	\
-		util-tests	\
-		zfs-tests
+include ../../Makefile.src
 
-include		Makefile.com
+TSDIR = $(TESTBIN)
+
+STFDESC = stf_description STRESS.assertions stress.vars
+SHS = mkassert stress_pos004 stress_pos005
+
+DESC = $(STFDESC:%=$(TESTBIN)/%)
+TS = $(SHS:%=$(TSDIR)/%)
+$(TS) := FILEMODE = 0555
+$(DESC) := FILEMODE = 0444
+
+all install: $(TS) $(DESC)
+
+$(DESC) : $(TESTBIN)
+$(TS): $(TSDIR)
+
+$(TSDIR)/%: %.ksh
+	$(INS.rename)

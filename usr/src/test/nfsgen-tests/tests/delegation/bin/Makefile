@@ -11,25 +11,27 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
-# Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
-.PARALLEL:	$(SUBDIRS)
+#
+# Tests not in shell
+#
+BINDIR = tests/delegation/bin
+PROGS = endless_exe get_deleg_type
 
-SUBDIRS=	comstar-tests	\
-		libc-tests	\
-		lofi-tests	\
-		os-tests	\
-		ndmp-tests	\
-		nfsgen-tests	\
-		nfssharemnt-tests \
-		nfsv4-tests	\
-		sharefs-tests	\
-		smbclient-tests	\
-		smf-tests	\
-		test-runner	\
-		util-tests	\
-		zfs-tests
+include ../../../Makefile.src
 
-include		Makefile.com
+TSDIR = $(TESTBIN)
+
+SHS = endless_scr
+
+TS = $(SHS:%=$(TSDIR)/%)
+$(TS) := FILEMODE = 0555
+
+all install: $(TS)
+
+$(TS): $(TSDIR)
+
+$(TSDIR)/%: %.ksh
+	$(INS.rename)

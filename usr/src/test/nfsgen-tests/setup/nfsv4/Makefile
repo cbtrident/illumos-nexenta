@@ -8,28 +8,36 @@
 # source.  A copy of the CDDL is also available via the Internet at
 # http://www.illumos.org/license/CDDL.
 #
-
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
-# Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
+include $(SRC)/Makefile.master
 
-.PARALLEL:	$(SUBDIRS)
+ROOTOPTPKG = $(ROOT)/opt/nfsgen-tests
+NFSV4DIR = $(ROOTOPTPKG)/bin/nfsv4
+NFSV4SH = $(NFSV4DIR)
 
-SUBDIRS=	comstar-tests	\
-		libc-tests	\
-		lofi-tests	\
-		os-tests	\
-		ndmp-tests	\
-		nfsgen-tests	\
-		nfssharemnt-tests \
-		nfsv4-tests	\
-		sharefs-tests	\
-		smbclient-tests	\
-		smf-tests	\
-		test-runner	\
-		util-tests	\
-		zfs-tests
+DESC = stf_description
+PROGS = configure srv_setup unconfigure
 
-include		Makefile.com
+STFDESC = $(DESC:%=$(NFSV4DIR)/%)
+SHS = $(PROGS:%=$(NFSV4SH)/%)
+$(STFDESC) := FILEMODE = 0444
+$(SHS) := FILEMODE = 0555
+
+all lint clean clobber:
+
+install: $(STFDESC) $(SHS)
+
+$(STFDESC) : $(NFSV4DIR)
+$(SHS): $(NFSV4SH)
+
+$(NFSV4DIR):
+	$(INS.dir)
+
+$(NFSV4SH)/% : %.ksh
+	$(INS.rename)
+
+$(NFSV4DIR)/% : %
+	$(INS.file)

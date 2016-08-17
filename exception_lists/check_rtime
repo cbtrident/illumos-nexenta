@@ -243,3 +243,4 @@ UNREF_OBJ	lib/(libdevinfo|libcfgadm)\.so\.1; .*\ of\ .*SUNW,Netra-CP2300/lib/lib
 #  Unreferenced object of libtcl8.5.so we can not change
 #
 UNREF_OBJ	/lib.*\ of\ .*libtcl8\.5\.so
+SKIP		^opt/nfsgen-tests/

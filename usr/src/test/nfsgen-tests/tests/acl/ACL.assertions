@@ -1,0 +1,992 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+#################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_001_pos
+#
+# DESCRIPTION:
+#	Verify chmod permission settings on files and directories, as both root
+#	and non-root users.
+#
+# STRATEGY:
+#	1. Loop root and $ACL_STAFF1 as root and non-root users.
+#	2. Create test file and directory in exported filesystem.
+#	3. Execute 'chmod' with specified options.
+#	4. Check 'ls -l' output and compare with expect results.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_compress_pos001
+#
+# DESCRIPTION:
+#	The function verifies that compress will keep file attribute intact
+#	after the file is compressed and uncompressed.
+#
+# STRATEGY:
+#	1. In directory A, create several files and add attribute files for them
+#	2. Save all files and their attribute files cksum value, then compress 
+#	   all the files.
+#	3. Move them to another directory B.
+#	4. Uncompress them and calculate all the files and attribute files cksum
+#	5. Verify all the cksum are identical
+#	
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_cp_neg001
+#
+# DESCRIPTION:
+#	Verifies that cp will not include file attribute when the -@ flag is not
+#	present.
+#
+# STRATEGY:
+#	1. In directory A, create several files and add attribute files for them
+#	2. Implement cp to files without '-@'
+#	3. Verify attribute files will not include file attribute
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_cp_neg002
+#
+# DESCRIPTION:
+#	Verifies that cp will not be able to include file attribute when
+#	attribute is unreadable (unless the user is root)
+#
+# STRATEGY:
+#	1. In directory A, create several files and add attribute files for them
+#	2. chmod all files'the attribute files to '000'.
+#	3. Implement 'cp -@p' to files.
+#	4. Verify attribute files are not existing for non-root user.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# CODING_STATUS: COMPLETED (2006-06-01)
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_cp_pos001
+#
+# DESCRIPTION:
+#	Verifies that cp will include file attribute when using the -@ flag
+#
+# STRATEGY:
+#	1. In directory A, create several files and add attribute files for them
+#	2. Save all files and their attribute files cksum value, then 'cp -@p' 
+#	   all the files to to another directory B.
+#	3. Calculate all the cksum in directory B.
+#	4. Verify all the cksum are identical
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_find_neg001
+#
+# DESCRIPTION:
+#	Verifies ability to find files with attribute with -xattr flag and using
+#	"-exec runat ls".
+#
+# STRATEGY:
+#	1. In directory A, create several files and add attribute files for them
+#	2. Delete all the attribute files.
+#	2. Verify all the specified files can not be found with '-xattr', 
+#	3. Verify all the attribute files can not be found with '-exec runat ls'
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_find_pos001
+#
+# DESCRIPTION:
+#	Verifies ability to find files with attribute with -xattr flag and using
+#	"-exec runat ls".
+#
+# STRATEGY:
+#	1. In directory A, create several files and add attribute files for them
+#	2. Verify all the specified files can be found with '-xattr', 
+#	3. Verify all the attribute files can be found with '-exec runat ls'
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_ls_neg001
+#
+# DESCRIPTION:
+#	Verifies that ls doesn't display @ in the file permissions using ls -@
+#	for files without attribute.
+#
+# STRATEGY:
+#	1. Create files with attribute files in directory A.
+#	2. Removed all attribute files.
+#	3. Verify 'ls -l' can't display @ in file permission.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_ls_pos001
+#
+# DESCRIPTION:
+#	Verifies that ls displays @ in the file permissions using ls -@ 
+#	for files with attribute.
+#
+# STRATEGY:
+#	1. Create files with attribute files in directory A.
+#	2. Verify 'ls -l' can display @ in file permissions.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: zfs_acl_mv_001_pos
+#
+# DESCRIPTION:
+#	Verifies that mv will include file attribute.
+#
+# STRATEGY:
+#	1. In directory A, create several files and add attribute files for them
+#	2. Save all files and their attribute files cksum value
+#	3. Move them to another directory B.
+#	4. Calculate all the files and attribute files cksum
+#	5. Verify all the cksum are identical
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# CODING_STATUS: COMPLETED (2006-06-01)
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_pack_pos001
+#
+# DESCRIPTION:
+#	Verifies that pack will keep file attribute intact afterthe file is
+#	packed and unpacked.
+#
+# STRATEGY:
+#	1. In directory A, create several files and add attribute files for them
+#	2. Save all files and their attribute files cksum value, then pack
+#	   all the files.
+#	3. Move them to another directory B.
+#	4. Unpack them and calculate all the files and attribute files cksum
+#	5. Verify all the cksum are identical
+#	
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_pax_pos001
+#
+# DESCRIPTION:
+#	Verify directories include attribute in pax archive and restore with pax
+#	should succeed.
+#
+# STRATEGY:
+#	1. Use mktree create a set of directories in directory A.
+#	2. Enter into directory A and record all directory information.
+#	3. pax all the files to directory B.
+#	4. Then pax the pax file to directory C.
+#	5. Record all the directories informat in derectory C.
+#	6. Verify the two records should be identical.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# CODING_STATUS: COMPLETED (2006-06-01)
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_pax_pos002
+#
+# DESCRIPTION:
+#	Verify directories which include attribute in pax archive and restore 
+#	with tar should succeed.
+#
+# STRATEGY:
+#	1. Use mktree create a set of directories in directory A.
+#	2. Enter into directory A and record all directory information.
+#	3. pax all the files to directory B.
+#	4. Then tar the pax file to directory C.
+#	5. Record all the directories informat in derectory C.
+#	6. Verify the two records should be identical.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_pax_pos003
+#
+# DESCRIPTION:
+#	Verify directories which include attribute in pax archive and restore
+#	with cpio should succeed.
+#
+# STRATEGY:
+#	1. Create several files in directory A.
+#	2. Enter into directory A and record all directory cksum.
+#	3. pax all the files to directory B.
+#	4. Then cpio the pax file to directory C.
+#	5. Record all the files cksum in derectory C.
+#	6. Verify the two records should be identical.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_pax_pos004
+#
+# DESCRIPTION:
+#	Verify files include attribute in pax archive and restore with pax
+#	should succeed.
+#
+# STRATEGY:
+#	1. Create several files which contains contribute files in directory A.
+#	2. Enter into directory A and record all files cksum.
+#	3. pax all the files to directory B.
+#	4. Then pax the pax file to directory C.
+#	5. Record all the files cksum in derectory C.
+#	6. Verify the two records should be identical.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_pax_pos005
+#
+# DESCRIPTION:
+#	Verify files include attribute in cpio archive and restore with cpio
+#	should succeed.
+#
+# STRATEGY:
+#	1. Create several files which contains contribute files in directory A.
+#	2. Enter into directory A and record all files cksum.
+#	3. pax all the files to directory B.
+#	4. Then pax the pax file to directory C.
+#	5. Record all the files cksum in derectory C.
+#	6. Verify the two records should be identical.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_pax_pos006
+#
+# DESCRIPTION:
+#	Verify files include attribute in tar archive and restore with tar
+#	should succeed.
+#
+# STRATEGY:
+#	1. Create several files which contains contribute files in directory A.
+#	2. Enter into directory A and record all files cksum.
+#	3. 'pax ustar' all the files to directory B.
+#	4. Then 'pax ustar' the pax file to directory C.
+#	5. Record all the files cksum in derectory C.
+#	6. Verify the two records should be identical.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_tar_neg001
+#
+# DESCRIPTION:
+#	Verifies that tar will not include files attribute when @ flag is not
+#	present.
+#
+# STRATEGY:
+#	1. Create several files with attribute files.
+#	2. Enter into directory A and record all files cksum
+#	3. tar all the files to directory B.
+#	4. Then tar the tar file to directory C.
+#	5. Record all the files cksum in derectory C.
+#	6. Verify the two records should be not identical.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_tar_pos001
+#
+# DESCRIPTION:
+#	Verifies that tar will include file attribute when @ flag is present.
+#
+# STRATEGY:
+#	1. Use mktree create a set of directories in directory A.
+#	2. Enter into directory A and record all directory information.
+#	3. tar all the files to directory B.
+#	4. Then tar the tar file to directory C.
+#	5. Record all the directories informat in derectory C.
+#	6. Verify the two records should be identical.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_compact_pos001
+#
+# DESCRIPTION:
+#	chmod A{+|-|=} could set compact ACL correctly.
+#
+# STRATEGY:
+#	1. Loop root and non-root user.
+#	2. Get the random compact ACL string.
+#	4. Separately chmod +|-|=
+#	5. Check compact ACL display as expected 
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# CODING_STATUS: COMPLETED (2006-08-11)
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_delete_pos001
+#
+# DESCRIPTION:
+#	Verify that the combined delete_child/delete permission for 
+#	owner/group/everyone are correct.
+#
+#        -------------------------------------------------------
+#        |   Parent Dir  |           Target Object Permissions |
+#        |  permissions  |                                     |
+#        -------------------------------------------------------
+#        |               | ACL Allows | ACL Denies| Delete     |
+#        |               |  Delete    |  Delete   | unspecified|
+#        -------------------------------------------------------
+#        |  ACL Allows   | Permit     | Permit    | Permit     |
+#        |  DELETE_CHILD |                                     |
+#        -------------------------------------------------------
+#        |  ACL Denies   | Permit     | Deny      | Deny       |
+#        |  DELETE_CHILD |            |           |            |
+#        -------------------------------------------------------
+#        | ACL specifies |            |           |            |
+#        | only allows   | Permit     | Permit    | Permit     |
+#        | write and     |            |           |            |
+#        | execute       |            |           |            |
+#        -------------------------------------------------------
+#        | ACL denies    |            |           |            |
+#        | write and     | Permit     | Deny      | Deny       |
+#        | execute       |            |           |            |
+#        ------------------------------------------------------- 
+#
+# STRATEGY:
+# 1. Create file and  directory in nfs filesystem
+# 2. Set special ACE combination to the file and directory
+# 3. Try to remove the file
+# 4. Verify that combined permissions for owner/group/everyone are correct.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_inherit_pos001
+#
+# DESCRIPTION:
+#	Verify chmod have correct behaviour to directory and file when setting
+#	different inherit strategy to them.
+#	
+# STRATEGY:
+#	1. Loop super user and non-super user to run the test case.
+#	2. Create basedir and a set of subdirectores and files within it.
+#	3. Separately chmod basedir with different inherite options.
+#	4. Then create nested directories and files like the following.
+#	
+#                                                   _ odir4
+#                                                  |_ ofile4
+#                                         _ odir3 _|
+#                                        |_ ofile3
+#                               _ odir1 _|
+#                              |_ ofile2
+#                     basefile |
+#          chmod -->  basedir -| 
+#                              |_ nfile1
+#                              |_ ndir1 _ 
+#                                        |_ nfile2
+#                                        |_ ndir2 _
+#                                                  |_ nfile3
+#                                                  |_ ndir3
+#
+#	5. Verify each directories and files have the correct access control
+#	   capability.
+#	
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_neg001
+#
+# DESCRIPTION:
+# 	Verify  1) Illegal options to chmod should fail.
+#		2) Delete all the ACE will lead to fail.
+#		3) Add ACE exceed 1024 will cause to fail.
+#
+# STRATEGY:
+#	1. Loop root and non-root users
+#	2. Verify all kinds of illegal option will lead to chmod failed.
+#	3. Verify 'chmod A0-' will fail when try to delete all the ACE.
+#	4. Verify 'chmod A+' will succeed when the ACE number exceed 1024.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_rwacl_pos001
+#
+# DESCRIPTION:
+#	Verify assigned read_acl/write_acl to owner@/group@/everyone@,
+#	specificied user and group. File have the correct access permission.
+#
+# STRATEGY:
+#	1. Separatedly verify file and directory was assigned read_acl/write_acl
+#	   by root and non-root user.
+#	2. Verify owner always can read and write acl, even deny.
+#	3. Verify group access permission, when group was assigned 
+#	   read_acl/write_acl.
+#	4. Verify access permission, after everyone was assigned read_acl/write.
+#	5. Verify everyone@ was deny except specificied user, this user can read
+#	   and write acl.
+#	6. Verify the group was deny except specified user, this user can read
+#	   and write acl
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_rwx_pos001
+#
+# DESCRIPTION:
+#	chmod A{+|-|=} have the correct behaviour to the ACL list. 	
+#
+# STRATEGY:
+#	1. loop check root and non-root users
+#	2. chmod file or dir with specified options
+#	3. get ACE after behaviours of chmod
+#	4. compare specified ACE and excpect ACE
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_rwx_pos002
+#
+# DESCRIPTION:
+#	chmod A{+|-|=} read_data|write_data|execute for owner@ group@ or everyone@
+#	correctly alters mode bits .
+#
+# STRATEGY:
+#	1. Loop root and non-root user.
+#	2. Get the random initial map.
+#	3. Get the random ACL string.
+#	4. Separately chmod +|-|= read_data|write_data|execute
+#	5. Check map bits 
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_rwx_pos003
+#
+# DESCRIPTION:
+#	Verify that the read_data/write_data/execute permission for 
+#	owner/group/everyone are correct.
+#
+# STRATEGY:
+#	1. Loop root and non-root user.
+#	2. Separated verify type@:access:allow|deny to file and directory
+#	3. To super user, read and write deny was override.
+#	4. According to ACE list and override rule, expect that 
+#	   read/write/execute file or directory succeed or fail.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_rwx_pos004
+#
+# DESCRIPTION:
+#	Verify that explicit ACL setting to specified user or group will
+#	override existed access rule.
+#
+# STRATEGY:
+#	1. Loop root and non-root user.
+#	2. Loop the specified access one by one.
+#	3. Loop verify explicit ACL set to specified user and group.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_xattr_pos001
+#
+# DESCRIPTION:
+#	Verify that the read_xattr/write_xattr for 
+#	owner/group/everyone are correct.
+#
+# STRATEGY:
+# 1. Create file and  directory in nfs filesystem
+# 2. Set special read_xattr ACE to the file and directory
+# 3. Try to list the extended attributes of the file and directory
+# 4. Set special write_xattr ACE to the file and directory
+# 5. Try to add new extended attributes to the file and directory
+# 6. Verify above operation is successful.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_chmod_xattr_pos002
+#
+# DESCRIPTION:
+#	Verify that the write_xattr for remove the extended attributes of
+#	owner/group/everyone are correct.
+#
+# STRATEGY:
+# 1. Create file and  directory in nfs filesystem
+# 2. Set special write_xattr ACE to the file and directory
+# 3. Try to remove the extended attributes of the file and directory
+# 4. Verify above operation is successful.
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_cp_pos001
+#
+# DESCRIPTION:
+# 	Verify that '/usr/bin/cp [-p]' supports ACL
+#
+# STRATEGY:
+# 	1. Create file and  directory in nfs filesystem
+# 	2. Set special ACE to the file and directory
+# 	3. Copy the file/directory to another directory
+# 	4. Verify that the ACL of file/directroy is not changed, when you are
+# 	   inserting an ACL with a user: or group: entry on the top.
+#	   (abstractions entry are treated special, since they represent the 
+#	   traditional permission bit mapping.)
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_cp_pos002
+#
+# DESCRIPTION:
+# 	Verify that '/usr/bin/cp [-p@]' supports ACL & xattrs
+#
+# STRATEGY:
+# 	1. Create file and  directory in nfs filesystem
+# 	2. Set special ACE to the file and directory
+#	3. Create xattr of the file and directory
+# 	4. Copy the file/directory to another directory.
+# 	5. Verify that the ACL & xattrs of the file/directroy is not changed, 
+#	   when you are inserting an ACL with user: or group: entry on the top.
+#	   (abstractions entry are treated special, since they represent the 
+#	   traditional permission bit mapping.)
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_cpio_pos001
+#
+# DESCRIPTION:
+# Verify that '$CPIO' command with -P option supports to archive ZFS ACLs
+#
+# STRATEGY:
+# 1. Create file and directory in nfs filesystem
+# 2. Add new ACE in ACL or change mode of file and directory
+# 3. Use $CPIO to archive file and directory
+# 4. Extract the archive file
+# 5. Verify that the restored ACLs of file and directory identify
+#    with the origional ones. 
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_cpio_pos002
+#
+# DESCRIPTION:
+# Verify that '$CPIO' command with -P@ option supports to archive ZFS ACLs
+#
+# STRATEGY:
+# 1. Create file and directory in nfs filesystem
+# 2. Add new ACE in ACL or change mode of file and directory
+# 3. Create xattr of the file and directory
+# 4. Use $CPIO to archive file and directory
+# 5. Extract the archive file
+# 6. Verify that the restored ACLs of file and directory identify
+#    with the origional ones. 
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_find_pos001
+#
+# DESCRIPTION:
+# Verify that '$FIND' command with '-ls' and '-acl' options supports NFSv4 ACL 
+#
+# STRATEGY:
+# 1. Create 5 files and 5 directories in nfs filesystem
+# 2. Select a file or directory and add a few ACEs to it 
+# 3. Use $FIND -ls to check the "+" existen only with the selected file or 
+#    directory
+# 4. Use $FIND -acl to check only the selected file/directory in the list
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_ls_pos001
+#
+# DESCRIPTION:
+# Verify that '/usr/bin/ls' command option supports NFSv4 ACL 
+#
+# STRATEGY:
+# 1. Create file and  directory in nfs filesystem
+# 2. Verify that 'ls [-dv]' can list the ACEs of ACL of 
+#    file/directroy
+# 3. Change the file/directory's acl
+# 4. Verify that 'ls -l' can use the '+' to indicate the non-trivial
+#    acl. 
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_mv_pos001
+#
+# DESCRIPTION:
+# Verify that '/usr/bin/mv' supports NFSv4 ACL
+#
+# STRATEGY:
+# 1. Create file and  directory in nfs filesystem
+# 2. Set special ACE to the file and directory
+# 3. Copy the file/directory to another directory
+# 4. Verify that the ACL of file/directroy is not changed
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_tar_pos001
+#
+# DESCRIPTION:
+# Verify that '$TAR' command with -p option supports to archive NFSv4 ACLs
+#
+# STRATEGY:
+# 1. Create file and directory in nfs filesystem
+# 2. Add new ACE in ACL of file and directory
+# 3. Use $TAR to archive file and directory
+# 4. Extract the archive file
+# 5. Verify that the restored ACLs of file and directory identify
+#    with the origional ones. 
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+#
+# __stc_assertion_start
+#
+# ID: acl_tar_pos002
+#
+# DESCRIPTION:
+# Verify that '$TAR' command with -p@ option supports to archive NFSv4 ACLs 
+#	& xattrs
+#
+# STRATEGY:
+# 1. Create file and directory in nfs filesystem
+# 2. Add new ACE in ACL of file and directory
+# 3. Create xattr of the file and directory
+# 4. Use $TAR cf@ to archive file and directory
+# 5. Use $TAR xf@ to extract the archive file
+# 6. Verify that the restored ACLs & xttrs of file and directory identify
+#    with the origional ones. 
+#
+# TESTABILITY: explicit
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# __stc_assertion_end
+#
+################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,205 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+. ${STF_TOOLS}/include/stf.kshlib
+. ${STF_SUITE}/include/nfs-util.kshlib
+. ${STF_TOOLS}/contrib/include/libsmf.shlib
+. ${STF_TOOLS}/contrib/include/nfs-tx.kshlib
+. ${STF_TOOLS}/contrib/include/logapi.kshlib
+
+NAME=$(basename $0)
+CDIR=$(dirname $0)
+
+export _NFS_STF_DEBUG=${_NFS_STF_DEBUG:-$NFSGEN_DEBUG}
+
+# Description:
+#       A function to do cleanup, printing related messages and
+#       remove files if provided
+# Usage:
+#       cleanup [result] [cat_file] [rm_files]
+# Return:
+#       The function returns <result>; and if the <cat_file> is provided
+#       and not empty, cat the file; if <rm_files> is provided, then
+#       remove these files.
+#
+
+function cleanup {
+	FNAME=cleanup
+	[[ :$NFSGEN_DEBUG: = *:${FNAME}:* || :${NFSGEN_DEBUG}: = *:all:* ]] \
+       		&& set -x
+
+	# cleanup for acl tests
+	# Current working directory may be a subdir of $TESTDIR,
+	# need to exit before removing $TESTDIR/*.
+	cd $MNTDIR
+	if [[ -d $TESTDIR ]]; then
+		rm -rf $TESTDIR/*
+		# The tests create $TESTDIR1 only if $TESTDIR is available.
+		[[ -d $TESTDIR1 ]] && rm -rf $TESTDIR1
+	fi
+
+	[[ -n $2 ]] && cat $2
+	rm -rf $STF_TMPDIR/*.$$ $3
+
+	[[ -n $1 ]] && exit ${1}
+}
+
+#
+# Description:
+#	A function to count if the file number in specified directory
+#	is equal to the expected number.
+# Usage:
+#	count_files dir number
+# Return:
+#	0 : success
+#	1 : failure
+#
+function count_files
+{
+	FNAME=count_files
+	[[ :$NFSGEN_DEBUG: = *:${FNAME}:* || :${NFSGEN_DEBUG}: = *:all:* ]] \
+       		&& set -x
+
+	typeset -i file_num
+	file_num=`find $1  -type f -print | wc -l`
+	if (( $file_num != $2 )); then
+		echo "\tFailed -the file number($file_num) in the directory($1)"
+		echo "\tis not equal to expected number($2)"
+		return 1
+	fi
+	return 0
+}
+
+#
+# Description
+#	A function to create a large amount of small files.
+# Usage:
+#	create_small_files dir count
+# Return:
+#	0 : success
+#	1 : failure
+#
+function create_small_files
+{
+	FNAME=create_small_files
+	[[ :$NFSGEN_DEBUG: = *:${FNAME}:* || :${NFSGEN_DEBUG}: = *:all:* ]] \
+       		&& set -x
+
+	typeset num=1
+	typeset pids=""
+       
+	while (($num <= $2)); do
+		cp /etc/passwd $1/file_$num > /dev/null 2>&1 &
+		pids="$pids $!"
+		((num = num + 1))
+	done
+
+	# wait to finish creating these files.
+	for pid in $pids; do
+		ps -p $pid > /dev/null 2>&1
+		(($? == 0)) && wait $pid
+	done
+
+	# check all files are created.
+	count_files $1 $2 || return 1
+	typeset -i num=1
+	while (($num <= $2)); do
+		diff /etc/passwd $1/file_$num 
+		if (($? != 0)); then
+			echo "\tFailed - the newly created file($1/file_$num)"
+			echo "\tis different from /etc/passwd"
+			return 1
+		fi
+		((num = num + 1))
+	done
+
+	return 0
+}
+
+# Description:
+#       A function to do get the real NFS mount point
+# Usage:
+#       get_realMNT curr_MNT
+# Return:
+#       The function prints the real NFS mount point from the given curr_MNT
+#		and returns 0 if the attend is successful
+#	or returns 1 if any error occurs.
+#
+
+function get_realMNT {
+	FNAME=get_realMNT
+	[[ :$NFSGEN_DEBUG: = *:${FNAME}:* || :${NFSGEN_DEBUG}: = *:all:* ]] \
+       		&& set -x
+
+	typeset curr_MNT=$1
+	[[ -z $curr_MNT ]] && \
+		print -u2 "get_realMNT: curr_MNT=<$curr_MNT>" && \
+			return 1
+
+	typeset realMNT=$(/bin/df $curr_MNT | awk '{print $1}')
+	# filter out if the name of the mount point is long (from df)
+	echo $realMNT | grep '):' > /dev/null 2>&1
+	(( $? == 0 )) && \
+		realMNT=$(echo $realMNT | awk -F\( '{print $1}')
+	[[ -z $realMNT ]] && \
+		print -u2 "get_realMNT: realMNT=<$realMNT>" && return 1
+
+	nfsstat -m $realMNT | grep "vers=" > /dev/null 2>&1
+	if (( $? != 0 )); then
+		# this is NOT a valid NFS mount point
+		print -u2 "get_realMNT: realMNT=<$realMNT> is not NFS/mnt"
+		return 1
+	fi
+
+	echo $realMNT
+	return 0
+}
+
+#
+# A wrapper function of c program
+#
+# $1 legal login name
+# $2-n commands and options
+#
+function chgusr_exec #<login_name> <commands> [...]
+{
+	FNAME=chgusr_exec
+	[[ :$NFSGEN_DEBUG: = *:${FNAME}:* || :${NFSGEN_DEBUG}: = *:all:* ]] \
+		&& set -x
+
+	user=$1
+	shift
+	cmd=$@
+	if [[ $IS_KRB5 == 1 ]] && [[ $user != root ]]; then
+		chg_usr_exec -k $KPASSWORD $user $cmd
+	else
+		chg_usr_exec $user $cmd
+	fi
+
+	return $?
+}
+
+

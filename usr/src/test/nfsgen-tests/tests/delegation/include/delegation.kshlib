@@ -1,0 +1,217 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+. ${STF_SUITE}/include/nfsgen.kshlib
+
+export PATH=$PATH:${STF_SUITE}/tests/delegation/bin/${STF_EXECUTE_MODE}
+export RD=1
+export WR=2
+export NONE=0
+
+if [[ :$NFSGEN_DEBUG: = *:C_UTILITY:* \
+                || :${NFSGEN_DEBUG}: = *:all:* ]]; then
+	DEBUGOPT="-D"
+fi
+
+C_OPTS="$MMAPOPT $DEBUGOPT"
+
+# Description
+#       A function to create a file. The function is special in that 
+#       client won't get RD or WR delegation after the file is created.
+# Usage:
+#       create_file_nodeleg <pathname>
+# Return:
+#       0 on success, 1 on error
+function create_file_nodeleg {
+	NAME=create_file_nodeleg
+	[[ :$NFSGEN_DEBUG: = *:${NAME}:* \
+        	|| :${NFSGEN_DEBUG}: = *:all:* ]] && set -x
+
+        dir=$(dirname $1)
+        file=$(basename $1)
+	RUN_CHECK "echo '#123456789' > $dir/$file.tmp1" || return 1
+        RUN_CHECK mkfile 1m $dir/$file.tmp2 || return 1
+	RUN_CHECK "cat $dir/$file.tmp1 $dir/$file.tmp2 > $dir/$file.tmp" \
+	    ||return 1
+	RUN_CHECK rm -f $dir/$file.tmp1 $dir/$file.tmp2
+	RUN_CHECK chmod 777 $dir/$file.tmp
+        RUN_CHECK mv $dir/$file.tmp $dir/$file || return 1
+}
+
+# Description
+#       A function to copy a file. The function is special in that 
+#       client won't get RD or WR delegation after the file is created.
+# Usage:
+#       copy_file_nodeleg <pathname>
+# Return:
+#       0 on success, 1 on error
+function copy_file_nodeleg {
+	NAME=copy_file_nodeleg
+	[[ :$NFSGEN_DEBUG: = *:${NAME}:* \
+        	|| :${NFSGEN_DEBUG}: = *:all:* ]] && set -x
+
+	src=$1
+	dst=$2
+	dst_dir=$(dirname $dst)
+	dst_file=$(basename $dst)
+
+	RUN_CHECK cp -p $src $dst_dir/$dst_file.tmp || return 1
+	RUN_CHECK mv $dst_dir/$dst_file.tmp $dst || return 1
+}
+
+# Description
+#	A function to get and save current rfsreqcnt_v4 statistic number
+# Usage:
+#       save_rfsreqcntv4 <opname>
+# Return:
+#       0 on success, 1 on error
+function save_rfsreqcntv4 {
+	NAME=save_rfsreqcntv4
+	[[ :$NFSGEN_DEBUG: = *:${NAME}:* \
+        	|| :${NFSGEN_DEBUG}: = *:all:* ]] && set -x
+
+	typeset opname=$1
+	typeset n=$(kstat -m nfs -n rfsreqcnt_v$TESTVERS -s $opname \
+            | grep $opname | awk '{print $2}')
+	if [[ -z $n ]]; then
+		print -u2 "failed to get $opname kstat statistic"
+		return 1
+	fi
+	echo $n
+}
+
+# Description
+#	A function to get rfsreqcnt_v4 statistic number and check
+#	it is larger than the value passed.
+# Usage:
+#       check_rfsreqcntv4_larger <opname> <old_value>
+# Return:
+#       0 on success, 1 on error
+function check_rfsreqcntv4_larger {
+	NAME=check_rfsreqcntv4_larger
+	[[ :$NFSGEN_DEBUG: = *:${NAME}:* \
+        	|| :${NFSGEN_DEBUG}: = *:all:* ]] && set -x
+
+	typeset opname=$1
+	typeset oldval=$2
+	typeset newval=$(kstat -m nfs -n rfsreqcnt_v$TESTVERS -s $opname \
+            | grep $opname | awk '{print $2}')
+
+	if [[ -z $newval ]]; then
+		print -u2 "failed to get $opname kstat number"
+		return 1
+	fi
+
+	if (( newval > oldval )); then
+		return 0
+	else
+		print -u2 "$opname statistic(Previous:$oldval Current: $newval)"
+		return 1
+	fi
+}
+
+# Description
+#	A function to get rfsreqcnt_v4 statistic number and check
+#	it is equal to the value passed.
+# Usage:
+#       check_rfsreqcntv4_equal <opname> <old_value>
+# Return:
+#       0 on success, 1 on error
+function check_rfsreqcntv4_equal {
+	NAME=check_rfsreqcntv4_equal
+	[[ :$NFSGEN_DEBUG: = *:${NAME}:* \
+        	|| :${NFSGEN_DEBUG}: = *:all:* ]] && set -x
+
+	typeset opname=$1
+	typeset oldval=$2
+	typeset newval=$(kstat -m nfs -n rfsreqcnt_v$TESTVERS -s $opname \
+            | grep $opname | awk '{print $2}')
+
+	if [[ -z $newval ]]; then
+		print -u2 "failed to get $opname kstat number"
+		return 1
+	fi
+
+	if (( newval == oldval )); then
+		return 0
+	else
+		print -u2 "$opname statistic(Previous:$oldval Current: $newval)"
+		return 1
+	fi
+}
+
+# Description
+#	A function to get and save current nfs4_callback_stats statistic number
+# Usage:
+#       save_nfs4callback <opname>
+# Return:
+#       0 on success, 1 on error
+function save_nfs4callback {
+	NAME=save_nfs4callback
+	[[ :$NFSGEN_DEBUG: = *:${NAME}:* \
+        	|| :${NFSGEN_DEBUG}: = *:all:* ]] && set -x
+
+	typeset opname=$1
+	typeset n=$(kstat -m nfs -n nfs4_callback_stats -s $opname \
+            | grep $opname | awk '{print $2}')
+	if [[ -z $n ]]; then
+		print -u2 "failed to get $opname kstat statistic"
+		return 1
+	fi
+	echo $n
+}
+
+# Description
+#	A function to get nfs4_callback_stats statistic number and check
+#	it is equal to the value passed.
+# Usage:
+#       check_nfs4callback_equal <opname> <old_value>
+# Return:
+#       0 on success, 1 on error
+function check_nfs4callback_equal {
+	NAME=check_nfs4callback_equal
+	[[ :$NFSGEN_DEBUG: = *:${NAME}:* \
+        	|| :${NFSGEN_DEBUG}: = *:all:* ]] && set -x
+
+	typeset opname=$1
+	typeset oldval=$2
+	typeset newval=$(kstat -m nfs -n nfs4_callback_stats -s $opname \
+            | grep $opname | awk '{print $2}')
+
+	if [[ -z $newval ]]; then
+		print -u2 "failed to get $opname kstat number"
+		return 1
+	fi
+
+	if (( newval == oldval )); then
+		return 0
+	else
+		print -u2 "$opname statistic(Previous:$oldval Current: $newval)"
+		return 1
+	fi
+}
+
+

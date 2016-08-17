@@ -8,28 +8,18 @@
 # source.  A copy of the CDDL is also available via the Internet at
 # http://www.illumos.org/license/CDDL.
 #
-
-#
 # Copyright (c) 2012 by Delphix. All rights reserved.
-# Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
+include $(SRC)/Makefile.master
 
-.PARALLEL:	$(SUBDIRS)
-
-SUBDIRS=	comstar-tests	\
-		libc-tests	\
-		lofi-tests	\
-		os-tests	\
-		ndmp-tests	\
-		nfsgen-tests	\
-		nfssharemnt-tests \
-		nfsv4-tests	\
-		sharefs-tests	\
-		smbclient-tests	\
-		smf-tests	\
-		test-runner	\
-		util-tests	\
-		zfs-tests
-
-include		Makefile.com
+TEST = recovery/client
+STFDESC = client.vars stf_description
+PROGS = bad_seqid clnt_recmaxname01 clnt_recnattr01 \
+	clntrecov_pos01 clntrecov_pos03 clntrecov_pos04 \
+	clntrecov_pos05 clntrecov_pos06 clntrecov_pos07 \
+	clntrecov_pos08 clntrecov_pos09 clntrecov_pos10 \
+	clntrecov_rw_pos01 clntrecov_rw_pos02 configure \
+	isserverup open_downgrade unconfigure
+	
+include ../../Makefile.test

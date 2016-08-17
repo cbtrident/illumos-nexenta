@@ -1,0 +1,375 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2016, Nexenta Systems Inc. All rights reserved.
+#
+
+set name=pkg.fmri value=pkg:/system/test/nfsgen@$(PKGVERS)
+set name=pkg.description value="NFSgen Test Suite"
+set name=pkg.summary value="NFSgen Functional Tests"
+set name=info.classification \
+    value=org.opensolaris.category.2008:Development/System
+set name=variant.arch value=$(ARCH)
+dir path=opt/nfsgen-tests
+dir path=opt/nfsgen-tests/bin
+dir path=opt/nfsgen-tests/bin/nfsv4
+dir path=opt/nfsgen-tests/include
+dir path=opt/nfsgen-tests/lib
+dir path=opt/nfsgen-tests/tests
+dir path=opt/nfsgen-tests/tests/acl
+dir path=opt/nfsgen-tests/tests/acl/nontrivial
+dir path=opt/nfsgen-tests/tests/acl/trivial
+dir path=opt/nfsgen-tests/tests/delegation
+dir path=opt/nfsgen-tests/tests/delegation/bin
+dir path=opt/nfsgen-tests/tests/delegation/include
+dir path=opt/nfsgen-tests/tests/delegation/oneclient
+dir path=opt/nfsgen-tests/tests/delegation/oneclient/delegreturn
+dir path=opt/nfsgen-tests/tests/delegation/oneclient/getdeleg
+dir path=opt/nfsgen-tests/tests/delegation/oneclient/neg
+dir path=opt/nfsgen-tests/tests/delegation/oneclient/nodelegreturn
+dir path=opt/nfsgen-tests/tests/delegation/oneclient/nonewop
+dir path=opt/nfsgen-tests/tests/delegation/twoclients
+dir path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn
+dir path=opt/nfsgen-tests/tests/delegation/twoclients/getdeleg
+dir path=opt/nfsgen-tests/tests/delegation/twoclients/misc
+dir path=opt/nfsgen-tests/tests/delegation/twoclients/nodeleg
+dir path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegclaim
+dir path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegreturn
+dir path=opt/nfsgen-tests/tests/file_ops
+dir path=opt/nfsgen-tests/tests/openlock
+dir path=opt/nfsgen-tests/tests/recovery
+dir path=opt/nfsgen-tests/tests/recovery/client
+dir path=opt/nfsgen-tests/tests/recovery/others
+dir path=opt/nfsgen-tests/tests/stress
+file path=opt/nfsgen-tests/bin/README mode=0444
+file path=opt/nfsgen-tests/bin/checkenv_def mode=0555
+file path=opt/nfsgen-tests/bin/chg_usr_exec mode=0555
+file path=opt/nfsgen-tests/bin/config.vars mode=0444
+file path=opt/nfsgen-tests/bin/configure mode=0555
+file path=opt/nfsgen-tests/bin/file_operator mode=0555
+file path=opt/nfsgen-tests/bin/holdopenat mode=0555
+file path=opt/nfsgen-tests/bin/mktree mode=0555
+file path=opt/nfsgen-tests/bin/nfsgentest mode=0555
+file path=opt/nfsgen-tests/bin/nfsv4/configure mode=0555
+file path=opt/nfsgen-tests/bin/nfsv4/srv_setup mode=0555
+file path=opt/nfsgen-tests/bin/nfsv4/stf_description mode=0444
+file path=opt/nfsgen-tests/bin/nfsv4/unconfigure mode=0555
+file path=opt/nfsgen-tests/bin/open_dg mode=0555
+file path=opt/nfsgen-tests/bin/srv_setup mode=0555
+file path=opt/nfsgen-tests/bin/stf_description mode=0444
+file path=opt/nfsgen-tests/bin/suite_cleanup mode=0555
+file path=opt/nfsgen-tests/bin/suite_setup mode=0555
+file path=opt/nfsgen-tests/bin/unconfigure mode=0555
+file path=opt/nfsgen-tests/include/nfsgen.h mode=0444
+file path=opt/nfsgen-tests/include/nfsgen.kshlib mode=0444
+file path=opt/nfsgen-tests/include/stf.h mode=0444
+file path=opt/nfsgen-tests/lib/libnfsgen.so mode=0555
+file path=opt/nfsgen-tests/tests/acl/ACL.assertions mode=0444
+file path=opt/nfsgen-tests/tests/acl/README mode=0444
+file path=opt/nfsgen-tests/tests/acl/acl.env mode=0444
+file path=opt/nfsgen-tests/tests/acl/acl.vars mode=0444
+file path=opt/nfsgen-tests/tests/acl/acl_common.kshlib mode=0444
+file path=opt/nfsgen-tests/tests/acl/cleanup mode=0555
+file path=opt/nfsgen-tests/tests/acl/command.env mode=0444
+file path=opt/nfsgen-tests/tests/acl/configure mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_chmod_compact_pos001 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_chmod_delete_pos001 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_chmod_inherit_pos001 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_chmod_neg001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_chmod_rwacl_pos001 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_chmod_rwx_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_chmod_rwx_pos002 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_chmod_rwx_pos003 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_chmod_rwx_pos004 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_chmod_xattr_pos001 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_chmod_xattr_pos002 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_cp_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_cp_pos002 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_cpio_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_cpio_pos002 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_find_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_ls_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_mv_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_tar_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/acl_tar_pos002 mode=0555
+file path=opt/nfsgen-tests/tests/acl/nontrivial/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/acl/setup mode=0555
+file path=opt/nfsgen-tests/tests/acl/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_chmod_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_compress_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_cp_neg001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_cp_neg002 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_cp_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_find_neg001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_find_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_ls_neg001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_ls_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_mv_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_pack_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_pax_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_pax_pos002 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_pax_pos003 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_pax_pos004 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_pax_pos005 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_pax_pos006 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_tar_neg001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/acl_tar_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/acl/trivial/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/acl/unconfigure mode=0555
+file path=opt/nfsgen-tests/tests/delegation/bin/endless_exe mode=0555
+file path=opt/nfsgen-tests/tests/delegation/bin/endless_scr mode=0555
+file path=opt/nfsgen-tests/tests/delegation/bin/get_deleg_type mode=0555
+file path=opt/nfsgen-tests/tests/delegation/configure mode=0555
+file path=opt/nfsgen-tests/tests/delegation/delegation.vars mode=0444
+file path=opt/nfsgen-tests/tests/delegation/include/delegation.kshlib \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/include/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/delegation/oneclient/cleanup mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/delegreturn/delegreturn \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/oneclient/delegreturn/exec_umount01 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/oneclient/delegreturn/exec_umount02 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/delegreturn/remove \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/delegreturn/rename \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/oneclient/delegreturn/stf_description \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/oneclient/delegreturn/umount \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/oneclient/getdeleg/exec_readdeleg01 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/oneclient/getdeleg/exec_readdeleg02 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/getdeleg/read_deleg \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/oneclient/getdeleg/reopen_newdeleg01 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/oneclient/getdeleg/reopen_newdeleg02 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/getdeleg/stf_description \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/oneclient/getdeleg/write_deleg \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/neg/reopen_neg_twousers \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/neg/stf_description \
+    mode=0444
+file \
+    path=opt/nfsgen-tests/tests/delegation/oneclient/nodelegreturn/close_no_delegreturn \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/oneclient/nodelegreturn/stf_description \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/oneclient/nonewop/nonewop \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/nonewop/nonewop01 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/nonewop/nonewop02 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/nonewop/nonewop03 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/nonewop/stf_description \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/oneclient/setup mode=0555
+file path=opt/nfsgen-tests/tests/delegation/oneclient/stf_description \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/delegation/twoclients/cleanup mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/configure mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/clntb_acl01 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/clntb_acl02 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/clntb_chmod01 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/clntb_chmod02 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/clntb_read \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/clntb_remove01 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/clntb_remove02 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/clntb_rename01 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/clntb_rename02 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/clntb_write01 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/clntb_write02 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/delegreturn2 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/exec_clntb_run \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/exec_clntb_write \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/mkassert \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/delegreturn/stf_description \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/twoclients/getdeleg/clntb_read \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/getdeleg/clntb_reading \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/getdeleg/clntb_write \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/getdeleg/getdeleg \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/getdeleg/mkassert \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/getdeleg/stf_description \
+    mode=0444
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/misc/clntb_stat_acregmax \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/misc/mkassert mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/misc/stf_description \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/twoclients/nodeleg/clntb_reading01 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/nodeleg/clntb_writing01 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/nodeleg/clntb_writing02 \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/nodeleg/mkassert \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/nodeleg/nodeleg \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/nodeleg/stf_description \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegclaim/mkassert \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegclaim/nodelegclaim \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegclaim/nodelegclaim01 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegclaim/nodelegclaim02 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegclaim/nodelegclaim03 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegclaim/nodelegclaim04 \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegclaim/stf_description \
+    mode=0444
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegreturn/clntb_read \
+    mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegreturn/mkassert \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegreturn/nodelegreturn \
+    mode=0555
+file \
+    path=opt/nfsgen-tests/tests/delegation/twoclients/nodelegreturn/stf_description \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/twoclients/setup mode=0555
+file path=opt/nfsgen-tests/tests/delegation/twoclients/stf_description \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/twoclients/twoclient.vars \
+    mode=0444
+file path=opt/nfsgen-tests/tests/delegation/unconfigure mode=0555
+file path=opt/nfsgen-tests/tests/file_ops/dir_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/file_ops/dir_pos002 mode=0555
+file path=opt/nfsgen-tests/tests/file_ops/dir_pos003 mode=0555
+file path=opt/nfsgen-tests/tests/file_ops/file_ops.vars mode=0444
+file path=opt/nfsgen-tests/tests/file_ops/mv_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/file_ops/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/file_ops/truncate_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/openlock/LOCK.assertions mode=0444
+file path=opt/nfsgen-tests/tests/openlock/OPEN.assertions mode=0444
+file path=opt/nfsgen-tests/tests/openlock/cleanup mode=0555
+file path=opt/nfsgen-tests/tests/openlock/locktest mode=0555
+file path=opt/nfsgen-tests/tests/openlock/mkassert mode=0555
+file path=opt/nfsgen-tests/tests/openlock/opentest mode=0555
+file path=opt/nfsgen-tests/tests/openlock/runtests mode=0555
+file path=opt/nfsgen-tests/tests/openlock/setup mode=0555
+file path=opt/nfsgen-tests/tests/openlock/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/recovery/README mode=0444
+file path=opt/nfsgen-tests/tests/recovery/S99nfs4red mode=0555
+file path=opt/nfsgen-tests/tests/recovery/checkenv_def mode=0555
+file path=opt/nfsgen-tests/tests/recovery/cleanup mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/bad_seqid mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/client.vars mode=0444
+file path=opt/nfsgen-tests/tests/recovery/client/clnt_recmaxname01 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clnt_recnattr01 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clntrecov_pos01 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clntrecov_pos03 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clntrecov_pos04 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clntrecov_pos05 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clntrecov_pos06 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clntrecov_pos07 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clntrecov_pos08 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clntrecov_pos09 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clntrecov_pos10 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clntrecov_rw_pos01 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/clntrecov_rw_pos02 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/configure mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/isserverup mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/open_downgrade mode=0555
+file path=opt/nfsgen-tests/tests/recovery/client/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/recovery/client/unconfigure mode=0555
+file path=opt/nfsgen-tests/tests/recovery/configure mode=0555
+file path=opt/nfsgen-tests/tests/recovery/nfs4red mode=0555
+file path=opt/nfsgen-tests/tests/recovery/others/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/recovery/others/unshareall_mnt01 mode=0555
+file path=opt/nfsgen-tests/tests/recovery/recovery.vars mode=0444
+file path=opt/nfsgen-tests/tests/recovery/setup mode=0555
+file path=opt/nfsgen-tests/tests/recovery/srv_setup mode=0555
+file path=opt/nfsgen-tests/tests/recovery/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/stress/STRESS.assertions mode=0444
+file path=opt/nfsgen-tests/tests/stress/mkassert mode=0555
+file path=opt/nfsgen-tests/tests/stress/stf_description mode=0444
+file path=opt/nfsgen-tests/tests/stress/stress.vars mode=0444
+file path=opt/nfsgen-tests/tests/stress/stress_pos001 mode=0555
+file path=opt/nfsgen-tests/tests/stress/stress_pos002 mode=0555
+file path=opt/nfsgen-tests/tests/stress/stress_pos003 mode=0555
+file path=opt/nfsgen-tests/tests/stress/stress_pos004 mode=0555
+file path=opt/nfsgen-tests/tests/stress/stress_pos005 mode=0555
+license cr_Sun license=cr_Sun
+license lic_CDDL license=lic_CDDL

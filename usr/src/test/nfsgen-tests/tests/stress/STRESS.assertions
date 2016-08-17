@@ -1,0 +1,100 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+#
+# Stress assertions
+#
+
+
+st_0001:
+-------
+	a test user open()s and write()s a file (size defined
+	as a parameter) then read()s it back to verify content
+	and delete it.
+
+	st_0001 -T 10 -Q 30 -I 10 -u 0.1 -f ${MNTDIR}/$$.st_0001 -d 1
+
+
+st_0002:
+-------
+	Open a large number of files. Writes some bytes (with size
+	defined as an option), closes the files, waits some time and
+	reopens the files checks their content and deletes them.
+	Optionally, write locks and spawns a child that attempts
+	to access file.
+	
+	st_0002 -u 0.1 -b ${MNTDIR} -n 128 -W 12 -d 1
+
+
+st_0003:
+-------
+  a)	Open a large enumber of files. Acquire a write lock then
+	fork a child that hammers to get a write lock, in the
+	meantime  parent sleeps, wakes up releases the initial
+	write lock and waits for the child to exit.
+
+	st_0003 -S 1 -b ${MNTDIR} -n 128 -W 30 -d 1
+
+
+st_0003:
+-------
+   b)	Open a large number of files read donly, close and open write
+	only, close and then open read only finally close and
+	unlink.
+
+	st_0003 -S 2 -b ${MNTDIR} -n 512 -d 1
+
+
+st_0003:
+-------
+   c)	Open a large number of files, acquire write lock then unlink
+	file _without_ a close.
+
+	st_0003 -S 4 -b ${MNTDIR} -n 512 -d 1
+
+st_0003:
+-------
+   d)	Open a large number of files read/write, read_lock the entire
+	file, write_lock the first and last 1024 bytes, release the
+	1st read_lock, get a write_lock on thte rest of the file
+	(middle bit) unlock everythihng and delete file.
+
+	st_0003 -S 3 -b ${NFStestDir} -n 512 -d 1
+
+	NOTE: Solaris doesn't support the negative seek with fcntl(2) for NFS;
+	so this assertion is now commented out.
+
+
+st_0004:
+-------
+	Spawn N processes, each process traverses a directory tree
+	and stats each file.
+
+
+st_0005:
+-------
+	sit in a loop mounting, readdir and unmounting a file system
+

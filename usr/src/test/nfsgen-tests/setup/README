@@ -1,0 +1,332 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+DESCRIPTION
+===========
+
+   This test suite contains common tests for different NFS versions
+   (i.e., nfsv4, future 4.1, etc).
+   
+  
+TEST STRUCTURE
+==============
+
+      ${STF_SUITE_ROOT}
+	  |- config.vars
+	  |- checkenv_def
+          |- configure.ksh
+	  |- unconfigure.ksh
+          |- bin
+          |- lib
+	  |- include
+          +- setup
+          |     +- nfsv4
+          |     |     |- checkenv_def
+          |     |     |- configure.ksh
+          |     |     |- unconfigure.ksh
+          |    ...
+          |  
+          +- tests
+                +- delegation
+                +- openlock
+		+- acl
+		+- file_ops
+		+- recovery
+		+- stress
+   
+   - programs used by tests are put into STF_TEST_SUITE/bin
+   - c function libs are put into STF_TEST_SUITE/lib
+   - ksh script libs are put into STF_TEST_SUITE/include
+   - test cases are grouped into 6 directories so far, more will
+     be added in the later phases as needed:
+	- delegation: test nfs delegation feature.
+	- openlock: test nfs open/lock state management.
+	- acl: test nfs acl. 
+	- file_ops: test file/dir operations via nfs
+	- recovery: test nfs recovery feature.
+	- stress: stress on open/read/write/lock ops.
+
+   To make it easy to write and deploy multiple setups, files for a
+   specific setup are placed under a dedicated subdir.
+
+   User needs to set SETUP env variable to specify which configuration
+   files to use. If SETUP=none, there will be no setup, nor any 
+   configuration files. If SETUP=nfsv4, top-level configuration files 
+   will redirect call from STF to corresponding files in setup/nfsv4.
+   
+   Top-level configuration files also perform some common tasks required
+   by all setups.
+   
+
+PREREQUISITES
+=============
+   
+   Below are the requirements common to all setups:
+   
+   1. You must have at least two machines. One is test client where
+      you run those tests, another one is NFS server which is accessed
+      remotely. Some tests(recovery, delegation) need three machines,
+      you should set variable 'CLIENT2" as the second client's name.
+   
+   2. All systems under testing (including the local system) must
+      enable r* service (i.e., run the command "netservices open")
+      and be able to do rcp/rsh to each other as root; (i.e., add
+      "local_host_name root" to ~/.rhosts on server, and comment out
+      CONSOLE entry in /etc/default/login).
+   
+   3. The suite requires the "root" password to do setup. You can
+      either run the suite as root, or enter the root password when
+      it asks on command line when you do 'stf_configure' as a regular
+      user.
+   
+   4. Make sure STF tools be in your PATH.
+   
+   5. You must set SETUP env variable to specify the setup on which
+      you want to run your tests. Currently it can have two values:
+   
+         nfsv4  -   run tests on NFSV4.0 protocol
+         none   -   run tests on the environment user set up manually.
+
+      "none" setup is a special setup. In this setup, the test suite
+      won't do any setup. That means user should set up a workable 
+      environment manually before he runs tests, and set up env 
+      variables needed by tests correctly. If you want to use this 
+      mode, see more details in "MANUAL SETUP" section below.
+      
+   6. Except SETUP=none, SERVER env variable must be set to specify
+      server machine.
+   
+   7. If you run tests on TX, you must specify ZONE_PATH env variable
+      to specify the pathname to labeled zone root file system.
+
+   8. If user set SHROPT to "sec=krb5" (or "sec=krb5i", "sec=krb5p")
+      Then test will setup kerberos environment in all machine. 
+      In that case, STC krb5tools are required. This test suite
+      can use either a local installation of the SUNWstc-krb5tools
+      package, or a remote, NFS-mounted location of the tools.
+      KRB5TOOLS_HOME points to its root directory. Its default value is
+      /opt/SUNWstc-krb5tools. To use krb5tools from elsewhere, 
+      simply set KRB5TOOLS_HOME in your environment, or use the '-c' option,
+      for example:
+
+	$ stf_configure -c \
+		"KRB5TOOLS_HOME=/ws/stcnv-gate/proto/tools/krb5tools"
+
+      Krb5 tests also uses four other env variables: DNS_DOMAIN,
+      SRV_DNS_DOMAIN, CLT2_DNS_DOMAIN, DNS_SERVER:
+
+	DNS_DOMAIN     - client dns domain. Default value is
+			 sfbay.sun.com.
+	SRV_DNS_DOMAIN  CLT2_DNS_DOMAIN 
+		       - server dns domain and client2 dns domain. 
+		         If users don't specify them, the values are
+			 got from the following resources:
+			   - /etc/resolv.conf
+			   - default as DNS_DOMAIN
+			 So user needs to set them if the machine has
+			 a different DNS domain than client.
+	DNS_SERVER     - a dns server that can resolve client
+			 and server's dns names.
+
+      Notes: 
+      - Currently openlock tests don't support krb5 config.
+      - DNS_DOMAIN, SRV_DNS_DOMAIN, CLT2_DNS_DOMAIN is used to construct
+      full qualified domain name for client and server, so they
+      cannot be, for example, "sun.com", instead they should
+      be "sfbay.sun.com", "ireland.sun.com", etc. BTW, although
+      test scripts can get client and server's full qualified
+      domain name automatically from dns sever, that requires
+      reverse dns lookup has been set up for machines being
+      queried, which is not always true for lab machines.
+
+   9. If not all systems participating in test execution are of a single
+      architecture (a "cross-architecture" testing scenario), the user shall
+      be prepared to pkgadd, install, mount or in some other manner make
+      available the appropriate test binaries on all systems participating
+      in the test. or install test suite for all architectures into the client.
+      And make sure the root directory of test suite on all systems is
+      the SAME path. For example, CLIENT2 - sparc; client - i386, if we have 
+      a binary in client located under /opt/SUNWstc-suite/bin/386/foo,
+      then we can also find a sparc binary in server or client under 
+      /opt/SUNWstc-suite/bin/sparc/foo.
+      
+
+   Below are requirements specific to nfsv4 setup:
+
+   1. By default, the test will detect automatically the filesystem type of
+      $SHRDIR on SERVER. If filesystem type is ZFS, tests will run over ZFS;
+      if filesystem type is UFS, tests will run over UFS.
+
+      If SERVER is zfs boot, and you want to run the tests over UFS, you
+      must provide a dir based on UFS and define it to SHRDIR variable;
+      Similarly, if SERVER is ufs boot, and you also want to run the tests 
+      over ZFS, you must provide a dir based on ZFS and define it to
+      SHRDIR variable.
+
+   
+OPTIONAL SETTINGS
+=================
+   
+   The following env variables(especially SHROPT and MNTOPT) may be
+   useful when running tests:
+   
+      SHRDIR  -  shared directory on server (default is "/nfsgen_share")
+      SHROPT  -  share options (default is anon=0 since ACL tests need it)
+      MNTDIR  -  mount directory on client (default is "/nfsgen_mount"), 
+		 All tests are run in this directory
+      MNTOPT  -  mount options (default is "rw")
+      STRESS_TIMEOUT - By default, the stress test will return TIMEOUT if
+		execution time of single test exceeds 3 hours(10800s). If you
+		change the value of the variables in stress/stress.vars,
+		you may need to reset STRESS_TIMEOUT to your expected time.
+      NFSGEN_DEBUG  - debug variable, which can be set with
+                 1) "all" for whole suite,
+                 2) the name of test scripts you want to debug(e.g. srv_setup),
+                 3) name of function in test scripts(e.g. wait_now),
+		 4) "RUN_CHECK_CMD" or "RUN_CHECK_ALL" for commands 
+		    called by RUN_CHECK() function,
+                 5) "RSH" to get output from the "RSH()" function
+		 6) combination of 2-5, separated by ":".
+   
+   The test suite provides many other env variables for customizing 
+   test environment, but they should work out of box and are not 
+   suggested to change. If you have any questions on them, feel
+   free to send email to maintainer of this suite, which you can
+   find in STC.INFO file under the test suite's root directory.
+
+   
+CONFIGURATION
+=============
+   
+   You can choose one of the following ways to define the variables
+   and configure your suite from the top level directory.
+    
+      1) define environment variables
+   
+         $ export SERVER=foo
+         $ stf_configure
+    
+      2) use '-c" option
+         $ stf_configure -c "SERVER=foo" -c ...
+    
+      3) use '-f' option
+         $ stf_configure -f ./myconf
+    
+   
+EXECUTION
+=========
+   
+   At execution phase, you can only use 'stf_execute' to run whole suite or
+   specified tests via '-r' option.
+   
+   Although stf_execute supports "-c" option to specify variables which 
+   overrides those specified at configuration phase, you MUST NOT do that 
+   for nfs suites, i.e., stf_execute -c "CLIENT2=client2" -c "SHRDIR=testdir",
+   since the suite has done corresponding configuration against those variables,
+   re-defining them at execution phase may cause confusing. But you can
+   print debugging info into journal file via 'stf_execute -c "NFSGEN_DEBUG=:xx:"', 
+   which is an exception.
+    
+   All results will be saved in the journal file under
+   /var/tmp/nfsgen/results or the directory defined by 'STF_RESULTS'.
+
+   Notes:
+   - Some tests call ipfilter to block packets, but ipfilter doesn't work
+     with RDMA configuration, so if you run the suite w/RDMA, those tests
+     (clntrecov_rw_pos01,clntrecov_rw_pos02) may return TIMEOUT.
+   
+    
+UNCONFIGURATION
+===============
+   
+   You can run the following command from the top level directory
+   
+      $ stf_unconfigure
+   
+   
+TEST DEVELOPMENT
+================
+
+   *NOTE*: This section is intended only for people who work on 
+   this test suite. If you don't want to change the test suite, add 
+   new setup or tests, you can skip this section.
+   
+   nfsgen test suite is unique in that it supports multiple setups,
+   new setups, as well as new tests, can be added over time. For this
+   purpose, it is important to define the interface between setup
+   code and tests.
+
+   Tests can make the following assumptions on the test execution
+   environment:
+   
+      1) a test directory with read/write/search access($MNTDIR)
+      2) both client and server have same nfs mapid domain($NFSMAPID_DOMAIN) 
+      3) both client and server have a same local group($TGROUP),
+      4) both client and server have two same local users($TUSER01 and $TUSER02),
+         they MUST be in $TGROUP and can be any valid user known by both client
+	 and server. If SETUP!=none, the suite configuration will 
+	 create in locally in both client and server.
+
+   All setup "plugins" should provide this, and tests are not
+   expected to change them during execution. 
+
+
+MANUAL SETUP
+============
+
+   As we mentioned before, when user sets SETUP variable, he can
+   set it to "none". This means user will set up the whole test
+   environment manually and let the test suite skip configuration
+   phase(however, user still needs to run stf_configure, which is
+   a step required by STF. It is just that stf_configure will
+   effectively do nothing in term of test environment setup.) This
+   feature is believed to be useful in some cases.
+
+   It should be noted that in this case, user is required to not
+   only set up a workable test environment, but also to set those
+   env variables correctly which compose of the interface between
+   setup code and tests(see "TEST ENVIRONMENT INTERFACE" section).
+
+   These variables are:
+
+      MNTDIR           -  test directory
+      NFSMAPID_DOMAIN  -  nfs mapid domain
+      TGROUP           -  a regular group on both client and server
+      TUSER01          -  a regular user in TGROUP on both client and server
+      TUSER02          -  a regular user in TGROUP on both client and server
+      TestZFS          -  If exported filesystem on the server is ZFS,
+                          the variable should be set to 1.
+      CLIENT2 	       -  Optional, if you set it, you should make sure
+			  the machine can be access via rsh/rcp as root.
+
+
+   In this case, if you want to run acl tests, you still refer to
+   the README file under tests/acl to do more manual setup.
+
+   When SETUP variable is not set to none, the tests under open and 
+   lock directories run separately with delegation on and off. But
+   if the variable is set to none, these tests only run with current
+   delegation configuration on the server.
