@@ -69,6 +69,7 @@ file path=opt/nfsgen-tests/bin/stf_description mode=0444
 file path=opt/nfsgen-tests/bin/suite_cleanup mode=0555
 file path=opt/nfsgen-tests/bin/suite_setup mode=0555
 file path=opt/nfsgen-tests/bin/unconfigure mode=0555
+file path=opt/nfsgen-tests/include/nfs-util.kshlib mode=0444
 file path=opt/nfsgen-tests/include/nfsgen.h mode=0444
 file path=opt/nfsgen-tests/include/nfsgen.kshlib mode=0444
 file path=opt/nfsgen-tests/include/stf.h mode=0444
