@@ -291,18 +291,14 @@ krrp_stream_destroy(krrp_stream_t *stream)
 	krrp_stream_lock(stream);
 
 	stream->state = KRRP_STRMS_STOPPED;
-	if (stream->work_thread != NULL) {
-		kt_did_t t_did = stream->work_thread->t_did;
-		krrp_stream_unlock(stream);
-		thread_join(t_did);
-		krrp_stream_lock(stream);
-	}
-
-	if (stream->task_engine != NULL)
-		krrp_stream_te_destroy(stream->task_engine);
+	while (stream->work_thread != NULL)
+		krrp_stream_cv_wait(stream);
 
 	if (stream->autosnap != NULL)
 		krrp_autosnap_destroy(stream->autosnap);
+
+	if (stream->task_engine != NULL)
+		krrp_stream_te_destroy(stream->task_engine);
 
 	if (stream->resume_info != NULL)
 		fnvlist_free(stream->resume_info);
@@ -920,6 +916,7 @@ krrp_stream_read(void *arg)
 	if (stream_task != NULL)
 		krrp_stream_task_done(stream, stream_task, B_TRUE);
 
+	krrp_stream_cv_broadcast(stream);
 	krrp_stream_unlock(stream);
 	thread_exit();
 }
@@ -1048,6 +1045,7 @@ krrp_stream_write(void *arg)
 	if (stream_task != NULL)
 		krrp_stream_task_done(stream, stream_task, B_TRUE);
 
+	krrp_stream_cv_broadcast(stream);
 	krrp_stream_unlock(stream);
 	thread_exit();
 }
