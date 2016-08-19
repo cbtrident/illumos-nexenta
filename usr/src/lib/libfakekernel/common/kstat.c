@@ -45,6 +45,19 @@ kstat_delete(kstat_t *ksp)
 {}
 
 /*ARGSUSED*/
+kstat_t *
+kstat_hold_byname(const char *ks_module, int ks_instance, const char *ks_name,
+    zoneid_t ks_zoneid)
+{
+	return (NULL);
+}
+
+/*ARGSUSED*/
+void
+kstat_rele(kstat_t *ksp)
+{}
+
+/*ARGSUSED*/
 void
 kstat_named_init(kstat_named_t *knp, const char *name, uchar_t data_type)
 {}

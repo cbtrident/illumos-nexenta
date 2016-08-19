@@ -1433,6 +1433,7 @@ smb_session_disconnect_share(
 		smb_tree_release(tree);
 		tree = next;
 	}
+	smb_llist_flush(&session->s_tree_list);
 }
 
 void

@@ -746,6 +746,8 @@ kshare_stats_init(smb_server_t *sv, smb_kshare_t *ks)
 	smbsrv_clsh_kstats_t	*ksr;
 	int			idx;
 	smb_named_stats_t	*smbnsp;
+	kstat_t			*kstat = NULL;
+	int			namelen;
 
 	/*
 	 * Most share names are short, and we'd like to allow consumers like
@@ -774,26 +776,36 @@ kshare_stats_init(smb_server_t *sv, smb_kshare_t *ks)
 	 * kstat, and a consumer needs to fetch that kstat to get the real share
 	 * name.
 	 */
-	if (strlen(ks->shr_name) > 24) {
-		(void) snprintf(ks_name, sizeof (ks_name), "sh/:%p",
-		    (void *)ks);
-	} else {
+	namelen = strlen(ks->shr_name);
+	if (namelen <= 24) {
 		(void) snprintf(ks_name, sizeof (ks_name), "sh/%s",
 		    ks->shr_name);
+
+		kstat = kstat_hold_byname("smbsrvshr", 0, ks_name, sv->sv_zid);
+	}
+
+	if (namelen > 24 || kstat != NULL) {
+		(void) snprintf(ks_name, sizeof (ks_name), "sh/:%p",
+		    (void *)ks);
+
+		if (kstat != NULL)
+			kstat_rele(kstat);
 	}
 
 	ks->shr_ksp = kstat_create_zone(SMBSRV_KSTAT_MODULE, 0,
 	    ks_name, SMBSRV_KSTAT_CLASS, KSTAT_TYPE_RAW,
 	    sizeof (smbsrv_clsh_kstats_t), 0, sv->sv_zid);
-	ks->stats.ksns = kstat_create_zone("smbsrvshr", 0,
-	    ks_name, SMBSRV_KSTAT_CLASS, KSTAT_TYPE_NAMED,
-	    0, KSTAT_FLAG_VIRTUAL, sv->sv_zid);
 
 	if (ks->shr_ksp == NULL)
 		return;
 
+	ks->stats.ksns = kstat_create_zone("smbsrvshr", 0,
+	    ks_name, SMBSRV_KSTAT_CLASS, KSTAT_TYPE_NAMED,
+	    0, KSTAT_FLAG_VIRTUAL, sv->sv_zid);
+
 	if (ks->stats.ksns == NULL) {
 		kstat_delete(ks->shr_ksp);
+		ks->shr_ksp = NULL;
 		return;
 	}
 
