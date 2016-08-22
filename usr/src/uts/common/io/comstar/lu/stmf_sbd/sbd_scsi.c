@@ -3808,8 +3808,7 @@ sbd_abort(struct stmf_lu *lu, int abort_cmd, void *arg, uint32_t flags)
 
 	ASSERT(abort_cmd == STMF_LU_ABORT_TASK);
 	task = (scsi_task_t *)arg;
-	if (task->task_cdb[0] == SCMD_COMPARE_AND_WRITE)
-		sbd_ats_remove_by_task(task);
+	sbd_ats_remove_by_task(task);
 	if (task->task_lu_private) {
 		sbd_cmd_t *scmd = (sbd_cmd_t *)task->task_lu_private;
 
@@ -3820,7 +3819,6 @@ sbd_abort(struct stmf_lu *lu, int abort_cmd, void *arg, uint32_t flags)
 				scmd->flags &= ~SBD_SCSI_CMD_TRANS_DATA;
 			}
 			scmd->flags &= ~SBD_SCSI_CMD_ACTIVE;
-			sbd_ats_remove_by_task(task);
 			return (STMF_ABORT_SUCCESS);
 		}
 	}

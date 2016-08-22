@@ -21,7 +21,7 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -523,6 +523,8 @@ idm_refcnt_wait_ref(idm_refcnt_t *refcnt);
 void
 idm_refcnt_async_wait_ref(idm_refcnt_t *refcnt, idm_refcnt_cb_t *cb_func);
 
+int
+idm_refcnt_is_held(idm_refcnt_t *refcnt);
 
 #ifdef	__cplusplus
 }

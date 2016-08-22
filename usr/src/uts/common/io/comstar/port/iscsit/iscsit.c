@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  *
- * Copyright 2014, 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -563,7 +563,8 @@ cleanup:
 			it_config_free_cmn(cfg);
 		if (cfg_pnvlist)
 			kmem_free(cfg_pnvlist, setcfg.set_cfg_pnvlist_len);
-		nvlist_free(cfg_nvlist);
+		if (cfg_nvlist)
+			nvlist_free(cfg_nvlist);
 
 		/*
 		 * Now that the reconfig is complete set our state back to
@@ -991,7 +992,7 @@ iscsit_task_aborted(idm_task_t *idt, idm_status_t status)
 			 * STMF_ABORTED, the code actually looks for
 			 * STMF_ABORT_SUCCESS.
 			 */
-			stmf_task_lport_aborted(itask->it_stmf_task,
+			stmf_task_lport_aborted_unlocked(itask->it_stmf_task,
 			    STMF_ABORT_SUCCESS, STMF_IOF_LPORT_DONE);
 			return;
 		} else {
@@ -1369,6 +1370,9 @@ iscsit_conn_lost(idm_conn_t *ic)
 	 * Make sure there aren't any PDU's transitioning from the receive
 	 * handler to the dispatch taskq.
 	 */
+	if (idm_refcnt_is_held(&ict->ict_dispatch_refcnt) < 0) {
+		cmn_err(CE_WARN, "Possible hang in iscsit_conn_lost");
+	}
 	idm_refcnt_wait_ref(&ict->ict_dispatch_refcnt);
 
 	return (IDM_STATUS_SUCCESS);
