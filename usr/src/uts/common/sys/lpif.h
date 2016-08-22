@@ -77,8 +77,7 @@ typedef struct stmf_lu {
 	uint32_t		lu_proxy_reg_arg_len;
 	void			(*lu_dbuf_free)(struct scsi_task *task,
 		struct stmf_data_buf *dbuf);
-	void			(*lu_task_done)(struct scsi_task *task,
-				    uint8_t id);
+	void			(*lu_task_done)(struct scsi_task *task);
 } stmf_lu_t;
 
 /*

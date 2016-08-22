@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/conf.h>
@@ -41,11 +41,11 @@
 #include "stmf_sbd.h"
 #include "sbd_impl.h"
 
-uint8_t HardwareAcceleratedLocking = 1; /* 0 for not enbaled */
-uint8_t HardwareAcceleratedMove = 1;	/* 0 for not enabled */
-
 /* ATS routines. */
 #define	SBD_ATS_MAX_NBLKS	32
+uint8_t HardwareAcceleratedLocking = 1; /* 0 for disabled */
+uint8_t HardwareAcceleratedMove = 1;
+uint64_t sbd_list_length = 0;
 
 uint8_t
 sbd_ats_max_nblks(void)
@@ -58,13 +58,11 @@ sbd_ats_max_nblks(void)
 #define	is_overlapping(start1, len1, start2, len2) \
 	((start2) > (start1) ? ((start2) - (start1)) < (len1) : \
 	((start1) - (start2)) < (len2))
-#define	SBD_ATS_NO_BUSY	(0x01)
 
-uint32_t sbd_list_length = 0;
-
+/*ARGSUSED*/
 static sbd_status_t
 sbd_ats_do_handling_before_io(scsi_task_t *task, struct sbd_lu *sl,
-	uint64_t lba, uint64_t count, uint32_t flags)
+    uint64_t lba, uint64_t count, uint32_t flags)
 {
 	sbd_status_t ret = SBD_SUCCESS;
 	ats_state_t *ats_state, *ats_state_ret;
@@ -73,6 +71,9 @@ sbd_ats_do_handling_before_io(scsi_task_t *task, struct sbd_lu *sl,
 
 	if (HardwareAcceleratedLocking == 0)
 		return (SBD_SUCCESS);
+
+	if (scmd == NULL)
+		return (ret);
 
 	mutex_enter(&sl->sl_lock);
 	/*
@@ -139,50 +140,18 @@ done:
 	scmd->ats_state = ats_state;
 	sbd_list_length++;
 	mutex_exit(&sl->sl_lock);
-
 	return (SBD_SUCCESS);
+
 exit:
 	mutex_exit(&sl->sl_lock);
-	if (ret == SBD_SUCCESS)
-		return (SBD_SUCCESS);
-
-	/*
-	 * if the command cannot be allowed to be restarted then just
-	 * return an error.  At the moment only unmap has this property.
-	 * Please refer to sbd_handle_unmap_xfer in sbd_scsi.c for full
-	 * details.
-	 */
-	if ((flags & SBD_ATS_NO_BUSY) != 0)
-		return (ret);
-
-	/*
-	 * at this point the command overlaps a running a compare and write.
-	 * It is either a compare and write overlapping a op or an op
-	 * overlapping a compare and write.  It needs to be delayed. That
-	 * means it is not active so if the stmf_task_poll_lu works
-	 * turn off active
-	 */
-
-	if (stmf_task_poll_lu(task, 10) != STMF_SUCCESS)
-		stmf_scsilib_send_status(task, STATUS_BUSY, 0);
-	else
-		scmd->flags &= ~SBD_SCSI_CMD_ACTIVE;
 	return (ret);
 }
 
 sbd_status_t
 sbd_ats_handling_before_io(scsi_task_t *task, struct sbd_lu *sl,
-	uint64_t lba, uint64_t count)
+    uint64_t lba, uint64_t count)
 {
 	return (sbd_ats_do_handling_before_io(task, sl, lba, count, 0));
-}
-
-sbd_status_t
-sbd_ats_handling_before_io_no_retry(scsi_task_t *task, struct sbd_lu *sl,
-	uint64_t lba, uint64_t count)
-{
-	return (sbd_ats_do_handling_before_io(task, sl, lba, count,
-	    SBD_ATS_NO_BUSY));
 }
 
 void
@@ -192,6 +161,8 @@ sbd_ats_remove_by_task(scsi_task_t *task)
 	sbd_lu_t *sl = (sbd_lu_t *)task->task_lu->lu_provider_private;
 	sbd_cmd_t *scmd = task->task_lu_private;
 
+	if (scmd == NULL)
+		return;
 	/*
 	 * Scan the list and take the task off of the list. It is possible
 	 * that the call is made in a situation where the task is not
@@ -239,8 +210,9 @@ sbd_compare_and_write(struct scsi_task *task, sbd_cmd_t *scmd,
 	len <<= sl->sl_data_blocksize_shift;
 	buf = kmem_alloc(len, KM_SLEEP);
 	ret = sbd_data_read(sl, task, addr, (uint64_t)len, buf);
-	if (ret != SBD_SUCCESS)
+	if (ret != SBD_SUCCESS) {
 		goto compare_and_write_done;
+	}
 	/*
 	 * Can't use bcmp here. We need mismatch offset.
 	 */
@@ -253,6 +225,7 @@ sbd_compare_and_write(struct scsi_task *task, sbd_cmd_t *scmd,
 		ret = SBD_COMPARE_FAILED;
 		goto compare_and_write_done;
 	}
+
 	ret = sbd_data_write(sl, task, addr, (uint64_t)len,
 	    scmd->trans_data + len);
 
@@ -279,20 +252,33 @@ sbd_send_miscompare_status(struct scsi_task *task, uint32_t miscompare_off)
 }
 
 static void
-sbd_ats_release_resources(scsi_task_t *task, sbd_cmd_t *scmd)
+sbd_ats_release_resources(struct scsi_task *task)
 {
-	if (scmd->seqno != task->task_cmd_seq_no)
-		cmn_err(CE_WARN, "ats seqno mismatch");
+	sbd_cmd_t *scmd = (sbd_cmd_t *)task->task_lu_private;
 
-	if (((scmd->flags & SBD_SCSI_CMD_TRANS_DATA) != 0) &&
-	    (scmd->trans_data != NULL)) {
+	/*
+	 * a few basic check here to be sure that there are not multiple
+	 * calls going on.  If scmd is null just return.  This is very
+	 * unlikely, but could happed if the task is freed by an abort.
+	 * If nbufs is invalid warn but ignore the error.  Last if the
+	 * trans_data is either null or the lenght is zero just blow
+	 * off the operation and leak the memory buffer.
+	 */
+	if (scmd == NULL)
+		return;
+
+	if (scmd->nbufs == 0xFF)
+		cmn_err(CE_WARN, "%s invalid buffer count %x", __func__,
+		    scmd->nbufs);
+
+	if ((scmd->trans_data != NULL) && (scmd->trans_data_len != 0))
 		kmem_free(scmd->trans_data, scmd->trans_data_len);
-		scmd->trans_data = NULL;
-		scmd->trans_data_len = 0;
-		scmd->flags &= ~SBD_SCSI_CMD_TRANS_DATA;
-	}
-	sbd_ats_remove_by_task(task);
+
+	scmd->trans_data = NULL; /* force panic later if re-entered */
+	scmd->trans_data_len = 0;
+	scmd->flags &= ~SBD_SCSI_CMD_TRANS_DATA;
 }
+
 void
 sbd_handle_ats_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
     struct stmf_data_buf *dbuf, uint8_t dbuf_reusable)
@@ -307,25 +293,23 @@ sbd_handle_ats_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 	}
 
 	if (dbuf->db_xfer_status != STMF_SUCCESS) {
-		scmd->flags |= SBD_SCSI_CMD_ABORT_REQUESTED;
-		sbd_ats_release_resources(task, scmd);
+		sbd_ats_remove_by_task(task);
+		sbd_ats_release_resources(task);
 		stmf_abort(STMF_QUEUE_TASK_ABORT, task,
 		    dbuf->db_xfer_status, NULL);
 		return;
 	}
 
-	/* if the command is no longer active return */
-	if (((scmd->flags & SBD_SCSI_CMD_ACTIVE) == 0) ||
-	    (scmd->trans_data == NULL) ||
-	    ((scmd->flags & SBD_SCSI_CMD_TRANS_DATA) == 0) ||
-	    (scmd->nbufs == 0xff))  {
-		cmn_err(CE_NOTE, "sbd_handle_ats_xfer_completion:handled"
-		    "unexpected completion");
-		return;
-	}
-
 	if (scmd->flags & SBD_SCSI_CMD_XFER_FAIL) {
 		goto ATS_XFER_DONE;
+	}
+
+	/* if state is confused drop the command */
+	if ((scmd->trans_data == NULL) ||
+	    ((scmd->flags & SBD_SCSI_CMD_TRANS_DATA) == 0) ||
+	    ((scmd->flags & SBD_SCSI_CMD_ACTIVE) == 0)) {
+		scmd->flags &= ~SBD_SCSI_CMD_ACTIVE;
+		return;
 	}
 
 	if (ATOMIC32_GET(scmd->len) != 0) {
@@ -338,6 +322,10 @@ sbd_handle_ats_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 		sbd_do_ats_xfer(task, scmd, NULL, 0);
 	}
 
+	/*
+	 * move the most recent data transfer to the temporary buffer
+	 * used for the compare and write function.
+	 */
 	laddr = dbuf->db_relative_offset;
 	for (buflen = 0, ndx = 0; (buflen < dbuf->db_data_size) &&
 	    (ndx < dbuf->db_sglist_length); ndx++) {
@@ -361,23 +349,18 @@ ATS_XFER_DONE:
 		 * and wait for the next buffer.  Once nbufs is 0 then all the
 		 * data has arrived and the compare can be done.
 		 */
-		if (ATOMIC8_GET(scmd->nbufs) > 0) {
+		if (ATOMIC8_GET(scmd->nbufs) > 0)
 			return;
-		}
+		scmd->flags &= ~SBD_SCSI_CMD_ACTIVE;
 		if (scmd->flags & SBD_SCSI_CMD_XFER_FAIL) {
-			sbd_ats_release_resources(task, scmd);
+			sbd_ats_remove_by_task(task);
 			stmf_scsilib_send_status(task, STATUS_CHECK,
 			    STMF_SAA_WRITE_ERROR);
 		} else {
 			ret = sbd_compare_and_write(task, scmd,
 			    &miscompare_off);
-
-			/*
-			 * since stmf_scsilib_send_status may result in
-			 * the task being released clean up resources before
-			 * calling it.
-			 */
-			sbd_ats_release_resources(task, scmd);
+			sbd_ats_remove_by_task(task);
+			sbd_ats_release_resources(task);
 			if (ret != SBD_SUCCESS) {
 				if (ret != SBD_COMPARE_FAILED) {
 					stmf_scsilib_send_status(task,
@@ -427,6 +410,8 @@ sbd_do_ats_xfer(struct scsi_task *task, sbd_cmd_t *scmd,
 		    (minsize >= 512));
 		if (dbuf == NULL) {
 			if (ATOMIC8_GET(scmd->nbufs) == 0) {
+				sbd_ats_remove_by_task(task);
+				sbd_ats_release_resources(task);
 				stmf_abort(STMF_QUEUE_TASK_ABORT, task,
 				    STMF_ALLOC_FAILURE, NULL);
 			}
@@ -445,7 +430,7 @@ sbd_do_ats_xfer(struct scsi_task *task, sbd_cmd_t *scmd,
 	 * scmd->nbufs is the outstanding transfers
 	 * scmd->len is the number of bytes that are remaing for requests
 	 */
-	atomic_add_8(&scmd->nbufs, 1);
+	atomic_inc_8(&scmd->nbufs);
 	atomic_add_32(&scmd->len, -len);
 	scmd->current_ro += len;
 }
@@ -478,6 +463,7 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 	}
 	addr = READ_SCSI64(&task->task_cdb[2], uint64_t);
 	len = (uint64_t)task->task_cdb[13];
+
 	if ((task->task_cdb[1]) || (len > SBD_ATS_MAX_NBLKS)) {
 		stmf_scsilib_send_status(task, STATUS_CHECK,
 		    STMF_SAA_INVALID_FIELD_IN_CDB);
@@ -492,6 +478,9 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 	 * This can be called again. It will return the same handle again.
 	 */
 	if (sbd_ats_handling_before_io(task, sl, addr, len) != SBD_SUCCESS) {
+		if (stmf_task_poll_lu(task, 10) != STMF_SUCCESS) {
+			stmf_scsilib_send_status(task, STATUS_BUSY, 0);
+		}
 		return;
 	}
 
@@ -504,6 +493,7 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 		task->task_expected_xfer_length = task->task_cmd_xfer_length;
 	}
 	if ((addr + len) > sl->sl_lu_size) {
+		sbd_ats_remove_by_task(task);
 		stmf_scsilib_send_status(task, STATUS_CHECK,
 		    STMF_SAA_LBA_OUT_OF_RANGE);
 		return;
@@ -512,6 +502,7 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 	len <<= 1;
 
 	if (len != task->task_expected_xfer_length) {
+		sbd_ats_remove_by_task(task);
 		stmf_scsilib_send_status(task, STATUS_CHECK,
 		    STMF_SAA_INVALID_FIELD_IN_CDB);
 		return;
@@ -522,6 +513,7 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 			if (initial_dbuf->db_data_size >
 			    task->task_expected_xfer_length) {
 				/* protocol error */
+				sbd_ats_remove_by_task(task);
 				stmf_abort(STMF_QUEUE_TASK_ABORT, task,
 				    STMF_INVALID_ARG, NULL);
 				return;
@@ -533,8 +525,15 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 	}
 	dbuf = initial_dbuf;
 
-	scmd = (sbd_cmd_t *)task->task_lu_private;
-	scmd->flags |= SBD_SCSI_CMD_TRANS_DATA;
+	if (task->task_lu_private) {
+		scmd = (sbd_cmd_t *)task->task_lu_private;
+	} else {
+		scmd = (sbd_cmd_t *)kmem_alloc(sizeof (sbd_cmd_t), KM_SLEEP);
+		task->task_lu_private = scmd;
+	}
+
+	/* We dont set the ATS_RELATED flag here */
+	scmd->flags = SBD_SCSI_CMD_ACTIVE | SBD_SCSI_CMD_TRANS_DATA;
 	scmd->cmd_type = SBD_CMD_SCSI_WRITE;
 	scmd->nbufs = 0;
 	ASSERT(len <= 0xFFFFFFFFull);
@@ -840,14 +839,13 @@ sbd_handle_xcopy(scsi_task_t *task, stmf_data_buf_t *dbuf)
 {
 	uint32_t cmd_xfer_len;
 
-	cmd_xfer_len = READ_SCSI32(&task->task_cdb[10], uint32_t);
-
-
 	if (HardwareAcceleratedMove == 0) {
 		stmf_scsilib_send_status(task, STATUS_CHECK,
 		    STMF_SAA_INVALID_OPCODE);
 		return;
 	}
+
+	cmd_xfer_len = READ_SCSI32(&task->task_cdb[10], uint32_t);
 
 	if (cmd_xfer_len == 0) {
 		task->task_cmd_xfer_length = 0;

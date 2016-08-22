@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  *
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 #ifndef _STMF_IMPL_H
@@ -176,7 +176,7 @@ typedef struct stmf_i_remote_port {
 	hrtime_t		irport_wrdone_timestamp;
 	kstat_t			*irport_kstat_info;
 	kstat_t			*irport_kstat_io;
-	kstat_t			*irport_kstat_estat;	/* extended statistics */
+	kstat_t			*irport_kstat_estat;	/* extended stats */
 	boolean_t		irport_info_dirty;
 } stmf_i_remote_port_t;
 
@@ -316,7 +316,7 @@ typedef struct stmf_i_scsi_task {
 	} else { \
 		w->worker_task_tail = NULL; \
 	}
-	
+
 /*
  * itask_flags
  */

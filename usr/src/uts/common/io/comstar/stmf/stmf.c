@@ -23,7 +23,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  */
@@ -34,7 +34,6 @@
 #include <sys/sunddi.h>
 #include <sys/modctl.h>
 #include <sys/scsi/scsi.h>
-#include <sys/scsi/generic/commands.h>
 #include <sys/scsi/generic/persist.h>
 #include <sys/scsi/impl/scsi_reset_notify.h>
 #include <sys/disp.h>
@@ -166,17 +165,14 @@ static void stmf_update_kstat_lu_q(scsi_task_t *, void());
 static void stmf_update_kstat_lport_q(scsi_task_t *, void());
 static void stmf_update_kstat_lu_io(scsi_task_t *, stmf_data_buf_t *);
 static void stmf_update_kstat_lport_io(scsi_task_t *, stmf_data_buf_t *);
-static void stmf_update_kstat_rport_io(scsi_task_t *, stmf_data_buf_t *);
-static void stmf_update_kstat_rport_estat(scsi_task_t *);
-
 static hrtime_t stmf_update_rport_timestamps(hrtime_t *start_tstamp,
     hrtime_t *done_tstamp, stmf_i_scsi_task_t *itask);
 
 static int stmf_irport_compare(const void *void_irport1,
     const void *void_irport2);
-
 static void stmf_create_kstat_rport(stmf_i_remote_port_t *irport);
 static void stmf_destroy_kstat_rport(stmf_i_remote_port_t *irport);
+static int stmf_kstat_rport_update(kstat_t *ksp, int rw);
 static stmf_i_remote_port_t *stmf_irport_create(scsi_devid_desc_t *rport_devid);
 static void stmf_irport_destroy(stmf_i_remote_port_t *irport);
 static stmf_i_remote_port_t *stmf_irport_register(
@@ -184,7 +180,6 @@ static stmf_i_remote_port_t *stmf_irport_register(
 static stmf_i_remote_port_t *stmf_irport_lookup_locked(
     scsi_devid_desc_t *rport_devid);
 static void stmf_irport_deregister(stmf_i_remote_port_t *irport);
-static int stmf_kstat_rport_update(kstat_t *ksp, int rw);
 
 extern struct mod_ops mod_driverops;
 
@@ -203,15 +198,15 @@ volatile int	stmf_default_task_timeout = 75;
  */
 volatile int	stmf_allow_modunload = 0;
 
-volatile uint8_t	stmf_enable_scaledown = 0;
 volatile int stmf_max_nworkers = 1024;
-volatile int stmf_min_nworkers = 128;
-volatile int stmf_worker_scale_down_delay = 90;
+volatile int stmf_min_nworkers = 32;
+volatile int stmf_worker_scale_down_delay = 3600;
+uint8_t stmf_enable_scaledown = 0;
 
 /* === [ Debugging and fault injection ] === */
 #ifdef	DEBUG
-volatile uint32_t stmf_drop_task_counter = 0;
-volatile uint32_t stmf_drop_buf_counter = 0;
+volatile int stmf_drop_task_counter = 0;
+volatile int stmf_drop_buf_counter = 0;
 
 #endif
 
@@ -285,12 +280,14 @@ static struct dev_ops stmf_ops = {
 	NULL			/* power */
 };
 
-#ifdef DEBUG
-#define	STMF_NAME		"COMSTAR STMFd+" __DATE__ " " __TIME__
-#else
-#define	STMF_NAME		"COMSTAR STMF+"
-#endif
+
 #define	STMF_MODULE_NAME	"stmf"
+
+#ifdef	DEBUG
+#define	STMF_NAME		"COMSTAR STMF " __DATE__ " " __TIME__ " DEBUG"
+#else
+#define	STMF_NAME		"COMSTAR STMF"
+#endif
 
 static struct modldrv modldrv = {
 	&mod_driverops,
@@ -486,7 +483,7 @@ stmf_close(dev_t dev, int flag, int otype, cred_t *credp)
 
 int
 stmf_copyin_iocdata(intptr_t data, int mode, stmf_iocdata_t **iocd,
-						void **ibuf, void **obuf)
+    void **ibuf, void **obuf)
 {
 	int ret;
 
@@ -545,7 +542,7 @@ stmf_copyout_iocdata(intptr_t data, int mode, stmf_iocdata_t *iocd, void *obuf)
 /* ARGSUSED */
 static int
 stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
-	cred_t *credp, int *rval)
+    cred_t *credp, int *rval)
 {
 	stmf_iocdata_t *iocd;
 	void *ibuf = NULL, *obuf = NULL;
@@ -2541,7 +2538,8 @@ stmf_load_ppd_ioctl(stmf_ppioctl_data_t *ppi, uint64_t *ppi_token,
 	}
 
 	/* Free any existing lists and add this one to the ppd */
-	nvlist_free(ppd->ppd_nv);
+	if (ppd->ppd_nv)
+		nvlist_free(ppd->ppd_nv);
 	ppd->ppd_nv = nv;
 
 	/* set the token for writes */
@@ -2613,7 +2611,8 @@ stmf_delete_ppd(stmf_pp_data_t *ppd)
 		return;
 
 	*pppd = ppd->ppd_next;
-	nvlist_free(ppd->ppd_nv);
+	if (ppd->ppd_nv)
+		nvlist_free(ppd->ppd_nv);
 
 	kmem_free(ppd, ppd->ppd_alloc_size);
 }
@@ -2720,8 +2719,8 @@ stmf_delete_all_ppds()
  * 16 is the max string length of a protocol_ident, increase
  * the size if needed.
  */
-#define	STMF_KSTAT_LU_SZ		(STMF_GUID_INPUT + 1 + 256)
-#define	STMF_KSTAT_TGT_SZ		(256 * 2 + 16)
+#define	STMF_KSTAT_LU_SZ	(STMF_GUID_INPUT + 1 + 256)
+#define	STMF_KSTAT_TGT_SZ	(256 * 2 + 16)
 #define	STMF_KSTAT_RPORT_DATAMAX	(sizeof (stmf_kstat_rport_info_t) / \
 					    sizeof (kstat_named_t))
 
@@ -3677,7 +3676,7 @@ stmf_destroy_kstat_rport(stmf_i_remote_port_t *irport)
 		    i < STMF_RPORT_INFO_LIMIT; i++, knp++) {
 			ptr = KSTAT_NAMED_STR_PTR(knp);
 			if (ptr != NULL)
-				kmem_free(ptr, KSTAT_NAMED_STR_BUFLEN(knp));
+			kmem_free(ptr, KSTAT_NAMED_STR_BUFLEN(knp));
 		}
 		kmem_free(ks_info, sizeof (*ks_info));
 	}
@@ -3860,7 +3859,6 @@ stmf_add_rport_info(stmf_scsi_session_t *ss,
 		    irport->irport_kstat_info);
 		cmn_err(CE_WARN, "STMF: info limit is reached for rport %s",
 		    KSTAT_NAMED_STR_PTR(&ks_info->i_rport_name));
-
 		return (STMF_FAILURE);
 	}
 
@@ -3928,7 +3926,6 @@ stmf_kstat_rport_update(kstat_t *ksp, int rw)
 	for (i = 0; i < STMF_KSTAT_RPORT_DATAMAX; i++, knp++) {
 		if (KSTAT_NAMED_STR_PTR(knp) == NULL)
 			break;
-
 		ndata++;
 		dsize += KSTAT_NAMED_STR_BUFLEN(knp);
 	}
@@ -4002,7 +3999,6 @@ try_dereg_ss_again:
 	ilport->ilport_nsessions--;
 
 	stmf_irport_deregister(iss->iss_irport);
-
 	/*
 	 * to avoid conflict with updating session's map,
 	 * which only grab stmf_lock
@@ -4014,23 +4010,23 @@ try_dereg_ss_again:
 	rw_exit(&ilport->ilport_lock);
 
 	if (sm->lm_nentries) {
-	for (n = 0; n < sm->lm_nentries; n++) {
-		if ((ent = (stmf_lun_map_ent_t *)sm->lm_plus[n])
-			!= NULL) {
-			if (ent->ent_itl_datap) {
-				stmf_do_itl_dereg(ent->ent_lu,
-					ent->ent_itl_datap,
-					STMF_ITL_REASON_IT_NEXUS_LOSS);
-			}
-			ilu = (stmf_i_lu_t *)
-				ent->ent_lu->lu_stmf_private;
-				atomic_add_32(&ilu->ilu_ref_cnt, -1);
+		for (n = 0; n < sm->lm_nentries; n++) {
+			if ((ent = (stmf_lun_map_ent_t *)sm->lm_plus[n])
+			    != NULL) {
+				if (ent->ent_itl_datap) {
+					stmf_do_itl_dereg(ent->ent_lu,
+					    ent->ent_itl_datap,
+					    STMF_ITL_REASON_IT_NEXUS_LOSS);
+				}
+				ilu = (stmf_i_lu_t *)
+				    ent->ent_lu->lu_stmf_private;
+				atomic_dec_32(&ilu->ilu_ref_cnt);
 				kmem_free(sm->lm_plus[n],
-					sizeof (stmf_lun_map_ent_t));
+				    sizeof (stmf_lun_map_ent_t));
 			}
 		}
 		kmem_free(sm->lm_plus,
-			sizeof (stmf_lun_map_ent_t *) * sm->lm_nentries);
+		    sizeof (stmf_lun_map_ent_t *) * sm->lm_nentries);
 	}
 	kmem_free(sm, sizeof (*sm));
 
@@ -4040,6 +4036,8 @@ try_dereg_ss_again:
 
 	mutex_exit(&stmf_state.stmf_lock);
 }
+
+
 
 stmf_i_scsi_session_t *
 stmf_session_id_to_issptr(uint64_t session_id, int stay_locked)
@@ -4384,7 +4382,7 @@ stmf_handle_to_buf(scsi_task_t *task, uint8_t h)
 /* ARGSUSED */
 struct scsi_task *
 stmf_task_alloc(struct stmf_local_port *lport, stmf_scsi_session_t *ss,
-			uint8_t *lun, uint16_t cdb_length_in, uint16_t ext_id)
+    uint8_t *lun, uint16_t cdb_length_in, uint16_t ext_id)
 {
 	stmf_lu_t *lu;
 	stmf_i_scsi_session_t *iss;
@@ -4800,8 +4798,7 @@ stmf_task_free(scsi_task_t *task)
 	stmf_task_audit(itask, TE_TASK_FREE, CMD_OR_IOF_NA, NULL);
 
 	if ((lu != NULL) && (lu->lu_task_done != NULL))
-		lu->lu_task_done(task, 4);
-
+		lu->lu_task_done(task);
 	stmf_free_task_bufs(itask, lport);
 	stmf_itl_task_done(itask);
 	DTRACE_PROBE2(stmf__task__end, scsi_task_t *, task,
@@ -4874,16 +4871,6 @@ stmf_post_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 	if (w1->worker_queue_depth < w->worker_queue_depth)
 		w = w1;
 
-	/*
-	 * if this command is a write_same or unmap just use worker 0
-	 * to limit starvation.
-	 */
-	if (task->task_cdb[0] == SCMD_WRITE_SAME_G4 ||
-	    task->task_cdb[0] == SCMD_WRITE_SAME_G1 ||
-	    task->task_cdb[0] == SCMD_UNMAP) {
-		w = &stmf_workers[0];
-	}
-
 	mutex_enter(&w->worker_lock);
 	if (((w->worker_flags & STMF_WORKER_STARTED) == 0) ||
 	    (w->worker_flags & STMF_WORKER_TERMINATE)) {
@@ -4895,7 +4882,21 @@ stmf_post_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 		w = stmf_workers;
 		mutex_enter(&w->worker_lock);
 	}
+
+	/*
+	 * if this command is a write_same or unmap just use worker 0
+	 * to limit starvation.
+	 */
+	if (task->task_cdb[0] == SCMD_WRITE_SAME_G4 ||
+	    task->task_cdb[0] == SCMD_WRITE_SAME_G1 ||
+	    task->task_cdb[0] == SCMD_UNMAP) {
+		mutex_exit(&w->worker_lock);
+		w = &stmf_workers[0];
+		mutex_enter(&w->worker_lock);
+	}
+
 	itask->itask_worker = w;
+
 	/*
 	 * Track max system load inside the worker as we already have the
 	 * worker lock (no point implementing another lock). The service
@@ -5020,7 +5021,7 @@ stmf_xfer_data(scsi_task_t *task, stmf_data_buf_t *dbuf, uint32_t ioflags)
 		return (STMF_ABORTED);
 #ifdef	DEBUG
 	if (!(ioflags & STMF_IOF_STATS_ONLY) && stmf_drop_buf_counter > 0) {
-		if (atomic_dec_32_nv(&stmf_drop_buf_counter) == 1)
+		if (atomic_dec_32_nv((uint32_t *)&stmf_drop_buf_counter) == 1)
 			return (STMF_SUCCESS);
 	}
 #endif
@@ -5231,10 +5232,6 @@ stmf_send_status_done(scsi_task_t *task, stmf_status_t s, uint32_t iof)
 	} while (atomic_cas_32(&itask->itask_flags, old, new) != old);
 	task->task_completion_status = s;
 
-	if (queue_it == free_it) {
-		cmn_err(CE_NOTE, "%s task being both queued and freed",
-		    __func__);
-	}
 
 	if (queue_it) {
 		ASSERT(itask->itask_ncmds < ITASK_MAX_NCMDS);
@@ -5301,7 +5298,6 @@ stmf_queue_task_for_abort(scsi_task_t *task, stmf_status_t s)
 	    (stmf_i_scsi_task_t *)task->task_stmf_private;
 	stmf_worker_t *w;
 	uint32_t old, new;
-	stmf_lu_t *lu = task->task_lu;
 
 	stmf_task_audit(itask, TE_TASK_ABORT, CMD_OR_IOF_NA, NULL);
 
@@ -5317,7 +5313,6 @@ stmf_queue_task_for_abort(scsi_task_t *task, stmf_status_t s)
 	task->task_completion_status = s;
 	itask->itask_start_time = ddi_get_lbolt();
 
-	lu->lu_abort(lu, STMF_LU_SET_ABORT, task, 0);
 	if (((w = itask->itask_worker) == NULL) ||
 	    (itask->itask_flags & ITASK_IN_TRANSITION)) {
 		return;
@@ -5330,8 +5325,8 @@ stmf_queue_task_for_abort(scsi_task_t *task, stmf_status_t s)
 		return;
 	}
 	atomic_or_32(&itask->itask_flags, ITASK_IN_WORKER_QUEUE);
+	itask->itask_worker_next = NULL;
 	STMF_ENQUEUE_ITASK(w, itask);
-
 	if ((w->worker_flags & STMF_WORKER_ACTIVE) == 0)
 		cv_signal(&w->worker_cv);
 	mutex_exit(&w->worker_lock);
@@ -5869,7 +5864,7 @@ stmf_ctl_lock_exit:;
 /* ARGSUSED */
 stmf_status_t
 stmf_info_impl(uint32_t cmd, void *arg1, void *arg2, uint8_t *buf,
-						uint32_t *bufsizep)
+    uint32_t *bufsizep)
 {
 	return (STMF_NOT_SUPPORTED);
 }
@@ -5877,7 +5872,7 @@ stmf_info_impl(uint32_t cmd, void *arg1, void *arg2, uint8_t *buf,
 /* ARGSUSED */
 stmf_status_t
 stmf_info(uint32_t cmd, void *arg1, void *arg2, uint8_t *buf,
-						uint32_t *bufsizep)
+    uint32_t *bufsizep)
 {
 	uint32_t cl = SI_GET_CLASS(cmd);
 
@@ -6110,7 +6105,6 @@ void
 stmf_scsilib_send_status(scsi_task_t *task, uint8_t st, uint32_t saa)
 {
 	uint8_t sd[18];
-
 	task->task_scsi_status = st;
 	if (st == 2) {
 		bzero(sd, 18);
@@ -6571,7 +6565,7 @@ stmf_worker_task(void *arg)
 	DTRACE_PROBE1(worker__create, stmf_worker_t, w);
 	mutex_enter(&w->worker_lock);
 	w->worker_flags |= STMF_WORKER_STARTED | STMF_WORKER_ACTIVE;
-stmf_worker_loop:;
+stmf_worker_loop:
 	if ((w->worker_ref_count == 0) &&
 	    (w->worker_flags & STMF_WORKER_TERMINATE)) {
 		w->worker_flags &= ~(STMF_WORKER_STARTED |
@@ -6583,8 +6577,6 @@ stmf_worker_loop:;
 	}
 	/* CONSTCOND */
 	while (1) {
-		itask = NULL;
-		curcmd = 0;
 		dec_qdepth = 0;
 		if (wait_timer && (ddi_get_lbolt() >= wait_timer)) {
 			wait_timer = 0;
@@ -6602,13 +6594,15 @@ stmf_worker_loop:;
 				    NULL;
 			}
 		}
-		STMF_DEQUEUE_ITASK(w, itask);
 
+		STMF_DEQUEUE_ITASK(w, itask);
 		if (!itask)
 			break;
+
 		task = itask->itask_task;
 		DTRACE_PROBE2(worker__active, stmf_worker_t, w,
 		    scsi_task_t *, task);
+
 		wait_queue = 0;
 		abort_free = 0;
 		if (itask->itask_ncmds > 0) {
@@ -6708,9 +6702,10 @@ out_itask_flag_loop:
 			}
 #ifdef	DEBUG
 			if (stmf_drop_task_counter > 0) {
-				if (atomic_dec_32_nv(&stmf_drop_task_counter)
-				    == 1)
+				if (atomic_dec_32_nv(
+				    (uint32_t *)&stmf_drop_task_counter) == 1) {
 					break;
+				}
 			}
 #endif
 			DTRACE_PROBE1(scsi__task__start, scsi_task_t *, task);
@@ -7023,6 +7018,7 @@ stmf_dlun0_new_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 		dbuf->db_relative_offset = 0;
 		dbuf->db_flags = DB_DIRECTION_TO_RPORT;
 		(void) stmf_xfer_data(task, dbuf, 0);
+
 		return;
 
 	case SCMD_REPORT_LUNS:
@@ -7080,6 +7076,7 @@ stmf_dlun0_new_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 		(void) stmf_xfer_data(task, dbuf, 0);
 		return;
 	}
+
 	stmf_scsilib_send_status(task, STATUS_CHECK, STMF_SAA_INVALID_OPCODE);
 }
 
@@ -7142,12 +7139,6 @@ stmf_dlun0_status_done(scsi_task_t *task)
 /* ARGSUSED */
 void
 stmf_dlun0_task_free(scsi_task_t *task)
-{
-}
-
-/* ARGSUSED */
-void
-stmf_dlun0_task_done(scsi_task_t *task, uint8_t id)
 {
 }
 
@@ -7231,6 +7222,12 @@ stmf_dlun0_ctl(struct stmf_lu *lu, int cmd, void *arg)
 	cmn_err(CE_WARN, "stmf_dlun0_ctl called with cmd %x", cmd);
 }
 
+/* ARGSUSED */
+void
+stmf_dlun0_task_done(struct scsi_task *task)
+{
+}
+
 void
 stmf_dlun_init()
 {
@@ -7244,8 +7241,8 @@ stmf_dlun_init()
 	dlun0->lu_task_free = stmf_dlun0_task_free;
 	dlun0->lu_abort = stmf_dlun0_abort;
 	dlun0->lu_task_poll = stmf_dlun0_task_poll;
-	dlun0->lu_ctl = stmf_dlun0_ctl;
 	dlun0->lu_task_done = stmf_dlun0_task_done;
+	dlun0->lu_ctl = stmf_dlun0_ctl;
 
 	ilu = (stmf_i_lu_t *)dlun0->lu_stmf_private;
 	ilu->ilu_cur_task_cntr = &ilu->ilu_task_cntr1;
@@ -7488,7 +7485,7 @@ stmf_generate_lu_event(stmf_i_lu_t *ilu, int eventid, void *arg, uint32_t flags)
 
 void
 stmf_generate_lport_event(stmf_i_local_port_t *ilport, int eventid, void *arg,
-				uint32_t flags)
+    uint32_t flags)
 {
 	if (STMF_EVENT_ENABLED(ilport->ilport_event_hdl, eventid) &&
 	    (ilport->ilport_lport->lport_event_handler != NULL)) {
@@ -7506,12 +7503,12 @@ stmf_generate_lport_event(stmf_i_local_port_t *ilport, int eventid, void *arg,
 void
 stmf_itl_task_start(stmf_i_scsi_task_t *itask)
 {
-	stmf_itl_data_t		*itl = itask->itask_itl_datap;
-	scsi_task_t		*task = itask->itask_task;
-	stmf_i_lu_t		*ilu;
-	stmf_i_scsi_session_t	*iss =
+	stmf_itl_data_t	*itl = itask->itask_itl_datap;
+	scsi_task_t	*task = itask->itask_task;
+	stmf_i_lu_t	*ilu;
+	stmf_i_scsi_session_t   *iss =
 	    itask->itask_task->task_session->ss_stmf_private;
-	stmf_i_remote_port_t	*irport = iss->iss_irport;
+	stmf_i_remote_port_t    *irport = iss->iss_irport;
 
 	if (itl == NULL || task->task_lu == dlun0)
 		return;
@@ -8117,7 +8114,7 @@ stmf_base16_str_to_binary(char *c, int dplen, uint8_t *dp)
 
 boolean_t
 stmf_scsilib_tptid_validate(scsi_transport_id_t *tptid, uint32_t total_sz,
-				uint16_t *tptid_sz)
+    uint16_t *tptid_sz)
 {
 	uint16_t tpd_len = SCSI_TPTID_SIZE;
 
@@ -8134,8 +8131,7 @@ stmf_scsilib_tptid_validate(scsi_transport_id_t *tptid, uint32_t total_sz,
 			return (B_FALSE);
 		break;
 
-	case PROTOCOL_iSCSI:
-		/* CSTYLED */
+	case PROTOCOL_iSCSI: /* CSTYLED */
 		{
 		iscsi_transport_id_t	*iscsiid;
 		uint16_t		adn_len, name_len;
@@ -8180,8 +8176,7 @@ stmf_scsilib_tptid_validate(scsi_transport_id_t *tptid, uint32_t total_sz,
 	case PROTOCOL_SAS:
 	case PROTOCOL_ADT:
 	case PROTOCOL_ATAPI:
-	default:
-		/* CSTYLED */
+	default: /* CSTYLED */
 		{
 		stmf_dflt_scsi_tptid_t *dflttpd;
 
@@ -8202,7 +8197,7 @@ stmf_scsilib_tptid_validate(scsi_transport_id_t *tptid, uint32_t total_sz,
 
 boolean_t
 stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
-				scsi_transport_id_t *tpd2)
+    scsi_transport_id_t *tpd2)
 {
 	if ((tpd1->protocol_id != tpd2->protocol_id) ||
 	    (tpd1->format_code != tpd2->format_code))
@@ -8210,8 +8205,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 
 	switch (tpd1->protocol_id) {
 
-	case PROTOCOL_iSCSI:
-		/* CSTYLED */
+	case PROTOCOL_iSCSI: /* CSTYLED */
 		{
 		iscsi_transport_id_t *iscsitpd1, *iscsitpd2;
 		uint16_t len;
@@ -8226,8 +8220,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 		}
 		break;
 
-	case PROTOCOL_SRP:
-		/* CSTYLED */
+	case PROTOCOL_SRP: /* CSTYLED */
 		{
 		scsi_srp_transport_id_t *srptpd1, *srptpd2;
 
@@ -8239,8 +8232,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 		}
 		break;
 
-	case PROTOCOL_FIBRE_CHANNEL:
-		/* CSTYLED */
+	case PROTOCOL_FIBRE_CHANNEL: /* CSTYLED */
 		{
 		scsi_fc_transport_id_t *fctpd1, *fctpd2;
 
@@ -8258,8 +8250,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 	case PROTOCOL_SAS:
 	case PROTOCOL_ADT:
 	case PROTOCOL_ATAPI:
-	default:
-		/* CSTYLED */
+	default: /* CSTYLED */
 		{
 		stmf_dflt_scsi_tptid_t *dflt1, *dflt2;
 		uint16_t len;
@@ -8370,7 +8361,8 @@ devid_to_remote_port_fail:
 }
 
 stmf_remote_port_t *
-stmf_remote_port_alloc(uint16_t tptid_sz) {
+stmf_remote_port_alloc(uint16_t tptid_sz)
+{
 	stmf_remote_port_t *rpt;
 	rpt = (stmf_remote_port_t *)kmem_zalloc(
 	    sizeof (stmf_remote_port_t) + tptid_sz, KM_SLEEP);
