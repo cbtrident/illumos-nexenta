@@ -25,6 +25,10 @@
 # Use is subject to license terms.
 #
 
+#
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+#
+
 DIR=$(dirname $0)
 NAME=$(basename $0)
 
@@ -69,7 +73,7 @@ if (( $? != 0 )); then
 	exit $UNTESTED
 fi
 
-strfs=$(cat $STF_TMPDIR/setup.$$)
+strfs=$(grep OKAY $STF_TMPDIR/setup.$$)
 rm $STF_TMPDIR/setup.$$
 FS_TYPE=$(echo $strfs | awk '{print $2}')
 if [[ $FS_TYPE == "ufs" ]]; then
