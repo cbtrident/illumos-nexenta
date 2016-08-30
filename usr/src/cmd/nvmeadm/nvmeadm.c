@@ -71,7 +71,7 @@ struct nvme_feature {
 	size_t f_bufsize;
 	uint_t f_getflags;
 	int (*f_get)(int, const nvme_feature_t *, nvme_identify_ctrl_t *);
-	void (*f_print)(uint64_t, void *, nvme_identify_ctrl_t *);
+	void (*f_print)(uint64_t, void *, size_t, nvme_identify_ctrl_t *);
 };
 
 #define	NVMEADM_CTRL	1
@@ -468,16 +468,18 @@ static int
 do_get_logpage_error(int fd, uint32_t nsid, nvme_identify_ctrl_t *idctl)
 {
 	int nlog = idctl->id_elpe + 1;
+	size_t bufsize = sizeof (nvme_error_log_entry_t) * nlog;
 	nvme_error_log_entry_t *elog;
 
 	if (nsid != 0)
 		errx(-1, "Error Log not available on a per-namespace basis");
 
-	elog = nvme_get_logpage(fd, NVME_LOGPAGE_ERROR,
-	    sizeof (nvme_error_log_entry_t) * nlog);
+	elog = nvme_get_logpage(fd, NVME_LOGPAGE_ERROR, &bufsize);
 
 	if (elog == NULL)
 		return (-1);
+
+	nlog = bufsize / sizeof (nvme_error_log_entry_t);
 
 	nvme_print_error_log(nlog, elog);
 
@@ -489,6 +491,7 @@ do_get_logpage_error(int fd, uint32_t nsid, nvme_identify_ctrl_t *idctl)
 static int
 do_get_logpage_health(int fd, uint32_t nsid, nvme_identify_ctrl_t *idctl)
 {
+	size_t bufsize = sizeof (nvme_health_log_t);
 	nvme_health_log_t *hlog;
 
 	if (nsid != 0)
@@ -496,8 +499,7 @@ do_get_logpage_health(int fd, uint32_t nsid, nvme_identify_ctrl_t *idctl)
 			errx(-1, "SMART/Health information not available "
 			    "on a per-namespace basis on this controller");
 
-	hlog = nvme_get_logpage(fd, NVME_LOGPAGE_HEALTH,
-	    sizeof (nvme_health_log_t));
+	hlog = nvme_get_logpage(fd, NVME_LOGPAGE_HEALTH, &bufsize);
 
 	if (hlog == NULL)
 		return (-1);
@@ -512,14 +514,14 @@ do_get_logpage_health(int fd, uint32_t nsid, nvme_identify_ctrl_t *idctl)
 static int
 do_get_logpage_fwslot(int fd, uint32_t nsid)
 {
+	size_t bufsize = sizeof (nvme_fwslot_log_t);
 	nvme_fwslot_log_t *fwlog;
 
 	if (nsid != 0)
 		errx(-1, "Firmware Slot information not available on a "
 		    "per-namespace basis");
 
-	fwlog = nvme_get_logpage(fd, NVME_LOGPAGE_FWSLOT,
-	    sizeof (nvme_fwslot_log_t));
+	fwlog = nvme_get_logpage(fd, NVME_LOGPAGE_FWSLOT, &bufsize);
 
 	if (fwlog == NULL)
 		return (-1);
@@ -567,15 +569,16 @@ static int
 do_get_feat_common(int fd, const nvme_feature_t *feat,
     nvme_identify_ctrl_t *idctl)
 {
-	uint64_t res;
 	void *buf = NULL;
+	size_t bufsize = feat->f_bufsize;
+	uint64_t res;
 
-	if (nvme_get_feature(fd, feat->f_feature, 0, &res, feat->f_bufsize,
-	    &buf) == B_FALSE)
+	if (nvme_get_feature(fd, feat->f_feature, 0, &res, &bufsize, &buf)
+	    == B_FALSE)
 		return (EINVAL);
 
 	nvme_print(0, feat->f_name, 0, NULL);
-	feat->f_print(res, buf, idctl);
+	feat->f_print(res, buf, bufsize, idctl);
 	free(buf);
 
 	return (0);
@@ -597,11 +600,11 @@ do_get_feat_intr_vect(int fd, const nvme_feature_t *feat,
 		return (EINVAL);
 
 	for (arg = 0; arg < intr_cnt; arg++) {
-		if (nvme_get_feature(fd, feat->f_feature, arg, &res, 0, NULL)
+		if (nvme_get_feature(fd, feat->f_feature, arg, &res, NULL, NULL)
 		    == B_FALSE)
 			return (EINVAL);
 
-		feat->f_print(res, NULL, idctl);
+		feat->f_print(res, NULL, 0, idctl);
 	}
 
 	return (0);

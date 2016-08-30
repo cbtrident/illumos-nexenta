@@ -38,25 +38,32 @@ extern void nvme_print_error_log(int, nvme_error_log_entry_t *);
 extern void nvme_print_health_log(nvme_health_log_t *, nvme_identify_ctrl_t *);
 extern void nvme_print_fwslot_log(nvme_fwslot_log_t *);
 
-extern void nvme_print_feat_arbitration(uint64_t, void *,
+extern void nvme_print_feat_arbitration(uint64_t, void *, size_t,
     nvme_identify_ctrl_t *);
-extern void nvme_print_feat_power_mgmt(uint64_t, void *,
+extern void nvme_print_feat_power_mgmt(uint64_t, void *, size_t,
     nvme_identify_ctrl_t *);
-extern void nvme_print_feat_lba_range(uint64_t, void *, nvme_identify_ctrl_t *);
-extern void nvme_print_feat_temperature(uint64_t, void *,
+extern void nvme_print_feat_lba_range(uint64_t, void *, size_t,
     nvme_identify_ctrl_t *);
-extern void nvme_print_feat_error(uint64_t, void *, nvme_identify_ctrl_t *);
-extern void nvme_print_feat_write_cache(uint64_t, void *,
+extern void nvme_print_feat_temperature(uint64_t, void *, size_t,
     nvme_identify_ctrl_t *);
-extern void nvme_print_feat_nqueues(uint64_t, void *, nvme_identify_ctrl_t *);
-extern void nvme_print_feat_intr_coal(uint64_t, void *, nvme_identify_ctrl_t *);
-extern void nvme_print_feat_intr_vect(uint64_t, void *, nvme_identify_ctrl_t *);
-extern void nvme_print_feat_write_atom(uint64_t, void *,
+extern void nvme_print_feat_error(uint64_t, void *, size_t,
     nvme_identify_ctrl_t *);
-extern void nvme_print_feat_async_event(uint64_t, void *,
+extern void nvme_print_feat_write_cache(uint64_t, void *, size_t,
     nvme_identify_ctrl_t *);
-extern void nvme_print_feat_auto_pst(uint64_t, void *, nvme_identify_ctrl_t *);
-extern void nvme_print_feat_progress(uint64_t, void *, nvme_identify_ctrl_t *);
+extern void nvme_print_feat_nqueues(uint64_t, void *, size_t,
+    nvme_identify_ctrl_t *);
+extern void nvme_print_feat_intr_coal(uint64_t, void *, size_t,
+    nvme_identify_ctrl_t *);
+extern void nvme_print_feat_intr_vect(uint64_t, void *, size_t,
+    nvme_identify_ctrl_t *);
+extern void nvme_print_feat_write_atom(uint64_t, void *, size_t,
+    nvme_identify_ctrl_t *);
+extern void nvme_print_feat_async_event(uint64_t, void *, size_t,
+    nvme_identify_ctrl_t *);
+extern void nvme_print_feat_auto_pst(uint64_t, void *, size_t,
+    nvme_identify_ctrl_t *);
+extern void nvme_print_feat_progress(uint64_t, void *, size_t,
+    nvme_identify_ctrl_t *);
 
 /* device node functions */
 extern int nvme_open(di_minor_t);
@@ -65,8 +72,8 @@ extern nvme_version_t *nvme_version(int);
 extern nvme_capabilities_t *nvme_capabilities(int);
 extern nvme_identify_ctrl_t *nvme_identify_ctrl(int);
 extern nvme_identify_nsid_t *nvme_identify_nsid(int);
-extern void *nvme_get_logpage(int, uint8_t, size_t);
-extern boolean_t nvme_get_feature(int, uint8_t, uint32_t, uint64_t *, size_t,
+extern void *nvme_get_logpage(int, uint8_t, size_t *);
+extern boolean_t nvme_get_feature(int, uint8_t, uint32_t, uint64_t *, size_t *,
     void **);
 extern int nvme_intr_cnt(int);
 

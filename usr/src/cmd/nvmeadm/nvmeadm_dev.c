@@ -24,11 +24,11 @@
 
 #include "nvmeadm.h"
 
-static boolean_t nvme_ioctl(int, int, size_t, void **, uint64_t, uint64_t *);
+static boolean_t nvme_ioctl(int, int, size_t *, void **, uint64_t, uint64_t *);
 
 
 static boolean_t
-nvme_ioctl(int fd, int ioc, size_t bufsize, void **buf, uint64_t arg,
+nvme_ioctl(int fd, int ioc, size_t *bufsize, void **buf, uint64_t arg,
     uint64_t *res)
 {
 	nvme_ioctl_t nioc = { 0 };
@@ -39,16 +39,16 @@ nvme_ioctl(int fd, int ioc, size_t bufsize, void **buf, uint64_t arg,
 	if (res != NULL)
 		*res = ~0ULL;
 
-	if (bufsize != 0) {
+	if (bufsize != NULL && *bufsize != 0) {
 		if (buf == NULL)
 			return (B_FALSE);
 
-		if ((*buf = malloc(bufsize)) == NULL) {
+		if ((*buf = calloc(*bufsize, 1)) == NULL) {
 			err(-1, "nvme_ioctl()");
 			return (B_FALSE);
 		}
 		nioc.n_buf = (uintptr_t)*buf;
-		nioc.n_len = bufsize;
+		nioc.n_len = *bufsize;
 	}
 
 	nioc.n_arg = arg;
@@ -56,12 +56,15 @@ nvme_ioctl(int fd, int ioc, size_t bufsize, void **buf, uint64_t arg,
 	if (ioctl(fd, ioc, &nioc) != 0) {
 		if (debug)
 			warn("nvme_ioctl()");
-		free(buf);
+		free(*buf);
 		return (B_FALSE);
 	}
 
 	if (res != NULL)
 		*res = nioc.n_arg;
+
+	if (bufsize != NULL)
+		*bufsize = nioc.n_len;
 
 	return (B_TRUE);
 }
@@ -70,9 +73,9 @@ nvme_capabilities_t *
 nvme_capabilities(int fd)
 {
 	void *cap = NULL;
+	size_t bufsize = sizeof (nvme_capabilities_t);
 
-	(void) nvme_ioctl(fd, NVME_IOC_CAPABILITIES,
-	    sizeof (nvme_capabilities_t), &cap, 0, NULL);
+	(void) nvme_ioctl(fd, NVME_IOC_CAPABILITIES, &bufsize, &cap, 0, NULL);
 
 	return (cap);
 }
@@ -81,9 +84,9 @@ nvme_version_t *
 nvme_version(int fd)
 {
 	void *vs = NULL;
+	size_t bufsize = sizeof (nvme_version_t);
 
-	(void) nvme_ioctl(fd, NVME_IOC_VERSION,
-	    sizeof (nvme_version_t), &vs, 0, NULL);
+	(void) nvme_ioctl(fd, NVME_IOC_VERSION, &bufsize, &vs, 0, NULL);
 
 	return (vs);
 }
@@ -92,9 +95,10 @@ nvme_identify_ctrl_t *
 nvme_identify_ctrl(int fd)
 {
 	void *idctl = NULL;
+	size_t bufsize = NVME_IDENTIFY_BUFSIZE;
 
-	(void) nvme_ioctl(fd, NVME_IOC_IDENTIFY_CTRL, NVME_IDENTIFY_BUFSIZE,
-	    &idctl, 0, NULL);
+	(void) nvme_ioctl(fd, NVME_IOC_IDENTIFY_CTRL, &bufsize, &idctl, 0,
+	    NULL);
 
 	return (idctl);
 }
@@ -103,15 +107,15 @@ nvme_identify_nsid_t *
 nvme_identify_nsid(int fd)
 {
 	void *idns = NULL;
+	size_t bufsize = NVME_IDENTIFY_BUFSIZE;
 
-	(void) nvme_ioctl(fd, NVME_IOC_IDENTIFY_NSID, NVME_IDENTIFY_BUFSIZE,
-	    &idns, 0, NULL);
+	(void) nvme_ioctl(fd, NVME_IOC_IDENTIFY_NSID, &bufsize, &idns, 0, NULL);
 
 	return (idns);
 }
 
 void *
-nvme_get_logpage(int fd, uint8_t logpage, size_t bufsize)
+nvme_get_logpage(int fd, uint8_t logpage, size_t *bufsize)
 {
 	void *buf = NULL;
 
@@ -123,7 +127,7 @@ nvme_get_logpage(int fd, uint8_t logpage, size_t bufsize)
 
 boolean_t
 nvme_get_feature(int fd, uint8_t feature, uint32_t arg, uint64_t *res,
-    size_t bufsize, void **buf)
+    size_t *bufsize, void **buf)
 {
 	return (nvme_ioctl(fd, NVME_IOC_GET_FEATURES, bufsize, buf,
 	    (uint64_t)feature << 32 | arg, res));

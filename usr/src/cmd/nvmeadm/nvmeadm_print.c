@@ -819,9 +819,11 @@ nvme_print_fwslot_log(nvme_fwslot_log_t *fwlog)
  * These functions pretty-print the data structures returned by GET FEATURES.
  */
 void
-nvme_print_feat_arbitration(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+nvme_print_feat_arbitration(uint64_t res, void *b, size_t s,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(s));
 	_NOTE(ARGUNUSED(id));
 	nvme_arbitration_t arb;
 
@@ -841,9 +843,11 @@ nvme_print_feat_arbitration(uint64_t res, void *b, nvme_identify_ctrl_t *id)
 }
 
 void
-nvme_print_feat_power_mgmt(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+nvme_print_feat_power_mgmt(uint64_t res, void *b, size_t s,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(s));
 	_NOTE(ARGUNUSED(id));
 	nvme_power_mgmt_t pm;
 
@@ -853,12 +857,14 @@ nvme_print_feat_power_mgmt(uint64_t res, void *b, nvme_identify_ctrl_t *id)
 }
 
 void
-nvme_print_feat_lba_range(uint64_t res, void *buf, nvme_identify_ctrl_t *id)
+nvme_print_feat_lba_range(uint64_t res, void *buf, size_t bufsize,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(id));
 
 	nvme_lba_range_type_t lrt;
 	nvme_lba_range_t *lr;
+	size_t n_lr;
 	int i;
 
 	if (buf == NULL)
@@ -867,10 +873,14 @@ nvme_print_feat_lba_range(uint64_t res, void *buf, nvme_identify_ctrl_t *id)
 	lrt.r = res;
 	lr = buf;
 
+	n_lr = bufsize / sizeof (nvme_lba_range_t);
+	if (n_lr > lrt.b.lr_num + 1)
+		n_lr = lrt.b.lr_num + 1;
+
 	nvme_print_uint64(2, "Number of LBA Ranges",
 	    (uint8_t)lrt.b.lr_num + 1, NULL, NULL);
 
-	for (i = 0; i <= lrt.b.lr_num; i++) {
+	for (i = 0; i != n_lr; i++) {
 		if (verbose == 0 && lr[i].lr_nlb == 0)
 			continue;
 
@@ -905,9 +915,11 @@ nvme_print_feat_lba_range(uint64_t res, void *buf, nvme_identify_ctrl_t *id)
 }
 
 void
-nvme_print_feat_temperature(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+nvme_print_feat_temperature(uint64_t res, void *b, size_t s,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(s));
 	_NOTE(ARGUNUSED(id));
 	nvme_temp_threshold_t tt;
 
@@ -917,9 +929,11 @@ nvme_print_feat_temperature(uint64_t res, void *b, nvme_identify_ctrl_t *id)
 }
 
 void
-nvme_print_feat_error(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+nvme_print_feat_error(uint64_t res, void *b, size_t s,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(s));
 	_NOTE(ARGUNUSED(id));
 	nvme_error_recovery_t er;
 
@@ -933,9 +947,11 @@ nvme_print_feat_error(uint64_t res, void *b, nvme_identify_ctrl_t *id)
 }
 
 void
-nvme_print_feat_write_cache(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+nvme_print_feat_write_cache(uint64_t res, void *b, size_t s,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(s));
 	_NOTE(ARGUNUSED(id));
 	nvme_write_cache_t wc;
 
@@ -945,9 +961,11 @@ nvme_print_feat_write_cache(uint64_t res, void *b, nvme_identify_ctrl_t *id)
 }
 
 void
-nvme_print_feat_nqueues(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+nvme_print_feat_nqueues(uint64_t res, void *b, size_t s,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(s));
 	_NOTE(ARGUNUSED(id));
 	nvme_nqueues_t nq;
 
@@ -959,9 +977,11 @@ nvme_print_feat_nqueues(uint64_t res, void *b, nvme_identify_ctrl_t *id)
 }
 
 void
-nvme_print_feat_intr_coal(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+nvme_print_feat_intr_coal(uint64_t res, void *b, size_t s,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(s));
 	_NOTE(ARGUNUSED(id));
 	nvme_intr_coal_t ic;
 
@@ -972,9 +992,11 @@ nvme_print_feat_intr_coal(uint64_t res, void *b, nvme_identify_ctrl_t *id)
 	    (uint16_t)ic.b.ic_time * 100, NULL, "us");
 }
 void
-nvme_print_feat_intr_vect(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+nvme_print_feat_intr_vect(uint64_t res, void *b, size_t s,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(s));
 	_NOTE(ARGUNUSED(id));
 	nvme_intr_vect_t iv;
 	char *tmp;
@@ -987,9 +1009,11 @@ nvme_print_feat_intr_vect(uint64_t res, void *b, nvme_identify_ctrl_t *id)
 }
 
 void
-nvme_print_feat_write_atom(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+nvme_print_feat_write_atom(uint64_t res, void *b, size_t s,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(s));
 	_NOTE(ARGUNUSED(id));
 	nvme_write_atomicity_t wa;
 
@@ -998,9 +1022,11 @@ nvme_print_feat_write_atom(uint64_t res, void *b, nvme_identify_ctrl_t *id)
 }
 
 void
-nvme_print_feat_async_event(uint64_t res, void *b, nvme_identify_ctrl_t *idctl)
+nvme_print_feat_async_event(uint64_t res, void *b, size_t s,
+    nvme_identify_ctrl_t *idctl)
 {
 	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(s));
 	nvme_async_event_conf_t aec;
 
 	aec.r = (uint32_t)res;
@@ -1018,14 +1044,15 @@ nvme_print_feat_async_event(uint64_t res, void *b, nvme_identify_ctrl_t *idctl)
 }
 
 void
-nvme_print_feat_auto_pst(uint64_t res, void *buf, nvme_identify_ctrl_t *id)
+nvme_print_feat_auto_pst(uint64_t res, void *buf, size_t bufsize,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(id));
 
 	nvme_auto_power_state_trans_t apst;
 	nvme_auto_power_state_t *aps;
 	int i;
-	int cnt = NVME_AUTO_PST_BUFSIZE / sizeof (nvme_auto_power_state_t);
+	int cnt = bufsize / sizeof (nvme_auto_power_state_t);
 
 	if (buf == NULL)
 		return;
@@ -1048,9 +1075,11 @@ nvme_print_feat_auto_pst(uint64_t res, void *buf, nvme_identify_ctrl_t *id)
 }
 
 void
-nvme_print_feat_progress(uint64_t res, void *b, nvme_identify_ctrl_t *id)
+nvme_print_feat_progress(uint64_t res, void *b, size_t s,
+    nvme_identify_ctrl_t *id)
 {
 	_NOTE(ARGUNUSED(b));
+	_NOTE(ARGUNUSED(s));
 	_NOTE(ARGUNUSED(id));
 	nvme_software_progress_marker_t spm;
 

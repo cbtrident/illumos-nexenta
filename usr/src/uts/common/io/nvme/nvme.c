@@ -235,7 +235,7 @@ static inline int nvme_check_cmd_status(nvme_cmd_t *);
 
 static void nvme_abort_cmd(nvme_cmd_t *);
 static int nvme_async_event(nvme_t *);
-static void *nvme_get_logpage(nvme_t *, uint8_t, ...);
+static int nvme_get_logpage(nvme_t *, void **, size_t *, uint8_t, ...);
 static void *nvme_identify(nvme_t *, uint32_t);
 static boolean_t nvme_set_features(nvme_t *, uint32_t, uint8_t, uint32_t,
     uint32_t *);
@@ -1256,6 +1256,7 @@ nvme_async_event_task(void *arg)
 	nvme_t *nvme = cmd->nc_nvme;
 	nvme_error_log_entry_t *error_log = NULL;
 	nvme_health_log_t *health_log = NULL;
+	size_t logsize = 0;
 	nvme_async_event_t event;
 	int ret;
 
@@ -1303,8 +1304,8 @@ nvme_async_event_task(void *arg)
 	switch (event.b.ae_type) {
 	case NVME_ASYNC_TYPE_ERROR:
 		if (event.b.ae_logpage == NVME_LOGPAGE_ERROR) {
-			error_log = (nvme_error_log_entry_t *)
-			    nvme_get_logpage(nvme, event.b.ae_logpage);
+			(void) nvme_get_logpage(nvme, (void **)&error_log,
+			    &logsize, event.b.ae_logpage);
 		} else {
 			dev_err(nvme->n_dip, CE_WARN, "!wrong logpage in "
 			    "async event reply: %d", event.b.ae_logpage);
@@ -1354,8 +1355,8 @@ nvme_async_event_task(void *arg)
 
 	case NVME_ASYNC_TYPE_HEALTH:
 		if (event.b.ae_logpage == NVME_LOGPAGE_HEALTH) {
-			health_log = (nvme_health_log_t *)
-			    nvme_get_logpage(nvme, event.b.ae_logpage, -1);
+			(void) nvme_get_logpage(nvme, (void **)&health_log,
+			    &logsize, event.b.ae_logpage, -1);
 		} else {
 			dev_err(nvme->n_dip, CE_WARN, "!wrong logpage in "
 			    "async event reply: %d", event.b.ae_logpage);
@@ -1402,11 +1403,10 @@ nvme_async_event_task(void *arg)
 	}
 
 	if (error_log)
-		kmem_free(error_log, sizeof (nvme_error_log_entry_t) *
-		    nvme->n_error_log_len);
+		kmem_free(error_log, logsize);
 
 	if (health_log)
-		kmem_free(health_log, sizeof (nvme_health_log_t));
+		kmem_free(health_log, logsize);
 }
 
 static int
@@ -1460,14 +1460,14 @@ nvme_async_event(nvme_t *nvme)
 	return (DDI_SUCCESS);
 }
 
-static void *
-nvme_get_logpage(nvme_t *nvme, uint8_t logpage, ...)
+static int
+nvme_get_logpage(nvme_t *nvme, void **buf, size_t *bufsize, uint8_t logpage,
+    ...)
 {
 	nvme_cmd_t *cmd = nvme_alloc_cmd(nvme, KM_SLEEP);
-	void *buf = NULL;
 	nvme_getlogpage_t getlogpage = { 0 };
-	size_t bufsize;
 	va_list ap;
+	int ret = DDI_FAILURE;
 
 	va_start(ap, logpage);
 
@@ -1480,18 +1480,22 @@ nvme_get_logpage(nvme_t *nvme, uint8_t logpage, ...)
 	switch (logpage) {
 	case NVME_LOGPAGE_ERROR:
 		cmd->nc_sqe.sqe_nsid = (uint32_t)-1;
-		bufsize = nvme->n_error_log_len *
-		    sizeof (nvme_error_log_entry_t);
+		/*
+		 * The GET LOG PAGE command can use at most 2 pages to return
+		 * data, PRP lists are not supported.
+		 */
+		*bufsize = MIN(2 * nvme->n_pagesize,
+		    nvme->n_error_log_len * sizeof (nvme_error_log_entry_t));
 		break;
 
 	case NVME_LOGPAGE_HEALTH:
 		cmd->nc_sqe.sqe_nsid = va_arg(ap, uint32_t);
-		bufsize = sizeof (nvme_health_log_t);
+		*bufsize = sizeof (nvme_health_log_t);
 		break;
 
 	case NVME_LOGPAGE_FWSLOT:
 		cmd->nc_sqe.sqe_nsid = (uint32_t)-1;
-		bufsize = sizeof (nvme_fwslot_log_t);
+		*bufsize = sizeof (nvme_fwslot_log_t);
 		break;
 
 	default:
@@ -1503,7 +1507,7 @@ nvme_get_logpage(nvme_t *nvme, uint8_t logpage, ...)
 
 	va_end(ap);
 
-	getlogpage.b.lp_numd = bufsize / sizeof (uint32_t) - 1;
+	getlogpage.b.lp_numd = *bufsize / sizeof (uint32_t) - 1;
 
 	cmd->nc_sqe.sqe_cdw10 = getlogpage.r;
 
@@ -1532,7 +1536,7 @@ nvme_get_logpage(nvme_t *nvme, uint8_t logpage, ...)
 	if (nvme_admin_cmd(cmd, nvme_admin_cmd_timeout) != DDI_SUCCESS) {
 		dev_err(nvme->n_dip, CE_WARN,
 		    "!nvme_admin_cmd failed for GET LOG PAGE");
-		return (NULL);
+		return (ret);
 	}
 
 	if (nvme_check_cmd_status(cmd)) {
@@ -1542,13 +1546,15 @@ nvme_get_logpage(nvme_t *nvme, uint8_t logpage, ...)
 		goto fail;
 	}
 
-	buf = kmem_alloc(bufsize, KM_SLEEP);
-	bcopy(cmd->nc_dma->nd_memp, buf, bufsize);
+	*buf = kmem_alloc(*bufsize, KM_SLEEP);
+	bcopy(cmd->nc_dma->nd_memp, *buf, *bufsize);
+
+	ret = DDI_SUCCESS;
 
 fail:
 	nvme_free_cmd(cmd);
 
-	return (buf);
+	return (ret);
 }
 
 static void *
@@ -2241,18 +2247,6 @@ nvme_init(nvme_t *nvme)
 		 */
 		nvme->n_write_cache_enabled = B_TRUE;
 	}
-
-	/*
-	 * Grab a copy of all mandatory log pages.
-	 *
-	 * TODO: should go away once user space tool exists to print logs
-	 */
-	nvme->n_error_log = (nvme_error_log_entry_t *)
-	    nvme_get_logpage(nvme, NVME_LOGPAGE_ERROR);
-	nvme->n_health_log = (nvme_health_log_t *)
-	    nvme_get_logpage(nvme, NVME_LOGPAGE_HEALTH, -1);
-	nvme->n_fwslot_log = (nvme_fwslot_log_t *)
-	    nvme_get_logpage(nvme, NVME_LOGPAGE_FWSLOT);
 
 	/*
 	 * Assume LBA Range Type feature is supported. If it isn't this
@@ -3349,15 +3343,13 @@ nvme_devctl_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p,
 		break;
 	}
 	case NVME_IOC_GET_LOGPAGE: {
-		void *log;
-		size_t bufsize;
+		void *log = NULL;
+		size_t bufsize = 0;
 
 		switch (nioc.n_arg) {
 		case NVME_LOGPAGE_ERROR:
 			if (nsid != 0)
 				return (EINVAL);
-			bufsize = nvme->n_error_log_len *
-			    sizeof (nvme_error_log_entry_t);
 			break;
 		case NVME_LOGPAGE_HEALTH:
 			if (nsid != 0 && nvme->n_idctl->id_lpa.lp_smart == 0)
@@ -3366,28 +3358,28 @@ nvme_devctl_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p,
 			if (nsid == 0)
 				nsid = (uint32_t)-1;
 
-			bufsize = sizeof (nvme_health_log_t);
 			break;
 		case NVME_LOGPAGE_FWSLOT:
 			if (nsid != 0)
 				return (EINVAL);
-			bufsize = sizeof (nvme_fwslot_log_t);
 			break;
 		default:
 			return (EINVAL);
 		}
 
-		if (nioc.n_len < bufsize)
-			return (ENOMEM);
-
-		log = nvme_get_logpage(nvme, nioc.n_arg, nsid);
-
-		if (log == NULL)
+		if (nvme_get_logpage(nvme, &log, &bufsize, nioc.n_arg, nsid)
+		    != DDI_SUCCESS)
 			return (EIO);
+
+		if (nioc.n_len < bufsize) {
+			kmem_free(log, bufsize);
+			return (ENOMEM);
+		}
 
 		if (ddi_copyout(log, (void *)nioc.n_buf, bufsize, mode) != 0)
 			rv = EFAULT;
 
+		nioc.n_len = bufsize;
 		kmem_free(log, bufsize);
 		break;
 	}
@@ -3472,6 +3464,7 @@ nvme_devctl_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p,
 
 		kmem_free(buf, bufsize);
 		nioc.n_arg = res;
+		nioc.n_len = bufsize;
 
 		break;
 	}

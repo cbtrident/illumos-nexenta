@@ -175,10 +175,6 @@ struct nvme {
 
 	ddi_taskq_t *n_cmd_taskq;
 
-	nvme_error_log_entry_t *n_error_log;
-	nvme_health_log_t *n_health_log;
-	nvme_fwslot_log_t *n_fwslot_log;
-
 	/* state for devctl minor node */
 	nvme_minor_state_t n_minor;
 
