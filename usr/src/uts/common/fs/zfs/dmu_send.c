@@ -3249,7 +3249,6 @@ dmu_recv_end_sync(void *arg, dmu_tx_t *tx)
 		dmu_buf_will_dirty(origin_head->ds_dbuf, tx);
 		dsl_dataset_phys(origin_head)->ds_flags &=
 		    ~DS_FLAG_INCONSISTENT;
-		dsl_dataset_cleanup_resume_receive_state(origin_head, tx);
 
 		dsl_dataset_rele(origin_head, FTAG);
 		dsl_destroy_head_sync_impl(drc->drc_ds, tx);
@@ -3272,7 +3271,20 @@ dmu_recv_end_sync(void *arg, dmu_tx_t *tx)
 
 		dmu_buf_will_dirty(ds->ds_dbuf, tx);
 		dsl_dataset_phys(ds)->ds_flags &= ~DS_FLAG_INCONSISTENT;
-		dsl_dataset_cleanup_resume_receive_state(ds, tx);
+		if (dsl_dataset_has_resume_receive_state(ds)) {
+			(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+			    DS_FIELD_RESUME_FROMGUID, tx);
+			(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+			    DS_FIELD_RESUME_OBJECT, tx);
+			(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+			    DS_FIELD_RESUME_OFFSET, tx);
+			(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+			    DS_FIELD_RESUME_BYTES, tx);
+			(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+			    DS_FIELD_RESUME_TOGUID, tx);
+			(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+			    DS_FIELD_RESUME_TONAME, tx);
+		}
 	}
 	drc->drc_newsnapobj = dsl_dataset_phys(drc->drc_ds)->ds_prev_snap_obj;
 	/*
