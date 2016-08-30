@@ -8022,8 +8022,6 @@ l2arc_dev_hdr_read(l2arc_dev_t *dev)
 	    ZIO_CHECKSUM_OFF, NULL, NULL, ZIO_PRIORITY_ASYNC_READ,
 	    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_CANFAIL |
 	    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY, B_FALSE))) != 0) {
-		spa_config_exit(dev->l2ad_vdev->vdev_spa, SCL_L2ARC,
-		    dev->l2ad_vdev);
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_io_errors);
 		return (err);
 	}
