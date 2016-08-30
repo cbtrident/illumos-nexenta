@@ -3779,3 +3779,26 @@ dsl_dataset_has_resume_receive_state(dsl_dataset_t *ds)
 	    zap_contains(ds->ds_dir->dd_pool->dp_meta_objset,
 	    ds->ds_object, DS_FIELD_RESUME_TOGUID) == 0);
 }
+
+void
+dsl_dataset_cleanup_resume_receive_state(dsl_dataset_t *ds, dmu_tx_t *tx) {
+	dsl_pool_t *dp = dmu_tx_pool(tx);
+
+	ASSERT3U((uintptr_t)dp, ==, (uintptr_t)(ds->ds_dir->dd_pool));
+
+	if (!dsl_dataset_has_resume_receive_state(ds))
+		return;
+
+	(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+	    DS_FIELD_RESUME_FROMGUID, tx);
+	(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+	    DS_FIELD_RESUME_OBJECT, tx);
+	(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+	    DS_FIELD_RESUME_OFFSET, tx);
+	(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+	    DS_FIELD_RESUME_BYTES, tx);
+	(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+	    DS_FIELD_RESUME_TOGUID, tx);
+	(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
+	    DS_FIELD_RESUME_TONAME, tx);
+}
