@@ -328,10 +328,10 @@ conf_str_to_bitmap(const char *conf_str)
 
 /*
  * Determine if the FRU fields denoted by fru_compare_flags match between the
- * spare and the dead drive.
+ * spare and the failed drive.
  */
 static boolean_t
-fru_based_match(zpool_handle_t *zhp, fmd_hdl_t *hdl, char *dead_fru,
+fru_based_match(zpool_handle_t *zhp, fmd_hdl_t *hdl, char *failed_fru,
     nvlist_t *spare, uint8_t fru_compare_flags)
 {
 	const char *spare_fru;
@@ -370,9 +370,9 @@ fru_based_match(zpool_handle_t *zhp, fmd_hdl_t *hdl, char *dead_fru,
 	}
 
 	if (fru_compare_flags & FRU_CMP_FLAG_ENC) {
-		if (!libzfs_fru_encl_cmp(dead_fru, spare_fru)) {
+		if (!libzfs_fru_encl_cmp(failed_fru, spare_fru)) {
 			free((void *) spare_fru);
-			fmd_hdl_debug(hdl, "fru_based_match: encl not mached");
+			fmd_hdl_debug(hdl, "fru_based_match: encl not matched");
 			return (B_FALSE);
 		}
 	}
@@ -383,8 +383,19 @@ fru_based_match(zpool_handle_t *zhp, fmd_hdl_t *hdl, char *dead_fru,
 }
 
 /*
- * Given a vdev, attempt to replace it with every known spare until one
- * succeeds, while preferring spares in the same spare group
+ * Given a vdev, attempt to replace it with every known spare.
+ * We first try to find a spare with the 'sparegroup' vdev prop that matches
+ * the failed drive. If this fails we will ignore spares with sparegroup prop
+ * set when trying to find a suitable spare.
+ * After the sparegroup matching is attempted we start considering media type,
+ * so an SSD will not be spared in by an HDD.
+ * If we don't match by sparegroup we will try to replace with a spare that
+ * matches the failed drive by FRU field(s). Currently only the enclosure FRU
+ * field matching is performed.
+ * If we don't match a spare by FRU we will generate a 'fru_not_matched' fault
+ * and move on trying to find any suitable spare meeting the media type and
+ * sparegroup conditions outlined above. If this fails as well we will
+ * generate a 'not_spared' fault.
  */
 static void
 replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
@@ -392,7 +403,7 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 	nvlist_t *config, *nvroot, *replacement;
 	nvlist_t **spares;
 	uint_t s, nspares;
-	char *dev_name, *conf_fru_compare_on_str, *dead_fru = NULL;
+	char *dev_name, *conf_fru_compare_on_str, *failed_fru = NULL;
 	uint8_t fru_compare_flags;
 
 	char dspr_group[MAXPATHLEN];
@@ -400,7 +411,7 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 
 	boolean_t done = B_FALSE;
 	boolean_t unassigned = B_FALSE;
-	boolean_t dead_is_ssd = B_FALSE;
+	boolean_t failed_is_ssd = B_FALSE;
 
 	config = zpool_get_config(zhp, NULL);
 	if (nvlist_lookup_nvlist(config, ZPOOL_CONFIG_VDEV_TREE,
@@ -426,11 +437,7 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 	    sizeof (dspr_group)) != 0 || strcmp("-", dspr_group) == 0)
 		unassigned = B_TRUE;
 
-	/*
-	 * See if any of the spares are in the sought spare group, use one,
-	 * if unsuccessful, try to find a device not assigned to any group,
-	 * and if there are none of those, fail
-	 */
+	/* see if any of the spares are in the sought sparegroup */
 	for (s = 0; s < nspares && !done && !unassigned; s++) {
 		uint64_t wholedisk = 0;
 		char *spare_path;
@@ -474,7 +481,7 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 	 * taking media type and FRU fields into account.
 	 */
 	if (nvlist_lookup_boolean_value(vdev,
-	    ZPOOL_CONFIG_IS_SSD, &dead_is_ssd) != 0) {
+	    ZPOOL_CONFIG_IS_SSD, &failed_is_ssd) != 0) {
 		nvlist_free(replacement);
 		fmd_hdl_debug(hdl, "replace_with_spare: IS_SSD prop not found");
 		generate_fault(hdl, vdev, "fault.fs.zfs.vdev.not_spared");
@@ -492,20 +499,21 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 	fmd_prop_free_string(hdl, conf_fru_compare_on_str);
 
 	/* try to find the FRU, if we can't, then disable FRU matching */
-	if (nvlist_lookup_string(vdev, ZPOOL_CONFIG_FRU, &dead_fru) != 0) {
+	if (nvlist_lookup_string(vdev, ZPOOL_CONFIG_FRU, &failed_fru) != 0) {
 		nvlist_free(replacement);
 		fmd_hdl_debug(hdl, "replace_with_spare: can't find FRU");
 		fru_compare_flags = FRU_CMP_FLAG_DISABLE;
-	} else if(dead_fru == NULL) {
+	} else if(failed_fru == NULL) {
 		nvlist_free(replacement);
 		fmd_hdl_debug(hdl, "replace_with_spare: can't find FRU");
 		fru_compare_flags = FRU_CMP_FLAG_DISABLE;
-	} else if (strlen(dead_fru) == 0) {
+	} else if (strlen(failed_fru) == 0) {
 		nvlist_free(replacement);
 		fmd_hdl_debug(hdl, "replace_with_spare: can't find FRU");
 		fru_compare_flags = FRU_CMP_FLAG_DISABLE;
 	}
 
+	/* see if any of the spares can be matched by FRU field(s) */
 	for (s = 0; s < nspares && !done; s++) {
 		uint64_t wholedisk = 0;
 		char *spare_path;
@@ -519,10 +527,10 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 			continue;
 		}
 
-		/* we will never swap dead SSD for spare HDD */
-		if (dead_is_ssd && !spare_is_ssd) {
+		/* we will never swap failed SSD for spare HDD */
+		if (failed_is_ssd && !spare_is_ssd) {
 			fmd_hdl_debug(hdl, "replace_with_spare: media type "
-			    "did not match. dead drive is SSD, spare is not");
+			    "did not match. failed drive is SSD, spare is not");
 			continue;
 		}
 
@@ -552,7 +560,7 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 		 * always return true so we never go inside this if and
 		 * FRU based matching is not attempted.
 		 */
-		if (!fru_based_match(zhp, hdl, dead_fru, spares[s],
+		if (!fru_based_match(zhp, hdl, failed_fru, spares[s],
 		    fru_compare_flags)) {
 			fmd_hdl_debug(hdl, "replace_with_spare: fru matching "
 			    "with %d flags failed", fru_compare_flags);
@@ -565,26 +573,79 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 		 */
 		fnvlist_add_nvlist_array(replacement,
 		    ZPOOL_CONFIG_CHILDREN, &spares[s], 1);
-
 		if (zpool_vdev_attach(zhp, dev_name, spare_name, replacement,
-		    B_TRUE) == 0)
+		    B_TRUE) == 0) {
 			done = B_TRUE;
 
-		/* FRU matching was not performed */
-		if (fru_compare_flags & FRU_CMP_FLAG_DISABLE)
+			/* FRU matching was disabled */
+			if (fru_compare_flags & FRU_CMP_FLAG_DISABLE)
+				generate_fault(hdl, vdev,
+				    "fault.fs.zfs.vdev.fru_not_matched");
+		}
+	}
+
+	/* see if any of the spares can be used at all */
+	for (s = 0; s < nspares && !done; s++) {
+		uint64_t wholedisk = 0;
+		char *spare_path;
+		boolean_t spare_is_ssd = B_FALSE;
+		char spare_name[MAXPATHLEN];
+
+		if (nvlist_lookup_boolean_value(spares[s],
+		    ZPOOL_CONFIG_IS_SSD, &spare_is_ssd) != 0) {
+		    fmd_hdl_debug(hdl, "replace_with_spare: "
+		    "IS_SSD prop not found for spare");
+			continue;
+		}
+
+		/* we will never swap failed SSD for spare HDD */
+		if (failed_is_ssd && !spare_is_ssd) {
+			fmd_hdl_debug(hdl, "replace_with_spare: media type "
+			    "did not match. failed drive is SSD, spare is not");
+			continue;
+		}
+
+		if (nvlist_lookup_string(spares[s], ZPOOL_CONFIG_PATH,
+		    &spare_path) != 0) {
+			fmd_hdl_debug(hdl, "replace_with_spare: PATH error");
+			continue;
+		}
+
+		(void) nvlist_lookup_uint64(spares[s], ZPOOL_CONFIG_WHOLE_DISK,
+		    &wholedisk);
+		(void) strlcpy(spare_name, spare_path, sizeof (spare_name));
+		if (wholedisk != 0)
+			spare_name[strlen(spare_name) - 2] = '\0';
+
+		/* skip this spare if it has the sparegroup prop set */
+		if ((vdev_get_prop(zhp, spare_name, VDEV_PROP_SPAREGROUP,
+		    sspr_group, sizeof (sspr_group)) == 0) &&
+		    (strcmp("-", sspr_group) != 0)) {
+			fmd_hdl_debug(hdl, "replace_with_spare: "
+			    "sparegroup found: %s",sspr_group);
+			continue;
+		}
+
+		fnvlist_add_nvlist_array(replacement,
+		    ZPOOL_CONFIG_CHILDREN, &spares[s], 1);
+		if (zpool_vdev_attach(zhp, dev_name, spare_name, replacement,
+		    B_TRUE) == 0) {
+			done = B_TRUE;
+
+			/* FRU matching was not attempted */
 			generate_fault(hdl, vdev,
 			    "fault.fs.zfs.vdev.fru_not_matched");
-
-		fmd_hdl_debug(hdl, "replace_with_spare: sparing completed "
-		    "for %s", dead_fru);
+		}
 	}
+
+	if (done)
+		fmd_hdl_debug(hdl, "replace_with_spare: sparing completed "
+		    "for %s", failed_fru);
+	else
+		generate_fault(hdl, vdev, "fault.fs.zfs.vdev.not_spared");
 
 	free(dev_name);
 	nvlist_free(replacement);
-
-	/* not able to find a suitable spare - generate the not-spared fault */
-	if (!done)
-		generate_fault(hdl, vdev, "fault.fs.zfs.vdev.not_spared");
 }
 
 /*
