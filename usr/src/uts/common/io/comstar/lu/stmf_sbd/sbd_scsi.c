@@ -1417,7 +1417,7 @@ sbd_handle_write_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 	 * call and handle it in sbd_data_write().
 	 */
 	if (((op == SCMD_WRITE_G1) || (op == SCMD_WRITE_G4) ||
-	     (op == SCMD_WRITE_G5)) && (task->task_cdb[1] & BIT_3)) {
+	    (op == SCMD_WRITE_G5)) && (task->task_cdb[1] & BIT_3)) {
 		fua_bit = B_TRUE;
 	}
 	laddr = scmd->addr + dbuf->db_relative_offset;

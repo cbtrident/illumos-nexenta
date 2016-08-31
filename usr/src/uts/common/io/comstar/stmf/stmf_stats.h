@@ -60,7 +60,7 @@ typedef struct stmf_kstat_tgt_info {
 	kstat_named_t		i_protocol;
 } stmf_kstat_tgt_info_t;
 
-#define STMF_RPORT_INFO_LIMIT 8
+#define	STMF_RPORT_INFO_LIMIT 8
 
 typedef struct stmf_kstat_rport_info {
     kstat_named_t i_rport_name;

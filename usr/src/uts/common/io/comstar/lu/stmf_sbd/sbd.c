@@ -3063,7 +3063,7 @@ sbd_data_read(sbd_lu_t *sl, struct scsi_task *task,
 	 * on the read.
 	 */
 	if (((op == SCMD_READ_G1) || (op == SCMD_READ_G4) ||
-	     (op == SCMD_READ_G5)) && (task->task_cdb[1] & BIT_3)) {
+	    (op == SCMD_READ_G5)) && (task->task_cdb[1] & BIT_3)) {
 		ioflag = FSYNC;
 	}
 	if ((offset + size) > sl->sl_data_readable_size) {
@@ -3140,7 +3140,7 @@ sbd_data_write(sbd_lu_t *sl, struct scsi_task *task,
 	 * on the write.
 	 */
 	if (((op == SCMD_WRITE_G1) || (op == SCMD_WRITE_G4) ||
-	     (op == SCMD_WRITE_G5)) && (task->task_cdb[1] & BIT_3)) {
+	    (op == SCMD_WRITE_G5)) && (task->task_cdb[1] & BIT_3)) {
 		fua_bit = B_TRUE;
 	}
 	if (((sl->sl_flags & SL_WRITEBACK_CACHE_DISABLE) &&
