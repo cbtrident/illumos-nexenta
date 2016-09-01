@@ -35,7 +35,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-/* Copyright 2015 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
 
 #include <syslog.h>
 #include <stdlib.h>
@@ -1028,7 +1028,8 @@ tar_getfile(tlm_backup_restore_arg_t *argp)
 		return (-1);
 	}
 
-	sels = ndmp_malloc(sizeof (char *) * (argp->ba_count + 1)); /* One extra for NULL terminate */
+	sels = ndmp_malloc(sizeof (char *) * (argp->ba_count + 1));
+	    /* One extra for NULL terminate */
 	if (sels == NULL) {
 		local_commands->tc_reader = TLM_STOP;
 		free(dir);
@@ -1913,7 +1914,8 @@ create_sym_link(char *dst, char *target, tlm_acls_t *acls,
 		erc = errno;
 		if (errno == EEXIST) {
 			erc = 0;
-			syslog(LOG_DEBUG, "softlink [%s] to [%s] already existed",
+			syslog(LOG_DEBUG,
+			    "softlink [%s] to [%s] already existed",
 			    dst, target);
 		} else {
 			job_stats->js_errors++;
