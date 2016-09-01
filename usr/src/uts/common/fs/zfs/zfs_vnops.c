@@ -24,8 +24,8 @@
  * Portions Copyright 2010 Robert Milkowski
  * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2015 Joyent, Inc.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -4496,14 +4496,15 @@ out:
 	return (error);
 }
 
-static boolean_t
-zfs_znode_free_invalid(znode_t *zp)
+/*ARGSUSED*/
+static void
+zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 {
+	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	vnode_t *vp = ZTOV(zp);
+	int error;
 
-	ASSERT(rw_read_held(&zfsvfs->z_teardown_inactive_lock));
-
+	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 	if (zp->z_sa_hdl == NULL) {
 		/*
 		 * The fs has been unmounted, or we did a
@@ -4522,22 +4523,8 @@ zfs_znode_free_invalid(znode_t *zp)
 		mutex_exit(&zp->z_lock);
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
 		zfs_znode_free(zp);
-		return (B_TRUE);
+		return;
 	}
-	return (B_FALSE);
-}
-
-/*ARGSUSED*/
-static void
-zfs_inactive_impl(vnode_t *vp, cred_t *cr, caller_context_t *ct)
-{
-	znode_t	*zp = VTOZ(vp);
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	int error;
-
-	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-	if (zfs_znode_free_invalid(zp))
-		return; /* z_teardown_inactive_lock already dropped */
 
 	/*
 	 * Attempt to push any data in the page cache.  If this fails
@@ -4568,53 +4555,6 @@ zfs_inactive_impl(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 
 	zfs_zinactive(zp);
 	rw_exit(&zfsvfs->z_teardown_inactive_lock);
-}
-
-static void
-zfs_inactive_task(void *task_arg)
-{
-	vnode_t *vp = (vnode_t *)task_arg;
-	ASSERT(vp);
-	zfs_inactive_impl(vp, CRED(), NULL);
-}
-
-/*
- * This value will be multiplied by zfs_dirty_data_max to determine
- * the threshold past which we will call zfs_inactive_impl() async.
- *
- * Selecting the multiplier is a balance between how long we're willing to wait
- * for delete/free to complete (get shell back, have a NFS thread captive, etc)
- * and reducing the number of active requests in the backing taskq.
- *
- * 4 GiB (zfs_dirty_data_max default) * 16 (multiplier default) = 64 GiB
- * meaning by default we will call zfs_inactive_impl async for vnodes > 64 GiB
- */
-uint16_t zfs_inactive_async_multiplier = 16;
-
-void
-zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
-{
-	znode_t	*zp = VTOZ(vp);
-
-	rw_enter(&zp->z_zfsvfs->z_teardown_inactive_lock, RW_READER);
-	if (zfs_znode_free_invalid(zp))
-		return; /* z_teardown_inactive_lock already dropped */
-
-	if (zp->z_size > zfs_inactive_async_multiplier * zfs_dirty_data_max) {
-		if (taskq_dispatch(dsl_pool_vnrele_taskq(
-		    dmu_objset_pool(zp->z_zfsvfs->z_os)), zfs_inactive_task,
-		    vp, TQ_NOSLEEP) != NULL) {
-			rw_exit(&zp->z_zfsvfs->z_teardown_inactive_lock);
-			return; /* task dispatched, we're done */
-		}
-	}
-	rw_exit(&zp->z_zfsvfs->z_teardown_inactive_lock);
-
-	/*
-	 * If the size of the vnode is <= than the threshold computed above
-	 * or if the taskq dispatch failed - do a sync zfs_inactive call
-	 */
-	zfs_inactive_impl(vp, cr, ct);
 }
 
 /*
