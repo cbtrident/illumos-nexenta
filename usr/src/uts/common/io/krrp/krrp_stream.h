@@ -76,7 +76,6 @@ struct krrp_stream_s {
 	kcondvar_t				cv;
 
 	boolean_t				wait_for_snap;
-	boolean_t				notify_when_done;
 
 	boolean_t				non_continuous;
 	boolean_t				fake_mode;
@@ -85,6 +84,7 @@ struct krrp_stream_s {
 	char					base_snap_name[MAXNAMELEN];
 	char					incr_snap_name[MAXNAMELEN];
 	nvlist_t				*resume_info;
+	uint64_t				notify_txg;
 	uint64_t				last_send_txg;
 	uint64_t				cur_send_txg;
 	uint64_t				cur_recv_txg;

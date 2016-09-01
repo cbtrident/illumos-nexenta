@@ -88,6 +88,7 @@ krrp_stream_read_create(krrp_stream_t **result_stream,
 
 	stream = krrp_stream_common_create();
 
+	stream->notify_txg = UINT64_MAX;
 	stream->mode = KRRP_STRMM_READ;
 	stream->recursive =
 	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_RECURSIVE);
@@ -371,9 +372,6 @@ krrp_stream_run(krrp_stream_t *stream, krrp_queue_t *write_data_queue,
 			krrp_stream_fake_read_task_init(stream->task_engine,
 			    stream->fake_data_sz);
 
-		if (stream->non_continuous)
-			stream->notify_when_done = B_TRUE;
-
 		stream->work_thread = thread_create(NULL, 0, &krrp_stream_read,
 		    stream, 0, &p0, TS_RUN, minclsyspri);
 		break;
@@ -417,7 +415,7 @@ krrp_stream_send_stop(krrp_stream_t *stream)
 	ASSERT(stream->mode == KRRP_STRMM_READ);
 	ASSERT(!stream->non_continuous);
 
-	if (!stream->notify_when_done) {
+	if (stream->notify_txg == UINT64_MAX) {
 		krrp_autosnap_create_snapshot(stream->autosnap);
 
 		/*
@@ -438,7 +436,6 @@ krrp_stream_send_stop(krrp_stream_t *stream)
 
 		krrp_autosnap_deactivate(stream->autosnap);
 
-		stream->notify_when_done = B_TRUE;
 		rc = 0;
 	}
 
@@ -556,6 +553,13 @@ krrp_stream_activate_autosnap(krrp_stream_t *stream,
 			krrp_stream_read_task_init(stream->task_engine,
 			    base_snap_txg, stream->base_snap_name,
 			    stream->incr_snap_name, stream->resume_info);
+
+			/*
+			 * Non-continuous replication sends only one snapshot.
+			 * We remember TXG of this snapshot and will notify
+			 * userspace that the snapshot successfully received
+			 */
+			stream->notify_txg = base_snap_txg;
 		}
 
 		break;
@@ -628,11 +632,9 @@ krrp_stream_txg_confirmed(krrp_stream_t *stream, uint64_t txg,
 		krrp_stream_calc_avg_rpo(stream, task, B_TRUE);
 		krrp_stream_task_fini(task);
 
-		if (stream->notify_when_done) {
-			txg = atomic_cas_64(&stream->last_send_txg, txg, txg);
-			if (txg == stream->last_full_ack_txg)
-				krrp_stream_callback(stream,
-				    KRRP_STREAM_SEND_DONE, NULL);
+		if (stream->notify_txg == txg) {
+			krrp_stream_callback(stream,
+			    KRRP_STREAM_SEND_DONE, NULL);
 		}
 
 		return;
@@ -793,6 +795,13 @@ krrp_stream_read_snap_notify_cb(const char *snap_name, boolean_t recursive,
 
 			if (stream->wait_for_snap) {
 				stream->wait_for_snap = B_FALSE;
+
+				/*
+				 * This snapshot is the last that we will send.
+				 * We remember its TXG and will notify userspace
+				 * that the snapshot successfully received
+				 */
+				stream->notify_txg = txg;
 
 				krrp_stream_lock(stream);
 				krrp_stream_cv_signal(stream);
