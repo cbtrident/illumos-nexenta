@@ -86,19 +86,19 @@ krrp_server_set_config(krrp_server_t *server, nvlist_t *params,
 	int rc = 0;
 	const char *listening_addr = NULL;
 	int listening_port = 0;
+	krrp_server_state_t saved_srv_state;
 
 	mutex_enter(&server->mtx);
 
 	if (server->state == KRRP_SRVS_RECONFIGURE) {
 		krrp_error_set(error, KRRP_ERRNO_BUSY, 0);
-		rc = -1;
-	} else
-		server->state = KRRP_SRVS_RECONFIGURE;
+		mutex_exit(&server->mtx);
+		return (-1);
+	}
 
+	saved_srv_state = server->state;
+	server->state = KRRP_SRVS_RECONFIGURE;
 	mutex_exit(&server->mtx);
-
-	if (rc != 0)
-		goto out;
 
 	(void) krrp_param_get(KRRP_PARAM_LISTENING_ADDRESS,
 	    params, (void *)&listening_addr);
@@ -134,8 +134,6 @@ krrp_server_set_config(krrp_server_t *server, nvlist_t *params,
 
 	server->listening_port = listening_port;
 
-	server->state = KRRP_SRVS_ACTIVE;
-
 	if (!server->running) {
 		/* The server is not started yet, so need to enable it */
 		krrp_server_enable(server);
@@ -162,7 +160,8 @@ krrp_server_set_config(krrp_server_t *server, nvlist_t *params,
 	 * We have woken up the worker thread so wait the result of
 	 * socket-create operation
 	 */
-	cv_wait(&server->cv, &server->mtx);
+	while (server->state == KRRP_SRVS_RECONFIGURE)
+		cv_wait(&server->cv, &server->mtx);
 
 	if (server->state != KRRP_SRVS_ACTIVE) {
 		krrp_error_set(error, server->error.krrp_errno,
@@ -173,8 +172,13 @@ krrp_server_set_config(krrp_server_t *server, nvlist_t *params,
 	server->without_event = B_FALSE;
 	mutex_exit(&server->mtx);
 
-out:
 	return (rc);
+
+out:
+	mutex_enter(&server->mtx);
+	server->state = saved_srv_state;
+	mutex_exit(&server->mtx);
+	return (-1);
 }
 
 int
@@ -243,6 +247,7 @@ krrp_server_worker(void *void_server)
 			continue;
 		}
 
+		server->state = KRRP_SRVS_ACTIVE;
 		cv_signal(&server->cv);
 		mutex_exit(&server->mtx);
 
