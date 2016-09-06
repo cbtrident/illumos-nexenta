@@ -5959,7 +5959,9 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		spa_event_notify(spa, NULL, ESC_ZFS_VDEV_REMOVE_AUX);
 	} else if (vd != NULL && vd->vdev_islog) {
 		ASSERT(!locked);
-		ASSERT(vd == vd->vdev_top);
+
+		if (vd != vd->vdev_top)
+			return (spa_vdev_exit(spa, NULL, txg, SET_ERROR(ENOTSUP)));
 
 		mg = vd->vdev_mg;
 
@@ -6006,6 +6008,9 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		spa_event_notify(spa, vd, ESC_ZFS_VDEV_REMOVE_DEV);
 	} else if (vd != NULL && vdev_is_special(vd)) {
 		ASSERT(!locked);
+
+		if (vd != vd->vdev_top)
+			return (spa_vdev_exit(spa, NULL, txg, SET_ERROR(ENOTSUP)));
 
 		error = spa_special_vdev_remove(spa, vd, &txg);
 		if (error == 0) {

@@ -1305,8 +1305,10 @@ spa_special_vdev_remove(spa_t *spa, vdev_t *vd, uint64_t *txg)
 	metaslab_group_t *mg;
 
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
-	ASSERT(vd == vd->vdev_top);
 	ASSERT(vdev_is_special(vd));
+
+	if (vd != vd->vdev_top)
+		return (SET_ERROR(ENOTSUP));
 
 	if (spa_feature_is_active(spa, SPA_FEATURE_WBC)) {
 		/*
