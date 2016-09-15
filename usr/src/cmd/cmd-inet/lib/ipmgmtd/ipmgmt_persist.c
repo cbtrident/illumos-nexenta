@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 /*
@@ -112,11 +112,11 @@ ipmgmt_find_if_field_updater(const char *field_name)
 
 static int
 ipmgmt_if_groupmembers_updater(nvlist_t *db_nvl, nvpair_t *member_nvp,
-	uint_t flags)
+    uint_t flags)
 {
 	char	**members;
 	char	*member;
-	char	*out_memebers[256];
+	char	*out_members[256];
 	uint_t  nelem = 0, cnt = 0;
 	int	err;
 
@@ -134,7 +134,7 @@ ipmgmt_if_groupmembers_updater(nvlist_t *db_nvl, nvpair_t *member_nvp,
 		    (strcmp(member, members[nelem]) == 0))
 			continue;
 
-		if ((out_memebers[cnt] = strdup(members[nelem])) == NULL) {
+		if ((out_members[cnt] = strdup(members[nelem])) == NULL) {
 			err = ENOMEM;
 			goto fail;
 		}
@@ -143,7 +143,7 @@ ipmgmt_if_groupmembers_updater(nvlist_t *db_nvl, nvpair_t *member_nvp,
 	}
 
 	if (flags & IPMGMT_APPEND) {
-		if ((out_memebers[cnt] = strdup(member)) == NULL) {
+		if ((out_members[cnt] = strdup(member)) == NULL) {
 			err = ENOMEM;
 			goto fail;
 		}
@@ -155,12 +155,12 @@ ipmgmt_if_groupmembers_updater(nvlist_t *db_nvl, nvpair_t *member_nvp,
 		    DATA_TYPE_STRING_ARRAY);
 	} else {
 		err = nvlist_add_string_array(db_nvl, IPADM_NVP_MIFNAMES,
-		    out_memebers, cnt);
+		    out_members, cnt);
 	}
 
 fail:
 	while (cnt--)
-		free(out_memebers[cnt]);
+		free(out_members[cnt]);
 
 	return (err);
 }
@@ -700,18 +700,17 @@ ipmgmt_db_update(void *arg, nvlist_t *db_nvl, char *buf, size_t buflen,
  */
 boolean_t
 ipmgmt_db_update_if(void *arg, nvlist_t *db_nvl, char *buf, size_t buflen,
-		int *errp)
+    int *errp)
 {
-	ipadm_dbwrite_cbarg_t	*cb = arg;
-	nvlist_t	*in_nvl = cb->dbw_nvl;
-	uint_t	flags = cb->dbw_flags;
-	nvpair_t	*nvp;
-	char	*name;
+	ipadm_dbwrite_cbarg_t *cb = arg;
 	ipmgmt_if_updater_ent_t *updater;
-	char	*member = NULL;
-	char	*gifname = NULL;
-	char	*db_line_if_name;
-
+	nvlist_t	*in_nvl = cb->dbw_nvl;
+	uint_t		flags = cb->dbw_flags;
+	nvpair_t	*nvp;
+	char		*name;
+	char		*db_ifname;
+	char		*gifname = NULL;
+	char		*mifname = NULL;
 
 	*errp = 0;
 
@@ -721,12 +720,12 @@ ipmgmt_db_update_if(void *arg, nvlist_t *db_nvl, char *buf, size_t buflen,
 		*errp = EINVAL;
 		return (B_FALSE);
 	}
-	
-	if (nvlist_lookup_string(db_nvl,
-	    IPADM_NVP_IFNAME, &db_line_if_name) == 0 &&
+
+	if (nvlist_exists(db_nvl, IPADM_NVP_IFCLASS) &&
+	    nvlist_lookup_string(db_nvl, IPADM_NVP_IFNAME, &db_ifname) == 0 &&
 	    nvlist_lookup_string(in_nvl, IPADM_NVP_GIFNAME, &gifname) == 0 &&
-	    nvlist_lookup_string(in_nvl, IPADM_NVP_MIFNAMES, &member) == 0 &&
-	    strcmp(db_line_if_name, member) == 0) {
+	    nvlist_lookup_string(in_nvl, IPADM_NVP_MIFNAMES, &mifname) == 0 &&
+	    strcmp(db_ifname, mifname) == 0) {
 		if (flags & IPMGMT_APPEND) {
 			if ((*errp = nvlist_add_string(db_nvl,
 			    IPADM_NVP_GIFNAME, gifname)) != 0)
@@ -743,10 +742,8 @@ ipmgmt_db_update_if(void *arg, nvlist_t *db_nvl, char *buf, size_t buflen,
 	if (!ipmgmt_nvlist_intersects(db_nvl, in_nvl))
 		return (B_TRUE);
 
-
 	for (nvp = nvlist_next_nvpair(in_nvl, NULL); nvp != NULL;
 	    nvp = nvlist_next_nvpair(in_nvl, nvp)) {
-
 		name = nvpair_name(nvp);
 		if (strcmp(name, IPADM_NVP_FAMILIES) != 0 &&
 		    strcmp(name, IPADM_NVP_MIFNAMES) != 0)
@@ -790,25 +787,25 @@ boolean_t
 ipmgmt_db_getif(void *arg, nvlist_t *db_nvl, char *buf, size_t buflen,
     int *errp)
 {
-	ipmgmt_get_cbarg_t	*cbarg = arg;
-	char	*ifname = cbarg->cb_ifname;
+	ipmgmt_get_cbarg_t *cbarg = arg;
+	char		*ifname = cbarg->cb_ifname;
 	nvpair_t	*nvp;
-	char	*db_ifname = NULL;
+	char		*db_ifname = NULL;
 	uint16_t	*db_families = NULL;
-	uint_t	nelem = 0;
+	uint_t		nelem = 0;
 
 	/* Parse db nvlist */
 	for (nvp = nvlist_next_nvpair(db_nvl, NULL); nvp != NULL;
 	    nvp = nvlist_next_nvpair(db_nvl, nvp)) {
-
-		if (strcmp(nvpair_name(nvp), IPADM_NVP_IFNAME) == 0)
+		if (strcmp(nvpair_name(nvp), IPADM_NVP_IFNAME) == 0) {
 			(void) nvpair_value_string(nvp, &db_ifname);
-		else if (strcmp(nvpair_name(nvp), IPADM_NVP_FAMILIES) == 0)
+		} else if (strcmp(nvpair_name(nvp), IPADM_NVP_FAMILIES) == 0) {
 			(void) nvpair_value_uint16_array(nvp,
 			    &db_families, &nelem);
+		}
 	}
 
-	if (db_ifname == NULL)
+	if (db_ifname == NULL || db_families == NULL)
 		return (B_TRUE);
 
 	if (ifname != NULL && ifname[0] != '\0' &&

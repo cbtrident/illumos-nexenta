@@ -348,7 +348,7 @@ ipadm_delete_aobjname(ipadm_handle_t iph, const char *ifname, sa_family_t af,
  * Gets all the addresses from active configuration and populates the
  * address information in `addrinfo'.
  */
-static ipadm_status_t
+ipadm_status_t
 i_ipadm_active_addr_info(ipadm_handle_t iph, const char *ifname,
     ipadm_addr_info_t **addrinfo, uint32_t ipadm_flags, int64_t lifc_flags)
 {

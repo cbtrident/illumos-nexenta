@@ -18,10 +18,11 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
- * Copyright (c) 2014 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #ifndef _LIBIPADM_IMPL_H
@@ -54,9 +55,9 @@ extern "C" {
 #define	IPADM_COMMON_OPT_MASK	(IPADM_OPT_ACTIVE | IPADM_OPT_PERSIST)
 
 typedef enum {
-    IPADM_ADD_IPMP_MEMBER,
-    IPADM_REMOVE_IPMP_MEMBER
-} ipadm_ipmp_operation_t;
+    IPADM_ADD_IPMP,
+    IPADM_REMOVE_IPMP
+} ipadm_ipmp_op_t;
 
 /* Opaque library handle */
 struct ipadm_handle {
@@ -190,6 +191,8 @@ extern ipadm_status_t	i_ipadm_get_persist_propval(ipadm_handle_t,
 			    const void *);
 
 /* ipadm_addr.c */
+extern ipadm_status_t	i_ipadm_active_addr_info(ipadm_handle_t, const char *,
+			    ipadm_addr_info_t **, uint32_t, int64_t);
 extern void		i_ipadm_init_addr(ipadm_addrobj_t, const char *,
 			    const char *, ipadm_addr_type_t);
 extern ipadm_status_t	i_ipadm_merge_prefixlen_from_nvl(nvlist_t *, nvlist_t *,
