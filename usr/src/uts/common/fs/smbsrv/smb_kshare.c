@@ -854,7 +854,8 @@ smb_named_kstat_update(kstat_t *ks, int rw)
 	smb_named_stats_t	*smbnsp = &smbksp->stats.ks_data;
 
 	if (rw == KSTAT_READ) {
-		bcopy(smbksp->shr_name, smbnsp->name, MAXNAMELEN);
+		(void) strlcpy(smbnsp->name, smbksp->shr_name,
+		    sizeof (smbnsp->name));
 
 		kstat_named_setstr(&smbnsp->kn[0],
 		    (const char *)smbksp->shr_name);
