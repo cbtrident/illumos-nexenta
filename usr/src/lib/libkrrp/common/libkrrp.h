@@ -175,6 +175,10 @@ typedef struct libkrrp_sess_status_s {
 	libkrrp_error_t libkrrp_error;
 } libkrrp_sess_status_t;
 
+typedef struct libkrrp_sess_conn_info_s {
+	uint32_t blk_sz;
+} libkrrp_sess_conn_info_t;
+
 boolean_t is_krrp_supported(void);
 
 libkrrp_handle_t *libkrrp_init(void);
@@ -215,6 +219,9 @@ int krrp_sess_send_stop(libkrrp_handle_t *, uuid_t);
 
 int krrp_sess_list(libkrrp_handle_t *, libkrrp_sess_list_t **);
 void krrp_sess_list_free(libkrrp_sess_list_t *);
+
+int krrp_sess_get_conn_info(libkrrp_handle_t *hdl, uuid_t sess_id,
+    libkrrp_sess_conn_info_t *sess_conn_info);
 
 int krrp_sess_status(libkrrp_handle_t *, uuid_t, libkrrp_sess_status_t *);
 void libkrrp_sess_error_description(libkrrp_error_t *, libkrrp_error_descr_t);

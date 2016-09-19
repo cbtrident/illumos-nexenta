@@ -37,6 +37,8 @@ static int krrp_ioctl_sess_create_write_stream(krrp_stream_t **result_stream,
     nvlist_t *params, krrp_error_t *error);
 
 static int krrp_ioctl_sess_conn_throttle(nvlist_t *params, krrp_error_t *error);
+static int krrp_ioctl_sess_conn_get_info(nvlist_t *params, nvlist_t *result,
+    krrp_error_t *error);
 
 static krrp_sess_t *krrp_ioctl_sess_action_common(nvlist_t *params,
     krrp_error_t *error);
@@ -119,8 +121,16 @@ int krrp_ioctl_process(krrp_ioctl_cmd_t cmd, nvlist_t *input,
 	case KRRP_IOCTL_SESS_CONN_THROTTLE:
 		rc = krrp_ioctl_sess_conn_throttle(input, error);
 		break;
+	case KRRP_IOCTL_SESS_GET_CONN_INFO:
+		rc = krrp_ioctl_sess_conn_get_info(input, output, error);
+		break;
 	default:
-		cmn_err(CE_PANIC, "Unknown ioctl cmd [%d]", cmd);
+		cmn_err(CE_WARN, "Unknown ioctl cmd [%d]", cmd);
+		krrp_error_set(error, KRRP_ERRNO_INVAL, ENOTSUP);
+		rc = -1;
+#ifdef DEBUG
+		panic("Unknown ioctl cmd");
+#endif
 	}
 
 out:
@@ -652,8 +662,8 @@ krrp_ioctl_sess_send_stop(nvlist_t *params, krrp_error_t *error)
 	return (rc);
 }
 
-static int krrp_ioctl_sess_conn_throttle(nvlist_t *params,
-    krrp_error_t *error)
+static int
+krrp_ioctl_sess_conn_throttle(nvlist_t *params, krrp_error_t *error)
 {
 	int rc;
 	krrp_sess_t *sess = NULL;
@@ -679,6 +689,23 @@ static int krrp_ioctl_sess_conn_throttle(nvlist_t *params,
 	rc = krrp_sess_throttle_conn(sess, limit, error);
 
 out:
+	krrp_sess_rele(sess);
+	return (rc);
+}
+
+static int
+krrp_ioctl_sess_conn_get_info(nvlist_t *params, nvlist_t *result,
+    krrp_error_t *error)
+{
+	int rc;
+	krrp_sess_t *sess = NULL;
+
+	sess = krrp_ioctl_sess_action_common(params, error);
+	if (sess == NULL)
+		return (-1);
+
+	rc = krrp_sess_get_conn_info(sess, result, error);
+
 	krrp_sess_rele(sess);
 	return (rc);
 }

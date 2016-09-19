@@ -523,3 +523,36 @@ fini:
 
 	return (rc);
 }
+
+int
+krrp_sess_get_conn_info(libkrrp_handle_t *hdl, uuid_t sess_id,
+    libkrrp_sess_conn_info_t *sess_conn_info)
+{
+	nvlist_t *result = NULL;
+	nvlist_t *params = NULL;
+	krrp_sess_id_str_t sess_id_str;
+	int rc = 0;
+
+	VERIFY(hdl != NULL);
+	VERIFY(sess_conn_info != NULL);
+
+	libkrrp_reset(hdl);
+
+	uuid_unparse(sess_id, sess_id_str);
+	params = fnvlist_alloc();
+	(void) krrp_param_put(KRRP_PARAM_SESS_ID, params, sess_id_str);
+
+	rc = krrp_ioctl_perform(hdl, KRRP_IOCTL_SESS_GET_CONN_INFO, params, &result);
+	if (rc != 0)
+		goto fini;
+
+	VERIFY0(krrp_param_get(KRRP_PARAM_DBLK_DATA_SIZE, result,
+	    &sess_conn_info->blk_sz));
+
+fini:
+	fnvlist_free(params);
+
+	fnvlist_free(result);
+
+	return (rc);
+}

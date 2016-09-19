@@ -38,6 +38,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	krrp_sess_list;
 	krrp_sess_list_free;
 	krrp_sess_status;
+	krrp_sess_get_conn_info;
 	krrp_sess_set_private_data;
 	krrp_sess_get_private_data;
 	krrp_svc_enable;

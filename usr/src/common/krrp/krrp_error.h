@@ -77,6 +77,7 @@ typedef enum {
 	X(AUTOSNAP)           \
 	X(RESUMETOKEN)        \
 	X(KEEPSNAPS)          \
+	X(GETSOCKOPTFAIL)     \
 
 
 #define	KRRP_ERRNO_EXPAND(enum_name) KRRP_ERRNO_##enum_name,

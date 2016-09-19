@@ -52,6 +52,8 @@
 	    krrp_usage_sess, SESS_CREATE_PDU_ENGINE) \
 	X(sess-conn-throttle, krrp_do_sess_action, \
 	    krrp_usage_sess, SESS_CONN_THROTTLE) \
+	X(sess-get-conn-info, krrp_do_sess_get_conn_info, \
+	    krrp_usage_sess, SESS_GET_CONN_INFO) \
 	X(ksvc-enable, krrp_do_ksvc_action, \
 	    krrp_usage_ksvc, KSVC_ENABLE) \
 	X(ksvc-disable, krrp_do_ksvc_action, \
@@ -90,7 +92,7 @@ static krrp_handler_func krrp_do_ksvc_action, krrp_do_ksvc_configure,
     krrp_do_sess_list, krrp_do_sess_action, krrp_do_sess_create_conn,
     krrp_do_sess_create_read_stream, krrp_do_sess_create_write_stream,
     krrp_do_sess_create_pdu_engine, krrp_do_sess_status, krrp_do_read_event,
-    krrp_do_svc_get_state, krrp_do_sess_create;
+    krrp_do_svc_get_state, krrp_do_sess_create, krrp_do_sess_get_conn_info;
 
 static int krrp_parse_and_check_sess_id(char *sess_id_str,
     uuid_t sess_id);
@@ -238,6 +240,10 @@ krrp_usage_sess(int rc, krrp_cmd_t *cmd, boolean_t use_return)
 		fprintf_msg("Usage: %s sess-conn-throttle "
 		    "<-s sess_id> -l <limit>\n",
 		    tool_name);
+		break;
+	case KRRP_CMD_SESS_GET_CONN_INFO:
+		fprintf_msg("Usage: %s sess-get-conn-info "
+		    "-s <sess_id>\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_CREATE_READ_STREAM:
 		fprintf_msg("Usage: %s sess-create-read-stream "
@@ -563,6 +569,58 @@ krrp_do_sess_action(int argc, char **argv, krrp_cmd_t *cmd)
 		krrp_print_libkrrp_error();
 		exit(1);
 	}
+
+	return (0);
+}
+
+static int
+krrp_do_sess_get_conn_info(int argc, char **argv, krrp_cmd_t *cmd)
+{
+	int c, rc = 0;
+	uuid_t sess_id;
+	libkrrp_sess_conn_info_t sess_conn_info;
+	char *sess_id_str = NULL;
+
+	assert(cmd->item == KRRP_CMD_SESS_GET_CONN_INFO);
+
+	uuid_clear(sess_id);
+
+	while ((c = getopt(argc, argv, "hs:")) != -1) {
+		switch (c) {
+		case 's':
+			if (krrp_parse_and_check_sess_id(optarg, sess_id) != 0)
+				exit(1);
+
+			sess_id_str = optarg;
+			break;
+		case '?':
+			krrp_print_err_unknown_param(argv[optind - 1]);
+			cmd->usage_func(1, cmd, B_FALSE);
+			break;
+		case 'h':
+			cmd->usage_func(0, cmd, B_FALSE);
+			break;
+		}
+	}
+
+	if (uuid_is_null(sess_id) == 1) {
+		krrp_print_err_no_sess_id();
+		cmd->usage_func(1, cmd, B_FALSE);
+	}
+
+	rc = krrp_sess_get_conn_info(libkrrp_hdl, sess_id, &sess_conn_info);
+	if (rc != 0) {
+		fprintf_err("Failed to get information about connection\n");
+		krrp_print_libkrrp_error();
+		exit(1);
+	}
+
+	fprintf_msg("Session: [%s]\n"
+	    "    block size: %u\n",
+	    sess_id_str,
+	    sess_conn_info.blk_sz);
+
+	fprintf_msg("\n");
 
 	return (0);
 }

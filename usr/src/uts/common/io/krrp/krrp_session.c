@@ -426,6 +426,30 @@ krrp_sess_get_status(krrp_sess_t *sess, nvlist_t *result)
 }
 
 /*
+ * Retrieve information about existing connection
+ * and place it to result NVL.
+ */
+int
+krrp_sess_get_conn_info(krrp_sess_t *sess, nvlist_t *result,
+    krrp_error_t *error)
+{
+	if (sess->type == KRRP_SESS_COMPOUND) {
+		krrp_error_set(error, KRRP_ERRNO_SESS, EINVAL);
+		return (-1);
+	}
+
+	if (sess->conn == NULL) {
+		krrp_error_set(error, KRRP_ERRNO_CONN, ENOENT);
+		return (-1);
+	}
+
+	VERIFY0(krrp_param_put(KRRP_PARAM_DBLK_DATA_SIZE,
+	    result, (void *)&sess->conn->blk_sz));
+
+	return (0);
+}
+
+/*
  * 'Started' means 'sess_run' IOCTL was successfully processed
  */
 boolean_t

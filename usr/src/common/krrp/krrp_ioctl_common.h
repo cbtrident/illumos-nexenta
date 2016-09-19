@@ -40,6 +40,7 @@ extern "C" {
 	X(SESS_CONN_THROTTLE) \
 	X(SESS_SET_PRIVATE_DATA) \
 	X(SESS_GET_PRIVATE_DATA) \
+	X(SESS_GET_CONN_INFO) \
 
 #define	KRRP_IOCTL_EXPAND(enum_name) KRRP_IOCTL_##enum_name,
 typedef enum {

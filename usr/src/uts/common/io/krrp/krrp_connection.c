@@ -4,6 +4,7 @@
 
 #include <sys/socket.h>
 #include <netinet/tcp.h>
+#include <inet/tcp.h>
 #include <sys/strsubr.h>
 #include <sys/socketvar.h>
 #include <sys/filio.h>
@@ -593,27 +594,28 @@ krrp_conn_connect_cb(ksocket_t ks,
 static int
 krrp_conn_post_configure(krrp_conn_t *conn, krrp_error_t *error)
 {
-	struct sonode *so;
+	struct so_snd_bufinfo snd_bufinfo;
 	uint32_t value;
+	int value_len;
 	int rc;
 
 	value = 1024 * 1024;
 	rc = ksocket_setsockopt(conn->ks, SOL_SOCKET, SO_SNDBUF,
 	    (const void *) &value, sizeof (value), CRED());
 	if (rc != 0)
-		goto err;
+		goto err_set;
 
 	value = 1024 * 1024;
 	rc = ksocket_setsockopt(conn->ks, SOL_SOCKET, SO_RCVBUF,
 	    (const void *) &value, sizeof (value), CRED());
 	if (rc != 0)
-		goto err;
+		goto err_set;
 
 	value = 1;
 	rc = ksocket_setsockopt(conn->ks, IPPROTO_TCP, TCP_NODELAY,
 	    (const void *) &value, sizeof (value), CRED());
 	if (rc != 0)
-		goto err;
+		goto err_set;
 
 	/* Do not allow to set it less 100 to exclude any side-effect */
 	value = krrp_tcp_abort_threshold > 100 ?
@@ -621,7 +623,7 @@ krrp_conn_post_configure(krrp_conn_t *conn, krrp_error_t *error)
 	rc = ksocket_setsockopt(conn->ks, IPPROTO_TCP, TCP_ABORT_THRESHOLD,
 	    (const void *) &value, sizeof (value), CRED());
 	if (rc != 0)
-		goto err;
+		goto err_set;
 
 	if (get_udatamodel() == DATAMODEL_NONE ||
 	    get_udatamodel() == DATAMODEL_NATIVE) {
@@ -643,19 +645,20 @@ krrp_conn_post_configure(krrp_conn_t *conn, krrp_error_t *error)
 	}
 
 	if (rc != 0)
-		goto err;
+		goto err_set;
 
+	value_len = sizeof (snd_bufinfo);
+	rc = ksocket_getsockopt(conn->ks, SOL_SOCKET, SO_SND_BUFINFO,
+	    (void *)&snd_bufinfo, &value_len, CRED());
+	if (rc != 0)
+		goto err_get;
 
-	so = (struct sonode *)(conn->ks);
+	conn->mblk_wroff = (size_t)snd_bufinfo.sbi_wroff;
+	conn->mblk_tail_len = (size_t)snd_bufinfo.sbi_tail;
 
-	conn->mblk_wroff = (size_t)so->so_proto_props.sopp_wroff;
-	conn->mblk_tail_len = (size_t)so->so_proto_props.sopp_tail;
-
-	conn->max_blk_sz = so->so_proto_props.sopp_maxpsz;
-
-	if (so->so_proto_props.sopp_maxblk == INFPSZ) {
+	if (snd_bufinfo.sbi_maxblk == INFPSZ) {
 		/* LSO is enabled */
-		conn->blk_sz = so->so_proto_props.sopp_maxpsz;
+		conn->blk_sz = snd_bufinfo.sbi_maxpsz;
 
 		/*
 		 * kmem_alloc for allocations that are less 128k
@@ -666,13 +669,17 @@ krrp_conn_post_configure(krrp_conn_t *conn, krrp_error_t *error)
 		if (conn->blk_sz > 128 * 1024)
 			conn->blk_sz = 128 * 1024;
 	} else {
-		conn->blk_sz = so->so_proto_props.sopp_maxblk;
+		conn->blk_sz = snd_bufinfo.sbi_maxblk;
 	}
 
 	return (0);
 
-err:
+err_set:
 	krrp_error_set(error, KRRP_ERRNO_SETSOCKOPTFAIL, rc);
+	return (-1);
+
+err_get:
+	krrp_error_set(error, KRRP_ERRNO_GETSOCKOPTFAIL, rc);
 	return (-1);
 }
 

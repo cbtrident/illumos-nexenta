@@ -178,6 +178,9 @@ int krrp_sess_send_stop(krrp_sess_t *sess, krrp_error_t *error);
 int krrp_sess_throttle_conn(krrp_sess_t *sess, size_t limit,
     krrp_error_t *error);
 
+int krrp_sess_get_conn_info(krrp_sess_t *sess, nvlist_t *result,
+    krrp_error_t *error);
+
 int krrp_sess_set_id(krrp_sess_t *sess, const char *sess_id_str,
     krrp_error_t *error);
 int krrp_sess_compare_id(const void *opaque_sess1, const void *opaque_sess2);

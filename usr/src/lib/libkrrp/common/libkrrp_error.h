@@ -168,6 +168,8 @@ typedef enum {
 #define	LIBKRRP_EMSG_SESS_CREATE_CONN_AUTH_INVAL "Invalid authentication digest"
 #define	LIBKRRP_EMSG_KEEPSNAPS_INVAL \
 	    "The number of keep snapshots must be in range (%d .. %d)"
+#define LIBKRRP_EMSG_SESS_ENOTSUP \
+	    "Operation is not supported for this type of session"
 
 #define	libkrrp_error_init(error) (void) memset(error, 0, \
 	    sizeof (libkrrp_error_t));

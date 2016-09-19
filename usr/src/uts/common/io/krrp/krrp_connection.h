@@ -80,7 +80,6 @@ struct krrp_conn_s {
 
 	size_t					mblk_wroff;
 	size_t					mblk_tail_len;
-	size_t					max_blk_sz;
 	size_t					blk_sz;
 
 	uint64_t				bytes_tx;
