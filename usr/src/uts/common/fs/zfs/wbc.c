@@ -243,24 +243,6 @@ wbc_clean_moved_tree(wbc_data_t *wbc_data)
 
 /* WBC-MOVE routines */
 
-/* Disable WBC threads but other params are left */
-void
-wbc_enter_fault_state(spa_t *spa)
-{
-	wbc_data_t *wbc_data = spa_get_wbc_data(spa);
-
-	mutex_enter(&wbc_data->wbc_lock);
-
-	if (!wbc_data->wbc_isfault) {
-		wbc_data->wbc_thr_exit = B_TRUE;
-		wbc_data->wbc_isfault = B_TRUE;
-		wbc_data->wbc_walking = B_FALSE;
-		cv_broadcast(&wbc_data->wbc_cv);
-	}
-
-	mutex_exit(&wbc_data->wbc_lock);
-}
-
 /*
  * Writeback Cache Migration Tunables
  *
@@ -589,8 +571,7 @@ wbc_move_block(void *arg)
 	spa_t *spa = wbc_data->wbc_spa;
 	int err = 0;
 
-	if (wbc_data->wbc_purge || wbc_data->wbc_isfault ||
-	    !wbc_data->wbc_isvalid) {
+	if (wbc_data->wbc_purge || !wbc_data->wbc_isvalid) {
 		atomic_inc_64(&wbc_data->wbc_blocks_mv);
 		return;
 	}
@@ -1676,7 +1657,7 @@ wbc_nc_cb(const char *name, boolean_t recursive, boolean_t autosnap,
 	wbc_data_t *wbc_data = wbc_instance->wbc_data;
 
 	mutex_enter(&wbc_data->wbc_lock);
-	if (!wbc_data->wbc_isvalid || wbc_data->wbc_isfault) {
+	if (!wbc_data->wbc_isvalid) {
 		mutex_exit(&wbc_data->wbc_lock);
 		return (B_FALSE);
 	}
@@ -1731,10 +1712,8 @@ wbc_err_cb(const char *name, int err, uint64_t txg, void *arg)
 	wbc_instance_t *wbc_instance = arg;
 	wbc_data_t *wbc_data = wbc_instance->wbc_data;
 
-	/* FIXME: ??? error on one wbc_instance will stop whole WBC ??? */
 	cmn_err(CE_WARN, "Autosnap can not create a snapshot for writecache at "
 	    "txg %llu [%d] of pool '%s'\n", (unsigned long long)txg, err, name);
-	wbc_enter_fault_state(wbc_data->wbc_spa);
 }
 
 void

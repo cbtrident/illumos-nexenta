@@ -169,7 +169,6 @@ struct wbc_data {
 
 	boolean_t	wbc_thr_exit;	/* exit flag */
 	boolean_t	wbc_isvalid;	/* WBC is inited */
-	boolean_t	wbc_isfault;	/* WBC is fault */
 	boolean_t	wbc_first_move; /* TRUE until the 1 WBC-win opened */
 };
 
@@ -249,7 +248,6 @@ void wbc_fini(wbc_data_t *wbc_data);
 
 void wbc_activate(spa_t *spa, boolean_t pool_creation);
 void wbc_deactivate(spa_t *spa);
-void wbc_enter_fault_state(spa_t *spa);
 
 int wbc_select_dva(wbc_data_t *wbc_data, zio_t *zio);
 int wbc_first_valid_dva(const blkptr_t *bp,

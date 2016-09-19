@@ -481,7 +481,6 @@ spa_select_class(spa_t *spa, zio_t *zio)
 		match = B_TRUE;
 	} else {
 		match = zp->zp_usewbc && spa->spa_wbc.wbc_ready_to_use &&
-		    !spa->spa_wbc.wbc_isfault &&
 		    spa_refine_data_placement(spa, zio);
 	}
 
