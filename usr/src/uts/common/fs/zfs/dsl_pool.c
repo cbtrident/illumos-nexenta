@@ -546,6 +546,9 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 			if ((azone->flags & AUTOSNAP_CREATOR) == 0)
 				continue;
 
+			if (azone->created)
+				continue;
+
 			azone->delayed = B_TRUE;
 			azone->dirty = B_TRUE;
 			wbc_azone = (azone->flags & AUTOSNAP_WBC) != 0;
@@ -626,7 +629,8 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 				boolean_t wbc_azone =
 				    ((azone->flags & AUTOSNAP_WBC) != 0);
 
-				if (!wbc_azone || !wbc_skip_txg) {
+				if ((!wbc_azone || !wbc_skip_txg) &&
+				    autosnap_confirm_snap(azone, txg)) {
 					autosnap_create_snapshot(azone,
 					    snap, dp, txg, tx);
 				}

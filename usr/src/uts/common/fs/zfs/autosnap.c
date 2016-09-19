@@ -1491,6 +1491,8 @@ autosnap_create_snapshot(autosnap_zone_t *azone, char *snap,
 
 	ASSERT(MUTEX_HELD(&azone->autosnap->autosnap_lock));
 
+	ASSERT(!azone->created);
+
 	recurs = !!(azone->flags & AUTOSNAP_RECURSIVE);
 	err = dsl_pool_collect_ds_for_autosnap(dp, txg,
 	    azone->dataset, snap, recurs, tx, &dst);
