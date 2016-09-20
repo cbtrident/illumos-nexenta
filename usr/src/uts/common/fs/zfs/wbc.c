@@ -1706,14 +1706,15 @@ wbc_nc_cb(const char *name, boolean_t recursive, boolean_t autosnap,
 	return (result);
 }
 
+/*ARGSUSED*/
 static void
 wbc_err_cb(const char *name, int err, uint64_t txg, void *arg)
 {
-	wbc_instance_t *wbc_instance = arg;
-	wbc_data_t *wbc_data = wbc_instance->wbc_data;
-
-	cmn_err(CE_WARN, "Autosnap can not create a snapshot for writecache at "
-	    "txg %llu [%d] of pool '%s'\n", (unsigned long long)txg, err, name);
+	if (krrp_debug) {
+		cmn_err(CE_WARN, "Autosnap can not create a snapshot "
+		    "for writecached dataset [%s] at txg %llu [%d]",
+		    name, (unsigned long long)txg, err);
+	}
 }
 
 void
