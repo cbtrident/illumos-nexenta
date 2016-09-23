@@ -797,8 +797,19 @@ dsl_destroy_head_sync_impl(dsl_dataset_t *ds, dmu_tx_t *tx)
 	objset_t *os;
 	VERIFY0(dmu_objset_from_ds(ds, &os));
 
-	if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WBC))
+	if (spa_feature_is_active(dp->dp_spa, SPA_FEATURE_WBC)) {
 		wbc_process_objset(spa_get_wbc_data(dp->dp_spa), os, B_TRUE);
+
+		/*
+		 * If WBC was activated for this dataset and it is a root
+		 * of WBC-ed tree of datasets then need to decrement WBC
+		 * feature flag refcounter, to be sure that 'feature@wbc'
+		 * shows correct information about the status of WBC
+		 */
+		if (os->os_wbc_root_ds_obj != 0 &&
+		    ds->ds_object == os->os_wbc_root_ds_obj)
+			spa_feature_decr(os->os_spa, SPA_FEATURE_WBC, tx);
+	}
 
 	if (!spa_feature_is_enabled(dp->dp_spa, SPA_FEATURE_ASYNC_DESTROY)) {
 		old_synchronous_dataset_destroy(ds, tx);

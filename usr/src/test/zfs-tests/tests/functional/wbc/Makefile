@@ -34,7 +34,8 @@ PROGS = cleanup \
 	wbc_012_pos \
 	wbc_013_neg \
 	wbc_014_pos \
-	wbc_015_neg
+	wbc_015_neg \
+	wbc_016_pos
 
 FILES = wbc.cfg \
 	wbc.kshlib
