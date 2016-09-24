@@ -464,6 +464,11 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 			if (zpool_vdev_attach(zhp, dev_name, spare_name,
 			    replacement, B_TRUE) == 0) {
 				done = B_TRUE;
+			} else {
+				fmd_hdl_debug(hdl, "replace_with_spare: "
+				    "sparegroup %s matched but "
+				    "zpool_vdev_attach(dev: %s, spare: %s) "
+				    "failed", sspr_group, dev_name, spare_name);
 			}
 		}
 	}
@@ -581,6 +586,11 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 			if (fru_compare_flags & FRU_CMP_FLAG_DISABLE)
 				generate_fault(hdl, vdev,
 				    "fault.fs.zfs.vdev.fru_not_matched");
+		} else {
+			fmd_hdl_debug(hdl, "replace_with_spare: FRU based "
+			    "matching succeeded (or was disabled) but "
+			    "zpool_vdev_attach(dev: %s, spare: %s) failed",
+			    dev_name, spare_name);
 		}
 	}
 
@@ -635,6 +645,10 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 			/* FRU matching was not attempted */
 			generate_fault(hdl, vdev,
 			    "fault.fs.zfs.vdev.fru_not_matched");
+		} else {
+			fmd_hdl_debug(hdl, "replace_with_spare: "
+			    " zpool_vdev_attach(dev: %s, spare: %s) failed",
+			    dev_name, spare_name);
 		}
 	}
 

@@ -291,8 +291,7 @@ vdev_config_generate(spa_t *spa, vdev_t *vd, boolean_t getstats,
 		VERIFY(nvlist_add_boolean_value(nv,
 		    ZPOOL_CONFIG_L2CACHE_PERSISTENT, B_TRUE) == 0);
 
-	if (vd->vdev_is_ssd)
-		fnvlist_add_boolean_value(nv, ZPOOL_CONFIG_IS_SSD, B_TRUE);
+	fnvlist_add_boolean_value(nv, ZPOOL_CONFIG_IS_SSD, vd->vdev_is_ssd);
 
 	if (vd->vdev_dtl_sm != NULL) {
 		fnvlist_add_uint64(nv, ZPOOL_CONFIG_DTL,
