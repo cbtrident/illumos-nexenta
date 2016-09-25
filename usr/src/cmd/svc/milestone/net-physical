@@ -19,12 +19,13 @@
 #
 # CDDL HEADER END
 #
-#
-# Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2012 Milan Jurik. All rights reserved.
+
 #
 # Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T.
 # All rights reserved.
+# Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2012 Milan Jurik. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.
 #
 
 . /lib/svc/share/smf_include.sh
@@ -305,6 +306,21 @@ if [ -n "$ipmp6_list" ]; then
 	done
 	[ -n "$ipmp6_failed" ] && warn_failed_ifs "create IPv6 IPMP" \
 	    "$ipmp6_failed"
+fi
+
+#
+# Upgrade ipadm.conf.
+#
+if /usr/bin/grep -q _family /etc/ipadm/ipadm.conf; then
+	oldifs=$(/usr/bin/sed -En \
+	    's/^_ifname=([a-z0-9]+);_family=[0-9]+;$/\1/p' \
+	    /etc/ipadm/ipadm.conf | /usr/bin/sort -u)
+	/usr/bin/sed -i '/_family/d' /etc/ipadm/ipadm.conf
+	for oldif in $oldifs; do
+		/usr/bin/printf \
+		    "_ifname=%s;_ifclass=0;_families=2,26;\n" \
+		    $oldif >> /etc/ipadm/ipadm.conf
+	done
 fi
 
 #

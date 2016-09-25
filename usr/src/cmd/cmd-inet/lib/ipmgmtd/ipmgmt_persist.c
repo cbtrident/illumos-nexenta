@@ -721,6 +721,9 @@ ipmgmt_db_update_if(void *arg, nvlist_t *db_nvl, char *buf, size_t buflen,
 		return (B_FALSE);
 	}
 
+	if (!nvlist_exists(db_nvl, IPADM_NVP_FAMILIES))
+		return (B_TRUE);
+
 	if (nvlist_exists(db_nvl, IPADM_NVP_IFCLASS) &&
 	    nvlist_lookup_string(db_nvl, IPADM_NVP_IFNAME, &db_ifname) == 0 &&
 	    nvlist_lookup_string(in_nvl, IPADM_NVP_GIFNAME, &gifname) == 0 &&
@@ -1126,7 +1129,7 @@ ipmgmt_aobjmap_op(ipmgmt_aobjmap_t *nodep, uint32_t op)
 	ipmgmt_aobjmap_t	*head, *prev, *matched = NULL;
 	boolean_t		update = B_TRUE;
 	int			err = 0;
-	ipadm_db_op_t		db_op;
+	ipadm_db_op_t		db_op = IPADM_DB_READ;
 
 	(void) pthread_rwlock_wrlock(&aobjmap.aobjmap_rwlock);
 
@@ -1588,7 +1591,7 @@ ipmgmt_db_init(void *cbarg, nvlist_t *db_nvl, char *buf, size_t buflen,
     int *errp)
 {
 	ipadm_handle_t	iph = cbarg;
-	nvpair_t	*nvp, *pnvp;
+	nvpair_t	*nvp, *pnvp = NULL;
 	char		*strval = NULL, *name, *mod = NULL, *pname;
 	char		tmpstr[IPMGMT_STRSIZE];
 	uint_t		proto;
@@ -1615,7 +1618,7 @@ ipmgmt_db_init(void *cbarg, nvlist_t *db_nvl, char *buf, size_t buflen,
 		}
 	}
 
-	/* if we are here than we found a global property */
+	/* If we are here then we have found a global property */
 	assert(mod != NULL);
 	assert(nvpair_type(pnvp) == DATA_TYPE_STRING);
 
@@ -1803,6 +1806,8 @@ ipmgmt_get_scfprop(scf_resources_t *res, const char *pgname, const char *pname,
 		break;
 	case SCF_TYPE_ASTRING:
 		*(char **)pval = scf_simple_prop_next_astring(prop);
+		break;
+	default:
 		break;
 	}
 ret:

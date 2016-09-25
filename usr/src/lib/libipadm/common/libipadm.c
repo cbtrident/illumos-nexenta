@@ -659,10 +659,9 @@ i_ipadm_init_ifobj(ipadm_handle_t iph, const char *ifname, nvlist_t *ifnvl)
 {
 	nvlist_t	*nvl = NULL;
 	nvpair_t	*nvp;
-	ipadm_status_t	status;
+	ipadm_status_t	status = IPADM_ENXIO;
 	ipadm_status_t	ret_status = IPADM_SUCCESS;
 	char		newifname[LIFNAMSIZ];
-	char		*afstr;
 	char		*aobjstr;
 	uint16_t	*afs;
 	char		*gifname;
@@ -672,60 +671,70 @@ i_ipadm_init_ifobj(ipadm_handle_t iph, const char *ifname, nvlist_t *ifnvl)
 
 	(void) strlcpy(newifname, ifname, sizeof (newifname));
 
+	/*
+	 * First go through the ifnvl nvlist looking for nested nvlist
+	 * containing interface class and address families.
+	 */
+	for (nvp = nvlist_next_nvpair(ifnvl, NULL); nvp != NULL;
+	    nvp = nvlist_next_nvpair(ifnvl, nvp)) {
+		char *icstr;
+		char **mifnames;
+		uint32_t ipadm_flags = IPADM_OPT_ACTIVE;
+
+		if (nvpair_value_nvlist(nvp, &nvl) != 0 ||
+		    nvlist_lookup_uint16_array(nvl, IPADM_NVP_FAMILIES,
+		    &afs, &nelem) != 0)
+			continue;
+
+		/* Check if this is IPMP group interface */
+		if (nvlist_lookup_string(nvl, IPADM_NVP_IFCLASS,
+		    &icstr) == 0 && atoi(icstr) == IPADM_IF_CLASS_IPMP)
+			ipadm_flags |= IPADM_OPT_IPMP;
+
+		/* Create interfaces for address families specified */
+		while (nelem-- > 0) {
+			uint16_t af = afs[nelem];
+
+			assert(af == AF_INET || af == AF_INET6);
+
+			status = i_ipadm_plumb_if(iph, newifname, af,
+			    ipadm_flags);
+			if (status == IPADM_IF_EXISTS)
+				status = IPADM_SUCCESS;
+			if (status != IPADM_SUCCESS)
+				return (status);
+		}
+		if (nvlist_lookup_string(nvl, IPADM_NVP_GIFNAME,
+		    &gifname) == 0) {
+			/*
+			 * IPMP underlying interface. Move to the
+			 * specified IPMP group.
+			 */
+			move_to_group = B_TRUE;
+		} else if ((ipadm_flags & IPADM_OPT_IPMP) &&
+		    nvlist_lookup_string_array(nvl, IPADM_NVP_MIFNAMES,
+		    &mifnames, &nelem) == 0) {
+			/* Non-empty IPMP group interface */
+			while (nelem-- > 0) {
+				(void) ipadm_add_ipmp_member(iph, newifname,
+				    mifnames[nelem], IPADM_OPT_ACTIVE);
+			}
+		}
+		if (iph->iph_zoneid != GLOBAL_ZONEID)
+			init_from_gz = B_TRUE;
+	}
+
+	if (status != IPADM_SUCCESS)
+		return (status);
+
+	/*
+	 * Go through the ifnvl nvlist again, applying persistent configuration.
+	 */
 	for (nvp = nvlist_next_nvpair(ifnvl, NULL); nvp != NULL;
 	    nvp = nvlist_next_nvpair(ifnvl, nvp)) {
 		if (nvpair_value_nvlist(nvp, &nvl) != 0)
 			continue;
-
-		if (nvlist_lookup_string(nvl, IPADM_NVP_FAMILY, &afstr) == 0) {
-			/* Old ipadm.conf format, simply plumb the interface */
-			status = i_ipadm_plumb_if(iph, newifname, atoi(afstr),
-			    IPADM_OPT_ACTIVE);
-			if (status == IPADM_IF_EXISTS)
-				status = IPADM_SUCCESS;
-		} else if (nvlist_lookup_uint16_array(nvl, IPADM_NVP_FAMILIES,
-		    &afs, &nelem) == 0) {
-			/* New ipadm.conf format */
-			char *icstr;
-			char **mifnames;
-			uint32_t ipadm_flags = IPADM_OPT_ACTIVE;
-
-			/* Check if this is IPMP group interface */
-			if (nvlist_lookup_string(nvl, IPADM_NVP_IFCLASS,
-			    &icstr) == 0 && atoi(icstr) == IPADM_IF_CLASS_IPMP)
-				ipadm_flags |= IPADM_OPT_IPMP;
-
-			/* Create interfaces for address families specified */
-			while (nelem-- > 0) {
-				uint16_t af = afs[nelem];
-
-				assert(af == AF_INET || af == AF_INET6);
-
-				status = i_ipadm_plumb_if(iph, newifname, af,
-				    ipadm_flags);
-				if (status == IPADM_IF_EXISTS)
-					status = IPADM_SUCCESS;
-			}
-			if (nvlist_lookup_string(nvl, IPADM_NVP_GIFNAME,
-			    &gifname) == 0) {
-				/*
-				 * IPMP underlying interface. Move to the
-				 * specified IPMP group.
-				 */
-				move_to_group = B_TRUE;
-			} else if ((ipadm_flags & IPADM_OPT_IPMP) &&
-			    nvlist_lookup_string_array(nvl, IPADM_NVP_MIFNAMES,
-			    &mifnames, &nelem) == 0) {
-				/* Non-empty IPMP group interface */
-				while (nelem-- > 0) {
-					(void) ipadm_add_ipmp_member(iph,
-					    newifname, mifnames[nelem],
-					    IPADM_OPT_ACTIVE);
-				}
-			}
-			if (iph->iph_zoneid != GLOBAL_ZONEID)
-				init_from_gz = B_TRUE;
-		} else if (nvlist_lookup_string(nvl, IPADM_NVP_AOBJNAME,
+		if (nvlist_lookup_string(nvl, IPADM_NVP_AOBJNAME,
 		    &aobjstr) == 0) {
 			/*
 			 * For a static address, we need to search for
@@ -740,6 +749,7 @@ i_ipadm_init_ifobj(ipadm_handle_t iph, const char *ifname, nvlist_t *ifnvl)
 					continue;
 			}
 			status = i_ipadm_init_addrobj(iph, nvl);
+
 			/*
 			 * If this address is in use on some other interface,
 			 * we want to record an error to be returned as

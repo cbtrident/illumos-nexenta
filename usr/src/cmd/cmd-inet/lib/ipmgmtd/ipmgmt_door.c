@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 /*
@@ -671,9 +671,10 @@ ipmgmt_resetprop_handler(void *argp)
 }
 
 /*
- * Handles the door command IPMGMT_CMD_GETIF. It retrieves the name of all the
- * persisted interfaces and the IP protocols (IPv4 or IPv6) they support.
- * Returns the info as a nvlist using door_return() from ipmgmt_common_handler().
+ * Handles the door command IPMGMT_CMD_GETIF. It retrieves names of all
+ * persisted interfaces and the IP protocol families (IPv4 or IPv6) they
+ * support. Returns the info as a nvlist using door_return() from
+ * ipmgmt_common_handler().
  */
 static void
 ipmgmt_getif_handler(void *argp)
@@ -874,7 +875,7 @@ ipmgmt_ipmp_update_handler(void *argp)
 	ipmgmt_get_group_interface(uargp->ia_mifname, gifname, LIFNAMSIZ);
 
 	if (flags & IPMGMT_APPEND) {
-		/* group interface should be available in the DB */
+		/* Group interface should be available in the DB */
 		if (!gif_exists) {
 			err = ENOENT;
 			goto ret;
@@ -899,7 +900,6 @@ ipmgmt_ipmp_update_handler(void *argp)
 	}
 
 	if (flags & IPMGMT_PERSIST) {
-
 		if ((err = nvlist_alloc(&nvl, NV_UNIQUE_NAME, 0)) != 0)
 			goto ret;
 
