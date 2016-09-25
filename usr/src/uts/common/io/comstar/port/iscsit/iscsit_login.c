@@ -2734,15 +2734,15 @@ iscsit_fold_name(char *name, size_t *buflen)
 	/* Check for one of the supported name types */
 	if (strncasecmp(name, SNS_EUI ".", strlen(SNS_EUI) + 1) == 0) {
 		sns = SNS_EUI;
-		*buflen = SNS_EUI_U8_LEN_MAX + 1;
+		*buflen = SNS_EUI_LEN_MAX + 1;
 		flag |= U8_TEXTPREP_TOUPPER;
 	} else if (strncasecmp(name, SNS_IQN ".", strlen(SNS_IQN) + 1) == 0) {
 		sns = SNS_IQN;
-		*buflen = SNS_IQN_U8_LEN_MAX + 1;
+		*buflen = SNS_IQN_LEN_MAX + 1;
 		flag |= U8_TEXTPREP_TOLOWER;
 	} else if (strncasecmp(name, SNS_NAA ".", strlen(SNS_NAA) + 1) == 0) {
 		sns = SNS_NAA;
-		*buflen = SNS_NAA_U8_LEN_MAX + 1;
+		*buflen = SNS_NAA_LEN_MAX + 1;
 		flag |= U8_TEXTPREP_TOUPPER;
 	} else {
 		return (NULL);
@@ -2751,7 +2751,7 @@ iscsit_fold_name(char *name, size_t *buflen)
 	ret = kmem_zalloc(*buflen, KM_SLEEP);
 	coff = strlen(sns);
 	inlen = strlen(name) - coff;
-	outlen = *buflen - coff;
+	outlen = *buflen - coff - 1;
 
 	/* Fold the case and normalize string */
 	if (u8_textprep_str(name + coff, &inlen, ret + coff, &outlen, flag,
