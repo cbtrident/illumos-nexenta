@@ -124,10 +124,9 @@ pvscsi_remove_from_queue(pvscsi_cmd_t *cmd)
 
 	ASSERT(pvs != NULL);
 	ASSERT(mutex_owned(&pvs->mutex));
-	ASSERT(list_link_active(&cmd->cmd_queue_node));
-	ASSERT(pvs->cmd_queue_len > 0);
 
 	if (list_link_active(&cmd->cmd_queue_node)) {
+		ASSERT(pvs->cmd_queue_len > 0);
 		list_remove(&pvs->cmd_queue, cmd);
 		pvs->cmd_queue_len--;
 	}
