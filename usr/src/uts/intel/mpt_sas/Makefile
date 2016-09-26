@@ -69,9 +69,9 @@ CERRWARN	+= -_gcc=-Wno-switch
 #
 .KEEP_STATE:
 
-all:		$(ALL_DEPS)
-
 def:		$(DEF_DEPS)
+
+all:		$(ALL_DEPS)
 
 clean:		$(CLEAN_DEPS)
 		$(RM) $(WARLOCK_OUT) $(WARLOCK_OK)
