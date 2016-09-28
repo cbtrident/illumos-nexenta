@@ -23,7 +23,7 @@
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2014 by Saso Kiselkov. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -605,7 +605,6 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_meta_limit;
 	kstat_named_t arcstat_meta_max;
 	kstat_named_t arcstat_meta_min;
-	kstat_named_t arcstat_ddt_used;
 	kstat_named_t arcstat_ddt_limit;
 	kstat_named_t arcstat_sync_wait_for_async;
 	kstat_named_t arcstat_demand_hit_predictive_prefetch;
@@ -723,7 +722,6 @@ static arc_stats_t arc_stats = {
 	{ "arc_meta_limit",		KSTAT_DATA_UINT64 },
 	{ "arc_meta_max",		KSTAT_DATA_UINT64 },
 	{ "arc_meta_min",		KSTAT_DATA_UINT64 },
-	{ "arc_ddt_used",		KSTAT_DATA_UINT64 },
 	{ "arc_ddt_limit",		KSTAT_DATA_UINT64 },
 	{ "sync_wait_for_async",	KSTAT_DATA_UINT64 },
 	{ "demand_hit_predictive_prefetch", KSTAT_DATA_UINT64 },
@@ -810,7 +808,7 @@ static arc_state_t	*arc_l2c_only;
 #define	arc_meta_min	ARCSTAT(arcstat_meta_min) /* min size for metadata */
 #define	arc_meta_used	ARCSTAT(arcstat_meta_used) /* size of metadata */
 #define	arc_meta_max	ARCSTAT(arcstat_meta_max) /* max size of metadata */
-#define	arc_ddt_used	ARCSTAT(arcstat_ddt_used) /* ddt size in arc */
+#define	arc_ddt_size	ARCSTAT(arcstat_ddt_size) /* ddt size in arc */
 #define	arc_ddt_limit	ARCSTAT(arcstat_ddt_limit) /* ddt in arc size limit */
 
 /*
@@ -2246,9 +2244,7 @@ arc_space_consume(uint64_t space, arc_space_type_t type)
 		break;
 	}
 
-	if (type == ARC_SPACE_DDT)
-		ARCSTAT_INCR(arcstat_ddt_used, space);
-	else if (type != ARC_SPACE_DATA)
+	if (type != ARC_SPACE_DATA && type != ARC_SPACE_DDT)
 		ARCSTAT_INCR(arcstat_meta_used, space);
 
 	atomic_add_64(&arc_size, space);
@@ -2280,10 +2276,7 @@ arc_space_return(uint64_t space, arc_space_type_t type)
 		break;
 	}
 
-	if (type == ARC_SPACE_DDT) {
-		ASSERT(arc_ddt_used >= space);
-		ARCSTAT_INCR(arcstat_ddt_used, -space);
-	} else if (type != ARC_SPACE_DATA) {
+	if (type != ARC_SPACE_DATA && type != ARC_SPACE_DDT) {
 		ASSERT(arc_meta_used >= space);
 		if (arc_meta_max < arc_meta_used)
 			arc_meta_max = arc_meta_used;
@@ -3335,7 +3328,7 @@ arc_adjust_impl(arc_state_t *state, uint64_t spa, int64_t bytes,
  * Depending on the value of adjust_ddt arg evict either DDT (B_TRUE)
  * or metadata (B_TRUE) buffers.
  * Evict metadata or DDT buffers from the cache, such that arc_meta_used or
- * arc_ddt_used is capped by the arc_meta_limit or arc_ddt_limit tunable.
+ * arc_ddt_size is capped by the arc_meta_limit or arc_ddt_limit tunable.
  */
 static uint64_t
 arc_adjust_meta_or_ddt(boolean_t adjust_ddt)
@@ -3345,12 +3338,13 @@ arc_adjust_meta_or_ddt(boolean_t adjust_ddt)
 	arc_buf_contents_t type;
 
 	if (adjust_ddt) {
-		over_limit = arc_ddt_used - arc_ddt_limit;
+		over_limit = arc_ddt_size - arc_ddt_limit;
 		type = ARC_BUFC_DDT;
 	} else {
 		over_limit = arc_meta_used - arc_meta_limit;
 		type = ARC_BUFC_METADATA;
 	}
+
 	/*
 	 * If we're over the limit, we want to evict enough
 	 * to get back under the limit. We don't want to
@@ -3364,7 +3358,7 @@ arc_adjust_meta_or_ddt(boolean_t adjust_ddt)
 
 	total_evicted += arc_adjust_impl(arc_mru, 0, target, type);
 
-	over_limit = adjust_ddt ? arc_ddt_used - arc_ddt_limit :
+	over_limit = adjust_ddt ? arc_ddt_size - arc_ddt_limit :
 	    arc_meta_used - arc_meta_limit;
 
 	/*
@@ -3972,7 +3966,7 @@ arc_kmem_reap_now(void)
 	extern kmem_cache_t	*range_seg_cache;
 
 #ifdef _KERNEL
-	if (arc_meta_used >= arc_meta_limit || arc_ddt_used >= arc_ddt_limit) {
+	if (arc_meta_used >= arc_meta_limit || arc_ddt_size >= arc_ddt_limit) {
 		/*
 		 * We are exceeding our meta-data or DDT cache limit.
 		 * Purge some DNLC entries to release holds on meta-data/DDT.
