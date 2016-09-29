@@ -18,10 +18,11 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
- * Copyright (c) 2014 Nexenta Systems, Inc. All rights reserved
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 /*
@@ -1037,7 +1038,7 @@ i_ipadm_get_ifprop_flags(ipadm_handle_t iph, const void *arg,
 			if (!(intf_flags & IFF_NONUD))
 				val = IPADM_ONSTR;
 		} else if (strcmp(pdp->ipd_name, "standby") == 0) {
-			if (!(intf_flags & IFF_STANDBY))
+			if (intf_flags & IFF_STANDBY)
 				val = IPADM_ONSTR;
 		}
 		nbytes = snprintf(buf, *bufsize, "%s", val);
