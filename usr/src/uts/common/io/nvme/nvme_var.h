@@ -222,8 +222,8 @@ struct nvme {
 
 struct nvme_namespace {
 	nvme_t *ns_nvme;
+	uint8_t ns_eui64[8];
 	char	ns_name[17];
-	uint64_t ns_eui64;
 
 	bd_handle_t ns_bd_hdl;
 

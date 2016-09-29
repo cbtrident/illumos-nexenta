@@ -278,7 +278,7 @@ typedef struct {
 		uint8_t rc_rsvd:1;
 	} id_rescap;
 	uint8_t id_rsvd1[120 - 32];
-	uint64_t id_eui64;		/* IEEE Extended Unique Id (1.1) */
+	uint8_t id_eui64[8];		/* IEEE Extended Unique Id (1.1) */
 	nvme_idns_lbaf_t id_lbaf[16];	/* LBA Formats */
 
 	uint8_t id_rsvd2[192];
@@ -447,8 +447,8 @@ typedef union {
 /* Volatile Write Cache Feature */
 typedef union {
 	struct {
-		uint16_t wc_wce:1;	/* Volatile Write Cache Enable */
-		uint16_t wc_rsvd;
+		uint32_t wc_wce:1;	/* Volatile Write Cache Enable */
+		uint32_t wc_rsvd:31;
 	} b;
 	uint32_t r;
 } nvme_write_cache_t;

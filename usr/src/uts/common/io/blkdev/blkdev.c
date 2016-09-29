@@ -587,7 +587,8 @@ bd_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 	rv = cmlb_attach(dip, &bd_tg_ops, DTYPE_DIRECT,
 	    bd->d_removable, bd->d_hotpluggable,
-	    drive.d_eui64 != 0 ? DDI_NT_BLOCK_BLKDEV :
+	    /*LINTED: E_BAD_PTR_CAST_ALIGN*/
+	    *(uint64_t *)drive.d_eui64 != 0 ? DDI_NT_BLOCK_BLKDEV :
 	    drive.d_lun >= 0 ? DDI_NT_BLOCK_CHAN : DDI_NT_BLOCK,
 	    CMLB_FAKE_LABEL_ONE_PARTITION, bd->d_cmlbh, 0);
 	if (rv != 0) {
@@ -1846,14 +1847,22 @@ bd_attach_handle(dev_info_t *dip, bd_handle_t hdl)
 	hdl->h_parent = dip;
 	hdl->h_name = "blkdev";
 
-	if (drive.d_eui64 != 0) {
+	/*LINTED: E_BAD_PTR_CAST_ALIGN*/
+	if (*(uint64_t *)drive.d_eui64 != 0) {
 		if (drive.d_lun >= 0) {
 			(void) snprintf(hdl->h_addr, sizeof (hdl->h_addr),
-			    "w%016"PRIx64",%X",
-			    BE_64(drive.d_eui64), drive.d_lun);
+			    "w%02X%02X%02X%02X%02X%02X%02X%02X,%X",
+			    drive.d_eui64[0], drive.d_eui64[1],
+			    drive.d_eui64[2], drive.d_eui64[3],
+			    drive.d_eui64[4], drive.d_eui64[5],
+			    drive.d_eui64[6], drive.d_eui64[7], drive.d_lun);
 		} else {
 			(void) snprintf(hdl->h_addr, sizeof (hdl->h_addr),
-			    "w%016"PRIx64, BE_64(drive.d_eui64));
+			    "w%02X%02X%02X%02X%02X%02X%02X%02X",
+			    drive.d_eui64[0], drive.d_eui64[1],
+			    drive.d_eui64[2], drive.d_eui64[3],
+			    drive.d_eui64[4], drive.d_eui64[5],
+			    drive.d_eui64[6], drive.d_eui64[7]);
 		}
 	} else {
 		if (drive.d_lun >= 0) {

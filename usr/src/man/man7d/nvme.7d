@@ -48,7 +48,7 @@ to attach to devices supporting newer version of the NVMe
 specification.
 The default value is 1, limiting
 .Nm
-to work with devices up to specification version 1.0.
+to work with devices up to specification version 1.1.
 .It Va ignore-unknown-vendor-status
 This can be set to 1 to allow
 .Nm
@@ -75,6 +75,8 @@ The default setting is 1, which enables the volatile write cache.
 This is the minimum physical block size that is reported to
 .Xr blkdev 7d .
 This value must be a power of 2 greater or equal to 4096.
+If the device reports a block size larger than what is specified here
+the driver will use the reported value.
 .El
 .
 .Sh FILES

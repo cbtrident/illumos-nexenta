@@ -178,7 +178,7 @@ disk_callback_blkdev(di_minor_t minor, di_node_t node)
 
 	addr = di_bus_addr(node);
 	(void) sscanf(addr, "w%016"PRIx64",%X", &eui64, &lun);
-	(void) snprintf(disk, DISK_SUBPATH_MAX, "t%"PRIX64"d%d", eui64, lun);
+	(void) snprintf(disk, DISK_SUBPATH_MAX, "t%016"PRIX64"d%d", eui64, lun);
 	disk_common(minor, node, disk, RM_STALE);
 	return (DEVFSADM_CONTINUE);
 }

@@ -77,6 +77,11 @@
  * thin provisioning and protection information. This driver does not support
  * any of this and ignores namespaces that have these attributes.
  *
+ * As of NVMe 1.1 namespaces can have an 64bit Extended Unique Identifier
+ * (EUI64). This driver uses the EUI64 if present to generate the devid and
+ * passes it to blkdev to use it in the device node names. As this is currently
+ * untested namespaces with EUI64 are ignored by default.
+ *
  *
  * Blkdev Interface:
  *
@@ -92,8 +97,9 @@
  * Blkdev also supports querying device/media information and generating a
  * devid. The driver reports the best block size as determined by the namespace
  * format back to blkdev as physical block size to support partition and block
- * alignment. The devid is composed using the device vendor ID, model number,
- * serial number, and the namespace ID.
+ * alignment. The devid is either based on the namespace EUI64, if present, or
+ * composed using the device vendor ID, model number, serial number, and the
+ * namespace ID.
  *
  *
  * Error Handling:
@@ -201,7 +207,7 @@
 static const int nvme_version_major = 1;
 static const int nvme_version_minor = 1;
 
-/* tunable for admin command timeout in us, default is 1s */
+/* tunable for admin command timeout in seconds, default is 1s */
 static volatile int nvme_admin_cmd_timeout = 1;
 
 static int nvme_attach(dev_info_t *, ddi_attach_cmd_t);
@@ -241,7 +247,7 @@ static boolean_t nvme_set_features(nvme_t *, uint32_t, uint8_t, uint32_t,
     uint32_t *);
 static boolean_t nvme_get_features(nvme_t *, uint32_t, uint8_t, uint32_t *,
     void **, size_t *);
-static boolean_t nvme_write_cache_set(nvme_t *, boolean_t *);
+static boolean_t nvme_write_cache_set(nvme_t *, boolean_t);
 static int nvme_set_nqueues(nvme_t *, uint16_t);
 
 static void nvme_free_dma(nvme_dma_t *);
@@ -396,7 +402,7 @@ static struct dev_ops nvme_dev_ops = {
 
 static struct modldrv nvme_modldrv = {
 	.drv_modops	= &mod_driverops,
-	.drv_linkinfo	= "NVMe v1.0e",
+	.drv_linkinfo	= "NVMe v1.1b",
 	.drv_dev_ops	= &nvme_dev_ops
 };
 
@@ -1021,8 +1027,6 @@ nvme_check_specific_cmd_status(nvme_cmd_t *cmd)
 		/* Invalid Log Page */
 		ASSERT(cmd->nc_sqe.sqe_opc == NVME_OPC_GET_LOG_PAGE);
 		atomic_inc_32(&cmd->nc_nvme->n_inv_log_page);
-		if (cmd->nc_xfer != NULL)
-			bd_error(cmd->nc_xfer, BD_ERR_ILLRQ);
 		return (EINVAL);
 
 	case NVME_CQE_SC_SPC_INV_FORMAT:
@@ -1672,8 +1676,6 @@ nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
 	boolean_t ret = B_FALSE;
 
 	ASSERT(res != NULL);
-	ASSERT(buf != NULL);
-	ASSERT(bufsize != NULL);
 
 	cmd->nc_sqid = 0;
 	cmd->nc_callback = nvme_wakeup_cmd;
@@ -1712,6 +1714,7 @@ nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
 		 */
 		cmd->nc_dontpanic = B_TRUE;
 		cmd->nc_sqe.sqe_nsid = nsid;
+		ASSERT(bufsize != NULL);
 		*bufsize = NVME_LBA_RANGE_BUFSIZE;
 
 		break;
@@ -1720,6 +1723,7 @@ nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
 		if (!nvme->n_auto_pst_supported)
 			goto fail;
 
+		ASSERT(bufsize != NULL);
 		*bufsize = NVME_AUTO_PST_BUFSIZE;
 		break;
 
@@ -1727,7 +1731,7 @@ nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
 		goto fail;
 	}
 
-	if (*bufsize != 0) {
+	if (bufsize != NULL && *bufsize != 0) {
 		if (nvme_zalloc_dma(nvme, *bufsize, DDI_DMA_READ,
 		    &nvme->n_prp_dma_attr, &cmd->nc_dma) != DDI_SUCCESS) {
 			dev_err(nvme->n_dip, CE_WARN,
@@ -1771,7 +1775,8 @@ nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
 		goto fail;
 	}
 
-	if (*bufsize != 0) {
+	if (bufsize != NULL && *bufsize != 0) {
+		ASSERT(buf != NULL);
 		*buf = kmem_alloc(*bufsize, KM_SLEEP);
 		bcopy(cmd->nc_dma->nd_memp, *buf, *bufsize);
 	}
@@ -1784,22 +1789,16 @@ fail:
 	return (ret);
 }
 
-
 static boolean_t
-nvme_write_cache_set(nvme_t *nvme, boolean_t *enable)
+nvme_write_cache_set(nvme_t *nvme, boolean_t enable)
 {
 	nvme_write_cache_t nwc = { 0 };
 
-	if (*enable)
+	if (enable)
 		nwc.b.wc_wce = 1;
 
 	if (!nvme_set_features(nvme, 0, NVME_FEAT_WRITE_CACHE, nwc.r, &nwc.r))
 		return (B_FALSE);
-
-	if (nwc.b.wc_wce == 1)
-		*enable = B_TRUE;
-	else
-		*enable = B_FALSE;
 
 	return (B_TRUE);
 }
@@ -2085,8 +2084,8 @@ nvme_init(nvme_t *nvme)
 	cc.b.cc_mps = nvme->n_pageshift - 12;
 	cc.b.cc_shn = 0;	/* no shutdown in progress */
 	cc.b.cc_en = 1;		/* enable controller */
-	cc.b.cc_iosqes = 6;	/* default minimum of 2^6 = 64 bytes */
-	cc.b.cc_iocqes = 4;	/* default minimum of 2^4 = 16 bytes */
+	cc.b.cc_iosqes = 6;	/* submission queue entry is 2^6 bytes long */
+	cc.b.cc_iocqes = 4;	/* completion queue entry is 2^4 bytes long */
 
 	nvme_put32(nvme, NVME_REG_CC, cc.r);
 
@@ -2236,9 +2235,13 @@ nvme_init(nvme_t *nvme)
 	nvme->n_write_cache_present =
 	    nvme->n_idctl->id_vwc.vwc_present == 0 ? B_FALSE : B_TRUE;
 
+	(void) ddi_prop_update_int(DDI_DEV_T_NONE, nvme->n_dip,
+	    "volatile-write-cache-present",
+	    nvme->n_write_cache_present ? 1 : 0);
+
 	if (!nvme->n_write_cache_present) {
 		nvme->n_write_cache_enabled = B_FALSE;
-	} else if (!nvme_write_cache_set(nvme, &nvme->n_write_cache_enabled)) {
+	} else if (!nvme_write_cache_set(nvme, nvme->n_write_cache_enabled)) {
 		dev_err(nvme->n_dip, CE_WARN,
 		    "!failed to %sable volatile write cache",
 		    nvme->n_write_cache_enabled ? "en" : "dis");
@@ -2247,6 +2250,10 @@ nvme_init(nvme_t *nvme)
 		 */
 		nvme->n_write_cache_enabled = B_TRUE;
 	}
+
+	(void) ddi_prop_update_int(DDI_DEV_T_NONE, nvme->n_dip,
+	    "volatile-write-cache-enable",
+	    nvme->n_write_cache_enabled ? 1 : 0);
 
 	/*
 	 * Assume LBA Range Type feature is supported. If it isn't this
@@ -2294,12 +2301,18 @@ nvme_init(nvme_t *nvme)
 		 * names.
 		 */
 		if (NVME_VERSION_ATLEAST(&nvme->n_version, 1, 1))
-			nvme->n_ns[i].ns_eui64 = idns->id_eui64;
+			bcopy(idns->id_eui64, nvme->n_ns[i].ns_eui64,
+			    sizeof (nvme->n_ns[i].ns_eui64));
 
-		if (nvme->n_ns[i].ns_eui64 != 0) {
+		/*LINTED: E_BAD_PTR_CAST_ALIGN*/
+		if (*(uint64_t *)nvme->n_ns[i].ns_eui64 != 0) {
+			uint8_t *eui64 = nvme->n_ns[i].ns_eui64;
+
 			(void) snprintf(nvme->n_ns[i].ns_name,
-			    sizeof (nvme->n_ns[i].ns_name), "%016"PRIx64,
-			    BE_64(nvme->n_ns[i].ns_eui64));
+			    sizeof (nvme->n_ns[i].ns_name),
+			    "%02x%02x%02x%02x%02x%02x%02x%02x",
+			    eui64[0], eui64[1], eui64[2], eui64[3],
+			    eui64[4], eui64[5], eui64[6], eui64[7]);
 		} else {
 			(void) snprintf(nvme->n_ns[i].ns_name,
 			    sizeof (nvme->n_ns[i].ns_name), "%d",
@@ -3050,7 +3063,7 @@ nvme_bd_driveinfo(void *arg, bd_drive_t *drive)
 	drive->d_removable = B_FALSE;
 	drive->d_hotpluggable = B_FALSE;
 
-	drive->d_eui64 = ns->ns_eui64;
+	bcopy(ns->ns_eui64, drive->d_eui64, sizeof (drive->d_eui64));
 	drive->d_target = ns->ns_id;
 	drive->d_lun = 0;
 
@@ -3154,9 +3167,10 @@ nvme_bd_devid(void *arg, dev_info_t *devinfo, ddi_devid_t *devid)
 {
 	nvme_namespace_t *ns = arg;
 
-	if (ns->ns_eui64 != 0) {
+	/*LINTED: E_BAD_PTR_CAST_ALIGN*/
+	if (*(uint64_t *)ns->ns_eui64 != 0) {
 		return (ddi_devid_init(devinfo, DEVID_SCSI3_WWN,
-		    sizeof (ns->ns_eui64), &ns->ns_eui64, devid));
+		    sizeof (ns->ns_eui64), ns->ns_eui64, devid));
 	} else {
 		return (ddi_devid_init(devinfo, DEVID_ENCAP,
 		    strlen(ns->ns_devid), ns->ns_devid, devid));

@@ -119,7 +119,7 @@ struct bd_drive {
 	char			*d_serial;
 	size_t			d_revision_len;
 	char			*d_revision;
-	uint64_t		d_eui64;
+	uint8_t			d_eui64[8];
 };
 
 struct bd_media {
