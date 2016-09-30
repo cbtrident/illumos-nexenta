@@ -20,7 +20,6 @@
  */
 /*
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Toomas Soome <tsoome@me.com>
  */
 
 /*
@@ -710,16 +709,6 @@ copy_solaris_part(struct ipart *ipart)
 	}
 
 	if ((fd = open(buf, O_RDONLY)) < 0) {
-		/*
-		 * Labeled device support in lofi provides p0 partition on
-		 * both x86 and sparc. However, sparc does not implement fdisk
-		 * partitioning. This workaround will allow format
-		 * to ignore fdisk errors in case of lofi devices.
-		 */
-		if (strcmp(cur_disk->disk_dkinfo.dki_cname, "lofi") == 0) {
-			solaris_offset = 0;
-			return (0);
-		}
 		err_print("Error: can't open disk '%s'.\n", buf);
 		return (-1);
 	}
@@ -976,15 +965,6 @@ good_fdisk()
 	if (lel(cur_disk->fdisk_part.numsect) > 0) {
 		return (1);
 	} else {
-		/*
-		 * Labeled device support in lofi provides p0 partition on
-		 * both x86 and sparc. However, sparc does not implement fdisk
-		 * partitioning. This workaround will allow format
-		 * to ignore fdisk errors in case of lofi devices.
-		 */
-		if (strcmp(cur_disk->disk_dkinfo.dki_cname, "lofi") == 0) {
-			return (1);
-		}
 		err_print("WARNING - ");
 		err_print("This disk may be in use by an application "
 		    "that has\n\t  modified the fdisk table. Ensure "

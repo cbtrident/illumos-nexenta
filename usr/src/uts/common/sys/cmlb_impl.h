@@ -20,7 +20,6 @@
  */
 
 /*
- * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
@@ -43,11 +42,7 @@ extern "C" {
 #define	FDISK_PARTS		(FD_NUMPART + MAX_EXT_PARTS)
 
 #if defined(_SUNOS_VTOC_8)
-/*
- * As lofi needs to support p0 on sparc in case of labeled virtual disks,
- * define NDSMAP to support one extra entrie.
- */
-#define	NSDMAP			(NDKMAP + 1)
+#define	NSDMAP			NDKMAP
 #elif defined(_SUNOS_VTOC_16)
 #define	NSDMAP			(NDKMAP + FDISK_PARTS + 1)
 #else
@@ -56,10 +51,11 @@ extern "C" {
 
 #define	MAXPART			(NSDMAP + 1)
 #define	WD_NODE			7
-#define	P0_RAW_DISK		(NDKMAP)
+
 
 #if defined(__i386) || defined(__amd64)
 
+#define	P0_RAW_DISK		(NDKMAP)
 #define	FDISK_P1		(NDKMAP+1)
 #define	FDISK_P2		(NDKMAP+2)
 #define	FDISK_P3		(NDKMAP+3)
@@ -86,10 +82,21 @@ extern "C" {
 #define	ISCD(cl)		(cl->cl_device_type == DTYPE_RODIRECT)
 #define	ISHOTPLUGGABLE(cl)	(cl->cl_is_hotpluggable)
 
-#define	CMLBUNIT_SHIFT		(CMLBUNIT_DFT_SHIFT)
-#define	CMLBPART_MASK		((1 << CMLBUNIT_SHIFT) - 1)
+#if defined(_SUNOS_VTOC_8)
 
-#define	CMLBUNIT(dev, shift)	(getminor((dev)) >> (shift))
+#define	CMLBUNIT_SHIFT		3
+#define	CMLBPART_MASK		7
+
+#elif defined(_SUNOS_VTOC_16)
+
+#define	CMLBUNIT_SHIFT		6
+#define	CMLBPART_MASK		63
+
+#else
+#error "No VTOC format defined."
+#endif
+
+#define	CMLBUNIT(dev)		(getminor((dev)) >> CMLBUNIT_SHIFT)
 #define	CMLBPART(dev)		(getminor((dev)) &  CMLBPART_MASK)
 
 /*

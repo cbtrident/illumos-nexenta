@@ -19,10 +19,11 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+
+#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #include <regex.h>
 #include <devfsadm.h>
@@ -72,14 +73,16 @@ lofi_rm_all(char *link)
  * For the master device:
  *	/dev/lofictl -> /devices/pseudo/lofi@0:ctl
  * For each other device
- *	/dev/lofi/1 -> /devices/pseudo/lofi@1:disk
- *	/dev/rlofi/1 -> /devices/pseudo/lofi@1:disk,raw
+ *	/dev/lofi/1 -> /devices/pseudo/lofi@0:1
+ *	/dev/rlofi/1 -> /devices/pseudo/lofi@0:1,raw
  */
 static int
 lofi(di_minor_t minor, di_node_t node)
 {
-	int instance;
+	dev_t	dev;
 	char mn[MAXNAMELEN + 1];
+	char blkname[MAXNAMELEN + 1];
+	char rawname[MAXNAMELEN + 1];
 	char path[PATH_MAX + 1];
 
 	(void) strcpy(mn, di_minor_name(minor));
@@ -87,14 +90,18 @@ lofi(di_minor_t minor, di_node_t node)
 	if (strcmp(mn, "ctl") == 0) {
 		(void) devfsadm_mklink(LOFI_CTL_NAME, node, minor, 0);
 	} else {
-		instance = di_instance(node);
+		dev = di_minor_devt(minor);
+		(void) snprintf(blkname, sizeof (blkname), "%d",
+		    (int)minor(dev));
+		(void) snprintf(rawname, sizeof (rawname), "%d,raw",
+		    (int)minor(dev));
 
-		if (strcmp(mn, LOFI_BLOCK_NODE) == 0) {
-			(void) snprintf(path, sizeof (path), "%s/%d",
-			    LOFI_BLOCK_NAME, instance);
-		} else if (strcmp(mn, LOFI_CHAR_NODE) == 0) {
-			(void) snprintf(path, sizeof (path), "%s/%d",
-			    LOFI_CHAR_NAME, instance);
+		if (strcmp(mn, blkname) == 0) {
+			(void) snprintf(path, sizeof (path), "%s/%s",
+			    LOFI_BLOCK_NAME, blkname);
+		} else if (strcmp(mn, rawname) == 0) {
+			(void) snprintf(path, sizeof (path), "%s/%s",
+			    LOFI_CHAR_NAME, blkname);
 		} else {
 			return (DEVFSADM_CONTINUE);
 		}
