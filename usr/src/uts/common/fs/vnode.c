@@ -1692,6 +1692,16 @@ top:
 		goto out;
 	}
 
+	/*
+	 * Make sure "from" vp is not a mount point.
+	 * Note, lookup did traverse() already, so
+	 * we'll be looking at the mounted FS.
+	 */
+	if ((fvp->v_flag & VROOT) != 0) {
+		error = EBUSY;
+		goto out;
+	}
+
 	if (auditing && tdvp != NULL)
 		audit_setfsat_path(3);
 	if (error = lookuppnat(&tpn, NULL, NO_FOLLOW, &tovp, &targvp, tdvp)) {
