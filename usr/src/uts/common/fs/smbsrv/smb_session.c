@@ -934,6 +934,7 @@ session_stats_init(smb_server_t *sv, smb_session_t *ss)
 {
 	static const char	*kr_names[] = SMBSRV_CLSH__NAMES;
 	char			ks_name[KSTAT_STRLEN];
+	char			*ipaddr_str = ss->ip_addr_str;
 	smbsrv_clsh_kstats_t	*ksr;
 	int			idx;
 
@@ -942,11 +943,18 @@ session_stats_init(smb_server_t *sv, smb_session_t *ss)
 		return;
 
 	/*
+	 * If ipv6_enable is set to true, IPv4 addresses will be prefixed
+	 * with ::ffff: (IPv4-mapped IPv6 address), strip it.
+	 */
+	if (strncasecmp(ipaddr_str, "::ffff:", 7) == 0)
+		ipaddr_str += 7;
+
+	/*
 	 * Create raw kstats for sessions with a name composed as:
 	 * cl/$IPADDR  and instance ss->s_kid
 	 * These will look like: smbsrv:0:cl/10.10.0.5
 	 */
-	(void) snprintf(ks_name, sizeof (ks_name), "cl/%s", ss->ip_addr_str);
+	(void) snprintf(ks_name, sizeof (ks_name), "cl/%s", ipaddr_str);
 
 	ss->s_ksp = kstat_create_zone(SMBSRV_KSTAT_MODULE, ss->s_kid,
 	    ks_name, SMBSRV_KSTAT_CLASS, KSTAT_TYPE_RAW,
