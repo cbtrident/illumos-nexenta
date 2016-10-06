@@ -1553,10 +1553,9 @@ zfs_event_post(const char *subclass, const char *operation, nvlist_t *ev_data)
 
 	fnvlist_add_string(ev_data, "operation", operation);
 
-	if (sysevent_evc_publish(zfs_channel, subclass,
-	    operation, "com.nexenta", "zfs-kernel", ev_data,
-	    EVCH_NOSLEEP) != 0)
-		cmn_err(CE_NOTE, "Failed to publish ZFS status event");
+	(void) sysevent_evc_publish(zfs_channel, subclass, operation,
+	    "com.nexenta", "zfs-kernel", ev_data, EVCH_NOSLEEP);
+
 out:
 	fnvlist_free(ev_data);
 }
@@ -6311,7 +6310,7 @@ zfs_ioc_send_space(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 	} else {
 		// If estimating the size of a full send, use dmu_send_estimate
 		error = dmu_send_estimate(tosnap, NULL, &space);
-	} 
+	}
 
 	fnvlist_add_uint64(outnvl, "space", space);
 
