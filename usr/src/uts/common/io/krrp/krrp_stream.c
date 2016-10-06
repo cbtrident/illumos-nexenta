@@ -915,15 +915,19 @@ krrp_stream_read(void *arg)
 		pdu = NULL;
 		stream->cur_pdu = NULL;
 		krrp_stream_lock(stream);
-	}
+	} /* while() loop */
 
-	stream->work_thread = NULL;
+	krrp_stream_unlock(stream);
 
 	if (pdu != NULL)
 		krrp_pdu_rele((krrp_pdu_t *)pdu);
 
 	if (stream_task != NULL)
 		krrp_stream_task_done(stream, stream_task, B_TRUE);
+
+	krrp_stream_lock(stream);
+
+	stream->work_thread = NULL;
 
 	krrp_stream_cv_broadcast(stream);
 	krrp_stream_unlock(stream);
@@ -1036,9 +1040,9 @@ krrp_stream_write(void *arg)
 
 		pdu = NULL;
 		krrp_stream_lock(stream);
-	}
+	} /* while() loop */
 
-	stream->work_thread = NULL;
+	krrp_stream_unlock(stream);
 
 	if (pdu != NULL)
 		krrp_pdu_rele((krrp_pdu_t *)pdu);
@@ -1053,6 +1057,10 @@ krrp_stream_write(void *arg)
 
 	if (stream_task != NULL)
 		krrp_stream_task_done(stream, stream_task, B_TRUE);
+
+	krrp_stream_lock(stream);
+
+	stream->work_thread = NULL;
 
 	krrp_stream_cv_broadcast(stream);
 	krrp_stream_unlock(stream);
