@@ -121,6 +121,7 @@ typedef enum {
 #define	LIBKRRP_EMSG_CHKSUMMISMATCH "Invalid stream (checksum mismatch)"
 #define	LIBKRRP_EMSG_OLDPOOL "Pool must be upgraded to receive this stream"
 #define	LIBKRRP_EMSG_DESTQUOTA "Destination space quota exceeded"
+#define	LIBKRRP_EMSG_DESTNOSPACE "Destination is out of space"
 #define	LIBKRRP_EMSG_READFAIL "Session read stream error (%s)"
 #define	LIBKRRP_EMSG_NOTEARLIERSNAP \
 	    "Not an earlier snapshot from the same fs"
