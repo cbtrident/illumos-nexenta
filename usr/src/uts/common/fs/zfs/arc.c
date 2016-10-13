@@ -5980,6 +5980,8 @@ arc_fini(void)
 		arc_ksp = NULL;
 	}
 
+	taskq_destroy(arc_flush_taskq);
+
 	mutex_destroy(&arc_reclaim_lock);
 	cv_destroy(&arc_reclaim_thread_cv);
 	cv_destroy(&arc_reclaim_waiters_cv);
@@ -6002,7 +6004,6 @@ arc_fini(void)
 	}
 	multilist_destroy(&arc_l2c_only->arcs_list[ARC_BUFC_METADATA]);
 	multilist_destroy(&arc_l2c_only->arcs_list[ARC_BUFC_DATA]);
-	taskq_destroy(arc_flush_taskq);
 
 	buf_fini();
 
