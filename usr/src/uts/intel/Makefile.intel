@@ -23,7 +23,7 @@
 # Copyright (c) 2013 Andrew Stormont.  All rights reserved.
 # Copyright 2016 Joyent, Inc.
 # Copyright 2016 Garrett D'Amore <garrett@damore.org>
-# Copyright 2016 Nexenta Systems, Inc.
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -658,6 +658,10 @@ MISC_KMODS	+= uathfw
 MISC_KMODS	+= klmmod klmops
 
 MISC_KMODS	+= krrp
+#
+# NFSv4 HA misc module
+#
+MISC_KMODS += cl_bootstrap
 
 #
 #	Software Cryptographic Providers (/kernel/crypto):

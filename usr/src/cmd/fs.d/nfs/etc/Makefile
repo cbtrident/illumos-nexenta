@@ -22,32 +22,40 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+#
 
 DEFAULTFILES = nfs.dfl
 
 include ../../../Makefile.cmd
 
 ETCNFS= $(ROOTETC)/nfs
+ETCCLUST= $(ROOTETC)/cluster
 VARNFS= $(ROOT)/var/nfs
 TXTS= nfssec.conf
 NFSTXTS= nfslog.conf
+NFSHA= nodeid
 V4SSDIR= $(VARNFS)/v4_state $(VARNFS)/v4_oldstate
 
 IETCFILES=			$(TXTS:%=$(ROOTETC)/%)
 INFSETCFILES=			$(NFSTXTS:%=$(ROOTETC)/nfs/%)
+NFSHAFILE=			$(NFSHA:%=$(ETCCLUST)/%)
 
 FILEMODE= 0644
 
-all: $(TXTS) $(NFSTXTS)
+all: $(TXTS) $(NFSTXTS) $(NFSHA)
 
 install: all $(IETCFILES) $(ETCNFS) $(INFSETCFILES) $(VARNFS) $(V4SSDIR) \
-	 $(IDEFFILES) $(ROOTETCDEFAULTFILES)
+	 $(IDEFFILES) $(ROOTETCDEFAULTFILES) $(ETCCLUST) $(NFSHAFILE)
 
 $(ROOTETC)/%: %
 	$(INS.file)
 
 $(ROOTETC)/nfs/%: %
 	$(INS.file)
+
+$(ETCCLUST):
+	$(INS.dir)
 
 $(ETCNFS):
 	$(INS.dir)
@@ -57,6 +65,9 @@ $(VARNFS):
 
 $(V4SSDIR):
 	$(INS.dir)
+
+$(ROOTETC)/cluster/%: %
+	$(INS.file)
 
 .KEEP_STATE:
 

@@ -1174,6 +1174,10 @@ NFSSRV_OBJS +=	nfs_server.o	nfs_srv.o	nfs3_srv.o \
 		nfs4_srv.o	nfs4_state.o	nfs4_srv_attr.o \
 		nfs4_srv_ns.o	nfs4_db.o	nfs4_srv_deleg.o \
 		nfs4_deleg_ops.o nfs4_srv_readdir.o nfs4_dispatch.o
+#
+# NFSv4 HA module
+#
+NFS_HA_OBJS += cl_bootstrap.o
 
 SMBSRV_SHARED_OBJS += \
 		smb_door_legacy.o \
