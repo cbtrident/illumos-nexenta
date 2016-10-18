@@ -4837,7 +4837,14 @@ stmf_task_free(scsi_task_t *task)
 		}
 	}
 
+	/*
+	 * To prevent a deadlock condition must release the itask_mutex,
+	 * grab a reader lock on iss_lockp and then reacquire the itask_mutex.
+	 */
+	mutex_exit(&itask->itask_mutex);
 	rw_enter(iss->iss_lockp, RW_READER);
+	mutex_enter(&itask->itask_mutex);
+
 	lport->lport_task_free(task);
 	if (itask->itask_worker) {
 		atomic_dec_32(&stmf_cur_ntasks);
