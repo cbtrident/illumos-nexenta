@@ -3566,7 +3566,8 @@ vdev_type_is_ddt(vdev_t *vd)
 {
 	uint64_t pool;
 
-	if (vd->vdev_l2ad_ddt == 1 && DDT_LIMIT_TO_L2ARC) {
+	if (vd->vdev_l2ad_ddt == 1 &&
+	    zfs_ddt_limit_type == DDT_LIMIT_TO_L2ARC) {
 		ASSERT(spa_l2cache_exists(vd->vdev_guid, &pool));
 		ASSERT(vd->vdev_isl2cache);
 		return (B_TRUE);
