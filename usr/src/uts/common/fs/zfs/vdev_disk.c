@@ -837,16 +837,6 @@ vdev_disk_io_start(zio_t *zio)
 				return;
 			}
 
-			if (error == ENOTSUP || error == ENOTTY) {
-				/*
-				 * If we get ENOTSUP or ENOTTY, we know that
-				 * no future attempts will ever succeed.
-				 * In this case we set a persistent bit so
-				 * that we don't bother with the ioctl in the
-				 * future.
-				 */
-				vd->vdev_nowritecache = B_TRUE;
-			}
 			zio->io_error = error;
 
 			break;
