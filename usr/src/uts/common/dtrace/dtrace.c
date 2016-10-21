@@ -23,6 +23,7 @@
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2016, Joyent, Inc. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -15440,12 +15441,14 @@ dtrace_helpers_create(proc_t *p)
 }
 
 static void
-dtrace_helpers_destroy(void)
+dtrace_helpers_destroy(proc_t *p)
 {
+	int i;
 	dtrace_helpers_t *help;
 	dtrace_vstate_t *vstate;
-	proc_t *p = curproc;
-	int i;
+
+	if (p == NULL)
+		p = curproc;
 
 	mutex_enter(&dtrace_lock);
 

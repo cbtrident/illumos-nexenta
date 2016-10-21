@@ -27,6 +27,7 @@
 /*
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SYS_DTRACE_H
@@ -2286,7 +2287,7 @@ extern void dtrace_membar_consumer(void);
 extern void (*dtrace_cpu_init)(processorid_t);
 extern void (*dtrace_modload)(struct modctl *);
 extern void (*dtrace_modunload)(struct modctl *);
-extern void (*dtrace_helpers_cleanup)();
+extern void (*dtrace_helpers_cleanup)(proc_t *);
 extern void (*dtrace_helpers_fork)(proc_t *parent, proc_t *child);
 extern void (*dtrace_cpustart_init)();
 extern void (*dtrace_cpustart_fini)();
