@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/ddi.h>
@@ -57,6 +57,32 @@ krrp_error_to_nvl(krrp_error_t *error, nvlist_t **result_nvl)
 	    nvl, (void *) &error->flags), ==, 0);
 
 	*result_nvl = nvl;
+}
+
+int
+krrp_error_from_nvl(krrp_error_t *res_error, nvlist_t *error_nvl)
+{
+	int rc;
+	krrp_error_t error;
+
+	rc = krrp_param_get(KRRP_PARAM_ERROR_CODE,
+	    error_nvl, (void *) &error.krrp_errno);
+	if (rc != 0)
+		return (rc);
+
+	rc = krrp_param_get(KRRP_PARAM_ERROR_EXCODE,
+	    error_nvl, (void *) &error.unix_errno);
+	if (rc != 0)
+		return (rc);
+
+	rc = krrp_param_get(KRRP_PARAM_ERROR_FLAGS,
+	    error_nvl, (void *) &error.flags);
+	if (rc != 0)
+		return (rc);
+
+	bcopy(&error, res_error, sizeof (krrp_error_t));
+
+	return (0);
 }
 
 #endif /* _KERNEL */

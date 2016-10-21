@@ -344,3 +344,52 @@ krrp_pdu_engine_notify_cb(void *void_pdu_engine)
 	cv_broadcast(&engine->cv);
 	mutex_exit(&engine->mtx);
 }
+
+int
+krrp_pdu_get_payload(krrp_pdu_ctrl_t *pdu, void **res_data, size_t *res_data_sz)
+{
+	size_t payload_sz;
+	void *data;
+	int rc;
+
+	ASSERT(pdu != NULL && pdu->hdr != NULL);
+	ASSERT(res_data != NULL && res_data_sz != NULL);
+
+	payload_sz = pdu->hdr->payload_sz;
+	if (payload_sz == 0) {
+		*res_data = NULL;
+		*res_data_sz = 0;
+		return (0);
+	}
+
+	data = kmem_alloc(payload_sz, KM_SLEEP);
+	rc = krrp_dblk_get_data(pdu->dblk, data, payload_sz);
+	if (rc != 0) {
+		kmem_free(data, payload_sz);
+		*res_data = NULL;
+		*res_data_sz = 0;
+		return (rc);
+	}
+
+	*res_data = data;
+	*res_data_sz = payload_sz;
+	return (0);
+}
+
+int
+krrp_pdu_get_nvl_from_payload(krrp_pdu_ctrl_t *pdu, nvlist_t **res_nvl)
+{
+	void *data = NULL;
+	size_t data_sz = 0;
+	int rc;
+
+	rc = krrp_pdu_get_payload(pdu, &data, &data_sz);
+	if (rc != 0)
+		return (rc);
+
+	rc = nvlist_unpack(data, data_sz, res_nvl, KM_SLEEP);
+
+	kmem_free(data, data_sz);
+
+	return (rc);
+}

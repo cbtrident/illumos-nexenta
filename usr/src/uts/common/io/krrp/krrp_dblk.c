@@ -160,6 +160,27 @@ krrp_dblk_rele(krrp_dblk_t *dblk)
 	}
 }
 
+int
+krrp_dblk_get_data(krrp_dblk_t *dblk, void *buf, size_t buf_sz)
+{
+	size_t buf_remain_sz = buf_sz;
+	size_t offset = 0;
+
+	while (dblk != NULL) {
+		size_t copy_sz = buf_remain_sz > dblk->cur_data_sz ?
+		    dblk->cur_data_sz : buf_remain_sz;
+		bcopy(dblk->data, (caddr_t)buf + offset, copy_sz);
+		buf_remain_sz -= copy_sz;
+		offset += copy_sz;
+		if (buf_remain_sz == 0 && dblk->next != NULL)
+			return (EINVAL);
+
+		dblk = dblk->next;
+	}
+
+	return (0);
+}
+
 /*
  * Here we use KM_NOSLEEP to be sure,
  * that the system is not under mem-pressure

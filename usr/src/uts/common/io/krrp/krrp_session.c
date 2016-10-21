@@ -769,11 +769,35 @@ krrp_sess_initiator_attach_conn(krrp_sess_t *sess, krrp_conn_t *conn,
 		goto err;
 
 	if (krrp_pdu_opcode(pdu) != KRRP_OPCODE_ATTACH_SESS) {
-		if (krrp_pdu_opcode(pdu) == KRRP_OPCODE_ERROR)
+		if (krrp_pdu_opcode(pdu) == KRRP_OPCODE_ERROR) {
+			nvlist_t *error_nvl = NULL;
+
 			cmn_err(CE_WARN, "Remote side returned an error");
 
-		krrp_error_set(error, KRRP_ERRNO_BADRESP, 0);
-		rc = -1;
+			rc = krrp_pdu_get_nvl_from_payload(pdu, &error_nvl);
+			if (rc == 0) {
+				rc = krrp_error_from_nvl(error, error_nvl);
+				if (rc == 0) {
+					if (error->krrp_errno == 0) {
+						/*
+						 * Something wrong, so we will return
+						 * KRRP_ERRNO_BADRESP
+						 */
+						rc = -1;
+					} else {
+						krrp_error_set_flag(error,
+						    KRRP_ERRF_REMOTE);
+					}
+				}
+
+				fnvlist_free(error_nvl);
+			}
+		}
+
+		if (rc != 0)
+			krrp_error_set(error, KRRP_ERRNO_BADRESP, 0);
+		else
+			rc = -1;
 	}
 
 	krrp_pdu_rele((krrp_pdu_t *)pdu);

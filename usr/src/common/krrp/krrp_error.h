@@ -106,9 +106,11 @@ typedef struct krrp_error_s {
 
 #ifdef _KERNEL
 
+void krrp_error_set_flag(krrp_error_t *, krrp_error_flag_t);
 void krrp_error_set(krrp_error_t *, krrp_errno_t, int);
 
 void krrp_error_to_nvl(krrp_error_t *, nvlist_t **);
+int krrp_error_from_nvl(krrp_error_t *, nvlist_t *);
 
 #endif /* _KERNEL */
 

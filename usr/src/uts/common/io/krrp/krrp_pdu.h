@@ -162,6 +162,10 @@ size_t krrp_pdu_engine_get_free_mem(krrp_pdu_engine_t *pdu_engine);
 void krrp_pdu_alloc(krrp_pdu_engine_t *, krrp_pdu_t **, boolean_t);
 void krrp_pdu_rele(krrp_pdu_t *);
 
+int krrp_pdu_get_payload(krrp_pdu_ctrl_t *pdu, void **res_data,
+    size_t *res_data_sz);
+int krrp_pdu_get_nvl_from_payload(krrp_pdu_ctrl_t *pdu, nvlist_t **res_nvl);
+
 #ifdef __cplusplus
 }
 #endif
