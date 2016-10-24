@@ -82,8 +82,6 @@ typedef struct libkrrp_event_s libkrrp_event_t;
 	X(READFAIL)              \
 	X(WRITEFAIL)             \
 	X(FLCTRLVIOL)            \
-	X(ZFSWBCBADMODE)         \
-	X(ZFSWBCBADUSE)          \
 	X(PINGTIMEOUT)           \
 	X(SETSOCKOPTFAIL)        \
 	X(PROTO)                 \

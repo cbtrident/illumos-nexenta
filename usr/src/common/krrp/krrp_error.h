@@ -66,8 +66,6 @@ typedef enum {
 	X(WRITEFAIL)          \
 	X(SNAPFAIL)           \
 	X(FLCTRLVIOL)         \
-	X(ZFSWBCBADMODE)      \
-	X(ZFSWBCBADUSE)       \
 	X(PINGTIMEOUT)        \
 	X(PROTO)              \
 	X(AUTH)               \

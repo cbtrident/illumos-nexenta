@@ -489,8 +489,6 @@ krrp_stream_validate_run(krrp_stream_t *stream, krrp_error_t *error)
 		rc = wbc_check_dataset(stream->dataset);
 		if (rc == 0 || rc == ENOTACTIVE)
 			rc = 0;
-		else if (rc == ENOTSUP)
-			krrp_error_set(error, KRRP_ERRNO_ZFSWBCBADUSE, 0);
 		else
 			krrp_error_set(error, KRRP_ERRNO_STREAM, rc);
 	}

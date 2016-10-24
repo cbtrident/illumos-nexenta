@@ -83,6 +83,8 @@ typedef enum {
 #define	LIBKRRP_EMSG_SESS_CONN_NOENT "Session connection does not exist"
 #define	LIBKRRP_EMSG_SESS_PDUENGINE_NOENT "Session PDU engine does not exist"
 #define	LIBKRRP_EMSG_STREAM_NOENT "Stream does not exist"
+#define	LIBKRRP_EMSG_STREAM_EOPNOTSUPP "The source dataset for continuous " \
+	    "replication must not have WBC enabled parents"
 #define	LIBKRRP_EMSG_SNAP_NAMES_EQUAL \
 	    "Source and common snapshots have the same name"
 #define	LIBKRRP_EMSG_SESS_RUN_ONCE_INCOMPAT \
@@ -90,9 +92,6 @@ typedef enum {
 #define	LIBKRRP_EMSG_SRCDS_NOTEXIST "Source dataset does not exist"
 #define	LIBKRRP_EMSG_DSTDS_NOTEXIST "Destination dataset does not exist"
 #define	LIBKRRP_EMSG_SRCSNAP_NOTEXIST "Source snapshot does not exist"
-#define	LIBKRRP_EMSG_ZFSWBCBADMODE "Incompatible WBC mode"
-#define	LIBKRRP_EMSG_ZFSWBCBADUSE \
-	    "WBC is enabled, but source or destination is not a pool"
 #define	LIBKRRP_EMSG_CMNSNAP_NOTEXIST "Common snapshot does not exist"
 #define	LIBKRRP_EMSG_SESS_THROTTLE_RECV \
 	    "Throttle limit can be set only for sender session"
