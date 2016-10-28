@@ -36,6 +36,7 @@ static const fmd_prop_t fmd_props [] = {
 	{ "io_N", FMD_TYPE_INT32, "10" },
 	{ "io_T", FMD_TYPE_TIME, "10min"},
 	{ "ignore-illegal-request", FMD_TYPE_BOOL, "true"},
+	{ "ignore-locked-device", FMD_TYPE_BOOL, "true"},
 	{ NULL, 0, NULL }
 };
 
@@ -122,6 +123,12 @@ disk_sense_recv(fmd_hdl_t *hdl, fmd_event_t *event, nvlist_t *nvl,
 		return;
 	}
 
+	if (key == 0x7 && asc == 0x20 && ascq == 0x2 &&
+	    (fmd_prop_get_int32(hdl, "ignore-locked-device") == FMD_B_TRUE)) {
+		fmd_hdl_debug(hdl, "Locked device, ignoring");
+		return;
+	}
+
 	fmd_hdl_debug(hdl, "Recording event in SERD %s: key: %x, asc: %x "
             "ascq: %x", devid, key, asc, ascq);
 
@@ -149,7 +156,7 @@ static const fmd_hdl_ops_t fmd_ops = {
 };
 
 static const fmd_hdl_info_t fmd_info = {
-	"disk-sense-de", "0.3", &fmd_ops, fmd_props
+	"disk-sense-de", "0.4", &fmd_ops, fmd_props
 };
 
 void
