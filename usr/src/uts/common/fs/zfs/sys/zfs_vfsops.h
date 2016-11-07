@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_SYS_FS_ZFS_VFSOPS_H
@@ -40,6 +41,20 @@ extern "C" {
 
 typedef struct zfsvfs zfsvfs_t;
 struct znode;
+
+/*
+ * ZFS Quality of Service (QoS) I/O throttling state,
+ * per file system.  Limits the I/O rate in this FS.
+ * See "Token Bucket" on Wikipedia
+ */
+typedef struct zfs_qos_state {
+	uint64_t qos_rate_cap;		/* zero means no cap */
+	int64_t qos_token_bucket;	/* bytes I/O allowed without waiting */
+	hrtime_t qos_last_update;
+	kmutex_t qos_lock;
+	kcondvar_t qos_wait_cv;
+	int qos_waiters;
+} zfs_qos_state_t;
 
 /*
  * Status of the zfs_unlinked_drain thread.
@@ -100,6 +115,7 @@ struct zfsvfs {
 	kmutex_t	z_drain_lock;
 	kcondvar_t	z_drain_cv;
 	drain_state_t	z_drain_state;
+	zfs_qos_state_t z_qos;
 };
 
 /*

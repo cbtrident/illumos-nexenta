@@ -510,6 +510,101 @@ mappedread(vnode_t *vp, int nbytes, uio_t *uio)
 	return (error);
 }
 
+/*
+ * Shortest time we'll attempt to cv_wait (below), in nSec.
+ * This should be no less than the minimum time it normally takes
+ * to block a thread and wake back up after the timeout fires.
+ * Guessing 10 uSec. for now.  This can be tuned as needed.
+ */
+hrtime_t zfs_qos_shortest_wait = 10000;
+
+/*
+ * ZFS Quality of Service (QoS) I/O throttling
+ * See "Token Bucket" on Wikipedia
+ *
+ * This is "Token Bucket" with some modifications to avoid wait times
+ * longer than a couple seconds, so that we don't trigger NFS retries
+ * or similar.  This does mean that concurrent requests might take us
+ * over the rate limit, but that's a lesser evil.
+ */
+static void
+zfs_qos_throttle(zfsvfs_t *zfsvfs, ssize_t iosize)
+{
+	zfs_qos_state_t *qos = &zfsvfs->z_qos;
+	hrtime_t now, delta; /* nanoseconds */
+	int64_t refill;
+
+	VERIFY(qos->qos_rate_cap > 0);
+	mutex_enter(&qos->qos_lock);
+
+	/*
+	 * If another thread is already waiting, we must queue up behind them.
+	 * We'll wait up to 1 sec here.  We normally will resume by cv_signal,
+	 * so we don't need fine timer resolution on this wait.
+	 */
+	if (qos->qos_token_bucket < 0) {
+		qos->qos_waiters++;
+		(void) cv_timedwait_hires(
+		    &qos->qos_wait_cv, &qos->qos_lock,
+		    NANOSEC, TR_CLOCK_TICK, 0);
+		qos->qos_waiters--;
+	}
+
+	/*
+	 * How long since we last updated the bucket?
+	 */
+	now = gethrtime();
+	delta = now - qos->qos_last_update;
+	qos->qos_last_update = now;
+	if (delta < 0)
+		delta = 0; /* paranoid */
+
+	/*
+	 * Add "tokens" for time since last update,
+	 * being careful about possible overflow.
+	 */
+	refill = (delta * qos->qos_rate_cap) / NANOSEC;
+	if (refill < 0 || refill > qos->qos_rate_cap)
+		refill = qos->qos_rate_cap; /* overflow */
+	qos->qos_token_bucket += refill;
+	if (qos->qos_token_bucket > qos->qos_rate_cap)
+		qos->qos_token_bucket = qos->qos_rate_cap;
+
+	/*
+	 * Withdraw tokens for the current I/O.* If this makes us overdrawn,
+	 * wait an amount of time proportionate to the overdraft.  However,
+	 * as a sanity measure, never wait more than 1 sec, and never try to
+	 * wait less than the time it normally takes to block and reschedule.
+	 *
+	 * Leave the bucket negative while we wait so other threads know to
+	 * queue up. In here, "refill" is the debt we're waiting to pay off.
+	 */
+	qos->qos_token_bucket -= iosize;
+	if (qos->qos_token_bucket < 0) {
+
+		refill = -qos->qos_token_bucket;
+		DTRACE_PROBE2(zfs_qos_over, zfsvfs_t *, zfsvfs,
+		    int64_t, refill);
+
+		delta = (refill * NANOSEC) / qos->qos_rate_cap;
+		delta = MIN(delta, NANOSEC);
+
+		if (delta > zfs_qos_shortest_wait) {
+			(void) cv_timedwait_hires(
+			    &qos->qos_wait_cv, &qos->qos_lock,
+			    delta, TR_NANOSEC, 0);
+		}
+
+		qos->qos_token_bucket += refill;
+	}
+	if (qos->qos_waiters > 0) {
+		cv_signal(&qos->qos_wait_cv);
+	}
+
+	mutex_exit(&qos->qos_lock);
+}
+
+
 offset_t zfs_read_chunk_size = 1024 * 1024; /* Tunable */
 
 /*
@@ -574,6 +669,12 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			return (error);
 		}
 	}
+
+	/*
+	 * ZFS QoS throttling
+	 */
+	if (zfsvfs->z_qos.qos_rate_cap)
+		zfs_qos_throttle(zfsvfs, uio->uio_resid);
 
 	/*
 	 * If we're in FRSYNC mode, sync out this znode before reading it.
@@ -765,6 +866,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
+
+	/*
+	 * ZFS QoS throttling
+	 */
+	if (zfsvfs->z_qos.qos_rate_cap)
+		zfs_qos_throttle(zfsvfs, uio->uio_resid);
 
 	/*
 	 * Pre-fault the pages to ensure slow (eg NFS) pages
