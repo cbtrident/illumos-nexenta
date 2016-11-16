@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -1007,10 +1007,10 @@ typedef struct smb_session {
 	int			reply_max_bytes;
 	uint16_t		smb_msg_size;
 	uint16_t		smb_max_mpx;
-	uchar_t			*outpipe_data;
-	int			outpipe_datalen;
-	int			outpipe_cookie;
 	smb_srqueue_t		*s_srqueue;
+	uchar_t			*s_scoreboard_arr;
+	kmutex_t		s_scoreboard_mutex;
+	uint64_t		s_scoreboard_maxid;
 	uint64_t		start_time;
 	kstat_t			*s_ksp;
 	smb_disp_stats_t	s_stats[SMBSRV_CLSH__NREQ];
