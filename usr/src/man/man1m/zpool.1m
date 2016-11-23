@@ -87,6 +87,7 @@
 .Op Fl o Ar mntopts
 .Oo Fl o Ar property Ns = Ns Ar value Oc Ns ...
 .Op Fl R Ar root
+.Op Fl t Ar numthreads
 .Nm
 .Cm import
 .Op Fl Dfm
@@ -95,6 +96,7 @@
 .Op Fl o Ar mntopts
 .Oo Fl o Ar property Ns = Ns Ar value Oc Ns ...
 .Op Fl R Ar root
+.Op Fl t Ar numthreads
 .Ar pool Ns | Ns Ar id
 .Op Ar newpool
 .Nm
@@ -1254,6 +1256,10 @@ and the
 .Sy altroot
 property to
 .Ar root .
+.It Fl t Ar numthreads
+Mount datasets in parallel using up to
+.Ar numthreads
+threads.
 .El
 .It Xo
 .Nm

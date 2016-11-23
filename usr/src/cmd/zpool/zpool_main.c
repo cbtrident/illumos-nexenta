@@ -2153,8 +2153,8 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
  *		is rebooted.
  *
  *       -V	Import even in the presence of faulted vdevs.  This is an
- *       	intentionally undocumented option for testing purposes, and
- *       	treats the pool configuration as complete, leaving any bad
+ *		intentionally undocumented option for testing purposes, and
+ *		treats the pool configuration as complete, leaving any bad
  *		vdevs in the FAULTED state. In other words, it does verbatim
  *		import.
  *
@@ -2169,7 +2169,7 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
  *       -t     Use up to num threads to mount datasets in parallel.
  *
  *       -T     Specify a starting txg to use for import. This option is
- *       	intentionally undocumented option for testing purposes.
+ *		intentionally undocumented option for testing purposes.
  *
  *       -a	Import all pools found.
  *
@@ -2206,7 +2206,7 @@ zpool_do_import(int argc, char **argv)
 	uint64_t pool_state, txg = -1ULL;
 	char *cachefile = NULL;
 	importargs_t idata = { 0 };
-	unsigned long n_threads = 1;
+	unsigned long n_threads = sysconf(_SC_NPROCESSORS_ONLN) * 2;
 	char *endptr;
 
 	/* check options */
@@ -2273,6 +2273,7 @@ zpool_do_import(int argc, char **argv)
 				goto error;
 			break;
 		case 't':
+			errno = 0;
 			n_threads = strtol(optarg, &endptr, 10);
 			if (errno != 0 || *endptr != '\0') {
 				(void) fprintf(stderr,
