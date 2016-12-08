@@ -18,10 +18,11 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 /*
@@ -2412,6 +2413,8 @@ ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t addr, uint32_t flags)
 	struct lifreq		lifr;
 	uint64_t		ifflags;
 	boolean_t		is_boot = (iph->iph_flags & IPH_IPMGMTD);
+	boolean_t		is_ipmp;
+	char			gifname[LIFGRNAMSIZ];
 
 	/* check for solaris.network.interface.config authorization */
 	if (!ipadm_check_auth())
@@ -2555,6 +2558,17 @@ ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t addr, uint32_t flags)
 			return (IPADM_SUCCESS);
 	}
 
+	/*
+	 * If interface is an IPMP group member, move it out of the group before
+	 * performing any operations on it.
+	 */
+	if ((is_ipmp = i_ipadm_is_under_ipmp(iph, addr->ipadm_ifname))) {
+		(void) i_ipadm_get_groupname_active(iph, addr->ipadm_ifname,
+		    gifname, sizeof (gifname));
+		(void) i_ipadm_set_groupname_active(iph, addr->ipadm_ifname,
+		    "");
+	}
+
 	/* Create the address. */
 	type = addr->ipadm_atype;
 	switch (type) {
@@ -2570,6 +2584,12 @@ ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t addr, uint32_t flags)
 	default:
 		status = IPADM_INVALID_ARG;
 		break;
+	}
+
+	/* Move the underlying IPMP interface back to the group */
+	if (is_ipmp) {
+		(void) i_ipadm_set_groupname_active(iph, addr->ipadm_ifname,
+		    gifname);
 	}
 
 	/*
@@ -2617,7 +2637,6 @@ i_ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t ipaddr, uint32_t flags)
 	struct sockaddr_storage		m, *mask = &m;
 	const struct sockaddr_storage	*addr = &ipaddr->ipadm_static_addr;
 	const struct sockaddr_storage	*daddr = &ipaddr->ipadm_static_dst_addr;
-	uint32_t			iff_flags = IFF_UP;
 	sa_family_t			af;
 	boolean_t			legacy = (iph->iph_flags & IPH_LEGACY);
 	struct ipadm_addrobj_s		legacy_addr;
@@ -2672,13 +2691,14 @@ i_ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t ipaddr, uint32_t flags)
 	}
 
 	if (flags & IPADM_OPT_UP) {
+		uint32_t	iff_flags = IFF_UP;
+
 		/*
-		 * Verify this is both:
-		 *   an interface under ipmp control and
-		 *   not the ipmp interface or a virtual ipmp interface
+		 * Set the NOFAILOVER flag only on underlying IPMP interface
+		 * and not the IPMP group interface itself.
 		 */
-		if ((i_ipadm_is_under_ipmp(iph, lifr.lifr_name)) &&
-		    !(i_ipadm_is_ipmp(iph, lifr.lifr_name)))
+		if (i_ipadm_is_under_ipmp(iph, lifr.lifr_name) &&
+		    !i_ipadm_is_ipmp(iph, lifr.lifr_name))
 			iff_flags |= IFF_NOFAILOVER;
 		status = i_ipadm_set_flags(iph, lifr.lifr_name,
 		    af, iff_flags, 0);
@@ -2781,6 +2801,21 @@ ipadm_delete_addr(ipadm_handle_t iph, const char *aobjname, uint32_t flags)
 	 * kernel.
 	 */
 	if (ipaddr.ipadm_flags & IPMGMT_ACTIVE) {
+		boolean_t	is_ipmp;
+		char		gifname[LIFGRNAMSIZ];
+
+		/*
+		 * If interface is an IPMP group member, move it out of the
+		 * group before performing any operations on it.
+		 */
+		if ((is_ipmp = i_ipadm_is_under_ipmp(iph,
+		    ipaddr.ipadm_ifname))) {
+			(void) i_ipadm_get_groupname_active(iph,
+			    ipaddr.ipadm_ifname, gifname, sizeof (gifname));
+			(void) i_ipadm_set_groupname_active(iph,
+			    ipaddr.ipadm_ifname, "");
+		}
+
 		switch (ipaddr.ipadm_atype) {
 		case IPADM_ADDR_STATIC:
 			status = i_ipadm_delete_addr(iph, &ipaddr);
@@ -2798,6 +2833,12 @@ ipadm_delete_addr(ipadm_handle_t iph, const char *aobjname, uint32_t flags)
 			 * through and delete that address object.
 			 */
 			break;
+		}
+
+		/* Move the underlying IPMP interface back to the group */
+		if (is_ipmp) {
+			(void) i_ipadm_set_groupname_active(iph,
+			    ipaddr.ipadm_ifname, gifname);
 		}
 
 		/*
