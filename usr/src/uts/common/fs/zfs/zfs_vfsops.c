@@ -1060,15 +1060,7 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 		if (readonly != 0)
 			zfsvfs->z_vfs->vfs_flag &= ~VFS_RDONLY;
 		else {
-			zfs_unlinked_drain_prepare(zfsvfs);
-			if (taskq_dispatch(dsl_pool_vnrele_taskq(
-			    spa_get_dsl(zfsvfs->z_os->os_spa)),
-			    (void (*)(void *))zfs_unlinked_drain, zfsvfs,
-			    TQ_NOSLEEP) == NULL) {
-				cmn_err(CE_WARN,
-				    "async zfs_unlinked_drain dispatch failed");
-				zfs_unlinked_drain(zfsvfs);
-			}
+			zfs_unlinked_drain(zfsvfs);
 		}
 
 		/*
@@ -1109,22 +1101,6 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 			}
 		}
 		zfsvfs->z_vfs->vfs_flag |= readonly; /* restore readonly bit */
-	} else if (readonly == 0 && !zfsvfs->z_unmounted) {
-		/*
-		 * We got here if we're doing a zfs_resume_fs(). This means
-		 * we did a zfs_suspend_fs() earlier which could have
-		 * interrupted freeing of dnodes. We need to restart this
-		 * freeing so that we don't "leak" the space.
-		 */
-		zfs_unlinked_drain_prepare(zfsvfs);
-		if (taskq_dispatch(dsl_pool_vnrele_taskq(
-		    spa_get_dsl(zfsvfs->z_os->os_spa)),
-		    (void (*)(void *))zfs_unlinked_drain, zfsvfs,
-		    TQ_NOSLEEP) == NULL) {
-			cmn_err(CE_WARN,
-			    "async zfs_unlinked_drain dispatch failed");
-			zfs_unlinked_drain(zfsvfs);
-		}
 	}
 
 	return (0);
@@ -1144,6 +1120,8 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	 */
 	rw_enter(&zfsvfs_lock, RW_READER);
 	rw_exit(&zfsvfs_lock);
+
+	VERIFY0(zfsvfs->z_znodes_freeing_cnt);
 
 	zfs_fuid_destroy(zfsvfs);
 
@@ -1908,6 +1886,8 @@ zfs_umount(vfs_t *vfsp, int fflag, cred_t *cr)
 	}
 
 	if (!(fflag & MS_FORCE)) {
+		uint_t active_vnodes;
+
 		/*
 		 * Check the number of active vnodes in the file system.
 		 * Our count is maintained in the vfs structure, but the
@@ -1917,12 +1897,18 @@ zfs_umount(vfs_t *vfsp, int fflag, cred_t *cr)
 		 * The '.zfs' directory maintains a reference of its
 		 * own, and any active references underneath are
 		 * reflected in the vnode count.
+		 *
+		 * Active vnodes: vnodes that were held by an user
 		 */
+
+		active_vnodes =
+		    vfsp->vfs_count - zfsvfs->z_znodes_freeing_cnt;
+
 		if (zfsvfs->z_ctldir == NULL) {
-			if (vfsp->vfs_count > 1)
+			if (active_vnodes > 1)
 				return (SET_ERROR(EBUSY));
 		} else {
-			if (vfsp->vfs_count > 2 ||
+			if (active_vnodes > 2 ||
 			    zfsvfs->z_ctldir->v_count > 1)
 				return (SET_ERROR(EBUSY));
 		}
@@ -2123,6 +2109,16 @@ zfs_resume_fs(zfsvfs_t *zfsvfs, const char *osname)
 		(void) zfs_rezget(zp);
 	}
 	mutex_exit(&zfsvfs->z_znodes_lock);
+
+	if (((zfsvfs->z_vfs->vfs_flag & VFS_RDONLY) == 0) &&
+	    !zfsvfs->z_unmounted) {
+		/*
+		 * zfs_suspend_fs() could have interrupted freeing
+		 * of dnodes. We need to restart this freeing so
+		 * that we don't "leak" the space.
+		 */
+		zfs_unlinked_drain(zfsvfs);
+	}
 
 bail:
 	/* release the VOPs */
