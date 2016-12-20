@@ -167,6 +167,7 @@ libkrrp_evc_callback(sysevent_t *ev, void *cookie)
 	}
 
 callback:
+	fnvlist_free(attr);
 	rc = hdl->callback(&libkrrp_ev, hdl->cookie);
 	return (rc);
 }
