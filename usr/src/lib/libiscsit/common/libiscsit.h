@@ -23,7 +23,7 @@
  * Use is subject to license terms.
  */
 /*
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_LIBISCSIT_H
@@ -52,7 +52,7 @@ extern "C" {
  * Other distros using it need to change accordingly.
  */
 
-#define	DEFAULT_IQN	"iqn.2010-08.org.illumos:"
+#define	DEFAULT_IQN	"iqn.2005-07.com.nexenta:"
 
 /*
  * Object Hierarchy
