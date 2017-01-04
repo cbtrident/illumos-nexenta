@@ -864,6 +864,8 @@ lzc_rollback(const char *fsname, char *snapnamebuf, int snapnamelen)
 		const char *snapname = fnvlist_lookup_string(result, "target");
 		(void) strlcpy(snapnamebuf, snapname, snapnamelen);
 	}
+	nvlist_free(result);
+
 	return (err);
 }
 
@@ -962,7 +964,7 @@ lzc_destroy_bookmarks(nvlist_t *bmarks, nvlist_t **errlist)
 }
 
 
-/**
+/*
  * Enumerate datasets and optionally get a few dataset properties.
  * In order to start dataset enumeration, an offset off '0' must be given
  * as the cursor argument. To continue enumeration, the previously returned
@@ -1012,7 +1014,7 @@ lzc_destroy_bookmarks(nvlist_t *bmarks, nvlist_t **errlist)
 
 int
 lzc_bulk_list(const char *fsname, uint32_t count, uint32_t skip,
-     boolean_t verbose, boolean_t snaps, uint64_t *cursor, nvlist_t **outnvl)
+    boolean_t verbose, boolean_t snaps, uint64_t *cursor, nvlist_t **outnvl)
 {
 	int error;
 	nvlist_t *args;
@@ -1047,7 +1049,7 @@ lzc_bulk_list(const char *fsname, uint32_t count, uint32_t skip,
 	if (error == ENOENT)
 		return (-1);
 
-	 /* Zero error code indicates "success and continue" */
+	/* Zero error code indicates "success and continue" */
 	VERIFY0(error);
 	return (error);
 }
