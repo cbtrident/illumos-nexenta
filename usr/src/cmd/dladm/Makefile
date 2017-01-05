@@ -60,6 +60,9 @@ $(PROG):	$(OBJS)
 		$(LINK.c) $(OBJS) -o $@ $(LDLIBS)
 		$(POST_PROCESS)
 
+clean:
+		$(RM) $(OBJS)
+
 install:	all $(ROOTSBINPROG) $(ROOTCFGDIR) $(ROOTCFGFILES)
 		$(RM) $(ROOTUSRSBINPROG)
 		-$(SYMLINK) ../../sbin/$(PROG) $(ROOTUSRSBINPROG)
