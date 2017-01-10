@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 #include <sys/modctl.h>
@@ -30,13 +30,15 @@
  *
  * The delivered /etc/cluster/nodeid file has the following as
  * the first line:
- * "# Used by NFS HA system.  Do not edit by hand." and will be
- * skipped when read.  Module expects to read the nodeid after
- * the header line.
+ *
+ * # Used by NFS HA system.  Do not edit by hand.
+ *
+ * which will be skipped when read.  Module expects to read the
+ * nodeid after the header line.
  */
-#define CL_MAX_NODEID	2
-#define CL_NODEID_FILE	"/etc/cluster/nodeid"
-#define CL_FILE_HDR_LEN	47
+#define	CL_MAX_NODEID	2
+#define	CL_NODEID_FILE	"/etc/cluster/nodeid"
+#define	CL_FILE_HDR_LEN	47
 
 static nodeid_t	nid;
 
@@ -72,18 +74,14 @@ clboot_rootconf(void)
 void
 clboot_mountroot(void)
 {
-	return;
 }
 
 void
 clconf_init(void)
 {
-	return;
 }
 
-/*
- * Called by NFS HA 
- */
+/* Called by NFS HA */
 nodeid_t
 clconf_get_nodeid(void)
 {
@@ -99,91 +97,75 @@ clconf_maximum_nodeid(void)
 void
 cluster(void)
 {
-	return;
 }
 
 int
-_init(void) {
+_init(void)
+{
 	int	e;
 	int	idx;
 	char	*buf = NULL;
-	struct _buf	*f;
-	uint64_t	fsz;
+	struct _buf *f;
+	uint64_t fsz;
 	int	rc = 0;
 	int	rdsz, hdr = CL_FILE_HDR_LEN;
 
-	if ((e = mod_install(&modlink))){
+	if ((e = mod_install(&modlink)) != 0)
 		return (e);
-	}
 
-	if ((f = kobj_open_file(CL_NODEID_FILE)) == (struct _buf *)-1 ) {
-		cmn_err(CE_WARN, "Fail to open %s", CL_NODEID_FILE);
+	if ((f = kobj_open_file(CL_NODEID_FILE)) == (struct _buf *)-1) {
+		cmn_err(CE_WARN, "!failed to open %s", CL_NODEID_FILE);
 		return (ENOENT);
 	}
 
-	/*
-	 * Check file size
-	 */
+	/* Check file size */
 	if ((kobj_get_filesize(f, &fsz) != 0) || fsz == 0) {
-		cmn_err(CE_WARN, "Fails to retrieve the file size for %s", CL_NODEID_FILE);
+		cmn_err(CE_WARN, "!failed to retrieve the file size for %s",
+		    CL_NODEID_FILE);
 		kobj_close_file(f);
 		return (EINVAL);
 	}
 
-	/*
-	 * We expect node id follows the file header
-	 */
+	/* We expect node id follows the file header */
 	if ((rdsz = ((int)fsz - hdr)) <= 0) {
-		cmn_err(CE_WARN, "The node id is not correctly configured");
+		cmn_err(CE_WARN, "!the node id is not correctly configured");
 		kobj_close_file(f);
-		return (ENOENT);	
+		return (ENOENT);
 	}
 
-	/*
-	 * Assume we have a node id
-	 */
+	/* Assume we have a node id */
 	buf = kmem_alloc(rdsz, KM_SLEEP);
 
-	/*
-	 * Read in node id
-	 */
+	/* Read in node id */
 	if (kobj_read_file(f, buf, rdsz, hdr) < 0) {
-		cmn_err(CE_WARN, "Fail to read %s", CL_NODEID_FILE);
+		cmn_err(CE_WARN, "!failed to read %s", CL_NODEID_FILE);
 		rc = EIO;
 		goto out;
 	}
 
-	/*
-	 * Check for any invalid char
-	 */
+	/* Check for any invalid char */
 	for (idx = 0; idx < (rdsz - 1); idx++) {
-		if (buf[idx] >= '0' && buf[idx] <= '9') {
+		if (buf[idx] >= '0' && buf[idx] <= '9')
 			continue;
-		} else {
-			cmn_err(CE_WARN, "Invalid node id detected");
-			rc = EINVAL;
-			goto out;
-		}
+		cmn_err(CE_WARN, "!invalid node id detected");
+		rc = EINVAL;
+		goto out;
 	}
 
-	/*
-	 * Set the global node id base 10
-	 */
+	/* Set the global node id base 10 */
 	if (ddi_strtoul(buf, NULL, 10, (ulong_t *)&nid) != 0) {
-		cmn_err(CE_WARN, "Fail to get cluster node id");
-		rc = EFAULT;	
+		cmn_err(CE_WARN, "!failed to get cluster node id");
+		rc = EFAULT;
 		goto out;
 	}
 
-	/*
-	 * Is node id out of range?
-	 */
+	/* Is node id out of range? */
 	if (nid > CL_MAX_NODEID || nid == 0) {
-		cmn_err(CE_NOTE, "Node ID is out of range");
-		rc = EFAULT;	
+		cmn_err(CE_NOTE, "!node ID is out of range");
+		rc = EFAULT;
 		goto out;
 	}
-	
+
 	cluster_bootflags |= CLUSTER_CONFIGURED;
 
 out:
@@ -192,9 +174,6 @@ out:
 	return (rc);
 }
 
-/*
- * _info function
- */
 int
 _info(struct modinfo *modinfop)
 {
