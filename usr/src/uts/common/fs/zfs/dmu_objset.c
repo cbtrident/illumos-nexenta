@@ -18,6 +18,7 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
@@ -26,7 +27,7 @@
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2015, STRATO AG, Inc. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -1574,7 +1575,7 @@ dmu_snapshot_realname(objset_t *os, char *name, char *real, int maxlen,
 
 	return (zap_lookup_norm(ds->ds_dir->dd_pool->dp_meta_objset,
 	    dsl_dataset_phys(ds)->ds_snapnames_zapobj, name, 8, 1, &ignored,
-	    MT_FIRST, real, maxlen, conflict));
+	    MT_NORMALIZE, real, maxlen, conflict));
 }
 
 int

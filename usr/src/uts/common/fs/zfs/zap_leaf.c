@@ -18,10 +18,11 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 /*
@@ -362,7 +363,7 @@ zap_leaf_array_match(zap_leaf_t *l, zap_name_t *zn,
 	}
 
 	ASSERT(zn->zn_key_intlen == 1);
-	if (zn->zn_matchtype & MT_FIRST) {
+	if (zn->zn_matchtype & MT_NORMALIZE) {
 		char *thisname = kmem_alloc(array_numints, KM_SLEEP);
 		boolean_t match;
 
@@ -418,9 +419,9 @@ zap_leaf_lookup(zap_leaf_t *l, zap_name_t *zn, zap_entry_handle_t *zeh)
 		/*
 		 * NB: the entry chain is always sorted by cd on
 		 * normalized zap objects, so this will find the
-		 * lowest-cd match for MT_FIRST.
+		 * lowest-cd match for MT_NORMALIZE.
 		 */
-		ASSERT((zn->zn_matchtype & MT_EXACT) ||
+		ASSERT((zn->zn_matchtype == 0) ||
 		    (zap_leaf_phys(l)->l_hdr.lh_flags & ZLF_ENTRIES_CDSORTED));
 		if (zap_leaf_array_match(l, zn, le->le_name_chunk,
 		    le->le_name_numints)) {
@@ -688,7 +689,7 @@ zap_entry_normalization_conflict(zap_entry_handle_t *zeh, zap_name_t *zn,
 			continue;
 
 		if (zn == NULL) {
-			zn = zap_name_alloc(zap, name, MT_FIRST);
+			zn = zap_name_alloc(zap, name, MT_NORMALIZE);
 			allocdzn = B_TRUE;
 		}
 		if (zap_leaf_array_match(zeh->zeh_leaf, zn,

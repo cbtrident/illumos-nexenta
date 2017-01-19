@@ -18,10 +18,11 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 #ifndef	_SYS_ZAP_H
@@ -89,17 +90,15 @@ extern "C" {
 
 /*
  * Specifies matching criteria for ZAP lookups.
- * MT_EXACT - exact match, bypasses normalization to do strcmp()
- * MT_FIRST - Normalizes the lookup - compose/decompose and then
- *            match the normalized string.
- * MT_CASE - Used to keep track of whether the lookup request is
- *           case sensitive or not (i.e. Windows vs Unix.)
+ * MT_NORMALIZE		Use ZAP normalization flags, which can include both
+ *			unicode normalization and case-insensitivity.
+ * MT_MATCH_CASE	Do case-sensitive lookups even if MT_NORMALIZE is
+ *			specified and ZAP normalization flags include
+ *			U8_TEXTPREP_TOUPPER.
  */
-typedef enum matchtype
-{
-	MT_EXACT = 0x1,
-	MT_FIRST,
-	MT_CASE = 0x4
+typedef enum matchtype {
+	MT_NORMALIZE = 1 << 0,
+	MT_MATCH_CASE = 1 << 1,
 } matchtype_t;
 
 typedef enum zap_flags {
@@ -116,15 +115,6 @@ typedef enum zap_flags {
 
 /*
  * Create a new zapobj with no attributes and return its object number.
- * MT_EXACT will cause the zap object to only support MT_EXACT lookups,
- * otherwise any matchtype can be used for lookups.
- *
- * normflags specifies what normalization will be done.  values are:
- * 0: no normalization (legacy on-disk format, supports MT_EXACT matching
- *     only)
- * U8_TEXTPREP_TOLOWER: case normalization will be performed.
- *
- * Eventually, other flags will permit unicode normalization as well.
  */
 uint64_t zap_create(objset_t *ds, dmu_object_type_t ot,
     dmu_object_type_t bonustype, int bonuslen, dmu_tx_t *tx);
