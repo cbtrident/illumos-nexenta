@@ -23,7 +23,7 @@
  * Copyright 2016 Joyent, Inc.
  */
 /*
- * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <stdio.h>
@@ -55,6 +55,8 @@
 #include <sys/fm/util.h>
 #include <fm/libfmevent.h>
 #include <sys/int_fmtio.h>
+#include <uuid/uuid.h>
+#include <libgen.h>
 
 
 /* fread/fwrite buffer size */
@@ -68,10 +70,12 @@
 
 static char	progname[9] = "savecore";
 static char	*savedir;		/* savecore directory */
+static char	*uuiddir;		/* UUID directory */
 static char	*dumpfile;		/* source of raw crash dump */
 static long	bounds = -1;		/* numeric suffix */
 static long	pagesize;		/* dump pagesize */
 static int	dumpfd = -1;		/* dumpfile descriptor */
+static boolean_t skip_event = B_FALSE;	/* do not raise an event */
 static dumphdr_t corehdr, dumphdr;	/* initial and terminal dumphdrs */
 static boolean_t dump_incomplete;	/* dumphdr indicates incomplete */
 static boolean_t fm_panic;		/* dump is the result of fm_panic */
@@ -239,7 +243,7 @@ logprint(uint32_t flags, char *message, ...)
 
 	case SC_EXIT_ERR:
 	default:
-		if (!mflag && logprint_raised++ == 0)
+		if (!mflag && logprint_raised++ == 0 && !skip_event)
 			raise_event(SC_EVENT_SAVECORE_FAILURE, buf);
 		code = 1;
 		break;
@@ -299,9 +303,15 @@ Fstat(int fd, Stat_t *sb, const char *fname)
 static void
 Stat(const char *fname, Stat_t *sb)
 {
-	if (stat64(fname, sb) != 0)
-		logprint(SC_SL_ERR | SC_EXIT_ERR, "stat(\"%s\"): %s", fname,
-		    strerror(errno));
+	if (stat64(fname, sb) != 0) {
+		/*
+		 * If dump/core file doesn't exist, then best
+		 * to not go further (raise an event).
+		 */
+		skip_event = B_TRUE;
+		logprint(SC_SL_ERR | SC_EXIT_ERR, "failed to get status "
+		    "of file %s", fname);
+	}
 }
 
 static void
@@ -417,10 +427,13 @@ check_space(int csave)
 {
 	struct statvfs fsb;
 	int64_t spacefree, dumpsize, minfree, datasize;
+	char minfreefile[MAXPATHLEN];
 
 	if (statvfs(".", &fsb) < 0)
 		logprint(SC_SL_ERR | SC_EXIT_ERR, "statvfs: %s",
 		    strerror(errno));
+
+	(void) snprintf(minfreefile, MAXPATHLEN, "%s/minfree", savedir);
 
 	dumpsize = dumphdr.dump_data - dumphdr.dump_start;
 	datasize = dumphdr.dump_npages * pagesize;
@@ -430,7 +443,7 @@ check_space(int csave)
 		dumpsize += datahdr.dump_data_csize;
 
 	spacefree = (int64_t)fsb.f_bavail * fsb.f_frsize;
-	minfree = 1024LL * read_number_from_file("minfree", 1024);
+	minfree = 1024LL * read_number_from_file(minfreefile, 1024);
 	if (spacefree < minfree + dumpsize) {
 		logprint(SC_SL_ERR | SC_EXIT_ERR,
 		    "not enough space in %s (%lld MB avail, %lld MB needed)",
@@ -572,7 +585,7 @@ copy_crashfile(const char *corefile)
 	size_t nb;
 
 	logprint(SC_SL_ERR | SC_IF_VERBOSE,
-	    "Copying %s to %s/%s\n", dumpfile, savedir, corefile);
+	    "Copying %s to %s/%s\n", dumpfile, uuiddir, corefile);
 
 	/*
 	 * This dump file is still compressed
@@ -1342,7 +1355,7 @@ build_corefile(const char *namelist, const char *corefile)
 	int corefd = Open(corefile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	int namefd = Open(namelist, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 
-	(void) printf("Constructing namelist %s/%s\n", savedir, namelist);
+	(void) printf("Constructing namelist %s/%s\n", uuiddir, namelist);
 
 	/*
 	 * Determine the optimum write size for the core file
@@ -1383,7 +1396,7 @@ build_corefile(const char *namelist, const char *corefile)
 	free(ksyms_cbase);
 	free(ksyms_base);
 
-	(void) printf("Constructing corefile %s/%s\n", savedir, corefile);
+	(void) printf("Constructing corefile %s/%s\n", uuiddir, corefile);
 
 	/*
 	 * Read in and write out the pfn table.
@@ -1556,7 +1569,7 @@ raise_event(enum sc_event_type evidx, char *warn_string)
 	uint32_t pl = sc_event[evidx].sce_payload;
 	char panic_stack[STACK_BUF_SIZE];
 	nvlist_t *attr = NULL;
-	char uuidbuf[36 + 1];
+	char uuidbuf[UUID_PRINTABLE_STRING_LENGTH];
 	int err = 0;
 
 	if (nvlist_alloc(&attr, NV_UNIQUE_NAME, 0) != 0)
@@ -1648,9 +1661,16 @@ main(int argc, char *argv[])
 	int i, c, bfd;
 	Stat_t st;
 	struct rlimit rl;
+	struct stat sc, sd;
 	long filebounds = -1;
 	char namelist[30], corefile[30], boundstr[30];
 	dumpfile = NULL;
+	char uuidstr[UUID_PRINTABLE_STRING_LENGTH];
+	uuid_t uu;
+	static char boundsfile[MAXPATHLEN];
+	static char boundslink[MAXPATHLEN];
+	static boolean_t fma_layout = B_TRUE;
+	char *slash;
 
 	startts = gethrtime();
 
@@ -1711,23 +1731,47 @@ main(int argc, char *argv[])
 
 	if (dumpfile == NULL) {
 		dumpfile = Zalloc(MAXPATHLEN);
-		if (ioctl(dumpfd, DIOCGETDEV, dumpfile) == -1)
+		if (ioctl(dumpfd, DIOCGETDEV, dumpfile) == -1) {
+			skip_event = B_TRUE;
 			logprint(SC_SL_NONE | SC_IF_ISATTY | SC_EXIT_ERR,
 			    "no dump device configured");
+		}
 	}
 
 	if (mflag)
 		return (message_save());
 
-	if (optind == argc - 1)
+	if (optind == argc - 1) {
+		/*
+		 * Use the default layout if directory was specified.
+		 * If the directory path matches value configured (by dumpadm),
+		 * then revert to fma layout.
+		 */
+		fma_layout = B_FALSE;
+		if (savedir != NULL && (stat(savedir, &sc) >= 0 &&
+		    stat(argv[optind], &sd) >= 0)) {
+			if (sc.st_ino == sd.st_ino &&
+			    sc.st_dev == sd.st_dev) {
+				fma_layout = B_TRUE;
+			}
+		}
 		savedir = argv[optind];
+	}
 
 	if (savedir == NULL || optind < argc - 1)
 		usage();
 
-	if (livedump && ioctl(dumpfd, DIOCDUMP, NULL) == -1)
-		logprint(SC_SL_NONE | SC_EXIT_ERR,
-		    "dedicated dump device required");
+	if (livedump) {
+		/*
+		 * For livedump we must update the dump header with
+		 * newly genearated uuid.
+		 */
+		uuid_generate(uu);
+		uuid_unparse(uu, uuidstr);
+		if (ioctl(dumpfd, DIOCDUMP, uuidstr) == -1)
+			logprint(SC_SL_NONE | SC_EXIT_ERR,
+			    "dedicated dump device required");
+	}
 
 	(void) close(dumpfd);
 	dumpfd = -1;
@@ -1786,6 +1830,21 @@ main(int argc, char *argv[])
 	if (dumphdr.dump_fm_panic)
 		fm_panic = B_TRUE;
 
+	/* remove last slash */
+	slash = strrchr(savedir, '\0');
+	while (--slash > savedir && *slash == '/') {
+		*slash = '\0';
+	}
+
+	if (fma_layout) {
+		uuiddir = Zalloc(strlen(savedir) + strlen("/data/") +
+		    UUID_PRINTABLE_STRING_LENGTH);
+		(void) snprintf(uuiddir, MAXPATHLEN, "%s/data/%s", savedir,
+		    dumphdr.dump_uuid);
+	} else {
+		uuiddir = savedir;
+	}
+
 	/*
 	 * We have a valid dump on a dump device and know as much about
 	 * it as we're going to at this stage.  Raise an event for
@@ -1823,27 +1882,77 @@ main(int argc, char *argv[])
 		/*NOTREACHED*/
 	}
 
-	if (chdir(savedir) == -1)
+	if (fma_layout && mkdirp(uuiddir, 0755) != 0) {
+		if (errno != EEXIST)
+			logprint(SC_SL_ERR | SC_EXIT_ERR,
+			    "mkdirp(\"%s\"): %s",
+			    uuiddir, strerror(errno));
+	}
+
+	if (chdir(uuiddir) == -1)
 		logprint(SC_SL_ERR | SC_EXIT_ERR, "chdir(\"%s\"): %s",
-		    savedir, strerror(errno));
+		    uuiddir, strerror(errno));
 
 	check_space(csave);
 
+	(void) snprintf(boundsfile, MAXPATHLEN, "%s/bounds", savedir);
+
 	if (filebounds < 0)
-		bounds = read_number_from_file("bounds", 0);
+		bounds = read_number_from_file(boundsfile, 0);
 	else
 		bounds = filebounds;
+
+	if (disregard_valid_flag && bounds > 0)
+		bounds--;
+
+	(void) snprintf(boundslink, MAXPATHLEN, "%s/%d", savedir, bounds);
+
+	/*
+	 * Create a symbolic link to easily maintain the sequential ordering.
+	 */
+	if (fma_layout && symlink(uuiddir, boundslink) != 0) {
+		if (errno == EEXIST) {
+			char symbuf[MAXPATHLEN] = {'\0'};
+
+			if (readlink(boundslink, symbuf, sizeof (symbuf)) < 0)
+				logprint(SC_SL_ERR | SC_EXIT_ERR,
+				"readlink: %s", strerror(errno));
+			if (strcmp(symbuf, uuiddir) != 0) {
+				logprint(SC_SL_ERR,
+				    "Symbolic link %s already exist but "
+				    "specifies a wrong UUID directory, "
+				    "new symbolic link will be created "
+				    "instead", boundslink);
+				(void) unlink(boundslink);
+				if (symlink(uuiddir, boundslink) != 0)
+					logprint(SC_SL_ERR | SC_EXIT_ERR,
+					    "symlink: %s", strerror(errno));
+			}
+		} else {
+			logprint(SC_SL_ERR | SC_EXIT_ERR, "symlink: %s",
+			    strerror(errno));
+		}
+	}
 
 	if (csave) {
 		size_t metrics_size = datahdr.dump_metrics;
 
 		(void) sprintf(corefile, "vmdump.%ld", bounds);
 
+		if (interactive && bounds >= 0 && access(corefile, F_OK)
+		    == 0) {
+			skip_event = B_TRUE;
+			logprint(SC_SL_NONE | SC_EXIT_ERR,
+			    "%s already exists: remove with "
+			    "'rm -f %s/{unix,vmcore}.%ld'",
+			    corefile, uuiddir, bounds);
+		}
+
 		datahdr.dump_metrics = 0;
 
 		logprint(SC_SL_ERR,
 		    "Saving compressed system crash dump in %s/%s",
-		    savedir, corefile);
+		    uuiddir, corefile);
 
 		copy_crashfile(corefile);
 
@@ -1902,22 +2011,24 @@ main(int argc, char *argv[])
 		logprint(SC_SL_ERR,
 		    "Decompress the crash dump with "
 		    "\n'savecore -vf %s/%s'",
-		    savedir, corefile);
+		    uuiddir, corefile);
 
 	} else {
 		(void) sprintf(namelist, "unix.%ld", bounds);
 		(void) sprintf(corefile, "vmcore.%ld", bounds);
 
-		if (interactive && filebounds >= 0 && access(corefile, F_OK)
-		    == 0)
+		if (interactive && bounds >= 0 && access(corefile, F_OK)
+		    == 0) {
+			skip_event = B_TRUE;
 			logprint(SC_SL_NONE | SC_EXIT_ERR,
 			    "%s already exists: remove with "
 			    "'rm -f %s/{unix,vmcore}.%ld'",
-			    corefile, savedir, bounds);
+			    corefile, uuiddir, bounds);
+		}
 
 		logprint(SC_SL_ERR,
 		    "saving system crash dump in %s/{unix,vmcore}.%ld",
-		    savedir, bounds);
+		    uuiddir, bounds);
 
 		build_corefile(namelist, corefile);
 
@@ -1962,7 +2073,7 @@ main(int argc, char *argv[])
 
 	if (filebounds < 0) {
 		(void) sprintf(boundstr, "%ld\n", bounds + 1);
-		bfd = Open("bounds", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		bfd = Open(boundsfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 		Pwrite(bfd, boundstr, strlen(boundstr), 0);
 		(void) close(bfd);
 	}

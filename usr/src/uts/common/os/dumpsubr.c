@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -3045,13 +3046,13 @@ dumpvp_resize()
 	return (0);
 }
 
-int
-dump_set_uuid(const char *uuidstr)
+static int
+dump_parse_uuid(const char *uuidstr)
 {
 	const char *ptr;
 	int i;
 
-	if (uuidstr == NULL || strnlen(uuidstr, 36 + 1) != 36)
+	if (uuidstr == NULL || strlen(uuidstr) != 36)
 		return (EINVAL);
 
 	/* uuid_parse is not common code so check manually */
@@ -3071,6 +3072,29 @@ dump_set_uuid(const char *uuidstr)
 			break;
 		}
 	}
+
+	return (0);
+}
+
+int
+dump_update_uuid(const char *uuidstr)
+{
+
+	if (dump_parse_uuid(uuidstr) != 0 || dumphdr == NULL)
+		return (EINVAL);
+
+	bzero(dumphdr->dump_uuid, sizeof (dumphdr->dump_uuid));
+	(void) strncpy(dumphdr->dump_uuid, uuidstr,
+	    sizeof (dumphdr->dump_uuid));
+
+	return (0);
+}
+
+int
+dump_set_uuid(const char *uuidstr)
+{
+	if (dump_parse_uuid(uuidstr) != 0)
+		return (EINVAL);
 
 	if (dump_osimage_uuid[0] != '\0')
 		return (EALREADY);

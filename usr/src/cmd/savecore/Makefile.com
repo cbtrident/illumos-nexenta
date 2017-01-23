@@ -20,6 +20,7 @@
 #
 #
 # Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc. All rights reserved.
 #
 
 PROG= savecore
@@ -41,6 +42,8 @@ CPPFLAGS += -D_LARGEFILE64_SOURCE=1 -DBZ_NO_STDIO -I$(SRC)/uts/common
 # will jump to 0.  So we use -ztext to avoid that.
 #
 LDFLAGS += -ztext
+
+LDLIBS += -luuid -lgen
 
 BZIP2OBJS =	bz2blocksort.o	\
 		bz2compress.o	\

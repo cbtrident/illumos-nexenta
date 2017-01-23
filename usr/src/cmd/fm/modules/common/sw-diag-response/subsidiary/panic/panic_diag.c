@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -86,6 +87,7 @@
 #include <sys/panic.h>
 #include <alloca.h>
 #include <zone.h>
+#include <uuid/uuid.h>
 
 #include "../../common/sw.h"
 #include "panic.h"
@@ -229,22 +231,13 @@ swde_panic_solve(fmd_hdl_t *hdl, fmd_case_t *cp,
 	 * function/line etc therein).  We could pick on a generic
 	 * representative such as /kernel/genunix but that could lead
 	 * to misunderstanding.  So we choose a path based on <dumpdir>
-	 * and the OS instance UUID - "<dumpdir>/.<os-instance-uuid>".
-	 * There's no file at that path (*) but no matter.  We can't use
-	 * <dumpdir>/vmdump.N or similar because if savecore is disabled
-	 * or failed we don't have any file or instance number.
-	 *
-	 * (*) Some day it would seem tidier to keep all files to do
-	 * with a single crash (unix/vmcore/vmdump, analysis output etc)
-	 * in a distinct directory, and <dumpdir>/.<uuid> seems like a good
-	 * choice.  For compatability we'd symlink into it.  So that is
-	 * another reason for this choice - some day it may exist!
+	 * and the OS instance UUID - "<dumpdir>/data/<uuid>".
 	 */
 	(void) nvlist_lookup_string(attr, "dumpdir", &dumpdir);
 	(void) nvlist_lookup_string(attr, "os-instance-uuid", &uuid);
-	path = alloca(strlen(dumpdir) + 1 + 1 + 36 + 1);
-	/* LINTED: E_SEC_SPRINTF_UNBOUNDED_COPY */
-	(void) sprintf(path, "%s/.%s", dumpdir, uuid);
+	path = alloca(strlen(dumpdir) + strlen("/data/") +
+	    UUID_PRINTABLE_STRING_LENGTH);
+	(void) snprintf(path, MAXPATHLEN, "%s/data/%s", dumpdir, uuid);
 	rsrc = panic_sw_fmri(hdl, path);
 
 	defect = fmd_nvl_create_defect(hdl, SW_SUNOS_PANIC_DEFECT,

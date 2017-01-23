@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
  * Delphix (c) 2012 by Delphix. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 
@@ -46,6 +47,8 @@
 #include <sys/conf.h>
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
+
+#define	DUMP_UUID_LEN	37
 
 static dev_info_t *dump_devi;
 
@@ -182,6 +185,19 @@ dump_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 		break;
 
 	case DIOCDUMP:
+		if ((error = copyinstr((char *)arg, uuidbuf, sizeof (uuidbuf),
+		    &len)) != 0)
+			break;
+
+		if (len != DUMP_UUID_LEN) {
+			error = EINVAL;
+			break;
+		}
+		if ((error = dump_update_uuid(uuidbuf)) != 0) {
+			error = EINVAL;
+			break;
+		}
+
 		mutex_enter(&dump_lock);
 		if (dumpvp == NULL)
 			error = ENODEV;

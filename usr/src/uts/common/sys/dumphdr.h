@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef _SYS_DUMPHDR_H
@@ -197,6 +198,7 @@ extern int dump_plat_addr(void);
 extern void dump_plat_pfn(void);
 extern int dump_plat_data(void *);
 extern int dump_set_uuid(const char *);
+extern int dump_update_uuid(const char *);
 extern const char *dump_get_uuid(void);
 
 /*
