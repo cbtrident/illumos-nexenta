@@ -70,7 +70,7 @@
 
 static char	progname[9] = "savecore";
 static char	*savedir;		/* savecore directory */
-static char	*uuiddir;		/* UUID directory */
+static char	uuiddir[MAXPATHLEN];	/* UUID directory */
 static char	*dumpfile;		/* source of raw crash dump */
 static long	bounds = -1;		/* numeric suffix */
 static long	pagesize;		/* dump pagesize */
@@ -1764,7 +1764,7 @@ main(int argc, char *argv[])
 	if (livedump) {
 		/*
 		 * For livedump we must update the dump header with
-		 * newly genearated uuid.
+		 * newly generated uuid.
 		 */
 		uuid_generate(uu);
 		uuid_unparse(uu, uuidstr);
@@ -1837,12 +1837,10 @@ main(int argc, char *argv[])
 	}
 
 	if (fma_layout) {
-		uuiddir = Zalloc(strlen(savedir) + strlen("/data/") +
-		    UUID_PRINTABLE_STRING_LENGTH);
-		(void) snprintf(uuiddir, MAXPATHLEN, "%s/data/%s", savedir,
-		    dumphdr.dump_uuid);
+		(void) snprintf(uuiddir, sizeof (uuiddir), "%s/data/%s",
+		    savedir, dumphdr.dump_uuid);
 	} else {
-		uuiddir = savedir;
+		(void) strncpy(uuiddir, savedir, sizeof (uuiddir));
 	}
 
 	/*
@@ -1919,7 +1917,7 @@ main(int argc, char *argv[])
 				"readlink: %s", strerror(errno));
 			if (strcmp(symbuf, uuiddir) != 0) {
 				logprint(SC_SL_ERR,
-				    "Symbolic link %s already exist but "
+				    "Symbolic link %s already exists but "
 				    "specifies a wrong UUID directory, "
 				    "new symbolic link will be created "
 				    "instead", boundslink);

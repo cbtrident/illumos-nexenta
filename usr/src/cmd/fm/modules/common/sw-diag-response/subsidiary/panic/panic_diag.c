@@ -85,9 +85,9 @@
 
 #include <strings.h>
 #include <sys/panic.h>
-#include <alloca.h>
 #include <zone.h>
 #include <uuid/uuid.h>
+#include <limits.h>
 
 #include "../../common/sw.h"
 #include "panic.h"
@@ -198,7 +198,8 @@ static void
 swde_panic_solve(fmd_hdl_t *hdl, fmd_case_t *cp,
     nvlist_t *attr, fmd_event_t *ep, boolean_t savecore_success)
 {
-	char *dumpdir, *path, *uuid;
+	char path[PATH_MAX];
+	char *dumpdir, *uuid;
 	nvlist_t *defect, *rsrc;
 	nvpair_t *nvp;
 	int i;
@@ -235,9 +236,7 @@ swde_panic_solve(fmd_hdl_t *hdl, fmd_case_t *cp,
 	 */
 	(void) nvlist_lookup_string(attr, "dumpdir", &dumpdir);
 	(void) nvlist_lookup_string(attr, "os-instance-uuid", &uuid);
-	path = alloca(strlen(dumpdir) + strlen("/data/") +
-	    UUID_PRINTABLE_STRING_LENGTH);
-	(void) snprintf(path, MAXPATHLEN, "%s/data/%s", dumpdir, uuid);
+	(void) snprintf(path, sizeof (path), "%s/data/%s", dumpdir, uuid);
 	rsrc = panic_sw_fmri(hdl, path);
 
 	defect = fmd_nvl_create_defect(hdl, SW_SUNOS_PANIC_DEFECT,
