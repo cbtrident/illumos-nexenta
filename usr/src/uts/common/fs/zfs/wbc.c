@@ -2287,7 +2287,6 @@ wbc_register_instance(wbc_data_t *wbc_data, objset_t *os)
 	dsl_dataset_t *ds = os->os_dsl_dataset;
 	wbc_instance_t *wbc_instance;
 	avl_index_t where = NULL;
-	zfs_autosnap_t *autosnap;
 
 	ASSERT(MUTEX_HELD(&wbc_data->wbc_lock));
 
@@ -2301,9 +2300,8 @@ wbc_register_instance(wbc_data_t *wbc_data, objset_t *os)
 	wbc_instance->ds_object = ds->ds_object;
 	wbc_instance->wbc_data = wbc_data;
 	dsl_dataset_name(ds, wbc_instance->ds_name);
-	autosnap = spa_get_autosnap(wbc_data->wbc_spa);
 	wbc_instance->wbc_autosnap_hdl =
-	    autosnap_register_handler_impl(autosnap, wbc_instance->ds_name,
+	    autosnap_register_handler_impl(wbc_data->wbc_spa, wbc_instance->ds_name,
 	    AUTOSNAP_CREATOR | AUTOSNAP_DESTROYER |
 	    AUTOSNAP_RECURSIVE | AUTOSNAP_WBC,
 	    wbc_confirm_cb, wbc_nc_cb, wbc_err_cb, wbc_instance);

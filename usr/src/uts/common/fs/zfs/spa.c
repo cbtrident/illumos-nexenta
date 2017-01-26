@@ -3144,11 +3144,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		 */
 		spa_history_log_version(spa, "open");
 
-		/*
-		 * Delete any inconsistent datasets.
-		 */
-		(void) dmu_objset_find(spa_name(spa),
-		    dsl_destroy_inconsistent, NULL, DS_FIND_CHILDREN);
+		dsl_destroy_inconsistent(spa_get_dsl(spa));
 
 		/*
 		 * Clean up any stale temporary dataset userrefs.
@@ -3390,10 +3386,8 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
 		mutex_exit(&spa_namespace_lock);
 	}
 
-	if (open_with_activation) {
-		autosnap_collect_orphaned_snapshots(spa);
+	if (open_with_activation)
 		wbc_activate(spa, B_FALSE);
-	}
 
 	*spapp = spa;
 
@@ -4593,8 +4587,6 @@ spa_import(const char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 
 	if (!spa_writeable(spa))
 		return (0);
-
-	autosnap_collect_orphaned_snapshots(spa);
 
 	wbc_activate(spa, B_FALSE);
 

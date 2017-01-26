@@ -79,7 +79,7 @@ typedef struct wbc_instance {
 
 	wbc_data_t	*wbc_data;
 	void		*wbc_autosnap_hdl;
-	char		ds_name[MAXNAMELEN];
+	char		ds_name[ZFS_MAX_DATASET_NAME_LEN];
 
 	/* copy of dsl_dataset_t->ds_object */
 	uint64_t	ds_object;

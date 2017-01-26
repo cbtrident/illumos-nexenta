@@ -22,7 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_SYS_DSL_DESTROY_H
@@ -35,6 +35,7 @@ extern "C" {
 struct nvlist;
 struct dsl_dataset;
 struct dmu_tx;
+struct dsl_pool;
 
 int dsl_destroy_snapshots_nvl(struct nvlist *, boolean_t,
     struct nvlist *);
@@ -43,7 +44,7 @@ int dsl_destroy_snapshot(const char *, boolean_t);
 int dsl_destroy_head(const char *);
 int dsl_destroy_head_check_impl(struct dsl_dataset *, int);
 void dsl_destroy_head_sync_impl(struct dsl_dataset *, struct dmu_tx *);
-int dsl_destroy_inconsistent(const char *, void *);
+int dsl_destroy_inconsistent(struct dsl_pool *dp);
 int dsl_destroy_snapshot_check_impl(struct dsl_dataset *, boolean_t);
 void dsl_destroy_snapshot_sync_impl(struct dsl_dataset *,
     boolean_t, struct dmu_tx *);

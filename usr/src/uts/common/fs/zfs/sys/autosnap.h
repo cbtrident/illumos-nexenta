@@ -27,7 +27,7 @@ typedef void (*autosnap_error_cb)(const char *name, int err,
 typedef struct autosnap_snapshot {
 	avl_node_t node; /* for release */
 	list_node_t dnode; /* for destroyer */
-	char name[MAXPATHLEN];
+	char name[ZFS_MAX_DATASET_NAME_LEN];
 	boolean_t recursive;
 	uint64_t txg;
 	uint64_t etxg;
@@ -41,7 +41,7 @@ typedef struct zfs_autosnap zfs_autosnap_t;
 /* Pools are distinguished by dataset and prefix */
 typedef struct autosnap_zone {
 	list_node_t node;
-	char dataset[MAXPATHLEN]; /* The name of top-level dataset */
+	char dataset[ZFS_MAX_DATASET_NAME_LEN]; /* The name of top-level dataset */
 	uint64_t flags; /* see below: autosnap_flags_t */
 	list_t listeners;
 	zfs_autosnap_t *autosnap;
@@ -58,6 +58,7 @@ typedef struct autosnap_zone {
 struct zfs_autosnap {
 	avl_tree_t snapshots;
 	kmutex_t autosnap_lock;
+	kmutex_t autosnap_avl_lock;
 	kcondvar_t autosnap_cv;
 	list_t autosnap_zones;
 	list_t autosnap_destroy_queue;
@@ -93,7 +94,7 @@ typedef struct autosnap_handler {
 	autosnap_zone_t *zone;
 } autosnap_handler_t;
 
-void * autosnap_register_handler_impl(zfs_autosnap_t *autosnap,
+void * autosnap_register_handler_impl(spa_t *spa,
     const char *name, uint64_t flags,
     autosnap_confirm_cb confirm_cb,
     autosnap_notify_created_cb nc_cb,
@@ -149,8 +150,6 @@ void autosnap_reap_orphaned_snaps(spa_t *spa);
 
 int autosnap_lock(spa_t *spa);
 void autosnap_unlock(spa_t *spa);
-
-void autosnap_collect_orphaned_snapshots(spa_t *spa);
 
 boolean_t autosnap_is_autosnap(dsl_dataset_t *ds);
 boolean_t autosnap_check_name(const char *snap_name);

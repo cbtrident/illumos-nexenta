@@ -992,34 +992,72 @@ dsl_destroy_head(const char *name)
 	    dsl_destroy_head_sync, &ddha, 0, ZFS_SPACE_CHECK_NONE));
 }
 
-/*
- * Note, this function is used as the callback for dmu_objset_find().  We
- * always return 0 so that we will continue to find and process
- * inconsistent datasets, even if we encounter an error trying to
- * process one of them.
- */
+typedef struct {
+	kmutex_t	lock;
+	list_t list;
+} dsl_inconsistent_walker_cb_t;
+
+typedef struct {
+	char name[ZFS_MAX_DATASET_NAME_LEN];
+	list_node_t node;
+} dsl_inconsistent_node_t;
+
 /* ARGSUSED */
-int
-dsl_destroy_inconsistent(const char *dsname, void *arg)
+static int
+dsl_collect_inconsistent_datasets_cb(dsl_pool_t *dp,
+    dsl_dataset_t *ds, void *arg)
 {
-	objset_t *os;
+	dsl_inconsistent_node_t *ds_node;
+	dsl_inconsistent_walker_cb_t *walker =
+	    (dsl_inconsistent_walker_cb_t *)arg;
 
-	if (dmu_objset_hold(dsname, FTAG, &os) == 0) {
-		boolean_t need_destroy = DS_IS_INCONSISTENT(dmu_objset_ds(os));
+	if (!DS_IS_INCONSISTENT(ds))
+		return (0);
 
-		/*
-		 * If the dataset is inconsistent because a resumable receive
-		 * has failed, then do not destroy it.
-		 */
-		if (dsl_dataset_has_resume_receive_state(dmu_objset_ds(os)))
-			need_destroy = B_FALSE;
+	/*
+	 * If the dataset is inconsistent because a resumable receive
+	 * has failed, then do not destroy it.
+	 */
+	if (dsl_dataset_has_resume_receive_state(ds))
+		return (0);
 
-		dmu_objset_rele(os, FTAG);
-		if (need_destroy)
-			(void) dsl_destroy_head(dsname);
-	}
+	ds_node = kmem_alloc(sizeof (dsl_inconsistent_node_t), KM_SLEEP);
+	dsl_dataset_name(ds, ds_node->name);
+
+	mutex_enter(&walker->lock);
+	list_insert_tail(&walker->list, ds_node);
+	mutex_exit(&walker->lock);
+
 	return (0);
 }
+
+/*
+ * Walk in parallel over the entire pool and gather inconsistent
+ * datasets namely, those that don't have resume token and destroy them.
+ */
+void
+dsl_destroy_inconsistent(dsl_pool_t *dp)
+{
+	dsl_inconsistent_walker_cb_t walker;
+	dsl_inconsistent_node_t *ds_node;
+
+	mutex_init(&walker.lock, NULL, MUTEX_DEFAULT, NULL);
+	list_create(&walker.list, sizeof (dsl_inconsistent_node_t),
+	    offsetof(dsl_inconsistent_node_t, node));
+
+	VERIFY0(dmu_objset_find_dp(dp, dp->dp_root_dir_obj,
+		dsl_collect_inconsistent_datasets_cb,
+	    &walker, DS_FIND_CHILDREN));
+
+	while ((ds_node = list_remove_head(&walker.list)) != NULL) {
+		(void) dsl_destroy_head(ds_node->name);
+		kmem_free(ds_node, sizeof (dsl_inconsistent_node_t));
+	}
+
+	list_destroy(&walker.list);
+	mutex_destroy(&walker.lock);
+}
+
 
 typedef struct {
 	const char *from_ds;

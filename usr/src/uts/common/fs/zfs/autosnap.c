@@ -6,6 +6,7 @@
 #include <sys/autosnap.h>
 #include <sys/dmu_objset.h>
 #include <sys/dsl_dataset.h>
+#include <sys/dsl_dir.h>
 #include <sys/dsl_destroy.h>
 #include <sys/unique.h>
 #include <sys/ctype.h>
@@ -22,102 +23,104 @@ typedef struct {
 
 /* AUTOSNAP-recollect routines */
 
-/* Collect orphaned snapshots after reboot */
-void
-autosnap_collect_orphaned_snapshots(spa_t *spa)
+static autosnap_snapshot_t *
+autosnap_create_snap_node(const char *snap_name, uint64_t txg,
+    uint64_t etxg, boolean_t recursive, boolean_t orphaned)
+{
+	autosnap_snapshot_t *snap_node;
+
+	snap_node = kmem_zalloc(sizeof (autosnap_snapshot_t), KM_SLEEP);
+
+	(void) strcpy(snap_node->name, snap_name);
+	snap_node->recursive = recursive;
+	snap_node->txg = txg;
+	snap_node->etxg = etxg;
+	snap_node->orphaned = orphaned;
+	list_create(&snap_node->listeners, sizeof (autosnap_handler_t),
+		offsetof(autosnap_handler_t, node));
+
+	return (snap_node);
+}
+
+/*
+ * Callback for dmu_objset_find_dp().
+ * This function is called for all DSs, but processes only
+ * autosnaps.
+ *
+ * The constructed autosnap-structure is marked as "orphaned" and
+ * placed to common AVL of autosnap
+ */
+static int
+autosnap_collect_orphaned_snapshots_cb(dsl_pool_t *dp,
+    dsl_dataset_t *ds, void *arg)
+{
+	zfs_autosnap_t *autosnap = (zfs_autosnap_t *)arg;
+	char snap_name[ZFS_MAX_DATASET_NAME_LEN];
+	autosnap_snapshot_t *snap_node;
+	uint64_t txg;
+
+	if (!ds->ds_is_snapshot)
+		return (0);
+
+	dsl_dataset_name(ds, snap_name);
+	if (!autosnap_check_name(strchr(snap_name, '@')))
+		return (0);
+
+	txg = dsl_dataset_phys(ds)->ds_creation_txg;
+	snap_node = autosnap_create_snap_node(snap_name,
+	    txg, txg, B_FALSE, B_TRUE);
+
+	mutex_enter(&autosnap->autosnap_avl_lock);
+	avl_add(&autosnap->snapshots, snap_node);
+	mutex_exit(&autosnap->autosnap_avl_lock);
+
+	return (0);
+}
+
+/*
+ * Collect orphaned snapshots for given "ds_name" and all its
+ * children if recursive is TRUE
+ *
+ * This function is called during registration of an autosnap-listener
+ * The registration process can be initiated by
+ *    - WBC that restores configuration when ZFS activates a pool
+ *    - an user that has enabled WBC or KRRP for a dataset
+ */
+static void
+autosnap_collect_orphaned_snapshots(spa_t *spa,
+    const char *ds_name, boolean_t recursive)
 {
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
-	zfs_ds_collector_entry_t *el;
-	int err;
+	int flags = DS_FIND_SNAPSHOTS;
 	dsl_pool_t *dp = spa_get_dsl(spa);
 	dsl_dataset_t *ds;
-	objset_t *os;
-	list_t ds_to_collect;
+	uint64_t dd_object;
+	boolean_t held;
 
-	list_create(&ds_to_collect, sizeof (zfs_ds_collector_entry_t),
-	    offsetof(zfs_ds_collector_entry_t, node));
 
-	dsl_pool_config_enter(dp, FTAG);
-	/* collect all datasets of the pool */
-	err = zfs_collect_ds(spa, spa_name(spa), B_TRUE, B_FALSE,
-	    &ds_to_collect);
-	dsl_pool_config_exit(dp, FTAG);
+	/*
+	 * If the top-level caller is ZFS that activates
+	 * the given pool, then the pool's config already held
+	 */
+	held = dsl_pool_config_held(dp);
+	if (!held)
+		dsl_pool_config_enter(dp, FTAG);
 
-	if (err) {
-		list_destroy(&ds_to_collect);
-		return;
-	}
+	if (dsl_dataset_hold(dp, ds_name, FTAG, &ds) != 0)
+		goto out;
 
-	mutex_enter(&autosnap->autosnap_lock);
+	dd_object = ds->ds_dir->dd_object;
+	dsl_dataset_rele(ds, FTAG);
 
-	/* iterate through the datasets */
-	dsl_pool_config_enter(dp, FTAG);
-	for (el = list_head(&ds_to_collect);
-	    el != NULL;
-	    el = list_head(&ds_to_collect)) {
-		dsl_dataset_t *pdss = NULL;
-		char name[MAXPATHLEN];
-		uint64_t offp = 0, obj = 0;
-		boolean_t cc = B_FALSE;
+	if (recursive)
+		flags |= DS_FIND_CHILDREN;
 
-		if (!err)
-			err = dsl_dataset_hold(dp, el->name, FTAG, &pdss);
+	VERIFY0(dmu_objset_find_dp(spa_get_dsl(spa), dd_object,
+	    autosnap_collect_orphaned_snapshots_cb, autosnap, flags));
 
-		if (!err)
-			err = dmu_objset_from_ds(pdss, &os);
-
-		while (!err) {
-			/* iterate through snapshots */
-			(void) strcpy(name, el->name);
-			(void) strcat(name, "@");
-
-			err = dmu_snapshot_list_next(os,
-			    MAXPATHLEN - strlen(name),
-			    name + strlen(name), &obj, &offp, &cc);
-			if (err == ENOENT) {
-				err = 0;
-				break;
-			}
-
-			if (!err) {
-				autosnap_snapshot_t *snap_node;
-				/* only autosnaps are collected */
-				if (!autosnap_check_name(strchr(name, '@')))
-					continue;
-
-				err = dsl_dataset_hold(dp, name, FTAG, &ds);
-				if (err)
-					continue;
-
-				snap_node =
-				    kmem_zalloc(sizeof (autosnap_snapshot_t),
-				    KM_SLEEP);
-
-				(void) strcpy(snap_node->name, name);
-				snap_node->recursive = B_FALSE;
-				snap_node->txg =
-				    dsl_dataset_phys(ds)->ds_creation_txg;
-				snap_node->etxg =
-				    dsl_dataset_phys(ds)->ds_creation_txg;
-				snap_node->orphaned = B_TRUE;
-				list_create(&snap_node->listeners,
-				    sizeof (autosnap_handler_t),
-				    offsetof(autosnap_handler_t, node));
-
-				avl_add(&autosnap->snapshots, snap_node);
-
-				dsl_dataset_rele(ds, FTAG);
-			}
-		}
-
-		if (pdss)
-			dsl_dataset_rele(pdss, FTAG);
-		(void) list_remove_head(&ds_to_collect);
-		dsl_dataset_collector_cache_free(el);
-	}
-	dsl_pool_config_exit(dp, FTAG);
-	mutex_exit(&autosnap->autosnap_lock);
-	list_destroy(&ds_to_collect);
+out:
+	if (!held)
+		dsl_pool_config_exit(dp, FTAG);
 }
 
 /* Plan to destroy all orphaned snapshots */
@@ -429,15 +432,16 @@ snapshot_txg_compare(const void *arg1, const void *arg2)
 /* AUTOSNAP-HDL routines */
 
 void *
-autosnap_register_handler_impl(zfs_autosnap_t *autosnap,
+autosnap_register_handler_impl(spa_t *spa,
     const char *name, uint64_t flags,
     autosnap_confirm_cb confirm_cb,
     autosnap_notify_created_cb nc_cb,
     autosnap_error_cb err_cb, void *cb_arg)
 {
+	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 	autosnap_handler_t *hdl = NULL;
 	autosnap_zone_t *zone, *rzone;
-	boolean_t children_have_zone;
+	boolean_t children_have_zone, new_zone = B_FALSE;
 
 
 	mutex_enter(&autosnap->autosnap_lock);
@@ -461,7 +465,7 @@ autosnap_register_handler_impl(zfs_autosnap_t *autosnap,
 	}
 
 	/* Create a new zone if it is absent */
-	if (!zone) {
+	if (zone == NULL) {
 		zone = kmem_zalloc(sizeof (autosnap_zone_t), KM_SLEEP);
 		(void) strcpy(zone->dataset, name);
 
@@ -471,6 +475,9 @@ autosnap_register_handler_impl(zfs_autosnap_t *autosnap,
 
 		zone->autosnap = autosnap;
 		list_insert_tail(&autosnap->autosnap_zones, zone);
+
+		autosnap_collect_orphaned_snapshots(spa, name,
+		    ((flags & AUTOSNAP_RECURSIVE) != 0));
 	} else {
 		if ((list_head(&zone->listeners) != NULL) &&
 		    ((flags & AUTOSNAP_CREATOR) ^
@@ -536,7 +543,7 @@ autosnap_register_handler(const char *name, uint64_t flags,
 
 	spa = spa_lookup(name);
 	if (spa != NULL) {
-		hdl = autosnap_register_handler_impl(spa_get_autosnap(spa),
+		hdl = autosnap_register_handler_impl(spa,
 		    name, flags, confirm_cb, nc_cb, err_cb, cb_arg);
 	}
 
@@ -1252,6 +1259,7 @@ autosnap_init(spa_t *spa)
 {
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 	mutex_init(&autosnap->autosnap_lock, NULL, MUTEX_ADAPTIVE, NULL);
+	mutex_init(&autosnap->autosnap_avl_lock, NULL, MUTEX_ADAPTIVE, NULL);
 	cv_init(&autosnap->autosnap_cv, NULL, CV_DEFAULT, NULL);
 	list_create(&autosnap->autosnap_zones, sizeof (autosnap_zone_t),
 	    offsetof(autosnap_zone_t, node));
@@ -1306,6 +1314,7 @@ autosnap_fini(spa_t *spa)
 	list_destroy(&autosnap->autosnap_destroy_queue);
 	list_destroy(&autosnap->autosnap_zones);
 	mutex_destroy(&autosnap->autosnap_lock);
+	mutex_destroy(&autosnap->autosnap_avl_lock);
 	cv_destroy(&autosnap->autosnap_cv);
 }
 
