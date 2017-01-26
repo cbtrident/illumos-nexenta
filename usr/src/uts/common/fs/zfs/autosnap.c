@@ -50,6 +50,7 @@ autosnap_create_snap_node(const char *snap_name, uint64_t txg,
  * The constructed autosnap-structure is marked as "orphaned" and
  * placed to common AVL of autosnap
  */
+/* ARGSUSED */
 static int
 autosnap_collect_orphaned_snapshots_cb(dsl_pool_t *dp,
     dsl_dataset_t *ds, void *arg)
@@ -441,7 +442,7 @@ autosnap_register_handler_impl(spa_t *spa,
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 	autosnap_handler_t *hdl = NULL;
 	autosnap_zone_t *zone, *rzone;
-	boolean_t children_have_zone, new_zone = B_FALSE;
+	boolean_t children_have_zone;
 
 
 	mutex_enter(&autosnap->autosnap_lock);

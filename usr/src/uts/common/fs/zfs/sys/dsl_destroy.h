@@ -44,7 +44,7 @@ int dsl_destroy_snapshot(const char *, boolean_t);
 int dsl_destroy_head(const char *);
 int dsl_destroy_head_check_impl(struct dsl_dataset *, int);
 void dsl_destroy_head_sync_impl(struct dsl_dataset *, struct dmu_tx *);
-int dsl_destroy_inconsistent(struct dsl_pool *dp);
+void dsl_destroy_inconsistent(struct dsl_pool *dp);
 int dsl_destroy_snapshot_check_impl(struct dsl_dataset *, boolean_t);
 void dsl_destroy_snapshot_sync_impl(struct dsl_dataset *,
     boolean_t, struct dmu_tx *);
