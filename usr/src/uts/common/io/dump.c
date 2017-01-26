@@ -47,8 +47,7 @@
 #include <sys/conf.h>
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
-
-#define	DUMP_UUID_LEN	37
+#include <sys/uuid.h>
 
 static dev_info_t *dump_devi;
 
@@ -98,7 +97,7 @@ dump_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	uint64_t dumpsize_in_pages;
 	int error = 0;
 	char *pathbuf = kmem_zalloc(MAXPATHLEN, KM_SLEEP);
-	char uuidbuf[36 + 1];
+	char uuidbuf[UUID_PRINTABLE_STRING_LENGTH];
 	size_t len;
 	vnode_t *vp;
 
@@ -189,7 +188,7 @@ dump_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 		    &len)) != 0)
 			break;
 
-		if (len != DUMP_UUID_LEN) {
+		if (len != UUID_PRINTABLE_STRING_LENGTH) {
 			error = EINVAL;
 			break;
 		}
@@ -213,7 +212,7 @@ dump_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 		    &len)) != 0)
 			break;
 
-		if (len != 37) {
+		if (len != UUID_PRINTABLE_STRING_LENGTH) {
 			error = EINVAL;
 			break;
 		}
@@ -222,7 +221,8 @@ dump_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 		break;
 
 	case DIOCGETUUID:
-		error = copyoutstr(dump_get_uuid(), (void *)arg, 37, NULL);
+		error = copyoutstr(dump_get_uuid(), (void *)arg,
+		    UUID_PRINTABLE_STRING_LENGTH, NULL);
 		break;
 
 	case DIOCRMDEV:

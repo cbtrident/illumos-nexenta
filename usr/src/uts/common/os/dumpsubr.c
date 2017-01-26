@@ -74,6 +74,7 @@
 #include <sys/hold_page.h>
 
 #include <bzip2/bzlib.h>
+#include <sys/uuid.h>
 
 /*
  * Crash dump time is dominated by disk write time.  To reduce this,
@@ -261,7 +262,7 @@ struct cbuf {
 	int off;			/* byte offset to first pfn */
 };
 
-static char dump_osimage_uuid[36 + 1];
+static char dump_osimage_uuid[UUID_PRINTABLE_STRING_LENGTH];
 
 #define	isdigit(ch)	((ch) >= '0' && (ch) <= '9')
 #define	isxdigit(ch)	(isdigit(ch) || ((ch) >= 'a' && (ch) <= 'f') || \
@@ -3047,16 +3048,18 @@ dumpvp_resize()
 }
 
 static int
-dump_parse_uuid(const char *uuidstr)
+dump_validate_uuid(const char *uuidstr)
 {
 	const char *ptr;
 	int i;
 
-	if (uuidstr == NULL || strlen(uuidstr) != 36)
+	if (uuidstr == NULL || strlen(uuidstr) !=
+	    UUID_PRINTABLE_STRING_LENGTH - 1)
 		return (EINVAL);
 
 	/* uuid_parse is not common code so check manually */
-	for (i = 0, ptr = uuidstr; i < 36; i++, ptr++) {
+	for (i = 0, ptr = uuidstr; i < UUID_PRINTABLE_STRING_LENGTH - 1;
+	    i++, ptr++) {
 		switch (i) {
 		case 8:
 		case 13:
@@ -3080,7 +3083,7 @@ int
 dump_update_uuid(const char *uuidstr)
 {
 
-	if (dump_parse_uuid(uuidstr) != 0 || dumphdr == NULL)
+	if (dump_validate_uuid(uuidstr) != 0 || dumphdr == NULL)
 		return (EINVAL);
 
 	bzero(dumphdr->dump_uuid, sizeof (dumphdr->dump_uuid));
@@ -3093,13 +3096,14 @@ dump_update_uuid(const char *uuidstr)
 int
 dump_set_uuid(const char *uuidstr)
 {
-	if (dump_parse_uuid(uuidstr) != 0)
+	if (dump_validate_uuid(uuidstr) != 0)
 		return (EINVAL);
 
 	if (dump_osimage_uuid[0] != '\0')
 		return (EALREADY);
 
-	(void) strncpy(dump_osimage_uuid, uuidstr, 36 + 1);
+	(void) strncpy(dump_osimage_uuid, uuidstr,
+	    UUID_PRINTABLE_STRING_LENGTH);
 
 	cmn_err(CE_CONT, "?This Solaris instance has UUID %s\n",
 	    dump_osimage_uuid);

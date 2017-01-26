@@ -87,7 +87,6 @@
 #include <sys/panic.h>
 #include <zone.h>
 #include <uuid/uuid.h>
-#include <limits.h>
 
 #include "../../common/sw.h"
 #include "panic.h"
@@ -198,7 +197,7 @@ static void
 swde_panic_solve(fmd_hdl_t *hdl, fmd_case_t *cp,
     nvlist_t *attr, fmd_event_t *ep, boolean_t savecore_success)
 {
-	char path[PATH_MAX];
+	char path[MAXPATHLEN];
 	char *dumpdir, *uuid;
 	nvlist_t *defect, *rsrc;
 	nvpair_t *nvp;
