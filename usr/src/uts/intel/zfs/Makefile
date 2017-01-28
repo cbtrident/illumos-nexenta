@@ -69,11 +69,6 @@ INC_PATH	+= -I$(UTSBASE)/common/fs/zfs
 INC_PATH	+= -I$(SRC)/common
 INC_PATH	+= -I$(COMMONBASE)/zfs
 
-#
-#	NZA ZFS Plus
-#
-INC_PATH	+= $(NZA_ZFSPLUSBASE_FLAGS)
-
 C99MODE=	-xc99=%all
 C99LMODE=	-Xc99=%all
 
@@ -124,5 +119,4 @@ $(ROOTLINK):	$(ROOT_FS_DIR) $(ROOTMODULE)
 #
 #	Include common targets.
 #
-include $(NZA_MAKEDEFS)
 include ../Makefile.targ

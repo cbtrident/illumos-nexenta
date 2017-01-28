@@ -18,9 +18,11 @@
 #
 # CDDL HEADER END
 #
+
+#
 # Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2012 Joshua M. Clulow <josh@sysmgr.org>
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 # Configuration variables for the runtime environment of the nightly
@@ -37,7 +39,7 @@
 #       checks for changes in ELF runpaths (-r)
 #       build and use this workspace's tools in $SRC/tools (-t)
 #
-# - This file is sourced by "bldenv.sh" and "nightly.sh" and should not 
+# - This file is sourced by "bldenv.sh" and "nightly.sh" and should not
 #   be executed directly.
 # - This script is only interpreted by ksh93 and explicitly allows the
 #   use of ksh93 language extensions.
@@ -51,12 +53,6 @@ export CODEMGR_WS=`git rev-parse --show-toplevel`
 # nightly itself.
 GATE=`basename ${CODEMGR_WS}`
 
-# For builds without nza-closed
-export NZA_MAKEDEFS="$CODEMGR_WS/usr/src/Makefile.nza"
-
-# For builds with nza-closed
-# export NZA_MAKEDEFS="$CODEMGR_WS/usr/nza-closed/Makefile.nza"
-
 # Maximum number of dmake jobs.  The recommended number is 2 + NCPUS,
 # where NCPUS is the number of logical CPUs on your build system.
 # export DMAKE_MAX_JOBS=4  (use default from $HOME/.make.machines)
@@ -67,7 +63,6 @@ export NZA_MAKEDEFS="$CODEMGR_WS/usr/src/Makefile.nza"
 export PARENT_WS=''
 
 # CLONE_WS is the workspace nightly should do a bringover from.
-# NZA:  This will be Nexenta's Illumos child, or a child of that.
 export CLONE_WS=''
 
 # The bringover, if any, is done as STAFFER.
@@ -100,15 +95,6 @@ export MACH="$(uname -p)"
 export ON_CLOSED_BINS="$CODEMGR_WS/closed"
 # Location of signed cryptographic binaries.
 export ON_CRYPTO_BINS="$CODEMGR_WS/on-crypto.$MACH.tar.bz2"
-
-#
-# NZA --> Sources of Nexenta-specific closed sources.  The usr/nza-closed
-# directory will be cloned from here.  If usr/nza-closed is not present,
-# the nightly will build, but not have any Nexenta closed-source enhancements.
-# This variable can be not set, and the build will still occur.
-# Also, this variable does not have to be relative to $CLONE_WS, but in this
-# example, it is.
-export NZA_CLOSED_SRC="$CLONE_WS/usr/nza-closed"
 
 #
 # REF_PROTO_LIST - for comparing the list of stuff in your proto area
@@ -246,7 +232,7 @@ export ENABLE_SMB_PRINTING='#'
 export ENABLE_IPP_PRINTING='#'
 
 # Detect the values to match the perl version used for building.
-# This code can be avoided by setting the variables here. 
+# This code can be avoided by setting the variables here.
 if [ -z "$PERL_VERSION" ] ; then
 	for d in 5.16.1 5.16 5.14 5.12 5.10.0 5.10 ; do
 		if [ -d /usr/perl5/$d ] ; then

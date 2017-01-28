@@ -266,33 +266,33 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	zvol_check_dump_config;
 	zvol_volsize_to_reservation;
 
-# NZA ZFS Plus
-	zfs_destroy_atomically;
-	zfs_check_krrp;
-	vdev_name_to_prop;
-	vdev_prop_to_name;
-	vdev_prop_readonly;
-	vdev_prop_values;
-	vdev_prop_column_name;
-	vdev_prop_align_right;
-	zpool_set_proplist;
-	vdev_set_proplist;
-	vdev_get_prop;
-	cos_set_proplist;
-	cos_get_prop;
+	# Nexenta interfaces
 	cos_alloc;
 	cos_free;
+	cos_get_prop;
+	cos_get_proplist;
 	cos_list;
 	cos_name_to_prop;
-	cos_prop_to_name;
-	cos_prop_readonly;
-	cos_prop_values;
-	cos_prop_column_name;
-	cos_prop_align_right;
-	vdev_print_one_property;
-	vdev_get_proplist;
 	cos_print_one_property;
-	cos_get_proplist;
+	cos_prop_align_right;
+	cos_prop_column_name;
+	cos_prop_readonly;
+	cos_prop_to_name;
+	cos_prop_values;
+	cos_set_proplist;
+	vdev_get_prop;
+	vdev_get_proplist;
+	vdev_name_to_prop;
+	vdev_print_one_property;
+	vdev_prop_align_right;
+	vdev_prop_column_name;
+	vdev_prop_readonly;
+	vdev_prop_to_name;
+	vdev_prop_values;
+	vdev_set_proplist;
+	zfs_check_krrp;
+	zfs_destroy_atomically;
+	zpool_set_proplist;
 
     local:
 	*;

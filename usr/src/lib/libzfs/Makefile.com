@@ -55,14 +55,7 @@ OBJS_COMMON=			\
 	libzfs_status.o		\
 	libzfs_util.o
 
-
 OBJECTS= $(OBJS_COMMON) $(OBJS_SHARED)
-#
-# ZFS Plus shared
-#
-include $(NZA_MAKEDEFS)
-OBJECTS += $(NZA_ZFSPLUS_SHARED_OBJS)
-OBJECTS += $(LIBZFS_LOG_EVENT_OBJS)
 
 include ../../Makefile.lib
 
@@ -77,7 +70,6 @@ INCS += -I$(SRCDIR)
 INCS += -I../../../uts/common/fs/zfs
 INCS += -I../../../common/zfs
 INCS += -I../../libc/inc
-INCS += $(NZA_ZFSPLUSBASE_FLAGS)
 
 C99MODE=	-xc99=%all
 C99LMODE=	-Xc99=%all
@@ -89,9 +81,7 @@ CPPFLAGS +=	$(INCS) -D_LARGEFILE64_SOURCE=1 -D_REENTRANT
 $(DYNLIB) := LDLIBS +=	-lz
 
 SRCS=	$(OBJS_COMMON:%.o=$(SRCDIR)/%.c)	\
-	$(OBJS_SHARED:%.o=$(SRC)/common/zfs/%.c) \
-	$(NZA_ZFSPLUS_SHARED_SRC) \
-	$(LIBZFS_LOG_EVENT_SRC)
+	$(OBJS_SHARED:%.o=$(SRC)/common/zfs/%.c)
 $(LINTLIB) := SRCS=	$(SRCDIR)/$(LINTSRC)
 
 .KEEP_STATE:

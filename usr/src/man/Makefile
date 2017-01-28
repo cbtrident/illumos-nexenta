@@ -15,8 +15,6 @@
 # Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 #
 
-include $(NZA_MAKEDEFS)
-
 SUBDIRS=	man1		\
 		man1b		\
 		man1c		\
@@ -102,8 +100,6 @@ SUBDIRS=	man1		\
 		man9f		\
 		man9p		\
 		man9s
-
-$(NZA_KMODS)SUBDIRS += $(NZA_CLOSED_MAN)
 
 .PARALLEL: $(SUBDIRS)
 

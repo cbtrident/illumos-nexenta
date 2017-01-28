@@ -29,7 +29,6 @@
 #
 
 include ../Makefile.master
-include $(NZA_MAKEDEFS)
 
 #
 #	Note that the commands 'lp', and 'perl' are first in
@@ -480,8 +479,6 @@ COMMON_SUBDIRS=		\
 	zonestat	\
 	zstreamdump	\
 	ztest
-
-$(NZA_KMODS)COMMON_SUBDIRS += $(NZA_CLOSED_CMD)
 
 i386_SUBDIRS=		\
 	acpihpd		\

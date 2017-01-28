@@ -81,7 +81,3 @@ $(ROOTUSRSBINLINKS):
 	-$(RM) $@; $(SYMLINK) ../../sbin/$(@F) $@
 
 include ../Makefile.targ
-#
-# ZFS Plus
-#
-include $(NZA_MAKEDEFS)

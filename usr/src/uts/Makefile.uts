@@ -36,7 +36,6 @@
 #	Include global definitions:
 #
 include $(SRC)/Makefile.master
-include $(NZA_MAKEDEFS)
 
 #
 #	No text domain in the kernel.
@@ -583,8 +582,6 @@ PARALLEL_KMODS = $(DRV_KMODS) $(EXEC_KMODS) $(FS_KMODS) $(SCHED_KMODS) \
 KMODS = $(GENUNIX_KMODS) $(PARALLEL_KMODS)
 
 $(PARALLEL_KMODS): $(GENUNIX_KMODS)
-
-$(NZA_MODS)NZA_KMODS = $(NZA_DRV_KMODS)
 
 LINT_KMODS = $(DRV_KMODS) $(EXEC_KMODS) $(FS_KMODS) $(SCHED_KMODS) \
 	  $(TOD_KMODS) $(STRMOD_KMODS) $(SYS_KMODS) $(MISC_KMODS) \

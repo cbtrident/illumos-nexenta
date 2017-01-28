@@ -28,7 +28,6 @@
 
 include $(SRC)/Makefile.master
 include $(SRC)/Makefile.buildnum
-include $(NZA_MAKEDEFS)
 
 #
 # Make sure we're getting a consistent execution environment for the
@@ -237,13 +236,6 @@ MANIFESTS = $(LIST_MANIFESTS_CMD:sh)
 
 # Conditionally add back lp-ipp
 $(ENABLE_IPP_PRINTING) MANIFESTS += print-lp-ipp-ipp-listener.mf
-
-# Conditionally add nza-closed manifests
-NZA_MANIFESTS =	driver-isal.mf network-aoe-target.mf
-NZA_MANIFESTS_CMD = \
-	( $(NZA_MANIFESTS:%=cp ../../nza-closed/pkg/manifests/% manifests;) )
-$(ENABLE_NZA_CLOSED) MANIFESTS += $(NZA_MANIFESTS) $(NZA_MANIFESTS_CMD:sh)
-CLOBBERFILES += $(NZA_MANIFESTS:%=manifests/%)
 
 PKGS= $(MANIFESTS:%.mf=%)
 DEP_PKGS= $(PKGS:%=$(PDIR)/%.dep)
