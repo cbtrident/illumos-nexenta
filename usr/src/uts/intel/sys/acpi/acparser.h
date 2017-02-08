@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2011, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -129,36 +129,7 @@ AcpiPsGetParent (
 
 
 /*
- * psobject - support for parse object processing
- */
-ACPI_STATUS
-AcpiPsBuildNamedOp (
-    ACPI_WALK_STATE         *WalkState,
-    UINT8                   *AmlOpStart,
-    ACPI_PARSE_OBJECT       *UnnamedOp,
-    ACPI_PARSE_OBJECT       **Op);
-
-ACPI_STATUS
-AcpiPsCreateOp (
-    ACPI_WALK_STATE         *WalkState,
-    UINT8                   *AmlOpStart,
-    ACPI_PARSE_OBJECT       **NewOp);
-
-ACPI_STATUS
-AcpiPsCompleteOp (
-    ACPI_WALK_STATE         *WalkState,
-    ACPI_PARSE_OBJECT       **Op,
-    ACPI_STATUS             Status);
-
-ACPI_STATUS
-AcpiPsCompleteFinalOp (
-    ACPI_WALK_STATE         *WalkState,
-    ACPI_PARSE_OBJECT       *Op,
-    ACPI_STATUS             Status);
-
-
-/*
- * psopinfo - AML Opcode information
+ * psopcode - AML Opcode information
  */
 const ACPI_OPCODE_INFO *
 AcpiPsGetOpcodeInfo (
@@ -321,6 +292,10 @@ AcpiPsFreeOp (
 
 BOOLEAN
 AcpiPsIsLeadingChar (
+    UINT32                  c);
+
+BOOLEAN
+AcpiPsIsPrefixChar (
     UINT32                  c);
 
 UINT32

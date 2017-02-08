@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2011, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -204,35 +204,6 @@ AcpiNsCompareNames (
 
 
 /*
- * nsconvert - Dynamic object conversion routines
- */
-ACPI_STATUS
-AcpiNsConvertToInteger (
-    ACPI_OPERAND_OBJECT     *OriginalObject,
-    ACPI_OPERAND_OBJECT     **ReturnObject);
-
-ACPI_STATUS
-AcpiNsConvertToString (
-    ACPI_OPERAND_OBJECT     *OriginalObject,
-    ACPI_OPERAND_OBJECT     **ReturnObject);
-
-ACPI_STATUS
-AcpiNsConvertToBuffer (
-    ACPI_OPERAND_OBJECT     *OriginalObject,
-    ACPI_OPERAND_OBJECT     **ReturnObject);
-
-ACPI_STATUS
-AcpiNsConvertToUnicode (
-    ACPI_OPERAND_OBJECT     *OriginalObject,
-    ACPI_OPERAND_OBJECT     **ReturnObject);
-
-ACPI_STATUS
-AcpiNsConvertToResource (
-    ACPI_OPERAND_OBJECT     *OriginalObject,
-    ACPI_OPERAND_OBJECT     **ReturnObject);
-
-
-/*
  * nsdump - Namespace dump/print utilities
  */
 void
@@ -305,22 +276,6 @@ AcpiNsCheckParameterCount (
     ACPI_NAMESPACE_NODE         *Node,
     UINT32                      UserParamCount,
     const ACPI_PREDEFINED_INFO  *Info);
-
-ACPI_STATUS
-AcpiNsCheckObjectType (
-    ACPI_PREDEFINED_DATA        *Data,
-    ACPI_OPERAND_OBJECT         **ReturnObjectPtr,
-    UINT32                      ExpectedBtypes,
-    UINT32                      PackageIndex);
-
-
-/*
- * nsprepkg - Validation of predefined name packages
- */
-ACPI_STATUS
-AcpiNsCheckPackage (
-    ACPI_PREDEFINED_DATA        *Data,
-    ACPI_OPERAND_OBJECT         **ReturnObjectPtr);
 
 
 /*
@@ -406,16 +361,15 @@ AcpiNsGetAttachedData (
  * predefined methods/objects
  */
 ACPI_STATUS
-AcpiNsSimpleRepair (
+AcpiNsRepairObject (
     ACPI_PREDEFINED_DATA    *Data,
     UINT32                  ExpectedBtypes,
     UINT32                  PackageIndex,
     ACPI_OPERAND_OBJECT     **ReturnObjectPtr);
 
 ACPI_STATUS
-AcpiNsWrapWithPackage (
+AcpiNsRepairPackageList (
     ACPI_PREDEFINED_DATA    *Data,
-    ACPI_OPERAND_OBJECT     *OriginalObject,
     ACPI_OPERAND_OBJECT     **ObjDescPtr);
 
 ACPI_STATUS
@@ -475,6 +429,10 @@ AcpiNsInstallNode (
 /*
  * nsutils - Utility functions
  */
+BOOLEAN
+AcpiNsValidRootPrefix (
+    char                    Prefix);
+
 ACPI_OBJECT_TYPE
 AcpiNsGetType (
     ACPI_NAMESPACE_NODE     *Node);

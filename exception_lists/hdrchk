@@ -335,5 +335,14 @@ usr/src/uts/common/sys/scsi/adapters/mpt_sas/mpi/mpi2_sas.h
 usr/src/uts/common/sys/scsi/adapters/mpt_sas/mpi/mpi2_targ.h
 usr/src/uts/common/sys/scsi/adapters/mpt_sas/mpi/mpi2_tool.h
 usr/src/uts/common/sys/scsi/adapters/mpt_sas/mpi/mpi2_type.h
-usr/src/uts/intel/io/acpica/compiler
-usr/src/uts/intel/sys/acpi
+usr/src/uts/intel/sys/acpi/acdebug.h
+usr/src/uts/intel/sys/acpi/acdisasm.h
+usr/src/uts/intel/sys/acpi/acevents.h
+usr/src/uts/intel/sys/acpi/acinterp.h
+usr/src/uts/intel/sys/acpi/acmacros.h
+usr/src/uts/intel/sys/acpi/acnames.h
+usr/src/uts/intel/sys/acpi/acpredef.h
+usr/src/uts/intel/sys/acpi/acresrc.h
+usr/src/uts/intel/sys/acpi/acstruct.h
+usr/src/uts/intel/sys/acpi/amlresrc.h
+usr/src/uts/intel/sys/acpi/platform/acwin64.h

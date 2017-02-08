@@ -60,7 +60,6 @@ COMMON_SUBDIRS=		\
 	adbgen		\
 	acct		\
 	acctadm		\
-	acpitools	\
 	aoeadm		\
 	aoesvc		\
 	arch		\
