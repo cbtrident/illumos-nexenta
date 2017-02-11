@@ -160,12 +160,14 @@ dump_record(dmu_sendarg_t *dsp, void *payload, int payload_len)
 	if (dsp->dsa_krrp_task == NULL ||
 	    dsp->dsa_krrp_task->buffer_args.force_cksum) {
 		fletcher_4_incremental_native(dsp->dsa_drr,
-		    offsetof(dmu_replay_record_t, drr_u.drr_checksum.drr_checksum),
+		    offsetof(dmu_replay_record_t,
+		    drr_u.drr_checksum.drr_checksum),
 		    &dsp->dsa_zc);
 		if (dsp->dsa_drr->drr_type != DRR_BEGIN) {
 			ASSERT(ZIO_CHECKSUM_IS_ZERO(&dsp->dsa_drr->drr_u.
 			    drr_checksum.drr_checksum));
-			dsp->dsa_drr->drr_u.drr_checksum.drr_checksum = dsp->dsa_zc;
+			dsp->dsa_drr->drr_u.drr_checksum.drr_checksum =
+			    dsp->dsa_zc;
 		}
 		fletcher_4_incremental_native(&dsp->dsa_drr->
 		    drr_u.drr_checksum.drr_checksum,
@@ -373,11 +375,10 @@ dump_write(dmu_sendarg_t *dsp, dmu_object_type_t type,
 				return (EIO);
 			}
 		}
-	}
-
-	rc = dump_bytes_with_checksum(dsp, abuf->b_data, blksz);
-	if (!dsp->sendsize) {
+		rc = dump_bytes_with_checksum(dsp, abuf->b_data, blksz);
 		(void) arc_buf_remove_ref(abuf, &abuf);
+	} else {
+		rc = dump_bytes(dsp, NULL, blksz);
 	}
 
 	if (rc != 0)
@@ -458,7 +459,7 @@ dump_spill(dmu_sendarg_t *dsp, uint64_t object, int blksz,
 		 * rc != 0 && rc != EINTR means that we cannot
 		 * zerocopy the data and need to use slow-path
 		 */
-		if (rc == 0 || rc == EINTR) 
+		if (rc == 0 || rc == EINTR)
 			return (rc);
 
 		ASSERT3U(rc, ==, ENODATA);
@@ -982,7 +983,8 @@ dmu_send_impl(void *tag, dsl_pool_t *dp, dsl_dataset_t *to_ds,
     dmu_krrp_task_t *krrp_task)
 {
 	return (dmu_send_impl_ss(tag, dp, to_ds, ancestor_zb, is_clone, embedok,
-	    large_block_ok, outfd, resumeobj, resumeoff, vp, off, B_FALSE, krrp_task));
+	    large_block_ok, outfd, resumeobj, resumeoff, vp, off, B_FALSE,
+	    krrp_task));
 }
 
 int
@@ -1957,8 +1959,8 @@ receive_read(struct receive_arg *ra, int len, void *buf)
 			    RLIM64_INFINITY, CRED(), &resid);
 			if (resid == len - done) {
 				/*
-				 * Note: ECKSUM indicates that the receive
-				 * was interrupted and can potentially be resumed.
+				 * Note: ECKSUM indicates that the receive was
+				 * interrupted and can potentially be resumed.
 				 */
 				ra->err = SET_ERROR(ECKSUM);
 			}
@@ -2547,10 +2549,12 @@ receive_read_payload_and_next_header(struct receive_arg *ra, int len, void *buf)
 		 * Note: checksum is of everything up to but not including the
 		 * checksum itself.
 		 */
-		ASSERT3U(offsetof(dmu_replay_record_t, drr_u.drr_checksum.drr_checksum),
+		ASSERT3U(offsetof(dmu_replay_record_t,
+		    drr_u.drr_checksum.drr_checksum),
 		    ==, sizeof (dmu_replay_record_t) - sizeof (zio_cksum_t));
 		receive_cksum(ra,
-		    offsetof(dmu_replay_record_t, drr_u.drr_checksum.drr_checksum),
+		    offsetof(dmu_replay_record_t,
+		    drr_u.drr_checksum.drr_checksum),
 		    &ra->next_rrd->header);
 
 		zio_cksum_t cksum_orig =
@@ -2756,7 +2760,8 @@ receive_read_record(struct receive_arg *ra)
 		if (ra->krrp_task == NULL ||
 		    ra->krrp_task->buffer_args.force_cksum) {
 			struct drr_end *drre = &ra->rrd->header.drr_u.drr_end;
-			if (!ZIO_CHECKSUM_EQUAL(ra->prev_cksum, drre->drr_checksum))
+			if (!ZIO_CHECKSUM_EQUAL(ra->prev_cksum,
+			    drre->drr_checksum))
 				return (SET_ERROR(ECKSUM));
 		}
 		return (0);
