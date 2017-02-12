@@ -2076,7 +2076,6 @@ spa_init(int mode)
 	spa_config_load();
 	l2arc_start();
 	ddt_init();
-	metaslab_global_init();
 	dsl_scan_global_init();
 }
 
@@ -2096,8 +2095,6 @@ spa_fini(void)
 	range_tree_fini();
 	unique_fini();
 	refcount_fini();
-	metaslab_global_fini();
-	dsl_scan_global_fini();
 
 	taskq_destroy(spa_sysevent_taskq);
 

@@ -168,8 +168,6 @@ extern int zfs_txg_timeout;
  */
 boolean_t zfs_free_bpobj_enabled = B_TRUE;
 
-static kmem_cache_t *scan_seg_cache;
-
 /* the order has to match pool_scan_type */
 static scan_cb_t *scan_funcs[POOL_SCAN_FUNCS] = {
 	NULL,
@@ -178,12 +176,6 @@ static scan_cb_t *scan_funcs[POOL_SCAN_FUNCS] = {
 	dsl_scan_scrub_cb,	/* POOL_SCAN_MOS */
 	dsl_scan_scrub_cb,	/* POOL_SCAN_META */
 };
-
-typedef struct {
-	range_seg_t	ss_rs;
-	avl_node_t	ss_size_node;
-	uint64_t	ss_fill;
-} scan_seg_t;
 
 typedef struct scan_io {
 	uint64_t		sio_prop;
@@ -215,9 +207,6 @@ struct dsl_scan_io_queue {
 
 	range_seg_t	q_issuing_rs;
 	uint64_t	q_num_issuing_zios;
-
-	scan_io_t	*q_adding_io;
-	uint64_t	q_removed_tmp;
 };
 
 #define	SCAN_IO_GET_OFFSET(sio)	\
@@ -225,8 +214,10 @@ struct dsl_scan_io_queue {
 #define	SCAN_IO_SET_OFFSET(sio, offset) \
 	BF64_SET_SB((sio)->sio_dva_word1, 0, 63, SPA_MINBLOCKSHIFT, 0, offset)
 
-static void scan_io_queue_insert_cb(range_tree_t *rt, void *rs, void *arg);
-static void scan_io_queue_remove_cb(range_tree_t *rt, void *rs, void *arg);
+static void scan_io_queue_insert_cb(range_tree_t *rt, range_seg_t *rs,
+    void *arg);
+static void scan_io_queue_remove_cb(range_tree_t *rt, range_seg_t *rs,
+    void *arg);
 static void scan_io_queue_vacate_cb(range_tree_t *rt, void *arg);
 static int ext_size_compar(const void *x, const void *y);
 static int io_addr_compar(const void *x, const void *y);
@@ -303,18 +294,7 @@ bp2sio(const blkptr_t *bp, scan_io_t *sio, int dva_i)
 void
 dsl_scan_global_init()
 {
-	ASSERT3P(scan_seg_cache, ==, NULL);
-	scan_seg_cache = kmem_cache_create("scan_seg_cache",
-	    sizeof (scan_seg_t), 0, NULL, NULL, NULL, NULL, NULL, 0);
 	fill_weight = zfs_scan_fill_weight;
-}
-
-void
-dsl_scan_global_fini()
-{
-	ASSERT(scan_seg_cache != NULL);
-	kmem_cache_destroy(scan_seg_cache);
-	scan_seg_cache = NULL;
 }
 
 int
@@ -2650,88 +2630,39 @@ scan_io_queue_insert(dsl_scan_t *scn, dsl_scan_io_queue_t *queue,
 	mutex_exit(&scn->scn_status_lock);
 
 	range_tree_set_gap(queue->q_exts_by_addr, zfs_scan_max_ext_gap);
-	queue->q_adding_io = sio;
-	range_tree_add(queue->q_exts_by_addr, offset, asize);
-	queue->q_adding_io = NULL;
+	range_tree_add_fill(queue->q_exts_by_addr, offset, asize, asize);
 }
 
-/*
- * Callback invoked when a scan_seg_t is being added to the q_exts_by_addr
- * range tree. Inserting a new segment might have removed a previously
- * existing segment due to the range tree automatically joining two
- * adjacent segments. In that case, scan_io_queue_remove_cb will have saved
- * the old segment's ss_fill value in q_removed_tmp, and the caller of
- * range_tree_add() has placed the newly adding scan_io_t into q_adding_io.
- * In order to properly track fill for the new segment, we need to add
- * the previously saved q_removed_tmp value and the size of the adding
- * scan_io_t to the ss_fill of the newly added scan_seg_t.
- */
+/* q_exts_by_addr segment add callback. */
 /*ARGSUSED*/
 static void
-scan_io_queue_insert_cb(range_tree_t *rt, void *rs, void *arg)
+scan_io_queue_insert_cb(range_tree_t *rt, range_seg_t *rs, void *arg)
 {
 	dsl_scan_io_queue_t *queue = arg;
-	scan_seg_t *ss = rs;
-	scan_seg_t *old_ss;
 	avl_index_t idx;
-
 	ASSERT(MUTEX_HELD(&queue->q_vd->vdev_scan_io_queue_lock));
-	ASSERT(queue->q_adding_io != NULL);
-
-	old_ss = avl_find(&queue->q_exts_by_size, ss, &idx);
-	if (old_ss != NULL) {
-		ASSERT3P(old_ss, ==, ss);
-		avl_remove(&queue->q_exts_by_size, ss);
-	}
-
-	ss->ss_fill += queue->q_adding_io->sio_asize + queue->q_removed_tmp;
-	ASSERT3U(ss->ss_fill, <=, ss->ss_rs.rs_end - ss->ss_rs.rs_start);
-	queue->q_removed_tmp = 0;
-
-	VERIFY3P(avl_find(&queue->q_exts_by_size, ss, &idx), ==, NULL);
-	avl_insert(&queue->q_exts_by_size, ss, idx);
+	VERIFY3P(avl_find(&queue->q_exts_by_size, rs, &idx), ==, NULL);
+	avl_insert(&queue->q_exts_by_size, rs, idx);
 }
 
-/*
- * Callback invoked from the q_exts_by_addr range tree when a scan_seg_t
- * is being removed. This can happen either when we are properly removing
- * a scan_seg_t, because we've consumed the extents in it, or because we
- * are adding a new scan_io_t and it happens to bridge the gap between two
- * scan_seg_t's. In that case, we need to memorize how well the adjacent
- * scan_seg_t's were filled (their ss_fill values), so that we can add
- * that in the insertion callback above. This information is conveyed to
- * this function by having the caller who invoked the range_tree_add()
- * place the io to be added into the q_adding_io temporary pointer.
- * That tells us that we are being called back due to a range_tree_add()
- * instead of a simple range_tree_remove().
- */
+/* q_exts_by_addr segment remove callback. */
 /*ARGSUSED*/
 static void
-scan_io_queue_remove_cb(range_tree_t *rt, void *rs, void *arg)
+scan_io_queue_remove_cb(range_tree_t *rt, range_seg_t *rs, void *arg)
 {
 	dsl_scan_io_queue_t *queue = arg;
-	scan_seg_t *ss = rs;
-
-	avl_remove(&queue->q_exts_by_size, ss);
-	if (queue->q_adding_io != NULL) {
-		queue->q_removed_tmp += ss->ss_fill;
-		ss->ss_fill = 0;
-	}
+	avl_remove(&queue->q_exts_by_size, rs);
 }
 
-/*
- * Callback invoked from the q_exts_by_addr range tree when the tree is
- * being vacated (during queue destruction). We don't do any queue counter
- * manipulations, since the queue is being destroyed anyway.
- */
+/* q_exts_by_addr vacate callback. */
 /*ARGSUSED*/
 static void
 scan_io_queue_vacate_cb(range_tree_t *rt, void *arg)
 {
 	dsl_scan_io_queue_t *queue = arg;
-	scan_seg_t *ss;
-	while ((ss = avl_first(&queue->q_exts_by_size)) != NULL)
-		avl_remove(&queue->q_exts_by_size, ss);
+	void *cookie = NULL;
+	while (avl_destroy_nodes(&queue->q_exts_by_size, &cookie) != NULL)
+		;
 }
 
 /*
@@ -2767,22 +2698,22 @@ scan_io_queue_vacate_cb(range_tree_t *rt, void *arg)
 static int
 ext_size_compar(const void *x, const void *y)
 {
-	const scan_seg_t *ssa = x, *ssb = y;
-	uint64_t sa = ssa->ss_rs.rs_end - ssa->ss_rs.rs_start,
-	    sb = ssb->ss_rs.rs_end - ssb->ss_rs.rs_start;
+	const range_seg_t *rsa = x, *rsb = y;
+	uint64_t sa = rsa->rs_end - rsa->rs_start,
+	    sb = rsb->rs_end - rsb->rs_start;
 	uint64_t score_a, score_b;
 
-	score_a = ssa->ss_fill + (((ssa->ss_fill * 100) / sa) *
-	    fill_weight * ssa->ss_fill) / 100;
-	score_b = ssb->ss_fill + (((ssb->ss_fill * 100) / sb) *
-	    fill_weight * ssb->ss_fill) / 100;
+	score_a = rsa->rs_fill + (((rsa->rs_fill * 100) / sa) *
+	    fill_weight * rsa->rs_fill) / 100;
+	score_b = rsb->rs_fill + (((rsb->rs_fill * 100) / sb) *
+	    fill_weight * rsb->rs_fill) / 100;
 
 	if (score_a > score_b)
 		return (-1);
 	if (score_a == score_b) {
-		if (ssa->ss_rs.rs_start < ssb->ss_rs.rs_start)
+		if (rsa->rs_start < rsb->rs_start)
 			return (-1);
-		if (ssa->ss_rs.rs_start == ssb->ss_rs.rs_start)
+		if (rsa->rs_start == rsb->rs_start)
 			return (0);
 		return (1);
 	}
@@ -2815,11 +2746,10 @@ scan_io_queue_create(vdev_t *vd)
 	q->q_scn = scn;
 	q->q_vd = vd;
 	cv_init(&q->q_cv, NULL, CV_DEFAULT, NULL);
-	ASSERT(scan_seg_cache != NULL);
-	q->q_exts_by_addr = range_tree_create_custom(&scan_io_queue_ops, q,
-	    &q->q_vd->vdev_scan_io_queue_lock, scan_seg_cache);
+	q->q_exts_by_addr = range_tree_create(&scan_io_queue_ops, q,
+	    &q->q_vd->vdev_scan_io_queue_lock);
 	avl_create(&q->q_exts_by_size, ext_size_compar,
-	    sizeof (scan_seg_t), offsetof(scan_seg_t, ss_size_node));
+	    sizeof (range_seg_t), offsetof(range_seg_t, rs_pp_node));
 	avl_create(&q->q_zios_by_addr, io_addr_compar,
 	    sizeof (scan_io_t), offsetof(scan_io_t, sio_nodes.sio_addr_node));
 
@@ -2972,7 +2902,7 @@ scan_io_queue_mem_lim(dsl_scan_t *scn)
 		if (queue != NULL) {
 			/* #extents in exts_by_size = # in exts_by_addr */
 			mused += avl_numnodes(&queue->q_exts_by_size) *
-			    sizeof (scan_seg_t) +
+			    sizeof (range_seg_t) +
 			    (avl_numnodes(&queue->q_zios_by_addr) +
 			    queue->q_num_issuing_zios) * sizeof (scan_io_t);
 		}
@@ -3028,7 +2958,7 @@ scan_io_queue_issue(list_t *io_list, dsl_scan_io_queue_t *queue)
 }
 
 /*
- * Given a scan_seg_t (extent) and a list, this function passes over a
+ * Given a range_seg_t (extent) and a list, this function passes over a
  * scan queue and gathers up the appropriate ios which fit into that
  * scan seg (starting from lowest LBA). During this, we observe that we
  * don't go over the `limit' in the total amount of scan_io_t bytes that
@@ -3042,21 +2972,21 @@ scan_io_queue_issue(list_t *io_list, dsl_scan_io_queue_t *queue)
  * q_exts_by_size tree.
  */
 static uint64_t
-scan_io_queue_gather(scan_seg_t *ss, list_t *list,
+scan_io_queue_gather(const range_seg_t *rs, list_t *list,
     dsl_scan_io_queue_t *queue, uint64_t limit)
 {
 	scan_io_t srch_sio, *sio, *next_sio;
 	avl_index_t idx;
-	uint64_t num_zios = 0, bytes = 0;
+	int64_t num_zios = 0, bytes = 0;
 	boolean_t size_limited = B_FALSE;
 
-	ASSERT(ss != NULL);
+	ASSERT(rs != NULL);
 	ASSERT3U(limit, !=, 0);
 	ASSERT(MUTEX_HELD(&queue->q_vd->vdev_scan_io_queue_lock));
 
 	list_create(list, sizeof (scan_io_t),
 	    offsetof(scan_io_t, sio_nodes.sio_list_node));
-	SCAN_IO_SET_OFFSET(&srch_sio, ss->ss_rs.rs_start);
+	SCAN_IO_SET_OFFSET(&srch_sio, rs->rs_start);
 
 	/*
 	 * The exact start of the extent might not contain any matching zios,
@@ -3066,52 +2996,36 @@ scan_io_queue_gather(scan_seg_t *ss, list_t *list,
 	if (sio == NULL)
 		sio = avl_nearest(&queue->q_zios_by_addr, idx, AVL_AFTER);
 
-	while (sio != NULL && SCAN_IO_GET_OFFSET(sio) < ss->ss_rs.rs_end) {
+	while (sio != NULL && SCAN_IO_GET_OFFSET(sio) < rs->rs_end) {
 		if (bytes >= limit) {
 			size_limited = B_TRUE;
 			break;
 		}
-		ASSERT3U(SCAN_IO_GET_OFFSET(sio), >=, ss->ss_rs.rs_start);
+		ASSERT3U(SCAN_IO_GET_OFFSET(sio), >=, rs->rs_start);
 		ASSERT3U(SCAN_IO_GET_OFFSET(sio) + sio->sio_asize, <=,
-		    ss->ss_rs.rs_end);
+		    rs->rs_end);
+
 		next_sio = AVL_NEXT(&queue->q_zios_by_addr, sio);
 		avl_remove(&queue->q_zios_by_addr, sio);
 		list_insert_tail(list, sio);
 		num_zios++;
 		bytes += sio->sio_asize;
-		ss->ss_fill -= sio->sio_asize;
 		sio = next_sio;
 	}
 
 	if (size_limited) {
-		scan_io_t *zero_io = kmem_zalloc(sizeof (*zero_io), KM_SLEEP);
-		/*
-		 * Only remove what's consumed. The ss_fill field will have
-		 * already been adjusted above, so when the range tree
-		 * internally recycles the value in scan_io_queue_insert_cb
-		 * and scan_io_queue_remove_cb, it will work out OK.
-		 */
+		uint64_t end;
 		sio = list_tail(list);
-		/*
-		 * We stick a zero-length io into q_adding_io, so that
-		 * scan_io_queue_remove_cb saves the ss_fill field of the
-		 * old scan seg (which has already been decremented by the
-		 * amount we lifted from it in the loop above) and will be
-		 * restored in the new scan seg representing the new extent
-		 * tail.
-		 */
-		queue->q_adding_io = zero_io;
-		range_tree_remove(queue->q_exts_by_addr, ss->ss_rs.rs_start,
-		    (SCAN_IO_GET_OFFSET(sio) + sio->sio_asize) -
-		    ss->ss_rs.rs_start);
-		kmem_free(zero_io, sizeof (*zero_io));
+		end = SCAN_IO_GET_OFFSET(sio) + sio->sio_asize;
+		range_tree_remove_fill(queue->q_exts_by_addr, rs->rs_start,
+		    end - rs->rs_start, bytes, 0);
 	} else {
 		/*
 		 * Whole extent consumed, remove it all, including any head
 		 * or tail overhang.
 		 */
-		range_tree_remove(queue->q_exts_by_addr, ss->ss_rs.rs_start,
-		    ss->ss_rs.rs_end - ss->ss_rs.rs_start);
+		range_tree_remove_fill(queue->q_exts_by_addr, rs->rs_start,
+		    rs->rs_end - rs->rs_start, bytes, 0);
 	}
 	atomic_add_64(&queue->q_num_issuing_zios, num_zios);
 
@@ -3130,7 +3044,7 @@ scan_io_queue_gather(scan_seg_t *ss, list_t *list,
  *	memory limit.
  * 3) Otherwise we don't select any extents.
  */
-static scan_seg_t *
+static const range_seg_t *
 scan_io_queue_fetch_ext(dsl_scan_io_queue_t *queue)
 {
 	dsl_scan_t *scn = queue->q_scn;
@@ -3170,7 +3084,7 @@ scan_io_queues_run_one(io_queue_run_info_t *info)
 	dsl_scan_t *scn = queue->q_scn;
 	kmutex_t *q_lock = &queue->q_vd->vdev_scan_io_queue_lock;
 	list_t zio_list;
-	scan_seg_t *ss;
+	const range_seg_t *rs;
 	uint64_t issued = 0;
 
 	ASSERT(scn->scn_is_sorted);
@@ -3181,10 +3095,10 @@ scan_io_queues_run_one(io_queue_run_info_t *info)
 
 		mutex_enter(q_lock);
 		/* First we select the extent we'll be issuing from next. */
-		ss = scan_io_queue_fetch_ext(queue);
-		DTRACE_PROBE2(queue_fetch_ext, scan_seg_t *, ss,
+		rs = scan_io_queue_fetch_ext(queue);
+		DTRACE_PROBE2(queue_fetch_ext, range_seg_t *, rs,
 		    dsl_scan_io_queue_t *, queue);
-		if (ss == NULL) {
+		if (rs == NULL) {
 			mutex_exit(q_lock);
 			break;
 		}
@@ -3194,7 +3108,7 @@ scan_io_queues_run_one(io_queue_run_info_t *info)
 		 * gather up the corresponding zio's, taking care not to step
 		 * over the limit.
 		 */
-		issued += scan_io_queue_gather(ss, &zio_list, queue,
+		issued += scan_io_queue_gather(rs, &zio_list, queue,
 		    limit - issued);
 		first_io = list_head(&zio_list);
 		last_io = list_tail(&zio_list);
@@ -3443,10 +3357,10 @@ dsl_scan_freed_dva(spa_t *spa, const blkptr_t *bp, int dva_i)
 	 * 1) Cold, just sitting in the queue of zio's to be issued at
 	 *	some point in the future. In this case, all we do is
 	 *	remove the zio from the q_zios_by_addr tree, decrement
-	 *	its data volume from the containing scan_seg_t and
+	 *	its data volume from the containing range_seg_t and
 	 *	resort the q_exts_by_size tree to reflect that the
-	 *	scan_seg_t has lost some of its 'fill'. We don't shorten
-	 *	the scan_seg_t - this is usually rare enough not to be
+	 *	range_seg_t has lost some of its 'fill'. We don't shorten
+	 *	the range_seg_t - this is usually rare enough not to be
 	 *	worth the extra hassle of trying keep track of precise
 	 *	extent boundaries.
 	 * 2) Hot, where the zio is currently in-flight in
@@ -3458,7 +3372,7 @@ dsl_scan_freed_dva(spa_t *spa, const blkptr_t *bp, int dva_i)
 	 */
 	sio = avl_find(&queue->q_zios_by_addr, &srch, &idx);
 	if (sio != NULL) {
-		scan_seg_t *ss;
+		range_seg_t *rs;
 
 		/* Got it while it was cold in the queue */
 		ASSERT3U(srch.sio_asize, ==, sio->sio_asize);
@@ -3471,20 +3385,19 @@ dsl_scan_freed_dva(spa_t *spa, const blkptr_t *bp, int dva_i)
 
 		/*
 		 * Since we're taking this scan_io_t out of its parent
-		 * scan_seg, we need to alter the scan_seg_t's ss_fill value,
-		 * so this changes its ordering position. We need to reinsert
-		 * in its appropriate place in q_exts_by_size.
+		 * range_seg_t, we need to alter the range_seg_t's rs_fill
+		 * value, so this changes its ordering position. We need
+		 * to reinsert in its appropriate place in q_exts_by_size.
 		 */
-		ss = range_tree_find(queue->q_exts_by_addr,
+		rs = range_tree_find(queue->q_exts_by_addr,
 		    SCAN_IO_GET_OFFSET(sio), sio->sio_asize);
-		ASSERT(ss != NULL);
-		avl_remove(&queue->q_exts_by_size, ss);
-		ASSERT3U(ss->ss_fill, <=,
-		    ss->ss_rs.rs_end - ss->ss_rs.rs_start);
-		ASSERT3U(ss->ss_fill, >=, sio->sio_asize);
-		ss->ss_fill -= sio->sio_asize;
-		VERIFY3P(avl_find(&queue->q_exts_by_size, ss, &idx), ==, NULL);
-		avl_insert(&queue->q_exts_by_size, ss, idx);
+		ASSERT(rs != NULL);
+		ASSERT3U(rs->rs_fill, >=, sio->sio_asize);
+		avl_remove(&queue->q_exts_by_size, rs);
+		ASSERT3U(rs->rs_fill, >=, sio->sio_asize);
+		rs->rs_fill -= sio->sio_asize;
+		VERIFY3P(avl_find(&queue->q_exts_by_size, rs, &idx), ==, NULL);
+		avl_insert(&queue->q_exts_by_size, rs, idx);
 
 		/*
 		 * We only update the queue byte counter in the cold path,

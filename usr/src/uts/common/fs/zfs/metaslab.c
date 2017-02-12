@@ -219,29 +219,6 @@ static void metaslab_free_trimset(metaslab_trimset_t *ts);
 static boolean_t metaslab_check_trim_conflict(metaslab_t *msp,
     uint64_t *offset, uint64_t size, uint64_t align, uint64_t limit);
 
-typedef struct ms_seg {
-	range_seg_t	ms_rs;
-	avl_node_t	ms_pp_node;	/* AVL picker-private node */
-} ms_seg_t;
-
-static kmem_cache_t *ms_seg_cache;
-
-void
-metaslab_global_init(void)
-{
-	ASSERT3P(ms_seg_cache, ==, NULL);
-	ms_seg_cache = kmem_cache_create("metaslab_seg_cache",
-	    sizeof (ms_seg_t), 0, NULL, NULL, NULL, NULL, NULL, 0);
-}
-
-void
-metaslab_global_fini(void)
-{
-	ASSERT(ms_seg_cache != NULL);
-	kmem_cache_destroy(ms_seg_cache);
-	ms_seg_cache = NULL;
-}
-
 /*
  * ==========================================================================
  * Metaslab classes
@@ -845,20 +822,20 @@ metaslab_group_allocatable(metaslab_group_t *mg)
 static int
 metaslab_rangesize_compare(const void *x1, const void *x2)
 {
-	const ms_seg_t *r1 = x1;
-	const ms_seg_t *r2 = x2;
-	uint64_t rs_size1 = r1->ms_rs.rs_end - r1->ms_rs.rs_start;
-	uint64_t rs_size2 = r2->ms_rs.rs_end - r2->ms_rs.rs_start;
+	const range_seg_t *r1 = x1;
+	const range_seg_t *r2 = x2;
+	uint64_t rs_size1 = r1->rs_end - r1->rs_start;
+	uint64_t rs_size2 = r2->rs_end - r2->rs_start;
 
 	if (rs_size1 < rs_size2)
 		return (-1);
 	if (rs_size1 > rs_size2)
 		return (1);
 
-	if (r1->ms_rs.rs_start < r2->ms_rs.rs_start)
+	if (r1->rs_start < r2->rs_start)
 		return (-1);
 
-	if (r1->ms_rs.rs_start > r2->ms_rs.rs_start)
+	if (r1->rs_start > r2->rs_start)
 		return (1);
 
 	return (0);
@@ -877,7 +854,7 @@ metaslab_rt_create(range_tree_t *rt, void *arg)
 	ASSERT(msp->ms_tree == NULL);
 
 	avl_create(&msp->ms_size_tree, metaslab_rangesize_compare,
-	    sizeof (ms_seg_t), offsetof(ms_seg_t, ms_pp_node));
+	    sizeof (range_seg_t), offsetof(range_seg_t, rs_pp_node));
 }
 
 /*
@@ -896,27 +873,25 @@ metaslab_rt_destroy(range_tree_t *rt, void *arg)
 }
 
 static void
-metaslab_rt_add(range_tree_t *rt, void *rs, void *arg)
+metaslab_rt_add(range_tree_t *rt, range_seg_t *rs, void *arg)
 {
-	ms_seg_t *mss = rs;
 	metaslab_t *msp = arg;
 
 	ASSERT3P(rt->rt_arg, ==, msp);
 	ASSERT3P(msp->ms_tree, ==, rt);
 	VERIFY(!msp->ms_condensing);
-	avl_add(&msp->ms_size_tree, mss);
+	avl_add(&msp->ms_size_tree, rs);
 }
 
 static void
-metaslab_rt_remove(range_tree_t *rt, void *rs, void *arg)
+metaslab_rt_remove(range_tree_t *rt, range_seg_t *rs, void *arg)
 {
-	ms_seg_t *mss = rs;
 	metaslab_t *msp = arg;
 
 	ASSERT3P(rt->rt_arg, ==, msp);
 	ASSERT3P(msp->ms_tree, ==, rt);
 	VERIFY(!msp->ms_condensing);
-	avl_remove(&msp->ms_size_tree, mss);
+	avl_remove(&msp->ms_size_tree, rs);
 }
 
 static void
@@ -934,7 +909,7 @@ metaslab_rt_vacate(range_tree_t *rt, void *arg)
 	 * will be freed by the range tree, so we don't want to free them here.
 	 */
 	avl_create(&msp->ms_size_tree, metaslab_rangesize_compare,
-	    sizeof (ms_seg_t), offsetof(ms_seg_t, ms_pp_node));
+	    sizeof (range_seg_t), offsetof(range_seg_t, rs_pp_node));
 }
 
 static range_tree_ops_t metaslab_rt_ops = {
@@ -958,12 +933,12 @@ uint64_t
 metaslab_block_maxsize(metaslab_t *msp)
 {
 	avl_tree_t *t = &msp->ms_size_tree;
-	ms_seg_t *mss;
+	range_seg_t *rs;
 
-	if (t == NULL || (mss = avl_last(t)) == NULL)
+	if (t == NULL || (rs = avl_last(t)) == NULL)
 		return (0ULL);
 
-	return (mss->ms_rs.rs_end - mss->ms_rs.rs_start);
+	return (rs->rs_end - rs->rs_start);
 }
 
 uint64_t
@@ -1002,22 +977,22 @@ static uint64_t
 metaslab_block_picker(metaslab_t *msp, avl_tree_t *t, uint64_t *cursor,
     uint64_t size, uint64_t align)
 {
-	ms_seg_t *mss, rsearch;
+	range_seg_t *rs, rsearch;
 	avl_index_t where;
 
-	rsearch.ms_rs.rs_start = *cursor;
-	rsearch.ms_rs.rs_end = *cursor + size;
+	rsearch.rs_start = *cursor;
+	rsearch.rs_end = *cursor + size;
 
-	mss = avl_find(t, &rsearch, &where);
-	if (mss == NULL)
-		mss = avl_nearest(t, where, AVL_AFTER);
+	rs = avl_find(t, &rsearch, &where);
+	if (rs == NULL)
+		rs = avl_nearest(t, where, AVL_AFTER);
 
-	for (; mss != NULL; mss = AVL_NEXT(t, mss)) {
-		uint64_t offset = P2ROUNDUP(mss->ms_rs.rs_start, align);
+	for (; rs != NULL; rs = AVL_NEXT(t, rs)) {
+		uint64_t offset = P2ROUNDUP(rs->rs_start, align);
 
-		if (offset + size <= mss->ms_rs.rs_end &&
+		if (offset + size <= rs->rs_end &&
 		    !metaslab_check_trim_conflict(msp, &offset, size, align,
-		    mss->ms_rs.rs_end)) {
+		    rs->rs_end)) {
 			*cursor = offset + size;
 			return (offset);
 		}
@@ -1132,20 +1107,19 @@ metaslab_cf_alloc(metaslab_t *msp, uint64_t size)
 	ASSERT3U(*cursor_end, >=, *cursor);
 
 	if ((*cursor + size) > *cursor_end) {
-		ms_seg_t *mss;
-		for (mss = avl_last(&msp->ms_size_tree);
-		    mss != NULL && mss->ms_rs.rs_end - mss->ms_rs.rs_start >=
-		    size; mss = AVL_PREV(&msp->ms_size_tree, mss)) {
-			*cursor = mss->ms_rs.rs_start;
-			*cursor_end = mss->ms_rs.rs_end;
+		range_seg_t *rs;
+		for (rs = avl_last(&msp->ms_size_tree);
+		    rs != NULL && rs->rs_end - rs->rs_start >= size;
+		    rs = AVL_PREV(&msp->ms_size_tree, rs)) {
+			*cursor = rs->rs_start;
+			*cursor_end = rs->rs_end;
 			if (!metaslab_check_trim_conflict(msp, cursor, size,
 			    1, *cursor_end)) {
 				/* segment appears to be acceptable */
 				break;
 			}
 		}
-		if (mss == NULL ||
-		    mss->ms_rs.rs_end - mss->ms_rs.rs_start < size)
+		if (rs == NULL || rs->rs_end - rs->rs_start < size)
 			return (-1ULL);
 	}
 
@@ -1179,7 +1153,7 @@ metaslab_ndf_alloc(metaslab_t *msp, uint64_t size)
 {
 	avl_tree_t *t = &msp->ms_tree->rt_root;
 	avl_index_t where;
-	ms_seg_t *mss, rsearch;
+	range_seg_t *rs, rsearch;
 	uint64_t hbit = highbit64(size);
 	uint64_t *cursor = &msp->ms_lbas[hbit - 1];
 	uint64_t max_size = metaslab_block_maxsize(msp);
@@ -1192,29 +1166,29 @@ metaslab_ndf_alloc(metaslab_t *msp, uint64_t size)
 	if (max_size < size)
 		return (-1ULL);
 
-	rsearch.ms_rs.rs_start = *cursor;
-	rsearch.ms_rs.rs_end = *cursor + size;
+	rsearch.rs_start = *cursor;
+	rsearch.rs_end = *cursor + size;
 
-	mss = avl_find(t, &rsearch, &where);
-	if (mss != NULL)
-		adjustable_start = mss->ms_rs.rs_start;
-	if (mss == NULL || mss->ms_rs.rs_end - adjustable_start < size ||
+	rs = avl_find(t, &rsearch, &where);
+	if (rs != NULL)
+		adjustable_start = rs->rs_start;
+	if (rs == NULL || rs->rs_end - adjustable_start < size ||
 	    metaslab_check_trim_conflict(msp, &adjustable_start, size, 1,
-	    mss->ms_rs.rs_end)) {
+	    rs->rs_end)) {
 		/* segment not usable, try the largest remaining one */
 		t = &msp->ms_size_tree;
 
-		rsearch.ms_rs.rs_start = 0;
-		rsearch.ms_rs.rs_end = MIN(max_size,
+		rsearch.rs_start = 0;
+		rsearch.rs_end = MIN(max_size,
 		    1ULL << (hbit + metaslab_ndf_clump_shift));
-		mss = avl_find(t, &rsearch, &where);
-		if (mss == NULL)
-			mss = avl_nearest(t, where, AVL_AFTER);
-		ASSERT(mss != NULL);
-		adjustable_start = mss->ms_rs.rs_start;
-		if (mss->ms_rs.rs_end - adjustable_start < size ||
+		rs = avl_find(t, &rsearch, &where);
+		if (rs == NULL)
+			rs = avl_nearest(t, where, AVL_AFTER);
+		ASSERT(rs != NULL);
+		adjustable_start = rs->rs_start;
+		if (rs->rs_end - adjustable_start < size ||
 		    metaslab_check_trim_conflict(msp, &adjustable_start,
-		    size, 1, mss->ms_rs.rs_end)) {
+		    size, 1, rs->rs_end)) {
 			/* even largest remaining segment not usable */
 			return (-1ULL);
 		}
@@ -1337,9 +1311,7 @@ metaslab_init(metaslab_group_t *mg, uint64_t id, uint64_t object, uint64_t txg,
 	 * addition of new space; and for debugging, it ensures that we'd
 	 * data fault on any attempt to use this metaslab before it's ready.
 	 */
-	ASSERT(ms_seg_cache != NULL);
-	ms->ms_tree = range_tree_create_custom(&metaslab_rt_ops, ms,
-	    &ms->ms_lock, ms_seg_cache);
+	ms->ms_tree = range_tree_create(&metaslab_rt_ops, ms, &ms->ms_lock);
 	metaslab_group_add(mg, ms);
 
 	ms->ms_fragmentation = metaslab_fragmentation(ms);
@@ -1746,7 +1718,7 @@ static boolean_t
 metaslab_should_condense(metaslab_t *msp)
 {
 	space_map_t *sm = msp->ms_sm;
-	ms_seg_t *mss;
+	range_seg_t *rs;
 	uint64_t size, entries, segsz, object_size, optimal_size, record_size;
 	dmu_object_info_t doi;
 	uint64_t vdev_blocksize = 1 << msp->ms_group->mg_vd->vdev_ashift;
@@ -1760,8 +1732,8 @@ metaslab_should_condense(metaslab_t *msp)
 	 * metaslabs that are empty and metaslabs for which a condense
 	 * request has been made.
 	 */
-	mss = avl_last(&msp->ms_size_tree);
-	if (mss == NULL || msp->ms_condense_wanted)
+	rs = avl_last(&msp->ms_size_tree);
+	if (rs == NULL || msp->ms_condense_wanted)
 		return (B_TRUE);
 
 	/*
@@ -1770,7 +1742,7 @@ metaslab_should_condense(metaslab_t *msp)
 	 * larger on-disk than the entire current on-disk structure, then
 	 * clearly condensing will increase the on-disk structure size.
 	 */
-	size = (mss->ms_rs.rs_end - mss->ms_rs.rs_start) >> sm->sm_shift;
+	size = (rs->rs_end - rs->rs_start) >> sm->sm_shift;
 	entries = size / (MIN(size, SM_RUN_MAX));
 	segsz = entries * sizeof (uint64_t);
 
@@ -3007,13 +2979,12 @@ metaslab_exec_trim(metaslab_t *msp)
 	trim_tree = msp->ms_trimming_ts->ts_tree;
 #ifdef	DEBUG
 	if (msp->ms_loaded) {
-		for (ms_seg_t *mss = avl_first(&trim_tree->rt_root);
-		    mss != NULL; mss = AVL_NEXT(&trim_tree->rt_root, mss)) {
+		for (range_seg_t *rs = avl_first(&trim_tree->rt_root);
+		    rs != NULL; rs = AVL_NEXT(&trim_tree->rt_root, rs)) {
 			if (!range_tree_contains(msp->ms_tree,
-			    mss->ms_rs.rs_start, mss->ms_rs.rs_end -
-			    mss->ms_rs.rs_start)) {
+			    rs->rs_start, rs->rs_end - rs->rs_start)) {
 				panic("trimming allocated region; mss=%p",
-				    (void*)mss);
+				    (void*)rs);
 			}
 		}
 	}

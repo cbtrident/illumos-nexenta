@@ -198,25 +198,7 @@ range_tree_seg_compare(const void *x1, const void *x2)
 range_tree_t *
 range_tree_create(range_tree_ops_t *ops, void *arg, kmutex_t *lp)
 {
-	return (range_tree_create_custom(ops, arg, lp, range_seg_cache));
-}
-
-/*
- * Same as range_tree_create, but allows you to pass a custom range tree
- * segment allocator. The purpose of this is that you can put additional
- * fields into the structure following a first range_seg_t field (which
- * will be used by the range tree itself), allowing you to store arbitrary
- * additional information with each range tree segment.
- */
-range_tree_t *
-range_tree_create_custom(range_tree_ops_t *ops, void *arg, kmutex_t *lp,
-    kmem_cache_t *seg_cache)
-{
-	range_tree_t *rt;
-
-	ASSERT3U(kmem_cache_bufsize(seg_cache), >=, sizeof (range_seg_t));
-
-	rt = kmem_zalloc(sizeof (range_tree_t), KM_SLEEP);
+	range_tree_t *rt = kmem_zalloc(sizeof (range_tree_t), KM_SLEEP);
 
 	avl_create(&rt->rt_root, range_tree_seg_compare,
 	    sizeof (range_seg_t), offsetof(range_seg_t, rs_node));
@@ -224,7 +206,6 @@ range_tree_create_custom(range_tree_ops_t *ops, void *arg, kmutex_t *lp,
 	rt->rt_lock = lp;
 	rt->rt_ops = ops;
 	rt->rt_arg = arg;
-	rt->rt_seg_cache = seg_cache;
 
 	if (rt->rt_ops != NULL && rt->rt_ops->rtop_create != NULL)
 		rt->rt_ops->rtop_create(rt, rt->rt_arg);
@@ -245,7 +226,7 @@ range_tree_destroy(range_tree_t *rt)
 }
 
 void
-range_tree_add(void *arg, uint64_t start, uint64_t size)
+range_tree_add_fill(void *arg, uint64_t start, uint64_t size, uint64_t fill)
 {
 	range_tree_t *rt = arg;
 	avl_index_t where;
@@ -272,12 +253,18 @@ range_tree_add(void *arg, uint64_t start, uint64_t size)
 		if (rs != NULL) {
 			if (rs->rs_start <= start && rs->rs_end >= end) {
 				if (rt->rt_ops != NULL &&
+				    rt->rt_ops->rtop_remove != NULL)
+					rt->rt_ops->rtop_remove(rt, rs,
+					    rt->rt_arg);
+				rs->rs_fill += fill;
+				if (rt->rt_ops != NULL &&
 				    rt->rt_ops->rtop_add != NULL) {
 					rt->rt_ops->rtop_add(rt, rs,
 					    rt->rt_arg);
 				}
 				return;
 			}
+			ASSERT0(fill);
 			if (rs->rs_start < start) {
 				ASSERT3U(end, >, rs->rs_end);
 				range_tree_add(rt, rs->rs_end, end -
@@ -318,7 +305,8 @@ range_tree_add(void *arg, uint64_t start, uint64_t size)
 		range_tree_stat_decr(rt, rs_after);
 
 		rs_after->rs_start = rs_before->rs_start;
-		kmem_cache_free(rt->rt_seg_cache, rs_before);
+		rs_after->rs_fill += rs_before->rs_fill + fill;
+		kmem_cache_free(range_seg_cache, rs_before);
 		rs = rs_after;
 	} else if (merge_before) {
 		if (rt->rt_ops != NULL && rt->rt_ops->rtop_remove != NULL)
@@ -327,6 +315,7 @@ range_tree_add(void *arg, uint64_t start, uint64_t size)
 		range_tree_stat_decr(rt, rs_before);
 
 		rs_before->rs_end = end;
+		rs_before->rs_fill += fill;
 		rs = rs_before;
 	} else if (merge_after) {
 		if (rt->rt_ops != NULL && rt->rt_ops->rtop_remove != NULL)
@@ -335,12 +324,13 @@ range_tree_add(void *arg, uint64_t start, uint64_t size)
 		range_tree_stat_decr(rt, rs_after);
 
 		rs_after->rs_start = start;
+		rs_after->rs_fill += fill;
 		rs = rs_after;
 	} else {
-		rs = kmem_cache_alloc(rt->rt_seg_cache, KM_SLEEP);
-		bzero(rs, kmem_cache_bufsize(rt->rt_seg_cache));
+		rs = kmem_cache_alloc(range_seg_cache, KM_SLEEP);
 		rs->rs_start = start;
 		rs->rs_end = end;
+		rs->rs_fill = fill;
 		avl_insert(&rt->rt_root, rs, where);
 	}
 
@@ -351,9 +341,15 @@ range_tree_add(void *arg, uint64_t start, uint64_t size)
 	rt->rt_space += size + gap_extra;
 }
 
+void
+range_tree_add(void *arg, uint64_t start, uint64_t size)
+{
+	range_tree_add_fill(arg, start, size, 0);
+}
+
 static void
-range_tree_remove_impl(void *arg, uint64_t start, uint64_t size,
-    boolean_t partial_overlap)
+range_tree_remove_impl(void *arg, uint64_t start, uint64_t size, uint64_t fill,
+    uint64_t fill_left, boolean_t partial_overlap)
 {
 	range_tree_t *rt = arg;
 	avl_index_t where;
@@ -365,6 +361,9 @@ range_tree_remove_impl(void *arg, uint64_t start, uint64_t size,
 	VERIFY3U(size, !=, 0);
 	if (!partial_overlap) {
 		VERIFY3U(size, <=, rt->rt_space);
+	} else {
+		VERIFY0(fill);
+		VERIFY0(fill_left);
 	}
 
 	rsearch.rs_start = start;
@@ -405,24 +404,32 @@ range_tree_remove_impl(void *arg, uint64_t start, uint64_t size,
 			rt->rt_ops->rtop_remove(rt, rs, rt->rt_arg);
 
 		if (left_over && right_over) {
-			newseg = kmem_cache_alloc(rt->rt_seg_cache, KM_SLEEP);
-			bzero(newseg, kmem_cache_bufsize(rt->rt_seg_cache));
+			newseg = kmem_cache_alloc(range_seg_cache, KM_SLEEP);
 			newseg->rs_start = end;
 			newseg->rs_end = rs->rs_end;
+			ASSERT3U(rs->rs_fill, >=, (fill + fill_left));
+			newseg->rs_fill = rs->rs_fill - (fill + fill_left);
 			range_tree_stat_incr(rt, newseg);
 
 			rs->rs_end = start;
+			rs->rs_fill = fill_left;
 
 			avl_insert_here(&rt->rt_root, newseg, rs, AVL_AFTER);
 			if (rt->rt_ops != NULL && rt->rt_ops->rtop_add != NULL)
 				rt->rt_ops->rtop_add(rt, newseg, rt->rt_arg);
 		} else if (left_over) {
 			rs->rs_end = start;
+			ASSERT3U(rs->rs_fill, >=, fill);
+			rs->rs_fill -= fill;
 		} else if (right_over) {
 			rs->rs_start = end;
+			ASSERT3U(rs->rs_fill, >=, fill);
+			rs->rs_fill -= fill;
 		} else {
+			ASSERT3U(rs->rs_fill, ==, fill);
+			ASSERT(fill == 0 || !partial_overlap);
 			avl_remove(&rt->rt_root, rs);
-			kmem_cache_free(rt->rt_seg_cache, rs);
+			kmem_cache_free(range_seg_cache, rs);
 			rs = NULL;
 		}
 
@@ -447,13 +454,20 @@ range_tree_remove_impl(void *arg, uint64_t start, uint64_t size,
 void
 range_tree_remove(void *arg, uint64_t start, uint64_t size)
 {
-	range_tree_remove_impl(arg, start, size, B_FALSE);
+	range_tree_remove_impl(arg, start, size, 0, 0, B_FALSE);
 }
 
 void
 range_tree_remove_overlap(void *arg, uint64_t start, uint64_t size)
 {
-	range_tree_remove_impl(arg, start, size, B_TRUE);
+	range_tree_remove_impl(arg, start, size, 0, 0, B_TRUE);
+}
+
+void
+range_tree_remove_fill(void *arg, uint64_t start, uint64_t size,
+    uint64_t fill, uint64_t remain_left)
+{
+	range_tree_remove_impl(arg, start, size, fill, remain_left, B_FALSE);
 }
 
 static range_seg_t *
@@ -557,7 +571,7 @@ range_tree_vacate(range_tree_t *rt, range_tree_func_t *func, void *arg)
 	while ((rs = avl_destroy_nodes(&rt->rt_root, &cookie)) != NULL) {
 		if (func != NULL)
 			func(arg, rs->rs_start, rs->rs_end - rs->rs_start);
-		kmem_cache_free(rt->rt_seg_cache, rs);
+		kmem_cache_free(range_seg_cache, rs);
 	}
 
 	bzero(rt->rt_histogram, sizeof (rt->rt_histogram));
@@ -575,7 +589,7 @@ range_tree_walk(range_tree_t *rt, range_tree_func_t *func, void *arg)
 		func(arg, rs->rs_start, rs->rs_end - rs->rs_start);
 }
 
-void *
+range_seg_t *
 range_tree_first(range_tree_t *rt)
 {
 	ASSERT(MUTEX_HELD(rt->rt_lock));

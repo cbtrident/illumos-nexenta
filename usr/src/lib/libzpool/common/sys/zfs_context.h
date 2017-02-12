@@ -329,7 +329,6 @@ extern void kstat_runq_back_to_waitq(kstat_io_t *);
 #define	kmem_cache_destroy(_c)	umem_cache_destroy(_c)
 #define	kmem_cache_alloc(_c, _f) umem_cache_alloc(_c, _f)
 #define	kmem_cache_free(_c, _b)	umem_cache_free(_c, _b)
-#define	kmem_cache_bufsize(_c)	umem_cache_bufsize(_c)
 #define	kmem_debugging()	0
 #define	kmem_cache_reap_now(_c)		/* nothing */
 #define	kmem_cache_set_move(_c, _cb)	/* nothing */
