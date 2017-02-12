@@ -26,7 +26,7 @@
  * Copyright (c) 2011 Bayard G. Bell.  All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 /*
  * Copyright 2011 cyril.galibern@opensvc.com
@@ -8718,7 +8718,7 @@ sd_unit_attach(void *arg)
 	/*
 	 * Read and initialize the devid for the unit if not done already.
 	 */
-	if (un->un_f_devid_supported && un->un_devid != NULL) {
+	if (un->un_f_devid_supported && un->un_devid == NULL) {
 		sd_register_devid(ssc, devi, reservation_flag);
 	}
 	mutex_exit(SD_MUTEX(un));
