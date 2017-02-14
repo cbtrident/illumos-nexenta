@@ -21,6 +21,7 @@
 #
 #
 # Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc. All rights reserved.
 #
 
 . /lib/svc/share/smf_include.sh
@@ -32,7 +33,7 @@
 #
 mksavedir ()
 {
-	[ -z "$DUMPADM_SAVDIR" ] && DUMPADM_SAVDIR=/var/crash/`uname -n`
+	[ -z "$DUMPADM_SAVDIR" ] && DUMPADM_SAVDIR=/var/crash
 	[ -d "$DUMPADM_SAVDIR" ] || /usr/bin/mkdir -m 0700 -p $DUMPADM_SAVDIR
 }
 

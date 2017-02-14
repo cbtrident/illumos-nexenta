@@ -20,14 +20,13 @@
  */
 /*
  * Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/swap.h>
 #include <sys/dumpadm.h>
-#include <sys/utsname.h>
 
 #include <unistd.h>
 #include <string.h>
@@ -88,20 +87,13 @@ static const char DC_STR_ALL[] = "all";		/* All pages */
 static void
 dconf_init(dumpconf_t *dcp, int dcmode)
 {
-	struct utsname ut;
-
 	/*
 	 * Default device for dumps is 'swap' (appropriate swap device),
-	 * and default savecore directory is /var/crash/`uname -n`,
+	 * and default savecore directory is /var/crash,
 	 * which is compatible with pre-dumpadm behavior.
 	 */
 	(void) strcpy(dcp->dc_device, DC_STR_SWAP);
 	(void) strcpy(dcp->dc_savdir, "/var/crash");
-
-	if (uname(&ut) != -1) {
-		(void) strcat(dcp->dc_savdir, "/");
-		(void) strcat(dcp->dc_savdir, ut.nodename);
-	}
 
 	/*
 	 * Default is contents kernel, savecore enabled on reboot,

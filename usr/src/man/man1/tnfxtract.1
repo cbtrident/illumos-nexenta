@@ -1,9 +1,10 @@
 '\" te
 .\"  Copyright (c) 2003, Sun Microsystems, Inc.  All Rights Reserved
+.\"  Copyright 2017 Nexenta Systems, Inc. All Rights Reserved.
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License.
 .\" You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.  See the License for the specific language governing permissions and limitations under the License.
 .\" When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE.  If applicable, add the following below this CDDL HEADER, with the fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.TH TNFXTRACT 1 "Aug 19, 2003"
+.TH TNFXTRACT 1 "Feb 13, 2017"
 .SH NAME
 tnfxtract \- extract kernel probes output into a trace file
 .SH SYNOPSIS
@@ -13,7 +14,6 @@ tnfxtract \- extract kernel probes output into a trace file
 .fi
 
 .SH DESCRIPTION
-.sp
 .LP
 The \fBtnfxtract\fR utility collects kernel trace output from an in-core buffer
 in the Solaris kernel, or from the memory image of a crashed system, and
@@ -40,7 +40,6 @@ the buffer is being concurrently written.
 The \fBTNF\fR trace file generated is suitable as input to \fBtnfdump\fR(1),
 which will generate an \fBASCII\fR file.
 .SH OPTIONS
-.sp
 .LP
 The following options are supported:
 .sp
@@ -65,7 +64,6 @@ given \fIdumpfile\fR.
 .RE
 
 .SH OPERANDS
-.sp
 .LP
 The following operand is supported:
 .sp
@@ -102,14 +100,13 @@ Extract probes from a kernel crash dump into \fBktrace.out\fR:
 .sp
 .in +2
 .nf
-example% \fBtnfxtract -d /var/crash/`uname -n`/vmcore.0 \e
-   -n /var/crash/`uname -n`/unix.0 ktrace.out\fR
+example% \fBtnfxtract -d /var/crash/data/UUID/core.0 \e
+   -n /var/crash/data/UUID/unix.0 ktrace.out\fR
 .fi
 .in -2
 .sp
 
 .SH EXIT STATUS
-.sp
 .LP
 The following exit values are returned:
 .sp
@@ -131,7 +128,6 @@ An error occurred.
 .RE
 
 .SH SEE ALSO
-.sp
 .LP
 \fBprex\fR(1), \fBtnfdump\fR(1), \fBsavecore\fR(1M),
 \fBtnf_kernel_probes\fR(4), \fBattributes\fR(5)
