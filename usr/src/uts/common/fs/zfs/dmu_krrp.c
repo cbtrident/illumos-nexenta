@@ -810,6 +810,7 @@ zfs_prepare_compound_data(list_t *fs_list, nvlist_t **fss)
 
 			fnvlist_add_nvlist(nvsnaps_props,
 			    snapname, nvsnap_props);
+			fnvlist_free(nvsnap_props);
 
 			snap_el = AVL_NEXT(&fs_el->snapshots, snap_el);
 		}
