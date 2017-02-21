@@ -2512,23 +2512,6 @@ static struct sd_chain_index	sd_chain_index_map[] = {
 #define	SD_NEXT_IODONE(index, un, bp)				\
 	((*(sd_iodone_chain[(index) - 1]))((index) - 1, un, bp))
 
-
-struct sd_device_info {
-	char *devtype;
-	char *vid;
-	char *pid;
-	char *rev;
-	char *serial;
-};
-
-#define	SD_EXPAND_DEVICE_INFO(di) \
-	"devtype", DATA_TYPE_STRING, (di.devtype != NULL) ? di.devtype : \
-	    "unknown", \
-	"vendor", DATA_TYPE_STRING, (di.vid != NULL) ? di.vid : "unknown", \
-	"product", DATA_TYPE_STRING, (di.pid != NULL) ? di.pid : "unknown", \
-	"revision", DATA_TYPE_STRING, (di.rev != NULL) ? di.rev : "unknown", \
-	"serial", DATA_TYPE_STRING, (di.serial != NULL) ? di.serial : "unknown"
-
 /*
  *    Function: _init
  *
@@ -9543,8 +9526,6 @@ sd_set_errstats(struct sd_lun *un)
 {
 	struct	sd_errstats	*stp;
 	char 			*sn;
-	dev_info_t	*dip;
-	char	buf[64];
 
 	ASSERT(un != NULL);
 	ASSERT(un->un_errstats != NULL);
@@ -9555,37 +9536,6 @@ sd_set_errstats(struct sd_lun *un)
 	(void) strncpy(stp->sd_revision.value.c,
 	    un->un_sd->sd_inq->inq_revision, 4);
 
-	dip = un->un_sd->sd_dev;
-	/* set INQUIRY properties */
-	/* we are not sure than inq_vid/inq_pid are finished with zero */
-	/* so we have to copy it to bigger buffer and force zero at the end */
-	/* this function is called only once for device */
-	/* so memset() is cheap here */
-	(void) memset(buf, 0, sizeof (buf));
-	(void) strncpy(buf, un->un_sd->sd_inq->inq_vid, 8);
-	(void) ddi_prop_update_string(DDI_DEV_T_ANY, dip,
-	    INQUIRY_VENDOR_ID, buf);
-
-	(void) memset(buf, 0, sizeof (buf));
-	(void) strncpy(buf, un->un_sd->sd_inq->inq_pid, 16);
-	(void) ddi_prop_update_string(DDI_DEV_T_ANY, dip,
-	    INQUIRY_PRODUCT_ID, buf);
-
-	(void) memset(buf, 0, sizeof (buf));
-	(void) strncpy(buf, un->un_sd->sd_inq->inq_revision, 4);
-	(void) ddi_prop_update_string(DDI_DEV_T_ANY, dip,
-	    INQUIRY_REVISION_ID, buf);
-
-	(void) memset(buf, 0, sizeof (buf));
-	(void) strncpy(buf, un->un_sd->sd_inq->inq_serial, 12);
-	(void) ddi_prop_update_string(DDI_DEV_T_ANY, dip,
-	    INQUIRY_SERIAL_NO, buf);
-	/* consider that device is hard-disk device if DEVICE_TYPE is not set */
-	if (ddi_prop_exists(DDI_DEV_T_NONE, dip,
-	    DDI_PROP_NOTPROM | DDI_PROP_DONTPASS, INQUIRY_DEVICE_TYPE) == 0) {
-		(void) ddi_prop_update_string(DDI_DEV_T_ANY, dip,
-		    INQUIRY_DEVICE_TYPE, "hard-disk");
-	}
 	/*
 	 * All the errstats are persistent across detach/attach,
 	 * so reset all the errstats here in case of the hot
@@ -17469,48 +17419,26 @@ sdrunout(caddr_t arg)
 }
 
 static void
-sd_get_device_info(dev_info_t *dip, struct sd_device_info *devinfo)
-{
-
-	(void) ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    INQUIRY_DEVICE_TYPE, &devinfo->devtype);
-	(void) ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    INQUIRY_VENDOR_ID, &devinfo->vid);
-	(void) ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    INQUIRY_PRODUCT_ID, &devinfo->pid);
-	(void) ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    INQUIRY_REVISION_ID, &devinfo->rev);
-	(void) ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    INQUIRY_SERIAL_NO, &devinfo->serial);
-}
-
-static void
 sd_slow_io_ereport(struct scsi_pkt *pktp)
 {
 	struct buf *bp;
 	struct sd_lun *un;
-	dev_info_t *dip;
 	char *devid;
-	struct sd_device_info devinfo = {0};
 
 	ASSERT(pktp != NULL);
 	bp = (struct buf *)pktp->pkt_private;
 	ASSERT(bp != NULL);
 	un = SD_GET_UN(bp);
 	ASSERT(un != NULL);
-	dip = un->un_sd->sd_dev;
 
 	SD_ERROR(SD_LOG_IO_CORE | SD_LOG_ERROR, un,
 	    "Slow IO detected SD: 0x%p delta in nsec: %llu",
 	    (void *)un, pktp->pkt_stop - pktp->pkt_start);
 
-	sd_get_device_info(dip, &devinfo);
-
 	devid = DEVI(un->un_sd->sd_dev)->devi_devid_str;
 	scsi_fm_ereport_post(un->un_sd, 0, NULL, "cmd.disk.slow-io",
 	    fm_ena_generate(0, FM_ENA_FMT1), devid, NULL, DDI_NOSLEEP, NULL,
 	    FM_VERSION, DATA_TYPE_UINT8, FM_EREPORT_VERS0,
-	    SD_EXPAND_DEVICE_INFO(devinfo),
 	    "start", DATA_TYPE_UINT64, pktp->pkt_start,
 	    "stop", DATA_TYPE_UINT64, pktp->pkt_stop,
 	    "delta", DATA_TYPE_UINT64, pktp->pkt_stop - pktp->pkt_start,
@@ -32375,7 +32303,6 @@ sd_ssc_ereport_post(sd_ssc_t *ssc, enum sd_driver_assessment drv_assess)
 	    SSC_FLAGS_INVALID_SENSE |
 	    SSC_FLAGS_INVALID_DATA;
 	char assessment[16];
-	struct sd_device_info devinfo = {0};
 
 	ASSERT(ssc != NULL);
 	ASSERT(ssc->ssc_uscsi_cmd != NULL);
@@ -32399,8 +32326,6 @@ sd_ssc_ereport_post(sd_ssc_t *ssc, enum sd_driver_assessment drv_assess)
 	if (ddi_in_panic() || (un->un_state == SD_STATE_SUSPENDED) ||
 	    (un->un_state == SD_STATE_DUMPING))
 		return;
-
-	sd_get_device_info(dip, &devinfo);
 
 	uscsi_pkt_reason = ssc->ssc_uscsi_info->ui_pkt_reason;
 	uscsi_pkt_state = ssc->ssc_uscsi_info->ui_pkt_state;
@@ -32457,7 +32382,6 @@ sd_ssc_ereport_post(sd_ssc_t *ssc, enum sd_driver_assessment drv_assess)
 		    FM_VERSION, DATA_TYPE_UINT8, FM_EREPORT_VERS0,
 		    DEVID_IF_KNOWN(devid),
 		    "driver-assessment", DATA_TYPE_STRING, assessment,
-		    SD_EXPAND_DEVICE_INFO(devinfo),
 		    "op-code", DATA_TYPE_UINT8, op_code,
 		    "cdb", DATA_TYPE_UINT8_ARRAY,
 		    cdblen, ssc->ssc_uscsi_cmd->uscsi_cdb,
@@ -32487,7 +32411,6 @@ sd_ssc_ereport_post(sd_ssc_t *ssc, enum sd_driver_assessment drv_assess)
 			    "driver-assessment", DATA_TYPE_STRING,
 			    drv_assess == SD_FM_DRV_FATAL ?
 			    "fail" : assessment,
-			    SD_EXPAND_DEVICE_INFO(devinfo),
 			    "op-code", DATA_TYPE_UINT8, op_code,
 			    "cdb", DATA_TYPE_UINT8_ARRAY,
 			    cdblen, ssc->ssc_uscsi_cmd->uscsi_cdb,
@@ -32518,7 +32441,6 @@ sd_ssc_ereport_post(sd_ssc_t *ssc, enum sd_driver_assessment drv_assess)
 			    "driver-assessment", DATA_TYPE_STRING,
 			    drv_assess == SD_FM_DRV_FATAL ?
 			    "fail" : assessment,
-			    SD_EXPAND_DEVICE_INFO(devinfo),
 			    "op-code", DATA_TYPE_UINT8, op_code,
 			    "cdb", DATA_TYPE_UINT8_ARRAY,
 			    cdblen, ssc->ssc_uscsi_cmd->uscsi_cdb,
@@ -32558,7 +32480,6 @@ sd_ssc_ereport_post(sd_ssc_t *ssc, enum sd_driver_assessment drv_assess)
 		    DEVID_IF_KNOWN(devid),
 		    "driver-assessment", DATA_TYPE_STRING,
 		    drv_assess == SD_FM_DRV_FATAL ? "fail" : assessment,
-		    SD_EXPAND_DEVICE_INFO(devinfo),
 		    "op-code", DATA_TYPE_UINT8, op_code,
 		    "cdb", DATA_TYPE_UINT8_ARRAY,
 		    cdblen, ssc->ssc_uscsi_cmd->uscsi_cdb,
@@ -32607,7 +32528,6 @@ sd_ssc_ereport_post(sd_ssc_t *ssc, enum sd_driver_assessment drv_assess)
 				    DATA_TYPE_STRING,
 				    drv_assess == SD_FM_DRV_FATAL ?
 				    "fatal" : assessment,
-				    SD_EXPAND_DEVICE_INFO(devinfo),
 				    "op-code",
 				    DATA_TYPE_UINT8, op_code,
 				    "cdb",
@@ -32710,7 +32630,6 @@ sd_ssc_ereport_post(sd_ssc_t *ssc, enum sd_driver_assessment drv_assess)
 			    DEVID_IF_KNOWN(devid),
 			    "driver-assessment", DATA_TYPE_STRING,
 			    drv_assess == SD_FM_DRV_FATAL ? "fail" : assessment,
-			    SD_EXPAND_DEVICE_INFO(devinfo),
 			    "op-code", DATA_TYPE_UINT8, op_code,
 			    "cdb",
 			    DATA_TYPE_UINT8_ARRAY,

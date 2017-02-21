@@ -18,8 +18,10 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 /*
@@ -99,6 +101,8 @@ scsi_fm_ereport_post(struct scsi_device *sd, int path_instance,
 	dev_info_t	*dip = sd->sd_dev;
 	dev_info_t	*eqdip = dip;
 	char		*minor_name;
+	nvlist_t	*nvl;
+	char		*prop;
 	va_list		ap;
 
 	/*
@@ -139,6 +143,34 @@ scsi_fm_ereport_post(struct scsi_device *sd, int path_instance,
 	 */
 	minor_name = NULL;
 
+	/* Create nvlist containing inquiry properties (if available) */
+	if (nvlist_alloc(&nvl, NV_UNIQUE_NAME, (sflag & DDI_NOSLEEP) ?
+	    KM_NOSLEEP : KM_SLEEP) != 0)
+		return;
+	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    INQUIRY_VENDOR_ID, &prop) == DDI_PROP_SUCCESS) {
+		(void) nvlist_add_string(nvl, "vendor", prop);
+		ddi_prop_free(prop);
+	}
+	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    INQUIRY_PRODUCT_ID, &prop) == DDI_PROP_SUCCESS) {
+		(void) nvlist_add_string(nvl, "product", prop);
+		ddi_prop_free(prop);
+	}
+	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    INQUIRY_REVISION_ID, &prop) == DDI_PROP_SUCCESS) {
+		(void) nvlist_add_string(nvl, "revision", prop);
+		ddi_prop_free(prop);
+	}
+	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    INQUIRY_SERIAL_NO, &prop) == DDI_PROP_SUCCESS) {
+		(void) nvlist_add_string(nvl, "serial", prop);
+		ddi_prop_free(prop);
+	}
+	/* Merge the provided payload if any */
+	if (pl != NULL)
+		(void) nvlist_merge(nvl, pl, 0);
+
 	/*
 	 * NOTE: If there is a 'linked' ena to be had, it should likely come
 	 * from the buf structure via the scsi_pkt pkt->pkt_bp.
@@ -147,6 +179,8 @@ scsi_fm_ereport_post(struct scsi_device *sd, int path_instance,
 	/* Post the ereport */
 	va_start(ap, pl);
 	fm_dev_ereport_postv(dip, eqdip, devpath, minor_name, devid, tpl0,
-	    class, ena, sflag, pl, ap);
+	    class, ena, sflag, nvl, ap);
 	va_end(ap);
+
+	nvlist_free(nvl);
 }
