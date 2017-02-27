@@ -129,8 +129,8 @@ boolean_t zfs_scan_direct = B_FALSE;	/* don't queue & sort zios, go direct */
 uint64_t zfs_scan_max_ext_gap = 2 << 20;	/* bytes */
 /* See scan_io_queue_mem_lim for details on the memory limit tunables */
 uint64_t zfs_scan_mem_lim_fact = 20;		/* fraction of physmem */
-uint64_t zfs_scan_mem_lim_soft_fact = 10;	/* fraction of mem lim */
-uint64_t zfs_scan_checkpoint_intval = 3600;	/* seconds */
+uint64_t zfs_scan_mem_lim_soft_fact = 20;	/* fraction of mem lim above */
+uint64_t zfs_scan_checkpoint_intval = 7200;	/* seconds */
 /*
  * fill_weight is non-tunable at runtime, so we copy it at module init from
  * zfs_scan_fill_weight. Runtime adjustments to zfs_scan_fill_weight would
@@ -186,17 +186,18 @@ typedef struct {
 } scan_seg_t;
 
 typedef struct scan_io {
-	dva_t			sio_dva;
 	uint64_t		sio_prop;
 	uint64_t		sio_phys_birth;
 	uint64_t		sio_birth;
 	zio_cksum_t		sio_cksum;
 	zbookmark_phys_t	sio_zb;
-	int			sio_flags;
 	union {
 		avl_node_t	sio_addr_node;
 		list_node_t	sio_list_node;
 	} sio_nodes;
+	uint64_t		sio_dva_word1;
+	uint32_t		sio_asize;
+	int			sio_flags;
 } scan_io_t;
 
 struct dsl_scan_io_queue {
@@ -219,10 +220,10 @@ struct dsl_scan_io_queue {
 	uint64_t	q_removed_tmp;
 };
 
-#define	SCAN_IO_GET_OFFSET(sio)	DVA_GET_OFFSET(&(sio)->sio_dva)
+#define	SCAN_IO_GET_OFFSET(sio)	\
+	BF64_GET_SB((sio)->sio_dva_word1, 0, 63, SPA_MINBLOCKSHIFT, 0)
 #define	SCAN_IO_SET_OFFSET(sio, offset) \
-	DVA_SET_OFFSET(&(sio)->sio_dva, (offset))
-#define	SCAN_IO_GET_ASIZE(sio)	DVA_GET_ASIZE(&(sio)->sio_dva)
+	BF64_SET_SB((sio)->sio_dva_word1, 0, 63, SPA_MINBLOCKSHIFT, 0, offset)
 
 static void scan_io_queue_insert_cb(range_tree_t *rt, void *rs, void *arg);
 static void scan_io_queue_remove_cb(range_tree_t *rt, void *rs, void *arg);
@@ -267,10 +268,12 @@ dsl_scan_is_running(const dsl_scan_t *scn)
 }
 
 static inline void
-sio2bp(const scan_io_t *sio, blkptr_t *bp)
+sio2bp(const scan_io_t *sio, blkptr_t *bp, uint64_t vdev_id)
 {
 	bzero(bp, sizeof (*bp));
-	bp->blk_dva[0] = sio->sio_dva;
+	DVA_SET_ASIZE(&bp->blk_dva[0], sio->sio_asize);
+	DVA_SET_VDEV(&bp->blk_dva[0], vdev_id);
+	bp->blk_dva[0].dva_word[1] = sio->sio_dva_word1;
 	bp->blk_prop = sio->sio_prop;
 	/*
 	 * We must reset the special flag, because the rebuilt BP lacks
@@ -288,7 +291,9 @@ bp2sio(const blkptr_t *bp, scan_io_t *sio, int dva_i)
 {
 	if (BP_IS_SPECIAL(bp))
 		ASSERT3S(dva_i, ==, WBC_NORMAL_DVA);
-	sio->sio_dva = bp->blk_dva[dva_i];
+	/* we discard the vdev guid, since we can deduce it from the queue */
+	sio->sio_dva_word1 = bp->blk_dva[dva_i].dva_word[1];
+	sio->sio_asize = DVA_GET_ASIZE(&bp->blk_dva[dva_i]);
 	sio->sio_prop = bp->blk_prop;
 	sio->sio_phys_birth = bp->blk_phys_birth;
 	sio->sio_birth = bp->blk_birth;
@@ -856,7 +861,8 @@ dsl_scan_check_pause(dsl_scan_t *scn, const zbookmark_phys_t *zb)
 	    (NSEC2MSEC(elapsed_nanosecs) > mintime &&
 	    (txg_sync_waiting(scn->scn_dp) ||
 	    dirty_pct >= zfs_vdev_async_write_active_min_dirty_percent)) ||
-	    spa_shutting_down(scn->scn_dp->dp_spa) || scn->scn_clearing) {
+	    spa_shutting_down(scn->scn_dp->dp_spa) || scn->scn_clearing ||
+	    scan_io_queue_mem_lim(scn) == MEM_LIM_HARD) {
 		if (zb) {
 			DTRACE_PROBE1(scan_pause, zbookmark_phys_t *, zb);
 			dprintf("pausing at bookmark %llx/%llx/%llx/%llx\n",
@@ -2624,7 +2630,7 @@ scan_io_queue_insert(dsl_scan_t *scn, dsl_scan_io_queue_t *queue,
 	sio->sio_flags = zio_flags;
 	sio->sio_zb = *zb;
 	offset = SCAN_IO_GET_OFFSET(sio);
-	asize = SCAN_IO_GET_ASIZE(sio);
+	asize = sio->sio_asize;
 
 	if (avl_find(&queue->q_zios_by_addr, sio, &idx) != NULL) {
 		/* block is already scheduled for reading */
@@ -2678,8 +2684,7 @@ scan_io_queue_insert_cb(range_tree_t *rt, void *rs, void *arg)
 		avl_remove(&queue->q_exts_by_size, ss);
 	}
 
-	ss->ss_fill += SCAN_IO_GET_ASIZE(queue->q_adding_io) +
-	    queue->q_removed_tmp;
+	ss->ss_fill += queue->q_adding_io->sio_asize + queue->q_removed_tmp;
 	ASSERT3U(ss->ss_fill, <=, ss->ss_rs.rs_end - ss->ss_rs.rs_start);
 	queue->q_removed_tmp = 0;
 
@@ -2843,8 +2848,8 @@ dsl_scan_io_queue_destroy(dsl_scan_io_queue_t *queue)
 #endif
 	while ((sio = avl_first(&queue->q_zios_by_addr)) != NULL) {
 		ASSERT(range_tree_contains(queue->q_exts_by_addr,
-		    SCAN_IO_GET_OFFSET(sio), SCAN_IO_GET_ASIZE(sio)));
-		bytes_dequeued += SCAN_IO_GET_ASIZE(sio);
+		    SCAN_IO_GET_OFFSET(sio), sio->sio_asize));
+		bytes_dequeued += sio->sio_asize;
 		avl_remove(&queue->q_zios_by_addr, sio);
 		kmem_free(sio, sizeof (*sio));
 	}
@@ -3001,8 +3006,8 @@ scan_io_queue_issue(list_t *io_list, dsl_scan_io_queue_t *queue)
 	while ((sio = list_head(io_list)) != NULL) {
 		blkptr_t bp;
 
-		sio2bp(sio, &bp);
-		bytes_issued += SCAN_IO_GET_ASIZE(sio);
+		sio2bp(sio, &bp, queue->q_vd->vdev_id);
+		bytes_issued += sio->sio_asize;
 		scan_exec_io(scn->scn_dp, &bp, sio->sio_flags, &sio->sio_zb,
 		    B_FALSE);
 		(void) list_remove_head(io_list);
@@ -3067,14 +3072,14 @@ scan_io_queue_gather(scan_seg_t *ss, list_t *list,
 			break;
 		}
 		ASSERT3U(SCAN_IO_GET_OFFSET(sio), >=, ss->ss_rs.rs_start);
-		ASSERT3U(SCAN_IO_GET_OFFSET(sio) + SCAN_IO_GET_ASIZE(sio), <=,
+		ASSERT3U(SCAN_IO_GET_OFFSET(sio) + sio->sio_asize, <=,
 		    ss->ss_rs.rs_end);
 		next_sio = AVL_NEXT(&queue->q_zios_by_addr, sio);
 		avl_remove(&queue->q_zios_by_addr, sio);
 		list_insert_tail(list, sio);
 		num_zios++;
-		bytes += SCAN_IO_GET_ASIZE(sio);
-		ss->ss_fill -= SCAN_IO_GET_ASIZE(sio);
+		bytes += sio->sio_asize;
+		ss->ss_fill -= sio->sio_asize;
 		sio = next_sio;
 	}
 
@@ -3097,7 +3102,7 @@ scan_io_queue_gather(scan_seg_t *ss, list_t *list,
 		 */
 		queue->q_adding_io = zero_io;
 		range_tree_remove(queue->q_exts_by_addr, ss->ss_rs.rs_start,
-		    (SCAN_IO_GET_OFFSET(sio) + SCAN_IO_GET_ASIZE(sio)) -
+		    (SCAN_IO_GET_OFFSET(sio) + sio->sio_asize) -
 		    ss->ss_rs.rs_start);
 		kmem_free(zero_io, sizeof (*zero_io));
 	} else {
@@ -3206,8 +3211,7 @@ scan_io_queues_run_one(io_queue_run_info_t *info)
 			queue->q_issuing_rs.rs_start =
 			    SCAN_IO_GET_OFFSET(first_io);
 			queue->q_issuing_rs.rs_end =
-			    SCAN_IO_GET_OFFSET(last_io) +
-			    SCAN_IO_GET_ASIZE(last_io);
+			    SCAN_IO_GET_OFFSET(last_io) + last_io->sio_asize;
 		}
 		mutex_exit(q_lock);
 
@@ -3432,7 +3436,7 @@ dsl_scan_freed_dva(spa_t *spa, const blkptr_t *bp, int dva_i)
 
 	bp2sio(bp, &srch, dva_i);
 	offset = SCAN_IO_GET_OFFSET(&srch);
-	asize = SCAN_IO_GET_ASIZE(&srch);
+	asize = srch.sio_asize;
 
 	/*
 	 * We can find the zio in two states:
@@ -3457,8 +3461,7 @@ dsl_scan_freed_dva(spa_t *spa, const blkptr_t *bp, int dva_i)
 		scan_seg_t *ss;
 
 		/* Got it while it was cold in the queue */
-		ASSERT0(bcmp(&srch.sio_dva, &sio->sio_dva,
-		    sizeof (srch.sio_dva)));
+		ASSERT3U(srch.sio_asize, ==, sio->sio_asize);
 		DTRACE_PROBE2(dequeue_now, const blkptr_t *, bp,
 		    dsl_scan_queue_t *, queue);
 		count_block(scn, dp->dp_blkstats, bp);
@@ -3473,13 +3476,13 @@ dsl_scan_freed_dva(spa_t *spa, const blkptr_t *bp, int dva_i)
 		 * in its appropriate place in q_exts_by_size.
 		 */
 		ss = range_tree_find(queue->q_exts_by_addr,
-		    SCAN_IO_GET_OFFSET(sio), SCAN_IO_GET_ASIZE(sio));
+		    SCAN_IO_GET_OFFSET(sio), sio->sio_asize);
 		ASSERT(ss != NULL);
 		avl_remove(&queue->q_exts_by_size, ss);
 		ASSERT3U(ss->ss_fill, <=,
 		    ss->ss_rs.rs_end - ss->ss_rs.rs_start);
-		ASSERT3U(ss->ss_fill, >=, SCAN_IO_GET_ASIZE(sio));
-		ss->ss_fill -= SCAN_IO_GET_ASIZE(sio);
+		ASSERT3U(ss->ss_fill, >=, sio->sio_asize);
+		ss->ss_fill -= sio->sio_asize;
 		VERIFY3P(avl_find(&queue->q_exts_by_size, ss, &idx), ==, NULL);
 		avl_insert(&queue->q_exts_by_size, ss, idx);
 
