@@ -1251,6 +1251,11 @@ autosnap_destroyer_thread_start(spa_t *spa)
 {
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 
+	mutex_enter(&autosnap->autosnap_lock);
+	autosnap->need_stop = B_FALSE;
+	cv_broadcast(&autosnap->autosnap_cv);
+	mutex_exit(&autosnap->autosnap_lock);
+
 	autosnap->destroyer = thread_create(NULL, 32 << 10,
 	    autosnap_destroyer_thread, spa, 0, &p0,
 	    TS_RUN, minclsyspri);
