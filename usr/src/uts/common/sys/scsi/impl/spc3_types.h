@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_SPC3_TYPES_H
@@ -875,10 +875,12 @@ typedef struct spc3_dev_id_vpd_page_impl {
 
 /*
  * SPC-3 Unit Serial Number VPD page (Table 332, 7.6.10)
+ * Use the same 'magic' 240 bytes response length
+ * as does the sd target layer
  */
 typedef struct spc3_usn_vpd_page_impl {
 	struct vpd_hdr uvpi_hdr;
-	uint64_t uvpi_usn[3]; /* Flexible */
+	uchar_t uvpi_usn[240 - sizeof (struct vpd_hdr)];
 } spc3_usn_vpd_page_impl_t;
 
 /*
