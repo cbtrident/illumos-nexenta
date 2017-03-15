@@ -21,6 +21,7 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <stdlib.h>
@@ -478,8 +479,7 @@ ipmi_lan_build_cmd(ipmi_handle_t *ihp, ipmi_cmd_t *req)
 	msg_hdr.imh_addr1 = IPMI_BMC_SLAVE_ADDR;
 	msg_hdr.imh_lun = req->ic_lun;
 	msg_hdr.imh_netfn = req->ic_netfn;
-	tmp = off - cs;
-	msg_hdr.imh_csum = ipmi_csum(msg + cs, tmp);
+	msg_hdr.imh_csum = ipmi_csum((uint8_t *)&msg_hdr, sizeof (msg_hdr));
 	cs = off;
 	msg_hdr.imh_addr2 = IPMI_BMC_SLAVE_ADDR;
 	entry->ire_rq_seq = curr_seq++;
