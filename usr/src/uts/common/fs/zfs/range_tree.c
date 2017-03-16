@@ -278,10 +278,14 @@ range_tree_add(void *arg, uint64_t start, uint64_t size)
 				}
 				return;
 			}
-			if (rs->rs_start < start)
-				range_tree_add(rt, rs->rs_end, end);
-			else
-				range_tree_add(rt, start, rs->rs_start);
+			if (rs->rs_start < start) {
+				ASSERT3U(end, >, rs->rs_end);
+				range_tree_add(rt, rs->rs_end, end -
+				    rs->rs_end);
+			} else {
+				ASSERT3U(rs->rs_start, >, start);
+				range_tree_add(rt, start, rs->rs_start - start);
+			}
 			return;
 		}
 	} else {
