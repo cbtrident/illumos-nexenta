@@ -22,7 +22,8 @@ PROGS = cleanup \
 	setup \
 	cifs_attr_001_pos \
 	cifs_attr_002_pos \
-	cifs_attr_003_pos
+	cifs_attr_003_pos \
+	cifs_attr_004_pos
 
 FILES = cifs.kshlib
 
