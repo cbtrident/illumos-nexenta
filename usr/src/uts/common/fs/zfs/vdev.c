@@ -2720,6 +2720,19 @@ vdev_clear(spa_t *spa, vdev_t *vd)
 	vd->vdev_stat.vs_write_errors = 0;
 	vd->vdev_stat.vs_checksum_errors = 0;
 
+	/*
+	 * If all disk vdevs failed at the same time (e.g. due to a
+	 * disconnected cable), that suspends I/O activity to the pool,
+	 * which stalls spa_sync if there happened to be any dirty data.
+	 * As a consequence, this flag might not be cleared, because it
+	 * is only lowered by spa_async_remove (which cannot run). This
+	 * then prevents zio_resume from succeeding even if vdev reopen
+	 * succeeds, leading to an indefinitely suspended pool. So we
+	 * lower the flag here to allow zio_resume to succeed, provided
+	 * reopening of the vdevs succeeds.
+	 */
+	vd->vdev_remove_wanted = B_FALSE;
+
 	for (int c = 0; c < vd->vdev_children; c++)
 		vdev_clear(spa, vd->vdev_child[c]);
 
