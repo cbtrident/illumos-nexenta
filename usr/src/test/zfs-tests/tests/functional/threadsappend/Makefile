@@ -28,11 +28,12 @@ include $(SRC)/cmd/Makefile.cmd
 include $(SRC)/test/Makefile.com
 
 ROOTOPTPKG = $(ROOT)/opt/zfs-tests
+ROOTBIN = $(ROOTOPTPKG)/bin
 
 OBJS = $(PROG:%=%.o)
 SRCS = $(OBJS:%.o=%.c)
 
-CMDS = $(PROG:%=$(TESTDIR)/%) $(SCRIPTS:%=$(TESTDIR)/%)
+CMDS = $(PROG:%=$(ROOTBIN)/%) $(SCRIPTS:%=$(TESTDIR)/%)
 $(CMDS) := FILEMODE = 0555
 
 CPPFLAGS += -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
@@ -47,7 +48,6 @@ $(PROG): $(OBJS)
 	$(COMPILE.c) $<
 
 install: all $(CMDS)
-	 mv $(TESTDIR)/$(PROG) $(ROOTOPTPKG)/bin
 
 lint: lint_SRCS
 
@@ -67,3 +67,6 @@ $(TESTDIR)/%: %
 
 $(TESTDIR)/%: %.ksh
 	$(INS.rename)
+
+$(ROOTBIN)/%: %
+	$(INS.file)
