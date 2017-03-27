@@ -330,24 +330,25 @@ autosnap_release_snapshots_by_txg_no_lock_impl(void *opaque, uint64_t from_txg,
 		 * If client holds reference to the snapshot
 		 * then remove it
 		 */
-		if (tmp_hdl) {
+		if (tmp_hdl != NULL) {
 			list_remove(&prev->listeners, tmp_hdl);
 			kmem_free(tmp_hdl, sizeof (autosnap_handler_t));
 
-
-			if (!destroy)
-				prev->orphaned = B_TRUE;
 			/*
-			 * If it is a last reference then move
-			 * snapshot to the destroyer's queue
+			 * If it is the last reference and autosnap should
+			 * not be destroyed then just free the structure.
+			 * Otherwise put it on the destroyer's queue.
 			 */
-			if (!prev->orphaned &&
-			    list_head(&prev->listeners) == NULL) {
+			if (list_head(&prev->listeners) == NULL) {
 				avl_remove(&autosnap->snapshots, prev);
-				list_insert_tail(
-				    &autosnap->autosnap_destroy_queue,
-				    prev);
-				cv_broadcast(&autosnap->autosnap_cv);
+				if (!destroy) {
+					kmem_free(prev, sizeof (autosnap_snapshot_t));
+				} else {
+					list_insert_tail(
+					    &autosnap->autosnap_destroy_queue,
+					    prev);
+					cv_broadcast(&autosnap->autosnap_cv);
+				}
 			}
 		}
 
@@ -1076,16 +1077,11 @@ autosnap_notify_created(const char *name, uint64_t txg,
 	search.txg = txg;
 	(void) strcpy(search.name, name);
 	snapshot = avl_find(&zone->autosnap->snapshots, &search, NULL);
-	if (snapshot) {
+	if (snapshot != NULL) {
 		found = B_TRUE;
 	} else {
-		snapshot = kmem_zalloc(sizeof (autosnap_snapshot_t), KM_SLEEP);
-		(void) strcpy(snapshot->name, name);
-		snapshot->txg = txg;
-		snapshot->etxg = txg;
-		snapshot->recursive = !!(zone->flags & AUTOSNAP_RECURSIVE);
-		list_create(&snapshot->listeners, sizeof (autosnap_handler_t),
-		    offsetof(autosnap_handler_t, node));
+		snapshot = autosnap_create_snap_node(name, txg, txg,
+		    !!(zone->flags & AUTOSNAP_RECURSIVE), B_FALSE);
 	}
 
 	autosnap_iterate_listeners(zone, snapshot, destruction);
@@ -1115,14 +1111,9 @@ autosnap_reject_snap(const char *name, uint64_t txg, zfs_autosnap_t *autosnap)
 	if (!autosnap_check_name(strchr(name, '@')))
 		return;
 
-	snapshot = kmem_zalloc(sizeof (autosnap_snapshot_t), KM_SLEEP);
-	(void) strcpy(snapshot->name, name);
-	snapshot->txg = txg;
-	snapshot->etxg = txg;
-	snapshot->recursive = B_FALSE;
+	snapshot = autosnap_create_snap_node(name, txg, txg, B_FALSE, B_FALSE);
 
-	list_insert_tail(
-	    &autosnap->autosnap_destroy_queue, snapshot);
+	list_insert_tail(&autosnap->autosnap_destroy_queue, snapshot);
 	cv_broadcast(&autosnap->autosnap_cv);
 }
 
