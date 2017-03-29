@@ -532,7 +532,7 @@ mappedread(vnode_t *vp, int nbytes, uio_t *uio)
  * ZFS I/O rate throttling
  */
 
-#define DELAY_SHIFT 24
+#define	DELAY_SHIFT 24
 
 typedef struct zfs_rate_delay {
 	uint_t rl_rate;
@@ -575,7 +575,7 @@ zfs_rate_delay_t zfs_rate_delay_table[] = {
 	{24, 3125},
 };
 
-#define MAX_RATE_TBL_ENTRY 24
+#define	MAX_RATE_TBL_ENTRY 24
 
 /*
  * The delay we use should be reduced based on the size of the iorate
@@ -588,7 +588,7 @@ zfs_get_delay(ssize_t iorate)
 
 	if (rate > MAX_RATE_TBL_ENTRY)
 		rate = MAX_RATE_TBL_ENTRY;
-	return zfs_rate_delay_table[rate].rl_delay;
+	return (zfs_rate_delay_table[rate].rl_delay);
 }
 
 /*
