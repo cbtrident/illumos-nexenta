@@ -96,34 +96,34 @@ main(int argc, char **argv)
 	}
 
 	if (vflag)
-		fprintf(stderr, "Write 1 (mode 644)\n");
+		(void) fprintf(stderr, "Write 1 (mode 644)\n");
 	n = write(fd, "mode 644 OK\n", 12);
 	if (n != 12) {
-		fprintf(stderr, "write mode 644, err=%d\n", errno);
+		(void) fprintf(stderr, "write mode 644, err=%d\n", errno);
 		exit(1);
 	}
 
 	if (vflag)
-		fprintf(stderr, "Chmod 444\n");
+		(void) fprintf(stderr, "Chmod 444\n");
 	n = fchmod(fd, 0444);
 	if (n < 0) {
-		fprintf(stderr, "chmod 444, err=%d\n", errno);
+		(void) fprintf(stderr, "chmod 444, err=%d\n", errno);
 		exit(1);
 	}
 
 	if (vflag)
-		fprintf(stderr, "Write 2 (mode 444)\n");
+		(void) fprintf(stderr, "Write 2 (mode 444)\n");
 	n = write(fd, "mode 444 OK\n", 12);
 	if (n != 12) {
-		fprintf(stderr, "write mode 444, err=%d\n", errno);
+		(void) fprintf(stderr, "write mode 444, err=%d\n", errno);
 		exit(1);
 	}
 
 	if (vflag)
-		fprintf(stderr, "Set DOS R/O\n");
+		(void) fprintf(stderr, "Set DOS R/O\n");
 	n = dosattr_set_ro(fd, NULL /* fname? */);
 	if (n != 0) {
-		fprintf(stderr, "Set R/O, err=%d\n", n);
+		(void) fprintf(stderr, "Set R/O, err=%d\n", n);
 		exit(1);
 	}
 
@@ -132,10 +132,10 @@ main(int argc, char **argv)
 	 * the same as when we've set the mode to 444 after open.
 	 */
 	if (vflag)
-		fprintf(stderr, "Write 3 (DOS R/O)\n");
+		(void) fprintf(stderr, "Write 3 (DOS R/O)\n");
 	n = write(fd, "Write DOS RO?\n", 14);
 	if (n != 14) {
-		fprintf(stderr, "write (DOS R/O), err=%d\n", errno);
+		(void) fprintf(stderr, "write (DOS R/O), err=%d\n", errno);
 		exit(1);
 	}
 
