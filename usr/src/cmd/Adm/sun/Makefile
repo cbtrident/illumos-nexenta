@@ -20,7 +20,7 @@
 #
 #
 # Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2010 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
 ETCFILES= ioctl.syscon passwd shadow motd
@@ -46,6 +46,7 @@ $(ROOTVARSMB)/smbpasswd :=	FILEMODE =	0400
 .KEEP_STATE:
 
 $(ROOTETCFTPUSERSLINK):	$(ROOTETCFTPDFILES)
+	$(RM) $@
 	$(SYMLINK) ftpd/ftpusers $@
 
 all: $(ETCFILES) $(KVMFILES) $(SMBFILES) $(FTPDFILES)
