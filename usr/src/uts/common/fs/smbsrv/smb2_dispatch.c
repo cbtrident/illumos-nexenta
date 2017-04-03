@@ -189,8 +189,14 @@ smb2sr_newrq(smb_request_t *sr)
 	 * Cancel also skips signature verification and
 	 * does not consume a sequence number.
 	 * [MS-SMB2] 3.2.4.24 Cancellation...
+	 *
+	 * We can't do this for encrypted requests because the
+	 * request is not yet decrypted here.  If we get an
+	 * encrypted cancel (unlikely but possible) just
+	 * let the normal dispatch mechanism handle it.
 	 */
-	if (smb2_cancel_in_reader != 0) {
+	if (magic == SMB2_PROTOCOL_MAGIC &&
+	    smb2_cancel_in_reader != 0) {
 		uint16_t command;
 
 		command = LE_IN16((uint8_t *)sr->sr_request_buf + 12);
