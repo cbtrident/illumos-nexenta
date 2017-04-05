@@ -92,53 +92,59 @@ smb3_encrypt_gen_nonce(smb_user_t *user, uint8_t *buf, size_t len)
 }
 
 int
+smb3_encrypt_init_mech(smb_session_t *s)
+{
+	smb_crypto_mech_t *mech;
+	int rc;
+
+	if (s->enc_mech != NULL)
+		return (0);
+
+	mech = kmem_zalloc(sizeof (*mech), KM_SLEEP);
+	rc = smb3_encrypt_getmech(mech);
+	if (rc != 0) {
+		kmem_free(mech, sizeof (*mech));
+		return (rc);
+	}
+	s->enc_mech = mech;
+
+	return (0);
+}
+
+/*
+ * Initializes keys/state required for SMB3 Encryption.
+ * Note: If a failure occurs here, don't fail the request.
+ * Instead, return an error when we attempt to encrypt/decrypt.
+ */
+void
 smb3_encrypt_begin(smb_request_t *sr, smb_token_t *token)
 {
 	smb_session_t *s = sr->session;
 	smb_user_t *u = sr->uid_user;
 	struct smb_key *enc_key = &u->u_enc_key;
 	struct smb_key *dec_key = &u->u_dec_key;
-	smb_crypto_mech_t *mech;
-	int rc;
 
 	/*
 	 * In order to enforce encryption, all users need to
 	 * have Session.EncryptData properly set, even anon/guest.
 	 */
-	if (s->s_server->sv_cfg.skc_encrypt != SMB_CONFIG_DISABLED) {
-		u->u_encrypt = s->s_server->sv_cfg.skc_encrypt;
-	}
+	u->u_encrypt = s->s_server->sv_cfg.skc_encrypt;
+	enc_key->len = 0;
+	dec_key->len = 0;
 
 	/*
 	 * If we don't have a session key, we'll fail later when a
 	 * request that requires (en/de)cryption can't be (en/de)crypted.
+	 * Also don't bother initializing if we don't have a mechanism.
 	 */
-	if (token->tkn_ssnkey.val == NULL || token->tkn_ssnkey.len == 0)
-		return (0);
-
-	/*
-	 * Session-level initialization (once per session)
-	 * Get mech handle, initalize IV
-	 */
-	smb_rwx_rwenter(&s->s_lock, RW_WRITER);
-	if (s->enc_mech == NULL) {
-		mech = kmem_zalloc(sizeof (*mech), KM_SLEEP);
-		rc = smb3_encrypt_getmech(mech);
-		if (rc != 0) {
-			kmem_free(mech, sizeof (*mech));
-			smb_rwx_rwexit(&s->s_lock);
-			return (rc);
-		}
-		s->enc_mech = mech;
-	}
-	smb_rwx_rwexit(&s->s_lock);
+	if (token->tkn_ssnkey.val == NULL || token->tkn_ssnkey.len == 0 ||
+	    s->enc_mech == NULL)
+		return;
 
 	/*
 	 * Compute and store the encryption keys, which live in
 	 * the user structure.
 	 */
-	enc_key->len = SMB3_KEYLEN;
-	dec_key->len = SMB3_KEYLEN;
 
 	/*
 	 * For SMB3, the encrypt/decrypt keys are derived from
@@ -147,16 +153,17 @@ smb3_encrypt_begin(smb_request_t *sr, smb_token_t *token)
 	if (smb3_do_kdf(enc_key->key, encrypt_kdf_input,
 	    sizeof (encrypt_kdf_input), token->tkn_ssnkey.val,
 	    token->tkn_ssnkey.len) != 0)
-		return (-1);
+		return;
 
 	if (smb3_do_kdf(dec_key->key, decrypt_kdf_input,
 	    sizeof (decrypt_kdf_input), token->tkn_ssnkey.val,
 	    token->tkn_ssnkey.len) != 0)
-		return (-1);
+		return;
 
 	smb3_encrypt_init_nonce(u);
 
-	return (0);
+	enc_key->len = SMB3_KEYLEN;
+	dec_key->len = SMB3_KEYLEN;
 }
 
 /*

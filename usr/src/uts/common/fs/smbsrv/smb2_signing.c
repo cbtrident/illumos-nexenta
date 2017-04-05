@@ -128,34 +128,16 @@ static uint8_t sign_kdf_input[29] = {
 	0, 'S', 'm', 'b', 'S', 'i', 'g', 'n',
 	0, 0, 0, 0, 0x80 };
 
-/*
- * smb2_sign_begin
- * Handles both SMB2 & SMB3
- *
- * Get the mechanism info.
- * Intializes MAC key based on the user session key and store it in
- * the signing structure.  This begins signing on this session.
- */
-int
-smb2_sign_begin(smb_request_t *sr, smb_token_t *token)
+void
+smb2_sign_init_mech(smb_session_t *s)
 {
-	smb_session_t *s = sr->session;
-	smb_user_t *u = sr->uid_user;
-	struct smb_key *sign_key = &u->u_sign_key;
+	smb_crypto_mech_t *mech;
 	int (*get_mech)(smb_crypto_mech_t *);
 	int (*sign_calc)(smb_request_t *, struct mbuf_chain *, uint8_t *);
-	smb_crypto_mech_t *mech;
 	int rc;
 
-	/*
-	 * We should normally have a session key here because
-	 * our caller filters out Anonymous and Guest logons.
-	 * However, buggy clients could get us here without a
-	 * session key, in which case we'll fail later when a
-	 * request that requires signing can't be checked.
-	 */
-	if (token->tkn_ssnkey.val == NULL || token->tkn_ssnkey.len == 0)
-		return (0);
+	if (s->sign_mech != NULL)
+		return;
 
 	if (s->dialect >= SMB_VERS_3_0) {
 		get_mech = smb3_cmac_getmech;
@@ -165,24 +147,45 @@ smb2_sign_begin(smb_request_t *sr, smb_token_t *token)
 		sign_calc = smb2_sign_calc;
 	}
 
-	/*
-	 * Session-level initialization (once per session)
-	 * Get mech handle, sign_calc function
-	 */
-	smb_rwx_rwenter(&s->s_lock, RW_WRITER);
-	if (s->sign_mech == NULL) {
-		mech = kmem_zalloc(sizeof (*mech), KM_SLEEP);
-		rc = get_mech(mech);
-		if (rc != 0) {
-			kmem_free(mech, sizeof (*mech));
-			smb_rwx_rwexit(&s->s_lock);
-			return (rc);
-		}
-		s->sign_mech = mech;
-		s->sign_calc = sign_calc;
-		s->sign_fini = smb2_sign_fini;
+	mech = kmem_zalloc(sizeof (*mech), KM_SLEEP);
+	rc = get_mech(mech);
+	if (rc != 0) {
+		kmem_free(mech, sizeof (*mech));
+		return;
 	}
-	smb_rwx_rwexit(&s->s_lock);
+	s->sign_mech = mech;
+	s->sign_calc = sign_calc;
+	s->sign_fini = smb2_sign_fini;
+}
+
+/*
+ * smb2_sign_begin
+ * Handles both SMB2 & SMB3
+ *
+ * Get the mechanism info.
+ * Intializes MAC key based on the user session key and store it in
+ * the signing structure.  This begins signing on this session.
+ */
+void
+smb2_sign_begin(smb_request_t *sr, smb_token_t *token)
+{
+	smb_session_t *s = sr->session;
+	smb_user_t *u = sr->uid_user;
+	struct smb_key *sign_key = &u->u_sign_key;
+
+	sign_key->len = 0;
+
+	/*
+	 * We should normally have a session key here because
+	 * our caller filters out Anonymous and Guest logons.
+	 * However, buggy clients could get us here without a
+	 * session key, in which case we'll fail later when a
+	 * request that requires signing can't be checked.
+	 * Also, don't bother initializing if we don't have a mechanism.
+	 */
+	if (token->tkn_ssnkey.val == NULL || token->tkn_ssnkey.len == 0 ||
+	    s->sign_mech == NULL)
+		return;
 
 	/*
 	 * Compute and store the signing key, which lives in
@@ -193,11 +196,11 @@ smb2_sign_begin(smb_request_t *sr, smb_token_t *token)
 		 * For SMB3, the signing key is a "KDF" hash of the
 		 * session key.
 		 */
-		sign_key->len = SMB3_KEYLEN;
 		if (smb3_do_kdf(sign_key->key, sign_kdf_input,
 		    sizeof (sign_kdf_input), token->tkn_ssnkey.val,
 		    token->tkn_ssnkey.len) != 0)
-			return (-1);
+			return;
+		sign_key->len = SMB3_KEYLEN;
 	} else {
 		/*
 		 * For SMB2, the signing key is just the first 16 bytes
@@ -226,8 +229,6 @@ smb2_sign_begin(smb_request_t *sr, smb_token_t *token)
 	 */
 	if (u->u_sign_flags & SMB_SIGNING_ENABLED)
 		sr->smb2_hdr_flags |= SMB2_FLAGS_SIGNED;
-
-	return (0);
 }
 
 /*

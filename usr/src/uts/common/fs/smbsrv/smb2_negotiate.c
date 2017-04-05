@@ -326,6 +326,7 @@ smb2_negotiate_common(smb_request_t *sr, uint16_t version)
 		return (-1); /* will drop */
 	}
 
+	smb2_sign_init_mech(s);
 
 	/*
 	 * [MS-SMB2] 3.3.5.4 Receiving an SMB2 NEGOTIATE Request
@@ -333,15 +334,13 @@ smb2_negotiate_common(smb_request_t *sr, uint16_t version)
 	 * Only set CAP_ENCRYPTION if this is 3.0 or 3.0.2 and
 	 * the client has it set.
 	 */
-#ifndef _FAKE_KERNEL
+
 	if (s->dialect < SMB_VERS_3_0 ||
-	    !SMB3_CLIENT_ENCRYPTS(sr))
+	    !SMB3_CLIENT_ENCRYPTS(sr) ||
+	    smb3_encrypt_init_mech(s) != 0)
 		s->srv_cap = smb2srv_capabilities & ~SMB2_CAP_ENCRYPTION;
 	else
 		s->srv_cap = smb2srv_capabilities;
-#else
-	s->srv_cap = smb2srv_capabilities & ~SMB2_CAP_ENCRYPTION;
-#endif
 
 	rc = smb_mbc_encodef(
 	    &sr->reply,

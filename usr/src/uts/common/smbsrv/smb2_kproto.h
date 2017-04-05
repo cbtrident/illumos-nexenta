@@ -62,9 +62,11 @@ uint32_t smb2sr_lookup_fid(smb_request_t *, smb2fid_t *);
 /* SMB2 signing routines - smb2_signing.c */
 int smb2_sign_check_request(smb_request_t *);
 void smb2_sign_reply(smb_request_t *);
+void smb2_sign_init_mech(smb_session_t *);
 
 int smb3_encrypt_sr(smb_request_t *, struct mbuf_chain *, struct mbuf_chain *);
 int smb3_decrypt_sr(smb_request_t *);
+int smb3_encrypt_init_mech(smb_session_t *s);
 
 uint32_t smb2_fsctl_fs(smb_request_t *, smb_fsctl_t *);
 uint32_t smb2_fsctl_netfs(smb_request_t *, smb_fsctl_t *);
