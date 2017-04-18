@@ -52,8 +52,8 @@ uint32_t smb2_max_trans  = (1<<16);	/* 64KB */
 
 /*
  * List of all SMB2 versions we implement.  Note that the
- * highest version we support may be limited by the
- * _cfg.skc_max_protocol setting.
+ * versions we support may be limited by the
+ * _cfg.skc_max_protocol and min_protocol settings.
  */
 static uint16_t smb2_versions[] = {
 	0x202,	/* SMB 2.002 */
@@ -68,7 +68,8 @@ smb2_supported_version(smb_session_t *s, uint16_t version)
 {
 	int i;
 
-	if (version > s->s_cfg.skc_max_protocol)
+	if (version > s->s_cfg.skc_max_protocol ||
+	    version < s->s_cfg.skc_min_protocol)
 		return (B_FALSE);
 	for (i = 0; i < smb2_nversions; i++)
 		if (version == smb2_versions[i])
@@ -108,7 +109,7 @@ smb1_negotiate_smb2(smb_request_t *sr)
 	 */
 	switch (negprot->ni_dialect) {
 	case DIALECT_SMB2002:	/* SMB 2.002 (a.k.a. SMB2.0) */
-		smb2_version = 0x202;
+		smb2_version = SMB_VERS_2_002;
 		s->dialect = smb2_version;
 		s->s_state = SMB_SESSION_STATE_NEGOTIATED;
 		/* Allow normal SMB2 requests now. */
@@ -244,6 +245,8 @@ smb2_newrq_negotiate(smb_request_t *sr)
 	 */
 	best_version = smb2_find_best_dialect(s, cl_versions, version_cnt);
 	if (best_version == 0) {
+		cmn_err(CE_NOTE, "clnt %s no supported dialect",
+		    sr->session->ip_addr_str);
 		sr->smb2_status = NT_STATUS_INVALID_PARAMETER;
 		rc = -1;
 		goto errout;
