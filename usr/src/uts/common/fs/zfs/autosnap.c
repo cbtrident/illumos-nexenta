@@ -17,9 +17,84 @@ static void autosnap_reject_snap(const char *name, uint64_t txg,
     zfs_autosnap_t *autosnap);
 
 typedef struct {
+	autosnap_handler_t *hdl;
+	list_node_t node;
+} autosnap_ref_t;
+
+typedef struct {
 	autosnap_zone_t *azone;
 	dsl_sync_task_t *dst;
 } autosnap_commit_cb_arg_t;
+
+static void
+autosnap_refcount_add(list_t *ref_cnt,
+    autosnap_handler_t *owner)
+{
+	autosnap_ref_t *ref;
+
+	ref = kmem_alloc(sizeof (autosnap_ref_t), KM_SLEEP);
+	ref->hdl = owner;
+	list_insert_tail(ref_cnt, ref);
+}
+
+static void
+autosnap_refcount_remove(list_t *ref_cnt,
+    autosnap_handler_t *owner)
+{
+	autosnap_ref_t *ref;
+
+	ASSERT(!list_is_empty(ref_cnt));
+
+	for (ref = list_head(ref_cnt); ref != NULL;
+	    ref = list_next(ref_cnt, ref)) {
+		if (ref->hdl == owner) {
+			list_remove(ref_cnt, ref);
+			kmem_free(ref, sizeof (autosnap_ref_t));
+
+			return;
+		}
+	}
+
+	/*
+	 * FIXME: After merge of latest illumos code
+	 * this will be removed with all autosnap_refcount_*
+	 * All autosnap_refcount_*() calls will be replaced by
+	 * the corresponding ref_counter_*()
+	 */
+	panic("No such hold %p", (void *)owner);
+}
+
+static void
+autosnap_refcount_remove_all(list_t *ref_cnt)
+{
+	autosnap_ref_t *ref;
+
+	while ((ref = list_head(ref_cnt)) != NULL) {
+		list_remove(ref_cnt, ref);
+		kmem_free(ref, sizeof (autosnap_ref_t));
+	}
+}
+
+static boolean_t
+autosnap_refcount_held(list_t *ref_cnt,
+    autosnap_handler_t *owner)
+{
+	autosnap_ref_t *ref;
+
+	for (ref = list_head(ref_cnt); ref != NULL;
+	    ref = list_next(ref_cnt, ref)) {
+		if (ref->hdl == owner)
+			return (B_TRUE);
+	}
+
+	return (B_FALSE);
+}
+
+static boolean_t
+autosnap_refcount_is_zero(list_t *ref_cnt)
+{
+	return (list_is_empty(ref_cnt));
+}
 
 /* AUTOSNAP-recollect routines */
 
@@ -36,8 +111,10 @@ autosnap_create_snap_node(const char *snap_name, uint64_t txg,
 	snap_node->txg = txg;
 	snap_node->etxg = etxg;
 	snap_node->orphaned = orphaned;
-	list_create(&snap_node->listeners, sizeof (autosnap_handler_t),
-		offsetof(autosnap_handler_t, node));
+
+	list_create(&snap_node->ref_cnt,
+	    sizeof (autosnap_ref_t),
+	    offsetof(autosnap_ref_t, node));
 
 	return (snap_node);
 }
@@ -55,7 +132,7 @@ static int
 autosnap_collect_orphaned_snapshots_cb(dsl_pool_t *dp,
     dsl_dataset_t *ds, void *arg)
 {
-	zfs_autosnap_t *autosnap = (zfs_autosnap_t *)arg;
+	autosnap_zone_t *zone = arg;
 	char snap_name[ZFS_MAX_DATASET_NAME_LEN];
 	autosnap_snapshot_t *snap_node;
 	uint64_t txg;
@@ -71,9 +148,9 @@ autosnap_collect_orphaned_snapshots_cb(dsl_pool_t *dp,
 	snap_node = autosnap_create_snap_node(snap_name,
 	    txg, txg, B_FALSE, B_TRUE);
 
-	mutex_enter(&autosnap->autosnap_avl_lock);
-	avl_add(&autosnap->snapshots, snap_node);
-	mutex_exit(&autosnap->autosnap_avl_lock);
+	mutex_enter(&zone->avl_lock);
+	avl_add(&zone->snapshots, snap_node);
+	mutex_exit(&zone->avl_lock);
 
 	return (0);
 }
@@ -88,13 +165,11 @@ autosnap_collect_orphaned_snapshots_cb(dsl_pool_t *dp,
  *    - an user that has enabled WBC or KRRP for a dataset
  */
 static void
-autosnap_collect_orphaned_snapshots(spa_t *spa,
-    const char *ds_name, boolean_t recursive)
+autosnap_collect_orphaned_snapshots(spa_t *spa, autosnap_zone_t *zone)
 {
-	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 	int flags = DS_FIND_SNAPSHOTS;
 	dsl_pool_t *dp = spa_get_dsl(spa);
-	dsl_dataset_t *ds;
+	dsl_dataset_t *ds = NULL;
 	uint64_t dd_object;
 	boolean_t held;
 
@@ -107,47 +182,22 @@ autosnap_collect_orphaned_snapshots(spa_t *spa,
 	if (!held)
 		dsl_pool_config_enter(dp, FTAG);
 
-	if (dsl_dataset_hold(dp, ds_name, FTAG, &ds) != 0)
+	if (dsl_dataset_hold(dp, zone->dataset, FTAG, &ds) != 0)
 		goto out;
 
 	dd_object = ds->ds_dir->dd_object;
 	dsl_dataset_rele(ds, FTAG);
 
-	if (recursive)
+	if ((zone->flags & AUTOSNAP_RECURSIVE) != 0)
 		flags |= DS_FIND_CHILDREN;
 
 	VERIFY0(dmu_objset_find_dp(spa_get_dsl(spa), dd_object,
-	    autosnap_collect_orphaned_snapshots_cb, autosnap, flags));
+	    autosnap_collect_orphaned_snapshots_cb, zone, flags));
 
 out:
 	if (!held)
 		dsl_pool_config_exit(dp, FTAG);
 }
-
-/* Plan to destroy all orphaned snapshots */
-void
-autosnap_reap_orphaned_snaps(spa_t *spa)
-{
-	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
-	autosnap_snapshot_t *snap, *prev_snap;
-
-	mutex_enter(&autosnap->autosnap_lock);
-	prev_snap = NULL;
-	snap = avl_first(&autosnap->snapshots);
-	while (snap) {
-		prev_snap = snap;
-		snap = AVL_NEXT(&autosnap->snapshots, snap);
-		if (prev_snap->orphaned && !list_head(&prev_snap->listeners)) {
-			avl_remove(&autosnap->snapshots, prev_snap);
-			list_insert_tail(&autosnap->autosnap_destroy_queue,
-			    prev_snap);
-		} else {
-			prev_snap->orphaned = B_FALSE;
-		}
-	}
-	mutex_exit(&autosnap->autosnap_lock);
-}
-
 
 /*
  * Return list of the snapshots which are owned by the caller
@@ -159,22 +209,20 @@ autosnap_get_owned_snapshots(void *opaque)
 	nvlist_t *dup;
 	autosnap_snapshot_t *snap;
 	autosnap_handler_t *hdl = opaque;
-	zfs_autosnap_t *autosnap = hdl->zone->autosnap;
+	autosnap_zone_t *zone = hdl->zone;
+	zfs_autosnap_t *autosnap = zone->autosnap;
 
 	if (!(hdl->flags & AUTOSNAP_OWNER))
 		return (NULL);
 
 	mutex_enter(&autosnap->autosnap_lock);
 
-	if (nvlist_alloc(&dup, NV_UNIQUE_NAME, KM_SLEEP) != 0) {
-		mutex_exit(&autosnap->autosnap_lock);
-		return (NULL);
-	}
+	dup = fnvlist_alloc();
 
 	/* iterate though snapshots and find requested */
-	for (snap = avl_first(&autosnap->snapshots);
+	for (snap = avl_first(&zone->snapshots);
 	    snap != NULL;
-	    snap = AVL_NEXT(&autosnap->snapshots, snap)) {
+	    snap = AVL_NEXT(&zone->snapshots, snap)) {
 		char ds_name[MAXPATHLEN];
 		uint64_t data[2];
 
@@ -184,7 +232,7 @@ autosnap_get_owned_snapshots(void *opaque)
 		(void) strcpy(ds_name, snap->name);
 		*(strchr(ds_name, '@')) = '\0';
 
-		if (strcmp(ds_name, hdl->zone->dataset) != 0)
+		if (strcmp(ds_name, zone->dataset) != 0)
 			continue;
 
 		data[0] = snap->txg;
@@ -204,17 +252,6 @@ autosnap_get_owned_snapshots(void *opaque)
 	return (dup);
 }
 
-static autosnap_handler_t *
-autosnap_clone_handler(autosnap_handler_t *hdl)
-{
-	autosnap_handler_t *clone =
-	    kmem_alloc(sizeof (autosnap_handler_t), KM_SLEEP);
-
-	(void) memcpy(clone, hdl, sizeof (autosnap_handler_t));
-
-	return (clone);
-}
-
 /*
  * Insert owners handler to snapshots
  */
@@ -222,30 +259,29 @@ static void
 autosnap_claim_orphaned_snaps(autosnap_handler_t *hdl)
 {
 	autosnap_zone_t *zone = hdl->zone;
-	zfs_autosnap_t *autosnap = zone->autosnap;
 	autosnap_snapshot_t *snap, *r_snap = NULL;
 
-	snap = avl_first(&autosnap->snapshots);
+	ASSERT(MUTEX_HELD(&zone->autosnap->autosnap_lock));
 
-	while (snap) {
-		char ds_name[MAXPATHLEN];
+	snap = avl_first(&zone->snapshots);
+
+	while (snap != NULL) {
+		char ds_name[ZFS_MAX_DATASET_NAME_LEN];
 		autosnap_snapshot_t *next_snap =
-		    AVL_NEXT(&autosnap->snapshots, snap);
+		    AVL_NEXT(&zone->snapshots, snap);
 
 		if (snap->orphaned) {
 			(void) strcpy(ds_name, snap->name);
 			*(strchr(ds_name, '@')) = '\0';
 
 			if (strcmp(ds_name, zone->dataset) == 0) {
-				list_insert_tail(&snap->listeners,
-				    autosnap_clone_handler(hdl));
-
+				autosnap_refcount_add(&snap->ref_cnt, hdl);
 				r_snap = snap;
 			} else if (strncmp(ds_name,
 			    zone->dataset, strlen(zone->dataset)) == 0 &&
 			    (hdl->flags & AUTOSNAP_RECURSIVE) &&
 			    r_snap != NULL) {
-				avl_remove(&autosnap->snapshots, snap);
+				avl_remove(&zone->snapshots, snap);
 				kmem_free(snap, sizeof (autosnap_snapshot_t));
 				r_snap->recursive = B_TRUE;
 			}
@@ -257,11 +293,10 @@ autosnap_claim_orphaned_snaps(autosnap_handler_t *hdl)
 
 /* AUTOSNAP_RELE routines */
 
-void
-autosnap_release_snapshots_by_txg_no_lock_impl(void *opaque, uint64_t from_txg,
-    uint64_t to_txg, boolean_t destroy)
+static void
+autosnap_release_snapshots_by_txg_no_lock_impl(autosnap_handler_t *hdl,
+    uint64_t from_txg, uint64_t to_txg, boolean_t destroy)
 {
-	autosnap_handler_t *hdl = opaque;
 	autosnap_zone_t *zone = hdl->zone;
 	zfs_autosnap_t *autosnap = zone->autosnap;
 	avl_index_t where;
@@ -275,10 +310,10 @@ autosnap_release_snapshots_by_txg_no_lock_impl(void *opaque, uint64_t from_txg,
 	search.txg = from_txg;
 	(void) strcpy(search.name, zone->dataset);
 	search_len = strlen(search.name);
-	walker = avl_find(&autosnap->snapshots, &search, &where);
+	walker = avl_find(&zone->snapshots, &search, &where);
 
-	if (!walker) {
-		walker = avl_nearest(&autosnap->snapshots,
+	if (walker == NULL) {
+		walker = avl_nearest(&zone->snapshots,
 		    where, AVL_AFTER);
 	}
 
@@ -290,7 +325,7 @@ autosnap_release_snapshots_by_txg_no_lock_impl(void *opaque, uint64_t from_txg,
 		return;
 
 	if (walker->txg < from_txg)
-		walker = AVL_NEXT(&autosnap->snapshots, walker);
+		walker = AVL_NEXT(&zone->snapshots, walker);
 
 	if (walker->txg > to_txg)
 		return;
@@ -300,49 +335,41 @@ autosnap_release_snapshots_by_txg_no_lock_impl(void *opaque, uint64_t from_txg,
 
 	/* iterate over the specified range */
 	do {
-		autosnap_handler_t *tmp_hdl = NULL;
-		boolean_t match, exact, pref, skip = B_TRUE;
+		boolean_t exact, pref, held = B_FALSE;
 
-		match = (strncmp(search.name, walker->name, search_len) == 0);
-		if (match) {
+		if (strncmp(search.name, walker->name, search_len) == 0) {
 			exact = (walker->name[search_len] == '@');
 			pref = (walker->name[search_len] == '/');
 
-			skip = !(exact ||
-			    (pref && (zone->flags & AUTOSNAP_RECURSIVE)));
-		}
-
-		/* find client's entry in a snapshot */
-		if (!skip) {
-			for (tmp_hdl = list_head(&walker->listeners);
-			    tmp_hdl != NULL;
-			    tmp_hdl = list_next(&walker->listeners, tmp_hdl)) {
-				if (tmp_hdl->mark == hdl->mark)
-					break;
+			if (exact ||
+			    (pref &&
+			    (zone->flags & AUTOSNAP_RECURSIVE) != 0)) {
+				held = autosnap_refcount_held(
+				    &walker->ref_cnt, hdl);
 			}
 		}
 
 		prev = walker;
 
-		walker = AVL_NEXT(&autosnap->snapshots, walker);
+		walker = AVL_NEXT(&zone->snapshots, walker);
 
 		/*
 		 * If client holds reference to the snapshot
 		 * then remove it
 		 */
-		if (tmp_hdl != NULL) {
-			list_remove(&prev->listeners, tmp_hdl);
-			kmem_free(tmp_hdl, sizeof (autosnap_handler_t));
+		if (held) {
+			autosnap_refcount_remove(&prev->ref_cnt, hdl);
 
 			/*
 			 * If it is the last reference and autosnap should
 			 * not be destroyed then just free the structure.
 			 * Otherwise put it on the destroyer's queue.
 			 */
-			if (list_head(&prev->listeners) == NULL) {
-				avl_remove(&autosnap->snapshots, prev);
+			if (autosnap_refcount_is_zero(&prev->ref_cnt)) {
+				avl_remove(&zone->snapshots, prev);
 				if (!destroy) {
-					kmem_free(prev, sizeof (autosnap_snapshot_t));
+					kmem_free(prev,
+					    sizeof (autosnap_snapshot_t));
 				} else {
 					list_insert_tail(
 					    &autosnap->autosnap_destroy_queue,
@@ -352,7 +379,7 @@ autosnap_release_snapshots_by_txg_no_lock_impl(void *opaque, uint64_t from_txg,
 			}
 		}
 
-	} while (walker && walker->txg <= to_txg);
+	} while (walker != NULL && walker->txg <= to_txg);
 }
 
 /* No lock version should be used from autosnap callbacks */
@@ -360,7 +387,9 @@ void
 autosnap_release_snapshots_by_txg_no_lock(void *opaque,
     uint64_t from_txg, uint64_t to_txg)
 {
-	autosnap_release_snapshots_by_txg_no_lock_impl(opaque,
+	autosnap_handler_t *hdl = opaque;
+
+	autosnap_release_snapshots_by_txg_no_lock_impl(hdl,
 	    from_txg, to_txg, B_TRUE);
 }
 
@@ -374,7 +403,8 @@ autosnap_release_snapshots_by_txg(void *opaque,
 	autosnap_handler_t *hdl = opaque;
 	autosnap_zone_t *zone = hdl->zone;
 	mutex_enter(&zone->autosnap->autosnap_lock);
-	autosnap_release_snapshots_by_txg_no_lock(opaque, from_txg, to_txg);
+	autosnap_release_snapshots_by_txg_no_lock_impl(hdl,
+	    from_txg, to_txg, B_TRUE);
 	mutex_exit(&zone->autosnap->autosnap_lock);
 }
 
@@ -471,15 +501,22 @@ autosnap_register_handler_impl(spa_t *spa,
 		zone = kmem_zalloc(sizeof (autosnap_zone_t), KM_SLEEP);
 		(void) strcpy(zone->dataset, name);
 
+		mutex_init(&zone->avl_lock, NULL, MUTEX_ADAPTIVE, NULL);
+
 		list_create(&zone->listeners,
 		    sizeof (autosnap_handler_t),
 		    offsetof(autosnap_handler_t, node));
 
+		avl_create(&zone->snapshots,
+		    snapshot_txg_compare,
+		    sizeof (autosnap_snapshot_t),
+		    offsetof(autosnap_snapshot_t, node));
+
+		zone->flags = flags;
 		zone->autosnap = autosnap;
 		list_insert_tail(&autosnap->autosnap_zones, zone);
 
-		autosnap_collect_orphaned_snapshots(spa, name,
-		    ((flags & AUTOSNAP_RECURSIVE) != 0));
+		autosnap_collect_orphaned_snapshots(spa, zone);
 	} else {
 		if ((list_head(&zone->listeners) != NULL) &&
 		    ((flags & AUTOSNAP_CREATOR) ^
@@ -499,9 +536,9 @@ autosnap_register_handler_impl(spa_t *spa,
 			    name, flags & AUTOSNAP_RECURSIVE ? "[r]" : "");
 			goto out;
 		}
-	}
 
-	zone->flags |= flags;
+		zone->flags |= flags;
+	}
 
 	hdl = kmem_zalloc(sizeof (autosnap_handler_t), KM_SLEEP);
 
@@ -511,7 +548,6 @@ autosnap_register_handler_impl(spa_t *spa,
 	hdl->cb_arg = cb_arg;
 	hdl->zone = zone;
 	hdl->flags = flags;
-	hdl->mark = unique_create();
 
 	list_insert_tail(&zone->listeners, hdl);
 
@@ -573,7 +609,7 @@ autosnap_unregister_handler(void *opaque)
 	spa = spa_lookup(zone->dataset);
 
 	/* if zone is absent, then just destroy handler */
-	if (!spa) {
+	if (spa == NULL) {
 		zone = NULL;
 		goto free_hdl;
 	}
@@ -582,9 +618,8 @@ autosnap_unregister_handler(void *opaque)
 
 	mutex_enter(&autosnap->autosnap_lock);
 
-	autosnap_release_snapshots_by_txg_no_lock_impl(
-	    opaque, AUTOSNAP_FIRST_SNAP, AUTOSNAP_LAST_SNAP,
-	    B_FALSE);
+	autosnap_release_snapshots_by_txg_no_lock_impl(hdl,
+	    AUTOSNAP_FIRST_SNAP, AUTOSNAP_LAST_SNAP, B_FALSE);
 
 free_hdl:
 
@@ -596,6 +631,23 @@ free_hdl:
 		list_remove(&zone->listeners, hdl);
 
 		if (list_head(&zone->listeners) == NULL) {
+			void *cookie = NULL;
+			autosnap_snapshot_t *snap;
+
+			while ((snap = avl_destroy_nodes(&zone->snapshots,
+			    &cookie)) != NULL) {
+				/*
+				 * Only orphans can be in
+				 * the AVL-tree at this stage
+				 */
+				VERIFY(snap->orphaned);
+				VERIFY(autosnap_refcount_is_zero(
+				    &snap->ref_cnt));
+				kmem_free(snap, sizeof (autosnap_snapshot_t));
+			}
+
+			avl_destroy(&zone->snapshots);
+			mutex_destroy(&zone->avl_lock);
 			list_remove(&autosnap->autosnap_zones, zone);
 			list_destroy(&zone->listeners);
 			kmem_free(zone, sizeof (autosnap_zone_t));
@@ -622,11 +674,10 @@ free_hdl:
 		}
 	}
 
-	unique_remove(hdl->mark);
 	kmem_free(hdl, sizeof (autosnap_handler_t));
 
 out:
-	if (spa)
+	if (spa != NULL)
 		mutex_exit(&autosnap->autosnap_lock);
 	if (!namespace_alteration)
 		mutex_exit(&spa_namespace_lock);
@@ -796,33 +847,37 @@ void
 autosnap_exempt_snapshot(spa_t *spa, const char *name)
 {
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
+	autosnap_zone_t *zone;
 	uint64_t txg;
 	int err;
 	dsl_dataset_t *ds;
 	autosnap_snapshot_t search = { 0 }, *found;
+	char *atpos;
 
 	err = dsl_dataset_hold(spa_get_dsl(spa), name, FTAG, &ds);
-	if (err) {
-		txg = UINT64_MAX;
-	} else {
-		txg = dsl_dataset_phys(ds)->ds_creation_txg;
-		dsl_dataset_rele(ds, FTAG);
-	}
+	if (err != 0)
+		return;
+
+	txg = dsl_dataset_phys(ds)->ds_creation_txg;
+	dsl_dataset_rele(ds, FTAG);
 
 	mutex_enter(&autosnap->autosnap_lock);
 
 	(void) strcpy(search.name, name);
-	search.txg = txg;
+	atpos = strchr(search.name, '@');
+	*atpos = '\0';
 
-	found = avl_find(&autosnap->snapshots, &search, NULL);
+	zone = autosnap_find_zone(autosnap, search.name, B_TRUE);
+	if (zone != NULL) {
+		*atpos = '@';
+		search.txg = txg;
 
-	if (found) {
-		autosnap_handler_t *hdl;
-
-		while ((hdl = list_remove_head(&found->listeners)) != NULL)
-			kmem_free(hdl, sizeof (autosnap_handler_t));
-		avl_remove(&autosnap->snapshots, found);
-		kmem_free(found, sizeof (autosnap_snapshot_t));
+		found = avl_find(&zone->snapshots, &search, NULL);
+		if (found != NULL) {
+			avl_remove(&zone->snapshots, found);
+			autosnap_refcount_remove_all(&found->ref_cnt);
+			kmem_free(found, sizeof (autosnap_snapshot_t));
+		}
 	}
 
 	mutex_exit(&autosnap->autosnap_lock);
@@ -982,40 +1037,20 @@ autosnap_error_snap(autosnap_zone_t *zone, uint64_t txg, int err)
 	}
 }
 
-static boolean_t
-autosnap_contains_handler(list_t *listeners, autosnap_handler_t *chdl)
-{
-	autosnap_handler_t *hdl;
-
-	for (hdl = list_head(listeners);
-	    hdl != NULL;
-	    hdl = list_next(listeners, hdl)) {
-		if (hdl->mark == chdl->mark)
-			return (B_TRUE);
-	}
-
-	return (B_FALSE);
-}
-
 /* iterate through handlers and call its notify callbacks */
 static void
-autosnap_iterate_listeners(autosnap_zone_t *zone, autosnap_snapshot_t *snap,
-    boolean_t destruction)
+autosnap_notify_listeners(autosnap_zone_t *zone,
+    autosnap_snapshot_t *snap)
 {
 	autosnap_handler_t *hdl;
 
 	for (hdl = list_head(&zone->listeners);
 	    hdl != NULL;
 	    hdl = list_next(&zone->listeners, hdl)) {
-		if (!hdl->nc_cb(snap->name,
+		if (hdl->nc_cb(snap->name,
 		    !!(zone->flags & AUTOSNAP_RECURSIVE),
 		    B_TRUE, snap->txg, snap->etxg, hdl->cb_arg))
-			continue;
-		if (destruction &&
-		    !autosnap_contains_handler(&snap->listeners, hdl)) {
-			list_insert_tail(&snap->listeners,
-			    autosnap_clone_handler(hdl));
-		}
+			autosnap_refcount_add(&snap->ref_cnt, hdl);
 	}
 }
 
@@ -1064,36 +1099,33 @@ autosnap_notify_created(const char *name, uint64_t txg,
     autosnap_zone_t *zone)
 {
 	autosnap_snapshot_t *snapshot = NULL, search;
-	boolean_t found = B_FALSE;
-	boolean_t autosnap = B_FALSE;
-	boolean_t destruction = B_TRUE;
+	avl_index_t where = NULL;
+	boolean_t found = B_TRUE;
 
 	ASSERT(MUTEX_HELD(&zone->autosnap->autosnap_lock));
 
-	autosnap = autosnap_check_name(strchr(name, '@'));
-
-	destruction = (autosnap && (!!(zone->flags & AUTOSNAP_DESTROYER)));
+#ifdef ZFS_DEBUG
+	VERIFY(autosnap_check_name(strchr(name, '@')));
+#endif
 
 	search.txg = txg;
 	(void) strcpy(search.name, name);
-	snapshot = avl_find(&zone->autosnap->snapshots, &search, NULL);
-	if (snapshot != NULL) {
-		found = B_TRUE;
-	} else {
+	snapshot = avl_find(&zone->snapshots, &search, &where);
+	if (snapshot == NULL) {
+		found = B_FALSE;
 		snapshot = autosnap_create_snap_node(name, txg, txg,
 		    !!(zone->flags & AUTOSNAP_RECURSIVE), B_FALSE);
 	}
 
-	autosnap_iterate_listeners(zone, snapshot, destruction);
+	autosnap_notify_listeners(zone, snapshot);
 
-	if (destruction) {
-		if (list_head(&snapshot->listeners) != NULL) {
-			if (!found)
-				avl_add(&zone->autosnap->snapshots, snapshot);
-		} else {
+	if ((zone->flags & AUTOSNAP_DESTROYER) != 0) {
+		if (list_is_empty(&snapshot->ref_cnt)) {
 			list_insert_tail(
 			    &zone->autosnap->autosnap_destroy_queue, snapshot);
 			cv_broadcast(&zone->autosnap->autosnap_cv);
+		} else if (!found) {
+			avl_insert(&zone->snapshots, snapshot, where);
 		}
 	} else if (!found) {
 		kmem_free(snapshot, sizeof (autosnap_snapshot_t));
@@ -1108,8 +1140,9 @@ autosnap_reject_snap(const char *name, uint64_t txg, zfs_autosnap_t *autosnap)
 
 	ASSERT(MUTEX_HELD(&autosnap->autosnap_lock));
 
-	if (!autosnap_check_name(strchr(name, '@')))
-		return;
+#ifdef ZFS_DEBUG
+	VERIFY(autosnap_check_name(strchr(name, '@')));
+#endif
 
 	snapshot = autosnap_create_snap_node(name, txg, txg, B_FALSE, B_FALSE);
 
@@ -1281,7 +1314,6 @@ autosnap_init(spa_t *spa)
 {
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 	mutex_init(&autosnap->autosnap_lock, NULL, MUTEX_ADAPTIVE, NULL);
-	mutex_init(&autosnap->autosnap_avl_lock, NULL, MUTEX_ADAPTIVE, NULL);
 	cv_init(&autosnap->autosnap_cv, NULL, CV_DEFAULT, NULL);
 	rw_init(&autosnap->autosnap_rwlock, NULL, RW_DEFAULT, NULL);
 	list_create(&autosnap->autosnap_zones, sizeof (autosnap_zone_t),
@@ -1290,11 +1322,6 @@ autosnap_init(spa_t *spa)
 	    sizeof (autosnap_snapshot_t),
 	    offsetof(autosnap_snapshot_t, dnode));
 	autosnap->need_stop = B_FALSE;
-
-	avl_create(&autosnap->snapshots,
-	    snapshot_txg_compare,
-	    sizeof (autosnap_snapshot_t),
-	    offsetof(autosnap_snapshot_t, node));
 
 #ifdef _KERNEL
 	autosnap_destroyer_thread_start(spa);
@@ -1310,7 +1337,6 @@ autosnap_fini(spa_t *spa)
 	autosnap_zone_t *zone;
 	autosnap_handler_t *hdl;
 	autosnap_snapshot_t *snap;
-	void *cookie = NULL;
 
 	if (!autosnap->initialized)
 		return;
@@ -1328,12 +1354,6 @@ autosnap_fini(spa_t *spa)
 	}
 
 	while ((snap =
-	    avl_destroy_nodes(&autosnap->snapshots, &cookie)) != NULL)
-		kmem_free(snap, sizeof (*snap));
-
-	avl_destroy(&autosnap->snapshots);
-
-	while ((snap =
 	    list_remove_head(&autosnap->autosnap_destroy_queue)) != NULL)
 		kmem_free(snap, sizeof (*snap));
 	list_destroy(&autosnap->autosnap_destroy_queue);
@@ -1342,7 +1362,6 @@ autosnap_fini(spa_t *spa)
 	rw_exit(&autosnap->autosnap_rwlock);
 	rw_destroy(&autosnap->autosnap_rwlock);
 	mutex_destroy(&autosnap->autosnap_lock);
-	mutex_destroy(&autosnap->autosnap_avl_lock);
 	cv_destroy(&autosnap->autosnap_cv);
 }
 
@@ -1376,7 +1395,9 @@ autosnap_check_name(const char *snap_name)
 		snap_name++;
 
 	len = strlen(snap_name);
-	if (strncmp(snap_name, AUTOSNAP_PREFIX, i) != 0 || len == i)
+	if (AUTOSNAP_PREFIX_LEN > len ||
+	    strncmp(snap_name, AUTOSNAP_PREFIX,
+	    AUTOSNAP_PREFIX_LEN) != 0)
 		return (B_FALSE);
 
 	while (i < len) {

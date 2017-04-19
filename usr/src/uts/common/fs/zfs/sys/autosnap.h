@@ -24,15 +24,26 @@ typedef boolean_t (*autosnap_notify_created_cb)(const char *name,
 typedef void (*autosnap_error_cb)(const char *name, int err,
     uint64_t txg, void *arg);
 
+typedef enum autosnap_flags {
+	AUTOSNAP_RECURSIVE	= 1 << 0,
+	AUTOSNAP_CREATOR	= 1 << 1,
+	AUTOSNAP_DESTROYER	= 1 << 2,
+	AUTOSNAP_KRRP		= 1 << 3,
+	AUTOSNAP_OWNER		= 1 << 4,
+	AUTOSNAP_WBC		= 1 << 5
+} autosnap_flags_t;
+
+
 typedef struct autosnap_snapshot {
 	avl_node_t node; /* for release */
 	list_node_t dnode; /* for destroyer */
 	char name[ZFS_MAX_DATASET_NAME_LEN];
 	boolean_t recursive;
+	boolean_t orphaned;
 	uint64_t txg;
 	uint64_t etxg;
-	list_t listeners;
-	boolean_t orphaned;
+
+	list_t ref_cnt;
 } autosnap_snapshot_t;
 
 typedef struct zfs_autosnap zfs_autosnap_t;
@@ -41,9 +52,12 @@ typedef struct zfs_autosnap zfs_autosnap_t;
 /* Pools are distinguished by dataset and prefix */
 typedef struct autosnap_zone {
 	list_node_t node;
-	char dataset[ZFS_MAX_DATASET_NAME_LEN]; /* The name of top-level dataset */
-	uint64_t flags; /* see below: autosnap_flags_t */
+	/* The name of top-level dataset */
+	char dataset[ZFS_MAX_DATASET_NAME_LEN];
+	autosnap_flags_t flags;
 	list_t listeners;
+	avl_tree_t snapshots;
+	kmutex_t avl_lock;
 	zfs_autosnap_t *autosnap;
 	boolean_t created; /* Snap already created */
 	boolean_t delayed; /* Snap delayed for some reasons */
@@ -56,9 +70,7 @@ typedef struct autosnap_zone {
 } autosnap_zone_t;
 
 struct zfs_autosnap {
-	avl_tree_t snapshots;
 	kmutex_t autosnap_lock;
-	kmutex_t autosnap_avl_lock;
 	kcondvar_t autosnap_cv;
 	krwlock_t autosnap_rwlock;
 	list_t autosnap_zones;
@@ -89,7 +101,6 @@ typedef struct autosnap_handler {
 	autosnap_notify_created_cb nc_cb;
 	autosnap_error_cb err_cb;
 	void *cb_arg;
-	uint64_t mark;
 	uint64_t flags;
 	autosnap_zone_t *zone;
 } autosnap_handler_t;
@@ -127,15 +138,6 @@ int autosnap_check_for_destroy(zfs_autosnap_t *autosnap,
 #define	AUTOSNAP_LAST_SNAP (UINT64_MAX-1)
 #define	AUTOSNAP_FIRST_SNAP 0x0
 
-typedef enum autosnap_flags {
-	AUTOSNAP_RECURSIVE	= 1 << 0,
-	AUTOSNAP_CREATOR	= 1 << 1,
-	AUTOSNAP_DESTROYER	= 1 << 2,
-	AUTOSNAP_KRRP		= 1 << 3,
-	AUTOSNAP_OWNER		= 1 << 4,
-	AUTOSNAP_WBC		= 1 << 5
-} autosnap_flags_t;
-
 /*
  * No lock version should be called if and only if a
  * snapshot should be released in nc_cb context
@@ -146,7 +148,6 @@ void autosnap_release_snapshots_by_txg_no_lock(void *opaque,
     uint64_t from_txg, uint64_t to_txg);
 
 nvlist_t *autosnap_get_owned_snapshots(void *opaque);
-void autosnap_reap_orphaned_snaps(spa_t *spa);
 
 int autosnap_lock(spa_t *spa, krw_t rw);
 void autosnap_unlock(spa_t *spa);
