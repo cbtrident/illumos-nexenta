@@ -22,7 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <smbsrv/smb_kproto.h>
@@ -72,9 +72,16 @@ smb_com_trans2_get_dfs_referral(smb_request_t *sr, smb_xa_t *xa)
 
 	status = smb_dfs_get_referrals(sr, &fsctl);
 
-	/* Out param is the API-level return code. */
+	/*
+	 * Out param is the API-level return code.
+	 * Out data (rep_data_mb) is the referral.
+	 */
 	doserr = smb_status2doserr(status);
 	(void) smb_mbc_encodef(&xa->rep_param_mb, "w", doserr);
+	if (status != 0) {
+		smbsr_error(sr, status, ERRDOS, doserr);
+		return (SDRC_ERROR);
+	}
 
 	return (SDRC_SUCCESS);
 }
