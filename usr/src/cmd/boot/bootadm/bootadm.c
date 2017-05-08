@@ -24,7 +24,7 @@
 
 /*
  * Copyright 2012 Milan Jurik. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2015 by Delphix. All rights reserved.
  */
 
@@ -164,6 +164,9 @@ typedef struct {
 #define	STAGE1			"/boot/grub/stage1"
 #define	STAGE2			"/boot/grub/stage2"
 
+#define	ETC_SYSTEM_DIR		"etc/system.d"
+#define	SELF_ASSEMBLY		"etc/system.d/.self-assembly"
+
 typedef enum zfs_mnted {
 	ZFS_MNT_ERROR = -1,
 	LEGACY_MOUNTED = 1,
@@ -245,6 +248,7 @@ static int bam_lock_fd = -1;
 static int bam_zfs;
 static int bam_mbr;
 static char rootbuf[PATH_MAX] = "/";
+static char self_assembly[PATH_MAX];
 static int bam_update_all;
 static int bam_alt_platform;
 static char *bam_platform;
@@ -283,6 +287,7 @@ static error_t read_list(char *, filelist_t *);
 static error_t set_option(menu_t *, char *, char *);
 static error_t set_kernel(menu_t *, menu_cmd_t, char *, char *, size_t);
 static error_t get_kernel(menu_t *, menu_cmd_t, char *, size_t);
+static error_t build_etc_system_dir(char *);
 static char *expand_path(const char *);
 
 static long s_strtol(char *);
@@ -298,6 +303,7 @@ static char *mount_top_dataset(char *pool, zfs_mnted_t *mnted);
 static int umount_top_dataset(char *pool, zfs_mnted_t mnted, char *mntpt);
 static int ufs_add_to_sign_list(char *sign);
 static error_t synchronize_BE_menu(void);
+static boolean_t sync_etc_system = B_FALSE;
 
 #if !defined(_OBP)
 static void ucode_install();
@@ -2334,6 +2340,16 @@ cmpstat(
 			}
 		}
 
+		/*
+		 * Bypass self-assembly file but set sync flag
+		 * to true if there are changes in
+		 * /etc/system.d directory.
+		 */
+		if (strstr(file, ETC_SYSTEM_DIR) &&
+		    strcmp(file, self_assembly) != 0) {
+			sync_etc_system = B_TRUE;
+		}
+
 		if (bam_verbose)
 			bam_print(PARSEABLE_NEW_FILE, file);
 		return (0);
@@ -2346,6 +2362,17 @@ cmpstat(
 	if (is_flag_on(IS_SPARC_TARGET) &&
 	    is_dir_flag_on(FILE64, NEED_UPDATE) && !bam_nowrite())
 		return (0);
+
+	/*
+	 * self-assembly file is always recreated so bypass it
+	 * if there are no changes in /etc/system.d directory.
+	 */
+	if (strcmp(file, self_assembly) == 0 &&
+	    sync_etc_system == B_FALSE) {
+		return (0);
+	}
+
+
 	/*
 	 * File exists in old archive. Check if file has changed
 	 */
@@ -2382,6 +2409,11 @@ cmpstat(
 				bam_error(UPDT_CACHE_FAIL, file);
 				return (-1);
 			}
+		}
+
+		if (strstr(file, ETC_SYSTEM_DIR) &&
+		    strcmp(file, self_assembly) != 0) {
+			sync_etc_system = B_TRUE;
 		}
 
 		if (bam_verbose)
@@ -2906,6 +2938,11 @@ check4stale(char *root)
 
 			if (bam_verbose)
 				bam_print(PARSEABLE_STALE_FILE, path);
+
+			if (strncmp(file, ETC_SYSTEM_DIR,
+			    strlen(ETC_SYSTEM_DIR)) == 0) {
+				sync_etc_system = B_TRUE;
+			}
 
 			if (is_flag_on(IS_SPARC_TARGET)) {
 				set_dir_flag(FILE64, NEED_UPDATE);
@@ -3636,6 +3673,106 @@ out_path_err:
 	return (BAM_ERROR);
 }
 
+static int
+assemble_systemfile(char *infilename, char *outfilename)
+{
+	char buf[BUFSIZ];
+	FILE *infile, *outfile;
+	size_t n;
+
+	if ((infile = fopen(infilename, "r")) == NULL) {
+		bam_error(_("failed to open file: %s: %s\n"), infilename,
+		    strerror(errno));
+		return (BAM_ERROR);
+	}
+
+	if ((outfile = fopen(outfilename, "a")) == NULL) {
+		bam_error(_("failed to open file: %s: %s\n"), outfilename,
+		    strerror(errno));
+		(void) fclose(infile);
+		return (BAM_ERROR);
+	}
+
+	while ((n = fread(buf, 1, sizeof (buf), infile)) > 0) {
+		if (fwrite(buf, 1, n, outfile) != n) {
+			bam_error(_("failed to write file: %s: %s\n"),
+			    outfilename, strerror(errno));
+			(void) fclose(infile);
+			(void) fclose(outfile);
+			return (BAM_ERROR);
+		}
+	}
+
+	(void) fclose(infile);
+	(void) fclose(outfile);
+
+	return (BAM_SUCCESS);
+}
+
+/*
+ * Concatenate all files (except those starting with a dot)
+ * from /etc/system.d directory into a single /etc/system.d/.self-assembly
+ * file. The kernel reads it before /etc/system file.
+ */
+static error_t
+build_etc_system_dir(char *root)
+{
+	struct dirent **filelist;
+	char path[PATH_MAX], tmpfile[PATH_MAX];
+	int i, files, sysfiles = 0;
+	int ret = BAM_SUCCESS;
+
+	(void) snprintf(path, sizeof (path), "%s/%s", root, ETC_SYSTEM_DIR);
+	(void) snprintf(self_assembly, sizeof (self_assembly),
+	    "%s%s", root, SELF_ASSEMBLY);
+	(void) snprintf(tmpfile, sizeof (tmpfile), "%s.%ld",
+	    self_assembly, (long)getpid());
+
+
+	if ((files = scandir(path, &filelist, NULL, alphasort)) < 0)
+		return (BAM_ERROR);
+
+	for (i = 0; i < files; i++) {
+		char	filepath[PATH_MAX];
+		char	*fname;
+
+		fname = filelist[i]->d_name;
+
+		/* skip anything that starts with a dot */
+		if (strncmp(fname, ".", 1) == 0) {
+			free(filelist[i]);
+			continue;
+		}
+
+		if (bam_verbose)
+			bam_print(_("/etc/system.d adding %s/%s\n"),
+			    path, fname);
+
+		(void) snprintf(filepath, sizeof (filepath), "%s/%s",
+		    path, fname);
+
+		if ((assemble_systemfile(filepath, tmpfile)) < 0) {
+			bam_error(_("failed to append file: %s: %s\n"),
+			    filepath, strerror(errno));
+			ret = BAM_ERROR;
+			break;
+		}
+		sysfiles++;
+	}
+
+	if (sysfiles > 0) {
+		if (rename(tmpfile, self_assembly) < 0) {
+			bam_error(_("failed to rename file: %s: %s\n"), tmpfile,
+			    strerror(errno));
+			return (BAM_ERROR);
+		}
+	} else {
+		(void) unlink(tmpfile);
+		(void) unlink(self_assembly);
+	}
+	return (ret);
+}
+
 static error_t
 create_ramdisk(char *root)
 {
@@ -3981,6 +4118,12 @@ update_archive(char *root, char *opt)
 		set_flag(RDONLY_FSCHK);
 		bam_check = 1;
 	}
+
+	/*
+	 * Process the /etc/system.d/self-assembly file.
+	 */
+	if (build_etc_system_dir(bam_root) == BAM_ERROR)
+		return (BAM_ERROR);
 
 	/*
 	 * Now check if an update is really needed.
