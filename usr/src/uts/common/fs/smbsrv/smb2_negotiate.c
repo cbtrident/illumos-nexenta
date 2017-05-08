@@ -329,7 +329,12 @@ smb2_negotiate_common(smb_request_t *sr, uint16_t version)
 		return (-1); /* will drop */
 	}
 
-	smb2_sign_init_mech(s);
+	/*
+	 * If the version is 0x2FF, we haven't completed negotiate.
+	 * Don't initialize until we have our final request.
+	 */
+	if (version != 0x2FF)
+		smb2_sign_init_mech(s);
 
 	/*
 	 * [MS-SMB2] 3.3.5.4 Receiving an SMB2 NEGOTIATE Request
