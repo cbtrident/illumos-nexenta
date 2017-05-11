@@ -37,11 +37,11 @@ verify_runnable "global"
 log_assert "zfs can handle race volume create operation."
 log_onexit cleanup
 
-log_must $ZFS create $TESTPOOL/$TESTFS
-log_must $ZFS create -V 1M $TESTPOOL/$TESTFS/$TESTVOL
-log_must $STAT /dev/zvol/rdsk/$TESTPOOL/$TESTFS/$TESTVOL
-log_must $ZFS destroy -r $TESTPOOL/$TESTFS
-log_must $ZFS create -V 1M $TESTPOOL/$TESTFS
-log_must $STAT /dev/zvol/rdsk/$TESTPOOL/$TESTFS
+log_must zfs create $TESTPOOL/$TESTFS
+log_must zfs create -V 1M $TESTPOOL/$TESTFS/$TESTVOL
+log_must stat /dev/zvol/rdsk/$TESTPOOL/$TESTFS/$TESTVOL
+log_must zfs destroy -r $TESTPOOL/$TESTFS
+log_must zfs create -V 1M $TESTPOOL/$TESTFS
+log_must stat /dev/zvol/rdsk/$TESTPOOL/$TESTFS
 
 log_pass "zfs handle race volume create operation."

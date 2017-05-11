@@ -428,15 +428,19 @@ abort_sequence_enter(char *msg)
 /*
  * Enter debugger.  Called when the user types ctrl-alt-d or whenever
  * code wants to enter the debugger and possibly resume later.
+ *
+ * msg:	message to print, possibly NULL.
  */
 void
-debug_enter(
-	char	*msg)		/* message to print, possibly NULL */
+debug_enter(char *msg)
 {
 	if (dtrace_debugger_init != NULL)
 		(*dtrace_debugger_init)();
 
-	if (msg)
+	if (msg != NULL || (boothowto & RB_DEBUG))
+		prom_printf("\n");
+
+	if (msg != NULL)
 		prom_printf("%s\n", msg);
 
 	if (boothowto & RB_DEBUG)
@@ -466,6 +470,8 @@ reset(void)
 		if (options_dip != NULL &&
 		    ddi_prop_exists(DDI_DEV_T_ANY, ddi_root_node(), 0,
 		    "efi-systab")) {
+			if (bootops == NULL)
+				acpi_reset_system();
 			efi_reset();
 		}
 
@@ -536,9 +542,7 @@ impl_obmem_pfnum(pfn_t pf)
 #ifdef	NM_DEBUG
 int nmi_test = 0;	/* checked in intentry.s during clock int */
 int nmtest = -1;
-nmfunc1(arg, rp)
-int	arg;
-struct regs *rp;
+nmfunc1(int arg, struct regs *rp)
 {
 	printf("nmi called with arg = %x, regs = %x\n", arg, rp);
 	nmtest += 50;

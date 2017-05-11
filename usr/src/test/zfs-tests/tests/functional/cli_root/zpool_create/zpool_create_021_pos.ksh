@@ -26,10 +26,7 @@
 #
 
 #
-# Copyright (c) 2012 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -79,7 +76,7 @@ set -A RW_FS_PROP "quota=512M" \
 
 typeset -i i=0
 while (( $i < ${#RW_FS_PROP[*]} )); do
-	log_must $ZPOOL create -O ${RW_FS_PROP[$i]} -f $TESTPOOL $DISKS
+	log_must zpool create -O ${RW_FS_PROP[$i]} -f $TESTPOOL $DISKS
 	datasetexists $TESTPOOL || \
 		log_fail "zpool create $TESTPOOL fail."
 	propertycheck $TESTPOOL ${RW_FS_PROP[i]} || \

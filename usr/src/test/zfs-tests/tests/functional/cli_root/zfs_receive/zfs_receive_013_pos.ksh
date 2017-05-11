@@ -2,108 +2,72 @@
 #
 # CDDL HEADER START
 #
-# The contents of this file are subject to the terms of the
-# Common Development and Distribution License (the "License").
-# You may not use this file except in compliance with the License.
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
 #
-# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
-# or http://www.opensolaris.org/os/licensing.
-# See the License for the specific language governing permissions
-# and limitations under the License.
-#
-# When distributing Covered Code, include this CDDL HEADER in each
-# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
-# If applicable, add the following below this CDDL HEADER, with the
-# fields enclosed by brackets "[]" replaced with your own identifying
-# information: Portions Copyright [yyyy] [name of copyright owner]
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
 #
 # CDDL HEADER END
 #
 
 #
-# Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
-# Use is subject to license terms.
+# Copyright (c) 2015, 2016 by Delphix. All rights reserved.
 #
 
-#
-# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
-#
-
-. $STF_SUITE/include/libtest.shlib
+. $STF_SUITE/tests/functional/cli_root/cli_common.kshlib
 
 #
 # DESCRIPTION:
-#	'zfs recv -F' destroy snapshots and file systems that do not
-#	exist on the sending side.
+#   Verifying 'zfs receive' works correctly on deduplicated streams
 #
 # STRATEGY:
-#	1. Create source filesystem.
-#	2. Source filesystem: create child filesystems 'fs1', 'fs2'
-#	   and take the recursive snapshot 'snap1'.
-#	3. Source filesystem: send initial recursive replication stream
-#	   from snapshot 'snap1'.
-#	4. Destination filesystem: receive initial replication stream from
-#	   source snapshot 'snap1'.
-#	5. Source filesystem: take recursive snapshot 'snap2'.
-#	6. Source filesystem: send incremental recursive replication stream
-#	   from snapshot 'snap1' to snapshot 'snap2'.
-#	7. Destination filesystem: receive incremental replication stream.
-#	8. Destination filesystem: make sure that child filesystems 'fs1' and
-#	   'fs2' and their recursive snapshots 'snap1' and 'snap2' are exists.
-#	9. Source filesystem: create child filesystem 'fs3' and take recursive
-#	   snapshot 'snap3'.
-#	10. Source filesystem: recursively destroy snapshot 'snap1'.
-#	11. Source filesystem: recursively destroy filesystem 'fs1'.
-#	12. Source filesystem: send incremental recursive replication stream
-#	    from snapshot 'snap2' to snapshot 'snap3'.
-#	13. Destination filesystem: force receive (-F) incremental replication
-#	    stream.
-#	14. Destination filesystem: make sure that only child filesystems
-#	    'fs2', 'fs3' and recursive snapshots 'snap2' and 'snap3' are exists.
+#   1. Create some snapshots with duplicated data
+#   2. Send a deduplicated stream of the last snapshot
+#   3. Attempt to receive the deduplicated stream
 #
 
-verify_runnable "both"
-
-typeset streamfile=/var/tmp/streamfile.$$
-typeset dataset=$TESTPOOL/$TESTFS
+src_fs=$TESTPOOL/drecvsrc
+temppool=recvtank
+dst_fs=$temppool/drecvdest
+streamfile=/var/tmp/drecvstream.$$
+tpoolfile=/temptank.$$
 
 function cleanup
 {
-	log_must $RM $streamfile
-	log_must $ZFS destroy -rf $dataset/src
-	log_must $ZFS destroy -rf $dataset/dst
+    for fs in $src_fs $dst_fs; do
+        datasetexists $fs && log_must zfs destroy -rf $fs
+    done
+    zpool destroy $temppool
+    [[ -f $streamfile ]] && log_must rm -f $streamfile
+    [[ -f $tpoolfile ]] && log_must rm -f $tpoolfile
 }
 
-
-log_assert "'zfs receive -F' destroy snapshots and file systems that do not " \
-	"exist on the sending side."
+log_assert "Verifying 'zfs receive' works correctly on deduplicated streams"
 log_onexit cleanup
 
-log_must $ZFS create $dataset/src
-log_must $ZFS create $dataset/src/fs1
-log_must $ZFS create $dataset/src/fs2
-log_must $ZFS snapshot -r $dataset/src@snap1
-log_must $ZFS send -R $dataset/src@snap1 > $streamfile
-log_must $ZFS receive $dataset/dst < $streamfile
+truncate -s 100M $tpoolfile
+log_must zpool create $temppool $tpoolfile
+log_must zfs create $src_fs
+src_mnt=$(get_prop mountpoint $src_fs) || log_fail "get_prop mountpoint $src_fs"
 
-log_must $ZFS snapshot -r $dataset/src@snap2
-log_must $ZFS send -R -I $dataset/src@snap1 $dataset/src@snap2 > $streamfile
-log_must $ZFS receive $dataset/dst < $streamfile
-log_must $ZFS list $dataset/dst/fs1@snap1
-log_must $ZFS list $dataset/dst/fs1@snap2
-log_must $ZFS list $dataset/dst/fs2@snap1
-log_must $ZFS list $dataset/dst/fs2@snap2
+echo blah > $src_mnt/blah
+zfs snapshot $src_fs@base
 
-log_must $ZFS create $dataset/src/fs3
-log_must $ZFS snapshot -r $dataset/src@snap3
-log_must $ZFS destroy -r $dataset/src@snap1
-log_must $ZFS destroy -r $dataset/src/fs1
-log_must $ZFS send -R -I $dataset/src@snap2 $dataset/src@snap3 > $streamfile
-log_must $ZFS receive -F $dataset/dst < $streamfile
-log_must $ZFS list $dataset/dst/fs2@snap2
-log_must $ZFS list $dataset/dst/fs2@snap3
-log_must $ZFS list $dataset/dst/fs3@snap3
-log_mustnot $ZFS list $dataset/dst/fs1
-log_mustnot $ZFS list $dataset/dst/fs2@snap1
+echo grumble > $src_mnt/grumble
+echo blah > $src_mnt/blah2
+zfs snapshot $src_fs@snap2
 
-log_pass "Verifying 'zfs receive -F' succeeds."
+echo grumble > $src_mnt/mumble
+echo blah > $src_mnt/blah3
+zfs snapshot $src_fs@snap3
+
+log_must eval "zfs send -D -R $src_fs@snap3 > $streamfile"
+log_must eval "zfs receive -v $dst_fs < $streamfile"
+
+cleanup
+
+log_pass "Verifying 'zfs receive' works correctly on deduplicated streams"

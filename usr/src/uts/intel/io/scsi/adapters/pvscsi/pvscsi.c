@@ -345,6 +345,8 @@ pvscsi_config_one(dev_info_t *pdip, pvscsi_softc_t *pvs, int target,
 	pvscsi_device_t	*devnode;
 	struct scsi_inquiry inq;
 
+	ASSERT(DEVI_BUSY_OWNED(pdip));
+
 	/* Inquiry target */
 	inqrc = pvscsi_inquiry_target(pvs, target, &inq);
 
@@ -445,8 +447,10 @@ pvscsi_config_all(dev_info_t *pdip, pvscsi_softc_t *pvs)
 {
 	int		target;
 
-	for (target = 0; target < PVSCSI_MAXTGTS; target++)
+	for (target = 0; target < PVSCSI_MAXTGTS; target++) {
+		/* ndi_devi_enter is done in pvscsi_bus_config */
 		(void) pvscsi_config_one(pdip, pvs, target, NULL);
+	}
 
 	return (NDI_SUCCESS);
 }
@@ -1165,7 +1169,7 @@ pvscsi_cmd_ext_alloc(pvscsi_softc_t *pvs, pvscsi_cmd_t *cmd, int kf)
 
 	if (cmd->cmdlen > sizeof (cmd->cmd_cdb)) {
 		if ((buf = kmem_zalloc(cmd->cmdlen, kf)) == NULL)
-			return (NULL);
+			return (DDI_FAILURE);
 		pkt->pkt_cdbp = buf;
 		cmd->flags |= PVSCSI_FLAG_CDB_EXT;
 	}
@@ -1190,7 +1194,7 @@ pvscsi_cmd_ext_alloc(pvscsi_softc_t *pvs, pvscsi_cmd_t *cmd, int kf)
 out:
 	pvscsi_cmd_ext_free(cmd);
 
-	return (NULL);
+	return (DDI_FAILURE);
 }
 
 static int

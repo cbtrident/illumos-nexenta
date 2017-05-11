@@ -22,7 +22,7 @@
 /*
  * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  */
 
 /*
@@ -2805,7 +2805,7 @@ do_rfs4_op_lookup(char *nm, struct svc_req *req, struct compound_state *cs)
 		/*
 		 * Now we do a checkauth4. The reason is that
 		 * this client/user may not have access to the new
-		 * exported file system, and if he does,
+		 * exported file system, and if they do,
 		 * the client/user may be mapped to a different uid.
 		 *
 		 * We start with a new cr, because the checkauth4 done
@@ -3999,7 +3999,7 @@ rfs4_op_release_lockowner(nfs_argop4 *argop, nfs_resop4 *resop,
 		 * We need to unhide the lockowner so the client can
 		 * try it again. The bad thing here is if the client
 		 * has a logic error that took it here in the first place
-		 * he probably has lost accounting of the locks that it
+		 * they probably have lost accounting of the locks that it
 		 * is holding. So we may have dangling state until the
 		 * open owner state is reaped via close. One scenario
 		 * that could possibly occur is that the client has
@@ -6327,7 +6327,7 @@ rfs4_lookupfile(component4 *component, struct svc_req *req,
 
 static nfsstat4
 create_vnode(vnode_t *dvp, char *nm,  vattr_t *vap, createmode4 mode,
-    timespec32_t *mtime, cred_t *cr, vnode_t **vpp, bool_t *created)
+    cred_t *cr, vnode_t **vpp, bool_t *created)
 {
 	int error;
 	nfsstat4 status = NFS4_OK;
@@ -6397,11 +6397,12 @@ tryagain:
 		}
 
 		/* Check for duplicate request */
-		ASSERT(mtime != 0);
 		va.va_mask = AT_MTIME;
 		error = VOP_GETATTR(*vpp, &va, 0, cr, NULL);
 		if (!error) {
 			/* We found the file */
+			const timestruc_t *mtime = &vap->va_mtime;
+
 			if (va.va_mtime.tv_sec != mtime->tv_sec ||
 			    va.va_mtime.tv_nsec != mtime->tv_nsec) {
 				/* but its not our creation */
@@ -6636,7 +6637,7 @@ rfs4_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		return (NFS4ERR_SERVERFAULT);
 	}
 
-	status = create_vnode(dvp, name, vap, args->mode, mtime,
+	status = create_vnode(dvp, name, vap, args->mode,
 	    cs->cr, &vp, &created);
 	if (nm != name)
 		kmem_free(name, MAXPATHLEN + 1);

@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2014, Joyent, Inc. All rights reserved.
+ * Copyright 2016 Joyent, Inc.
  * Copyright 2015 Garrett D'Amore <garrett@damore.org>
  */
 
@@ -154,11 +154,13 @@ static pd_getf_t	get_zone, get_autopush, get_rate_mod, get_rate,
 			get_bridge_pvid, get_protection, get_rxrings,
 			get_txrings, get_cntavail, get_secondary_macs,
 			get_allowedips, get_allowedcids, get_pool,
-			get_rings_range, get_linkmode_prop;
+			get_rings_range, get_linkmode_prop,
+			get_promisc_filtered;
 
 static pd_setf_t	set_zone, set_rate, set_powermode, set_radio,
 			set_public_prop, set_resource, set_stp_prop,
-			set_bridge_forward, set_bridge_pvid, set_secondary_macs;
+			set_bridge_forward, set_bridge_pvid, set_secondary_macs,
+			set_promisc_filtered;
 
 static pd_checkf_t	check_zone, check_autopush, check_rate, check_hoplimit,
 			check_encaplim, check_uint32, check_maxbw, check_cpus,
@@ -269,9 +271,17 @@ static link_attr_t link_attr[] = {
 
 	{ MAC_PROP_EN_100GFDX_CAP, sizeof (uint8_t),	"en_100gfdx_cap"},
 
+	{ MAC_PROP_ADV_50GFDX_CAP, sizeof (uint8_t),	"adv_50gfdx_cap"},
+
+	{ MAC_PROP_EN_50GFDX_CAP, sizeof (uint8_t),	"en_50gfdx_cap"},
+
 	{ MAC_PROP_ADV_40GFDX_CAP, sizeof (uint8_t),	"adv_40gfdx_cap"},
 
 	{ MAC_PROP_EN_40GFDX_CAP, sizeof (uint8_t),	"en_40gfdx_cap"},
+
+	{ MAC_PROP_ADV_25GFDX_CAP, sizeof (uint8_t),	"adv_25gfdx_cap"},
+
+	{ MAC_PROP_EN_25GFDX_CAP, sizeof (uint8_t),	"en_25gfdx_cap"},
 
 	{ MAC_PROP_ADV_10GFDX_CAP, sizeof (uint8_t),	"adv_10gfdx_cap"},
 
@@ -382,6 +392,8 @@ static link_attr_t link_attr[] = {
 
 	{ MAC_PROP_IB_LINKMODE,	sizeof (uint32_t),	"linkmode"},
 
+	{ MAC_PROP_VN_PROMISC_FILTERED,	sizeof (boolean_t), "promisc-filtered"},
+
 	{ MAC_PROP_SECONDARY_ADDRS, sizeof (mac_secondary_addr_t),
 	    "secondary-macs"},
 
@@ -437,6 +449,11 @@ static  val_desc_t	link_protect_vals[] = {
 	{ "restricted",		MPT_RESTRICTED	},
 	{ "ip-nospoof",		MPT_IPNOSPOOF	},
 	{ "dhcp-nospoof",	MPT_DHCPNOSPOOF	},
+};
+
+static  val_desc_t	link_promisc_filtered_vals[] = {
+	{ "off",	B_FALSE },
+	{ "on",		B_TRUE },
 };
 
 static val_desc_t	dladm_wlan_radio_vals[] = {
@@ -549,12 +566,32 @@ static prop_desc_t	prop_table[] = {
 	    set_public_prop, NULL, get_binary, NULL,
 	    0, DATALINK_CLASS_PHYS, DL_ETHER },
 
+	{ "adv_50gfdx_cap", { "", 0 },
+	    link_01_vals, VALCNT(link_01_vals),
+	    NULL, NULL, get_binary, NULL,
+	    0, DATALINK_CLASS_PHYS, DL_ETHER },
+
+	{ "en_50gfdx_cap", { "", 0 },
+	    link_01_vals, VALCNT(link_01_vals),
+	    set_public_prop, NULL, get_binary, NULL,
+	    0, DATALINK_CLASS_PHYS, DL_ETHER },
+
 	{ "adv_40gfdx_cap", { "", 0 },
 	    link_01_vals, VALCNT(link_01_vals),
 	    NULL, NULL, get_binary, NULL,
 	    0, DATALINK_CLASS_PHYS, DL_ETHER },
 
 	{ "en_40gfdx_cap", { "", 0 },
+	    link_01_vals, VALCNT(link_01_vals),
+	    set_public_prop, NULL, get_binary, NULL,
+	    0, DATALINK_CLASS_PHYS, DL_ETHER },
+
+	{ "adv_25gfdx_cap", { "", 0 },
+	    link_01_vals, VALCNT(link_01_vals),
+	    NULL, NULL, get_binary, NULL,
+	    0, DATALINK_CLASS_PHYS, DL_ETHER },
+
+	{ "en_25gfdx_cap", { "", 0 },
 	    link_01_vals, VALCNT(link_01_vals),
 	    set_public_prop, NULL, get_binary, NULL,
 	    0, DATALINK_CLASS_PHYS, DL_ETHER },
@@ -754,6 +791,12 @@ static prop_desc_t	prop_table[] = {
 	    link_protect_vals, VALCNT(link_protect_vals),
 	    set_resource, NULL, get_protection, check_prop, 0,
 	    DATALINK_CLASS_ALL, DATALINK_ANY_MEDIATYPE },
+
+	{ "promisc-filtered", { "on", 1 },
+	    link_promisc_filtered_vals, VALCNT(link_promisc_filtered_vals),
+	    set_promisc_filtered, NULL, get_promisc_filtered, check_prop, 0,
+	    DATALINK_CLASS_VNIC, DATALINK_ANY_MEDIATYPE },
+
 
 	{ "allowed-ips", { "--", 0 },
 	    NULL, 0, set_resource, NULL,
@@ -4827,4 +4870,51 @@ get_linkmode_prop(dladm_handle_t handle, prop_desc_t *pdp,
 
 	*val_cnt = 1;
 	return (DLADM_STATUS_OK);
+}
+
+/*ARGSUSED*/
+static dladm_status_t
+get_promisc_filtered(dladm_handle_t handle, prop_desc_t *pdp,
+    datalink_id_t linkid, char **prop_val, uint_t *val_cnt,
+    datalink_media_t media, uint_t flags, uint_t *perm_flags)
+{
+	char			*s;
+	dladm_status_t		status;
+	boolean_t		filt;
+
+	status = i_dladm_get_public_prop(handle, linkid, pdp->pd_name, flags,
+	    perm_flags, &filt, sizeof (filt));
+	if (status != DLADM_STATUS_OK)
+		return (status);
+
+	if (filt != 0)
+		s = link_promisc_filtered_vals[1].vd_name;
+	else
+		s = link_promisc_filtered_vals[0].vd_name;
+	(void) snprintf(prop_val[0], DLADM_STRSIZE, "%s", s);
+
+	*val_cnt = 1;
+	return (DLADM_STATUS_OK);
+}
+
+/* ARGSUSED */
+static dladm_status_t
+set_promisc_filtered(dladm_handle_t handle, prop_desc_t *pdp,
+    datalink_id_t linkid, val_desc_t *vdp, uint_t val_cnt, uint_t flags,
+    datalink_media_t media)
+{
+	dld_ioc_macprop_t	*dip;
+	dladm_status_t		status = DLADM_STATUS_OK;
+
+	dip = i_dladm_buf_alloc_by_name(0, linkid, pdp->pd_name,
+	    0, &status);
+
+	if (dip == NULL)
+		return (status);
+
+	(void) memcpy(dip->pr_val, &vdp->vd_val, dip->pr_valsize);
+	status = i_dladm_macprop(handle, dip, B_TRUE);
+
+	free(dip);
+	return (status);
 }

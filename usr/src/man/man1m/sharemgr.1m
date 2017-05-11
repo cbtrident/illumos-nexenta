@@ -4,7 +4,7 @@
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License. You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.
 .\"  See the License for the specific language governing permissions and limitations under the License. When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE.  If applicable, add the following below this CDDL HEADER, with
 .\" the fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.TH SHAREMGR 1M "Sep 21, 2009"
+.TH SHAREMGR 1M "Feb 25, 2017"
 .SH NAME
 sharemgr \- configure and manage file sharing
 .SH SYNOPSIS
@@ -1167,17 +1167,17 @@ name.
 .sp .6
 .RS 4n
 To use domain membership the server must use DNS or LDAP, rather than, for
-example, NIS or NIS+, to resolve hostnames to IP addresses. That is, the
+example, NIS, to resolve hostnames to IP addresses. That is, the
 \fBhosts\fR entry in the \fBnsswitch.conf\fR(4) must specify \fBdns\fR or
-\fBldap\fR ahead of \fBnis\fR or \fBnisplus\fR, because only DNS and LDAP
-return the full domain name of the host. Other name services, such as NIS or
-NIS+, cannot be used to resolve hostnames on the server because, when mapping
+\fBldap\fR ahead of \fBnis\fR, because only DNS and LDAP
+return the full domain name of the host. Other name services, such as NIS,
+cannot be used to resolve hostnames on the server because, when mapping
 an IP address to a hostname, they do not return domain information. For
 example, for the IP address 172.16.45.9:
 .sp
 .ne 2
 .na
-\fBNIS or NIS+\fR
+\fBNIS\fR
 .ad
 .sp .6
 .RS 4n
@@ -1213,7 +1213,7 @@ rw=.
 .in -2
 
 \&...matches \fBmydomain\fR but not \fBmydomain.mycompany.com\fR. This feature
-can be used to match hosts resolved through NIS and NIS+ rather than DNS and
+can be used to match hosts resolved through NIS rather than DNS and
 LDAP.
 .RE
 

@@ -18,9 +18,11 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2015, Joyent, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #if !defined(lint)
@@ -568,6 +570,7 @@ stubs_base:
 	NO_UNLOAD_STUB(procfs, prgetcred,	nomod_zero);
 	NO_UNLOAD_STUB(procfs, prgetpriv,	nomod_zero);
 	NO_UNLOAD_STUB(procfs, prgetprivsize,	nomod_zero);
+	NO_UNLOAD_STUB(procfs, prgetsecflags,	nomod_zero);        
 	NO_UNLOAD_STUB(procfs, prgetstatus,	nomod_zero);
 	NO_UNLOAD_STUB(procfs, prgetlwpstatus,	nomod_zero);
 	NO_UNLOAD_STUB(procfs, prgetpsinfo,	nomod_zero);
@@ -620,7 +623,6 @@ stubs_base:
 #ifndef UFS_MODULE
 	MODULE(ufs,fs);
 	STUB(ufs, quotactl, nomod_minus_one);
-	STUB(ufs, ufs_remountroot, 0);
 	END_MODULE(ufs);
 #endif
 
@@ -730,7 +732,6 @@ stubs_base:
 #ifndef SWAPGENERIC_MODULE
 	MODULE(swapgeneric,misc);
 	STUB(swapgeneric, rootconf,     0);
-	STUB(swapgeneric, svm_rootconf, 0);
 	STUB(swapgeneric, getrootdev,   0);
 	STUB(swapgeneric, getfsname,    0);
 	STUB(swapgeneric, loadrootmodules, 0);
@@ -901,6 +902,7 @@ stubs_base:
 	NO_UNLOAD_STUB(c2audit, audit_fdrecv,		nomod_zero);
 	NO_UNLOAD_STUB(c2audit, audit_priv,		nomod_zero);
 	NO_UNLOAD_STUB(c2audit, audit_setppriv,		nomod_zero);
+	NO_UNLOAD_STUB(c2audit, audit_psecflags,	nomod_zero);
 	NO_UNLOAD_STUB(c2audit, audit_devpolicy,	nomod_zero);
 	NO_UNLOAD_STUB(c2audit, audit_setfsat_path,	nomod_zero);
 	NO_UNLOAD_STUB(c2audit, audit_cryptoadm,	nomod_zero);

@@ -34,7 +34,7 @@ log_onexit cleanup
 for pool_type in "stripe" "mirror" ; do
 	for special_type in "raidz" "raidz2" "raidz3" ; do
 		log_must create_pool $TESTPOOL $pool_type
-		log_mustnot $ZPOOL add $TESTPOOL special $special_type $SSD_DISKS
+		log_mustnot zpool add $TESTPOOL special $special_type $SSD_DISKS
 		log_must destroy_pool $TESTPOOL
 	done
 done

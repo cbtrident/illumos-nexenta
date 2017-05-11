@@ -260,7 +260,6 @@ MANFILES=	acctcom.1			\
 	 	nohup.1				\
 	 	nroff.1				\
 	 	od.1				\
-	 	on.1				\
 	 	optisa.1			\
 	 	pack.1				\
 	 	pagesize.1			\
@@ -301,6 +300,7 @@ MANFILES=	acctcom.1			\
 	 	profiles.1			\
 	 	projects.1			\
 	 	ps.1				\
+		psecflags.1			\
 	 	ptree.1				\
 	 	pvs.1				\
 	 	pwd.1				\

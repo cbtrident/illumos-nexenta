@@ -24,6 +24,8 @@
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
+# Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2016 Joyent, Inc.
 #
 
 #
@@ -38,7 +40,7 @@ include Targetdirs
 
 COMMON_SUBDIRS=	uts lib cmd ucblib ucbcmd psm man test
 sparc_SUBDIRS= stand
-i386_SUBDIRS= grub
+i386_SUBDIRS= grub boot
 
 #
 # sparc needs to build stand before psm
@@ -217,6 +219,7 @@ sysheaders: FRC
 	@cd uts; pwd; $(MAKE) install_h
 
 cmdheaders: FRC
+	@cd cmd/devfsadm; pwd; $(MAKE) install_h
 	@cd cmd/fm; pwd; $(MAKE) install_h
 	@cd cmd/mdb; pwd; $(MAKE) install_h
 

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -100,7 +100,7 @@ static void wbc_move_block(void *arg);
 static int wbc_move_block_impl(wbc_block_t *block);
 static int wbc_collect_special_blocks(dsl_pool_t *dp);
 static void wbc_close_window(wbc_data_t *wbc_data);
-static void wbc_write_update_window(void *void_spa, dmu_tx_t *tx);
+static void wbc_write_update_window(void *void_avl_tree, dmu_tx_t *tx);
 
 static int wbc_io(wbc_io_type_t type, wbc_block_t *block, void *data);
 static int wbc_blocks_compare(const void *arg1, const void *arg2);
@@ -1105,7 +1105,7 @@ wbc_collect_special_blocks(dsl_pool_t *dp)
 			mutex_exit(&wbc_data->wbc_lock);
 
 			dsl_sync_task(spa->spa_name, NULL,
-			    wbc_write_update_window, spa,
+			    wbc_write_update_window, NULL,
 			    ZFS_SPACE_CHECK_NONE, 0);
 		} else {
 			mutex_exit(&wbc_data->wbc_lock);
@@ -1232,17 +1232,45 @@ wbc_clean_state_delete(void *void_spa, dmu_tx_t *tx)
 }
 
 static void
-wbc_write_update_window(void *void_spa, dmu_tx_t *tx)
+wbc_free_special_dvas(spa_t *spa, avl_tree_t *tree_to_clean, uint64_t txg)
 {
-	spa_t *spa = void_spa;
+	wbc_block_t *node;
+	void *cookie = NULL;
+
+	/*
+	 * Clean the tree of moved blocks, free special dva and
+	 * wbc_block structure of every block in the tree
+	 */
+	spa_config_enter(spa, SCL_VDEV, FTAG, RW_READER);
+
+	while ((node = avl_destroy_nodes(tree_to_clean, &cookie)) != NULL) {
+		if (!WBCBP_IS_DELETED(node)) {
+			metaslab_free_dva(spa, &node->dva[WBC_SPECIAL_DVA],
+			    txg, B_FALSE);
+		}
+
+		wbc_free_block(node);
+	}
+
+	spa_config_exit(spa, SCL_VDEV, FTAG);
+}
+
+static void
+wbc_write_update_window(void *void_avl_tree, dmu_tx_t *tx)
+{
+	spa_t *spa = dmu_tx_pool(tx)->dp_spa;
 	wbc_data_t *wbc_data = spa_get_wbc_data(spa);
+	avl_tree_t *tree_to_clean = void_avl_tree;
+
+	if (tree_to_clean != NULL)
+		wbc_free_special_dvas(spa, tree_to_clean, tx->tx_txg);
 
 	if (wbc_data->wbc_finish_txg == 0) {
 		/*
 		 * The "delete" state is not valid,
 		 * because window has been closed or purged
 		 */
-		wbc_clean_state_delete(void_spa, tx);
+		wbc_clean_state_delete(spa, tx);
 	}
 
 	(void) zap_update(spa->spa_dsl_pool->dp_meta_objset,
@@ -1262,12 +1290,10 @@ wbc_write_update_window(void *void_spa, dmu_tx_t *tx)
 static void
 wbc_close_window_impl(spa_t *spa, avl_tree_t *tree)
 {
-	wbc_block_t *node;
 	wbc_data_t *wbc_data = spa_get_wbc_data(spa);
 	dmu_tx_t *tx;
 	int err;
 	uint64_t txg;
-	void *cookie = NULL;
 
 	ASSERT(MUTEX_HELD(&wbc_data->wbc_lock));
 
@@ -1299,21 +1325,6 @@ wbc_close_window_impl(spa_t *spa, avl_tree_t *tree)
 		return;
 	}
 
-	/*
-	 * Clean the tree of moved blocks, free special dva and
-	 * wbc_block structure of every block in the tree
-	 */
-	spa_config_enter(spa, SCL_VDEV, FTAG, RW_READER);
-	while ((node = avl_destroy_nodes(tree, &cookie)) != NULL) {
-		if (!WBCBP_IS_DELETED(node)) {
-			metaslab_free_dva(spa, &node->dva[WBC_SPECIAL_DVA],
-			    tx->tx_txg, B_FALSE);
-		}
-
-		wbc_free_block(node);
-	}
-	spa_config_exit(spa, SCL_VDEV, FTAG);
-
 	/* Move left boundary of the window and reset the right one */
 	wbc_data->wbc_start_txg = wbc_data->wbc_finish_txg + 1;
 	wbc_data->wbc_finish_txg = 0;
@@ -1329,7 +1340,7 @@ wbc_close_window_impl(spa_t *spa, avl_tree_t *tree)
 
 	/* Write down new boundaries */
 	dsl_sync_task_nowait(spa->spa_dsl_pool,
-	    wbc_write_update_window, spa, 0, ZFS_SPACE_CHECK_NONE, tx);
+	    wbc_write_update_window, tree, 0, ZFS_SPACE_CHECK_NONE, tx);
 	dmu_tx_commit(tx);
 
 	mutex_exit(&wbc_data->wbc_lock);
@@ -1527,7 +1538,7 @@ wbc_purge_window(spa_t *spa, dmu_tx_t *tx)
 
 	if (tx) {
 		dsl_sync_task_nowait(spa->spa_dsl_pool,
-		    wbc_write_update_window, spa, 0, ZFS_SPACE_CHECK_NONE, tx);
+		    wbc_write_update_window, NULL, 0, ZFS_SPACE_CHECK_NONE, tx);
 	} else {
 		/*
 		 * It is safe to drop the lock as the function has already
@@ -1537,7 +1548,7 @@ wbc_purge_window(spa_t *spa, dmu_tx_t *tx)
 		mutex_exit(&wbc_data->wbc_lock);
 
 		dsl_sync_task(spa->spa_name, NULL,
-		    wbc_write_update_window, spa, 0, ZFS_SPACE_CHECK_NONE);
+		    wbc_write_update_window, NULL, 0, ZFS_SPACE_CHECK_NONE);
 		mutex_enter(&wbc_data->wbc_lock);
 	}
 

@@ -32,19 +32,20 @@ log_assert "Special vdev cannot be added to the old-version pools"
 log_onexit cleanup
 
 for special_type in "stripe" "mirror" ; do
-	log_must $ZPOOL create -f -o version=28 $TESTPOOL $HDD_DISKS
+	log_must zpool create -f -o version=28 $TESTPOOL $HDD_DISKS
 
 	if [[ $special_type == "stripe" ]] ; then
-		log_mustnot $ZPOOL add -f $TESTPOOL special $SSD_DISKS
+		log_mustnot zpool add -f $TESTPOOL special $SSD_DISKS
 	else
-		log_mustnot $ZPOOL add -f $TESTPOOL special $special_type $SSD_DISKS
+		log_mustnot zpool add -f $TESTPOOL special $special_type \
+		    $SSD_DISKS
 	fi
-	
+
 	log_must display_status $TESTPOOL
-	log_must $SYNC
-	log_must $ZPOOL scrub $TESTPOOL
+	log_must sync
+	log_must zpool scrub $TESTPOOL
 	while is_pool_scrubbing $TESTPOOL ; do
-		$SLEEP 1
+		sleep 1
 	done
 
 	log_must check_pool_errors $TESTPOOL
@@ -56,7 +57,8 @@ for special_type in "stripe" "mirror" ; do
 		special_type=""
 	fi
 
-	log_mustnot $ZPOOL create -f -o version=28 $TESTPOOL $HDD_DISKS special $special_type $SSD_DISKS
+	log_mustnot zpool create -f -o version=28 $TESTPOOL $HDD_DISKS special \
+	    $special_type $SSD_DISKS
 done
 
 log_pass "Special vdev cannot be added to the old-version pools"

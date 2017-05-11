@@ -26,12 +26,9 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc. All rights reserved.
-# 
+#
 
 . $STF_SUITE/include/libtest.shlib
 . $STF_SUITE/tests/functional/userquota/userquota_common.kshlib
@@ -54,7 +51,7 @@ function cleanup
 	fi
 
 	if [[ -f $pool_vdev ]]; then
-		$RM -f $pool_vdev
+		rm -f $pool_vdev
 	fi
 }
 
@@ -65,25 +62,25 @@ log_assert \
 
 typeset pool_vdev=/var/tmp/pool_dev.$$
 
-log_must $MKFILE 500m $pool_vdev
+log_must mkfile 500m $pool_vdev
 
 if poolexists $TESTPOOL1; then
 	destroy_pool_no_force $TESTPOOL1
 fi
 
-log_must $ZPOOL create -O userquota@$QUSER1=$UQUOTA_SIZE \
+log_must zpool create -O userquota@$QUSER1=$UQUOTA_SIZE \
 	-O groupquota@$QGROUP=$GQUOTA_SIZE $TESTPOOL1 $pool_vdev
 
-log_must eval "$ZFS list -r -o userquota@$QUSER1,groupquota@$QGROUP \
+log_must eval "zfs list -r -o userquota@$QUSER1,groupquota@$QGROUP \
 	$TESTPOOL1 > /dev/null 2>&1"
 
 log_must check_quota "userquota@$QUSER1" $TESTPOOL1 "$UQUOTA_SIZE"
 log_must check_quota "groupquota@$QGROUP" $TESTPOOL1 "$GQUOTA_SIZE"
 
-log_must $ZFS create -o userquota@$QUSER1=$UQUOTA_SIZE \
+log_must zfs create -o userquota@$QUSER1=$UQUOTA_SIZE \
 	-o groupquota@$QGROUP=$GQUOTA_SIZE $TESTPOOL1/fs
 
-log_must eval "$ZFS list -r -o userquota@$QUSER1,groupquota@$QGROUP \
+log_must eval "zfs list -r -o userquota@$QUSER1,groupquota@$QGROUP \
 	$TESTPOOL1 > /dev/null 2>&1"
 
 log_must check_quota "userquota@$QUSER1" $TESTPOOL1/fs "$UQUOTA_SIZE"

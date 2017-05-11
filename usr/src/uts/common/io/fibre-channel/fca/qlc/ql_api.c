@@ -24,6 +24,10 @@
 /*
  * Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
  */
+/*
+ * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
+ */
 
 #pragma ident	"Copyright 2015 QLogic Corporation; ql_api.c"
 
@@ -5279,8 +5283,8 @@ ql_els_plogi(ql_adapter_state_t *ha, fc_packet_t *pkt)
 
 	if (CFG_IST(ha, CFG_N2N_SUPPORT) && ha->topology & QL_N_PORT) {
 		/*
-		 * In p2p topology he sends a PLOGI after determining
-		 * he has the N_Port login initiative.
+		 * In p2p topology it sends a PLOGI after determining
+		 * it has the N_Port login initiative.
 		 */
 		ret = ql_p2p_plogi(ha, pkt);
 	}

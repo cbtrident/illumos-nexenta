@@ -24,9 +24,9 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 #
 
@@ -38,11 +38,10 @@ verify_runnable "global"
 DISK=${DISKS%% *}
 
 ismounted "$TESTPOOL/$TESTFS"
-(( $? == 0 )) && \
-        log_must $ZFS umount $TESTDIR
+(( $? == 0 )) && log_must zfs umount $TESTDIR
 
 destroy_pool $TESTPOOL
-[[ -e $TESTDIR ]] && log_must $RM -rf $TESTDIR
+[[ -e $TESTDIR ]] && log_must rm -rf $TESTDIR
 
 #
 # Remove 100mb partition.

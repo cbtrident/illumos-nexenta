@@ -24,8 +24,6 @@
  * Use is subject to license terms.
  */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 /*
  * Common misc module interfaces of DRM under Solaris
  */
@@ -57,7 +55,6 @@ extern "C" {
 #include <sys/conf.h>
 #include <sys/kmem.h>
 #include <sys/visual_io.h>
-#include <sys/font.h>
 #include <sys/fbio.h>
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
@@ -72,7 +69,7 @@ extern "C" {
 #include <sys/ddi_impldefs.h>
 #include <sys/sunldi.h>
 #include <sys/mkdev.h>
-#include <gfx_private.h>
+#include <sys/gfx_private.h>
 #include <sys/agpgart.h>
 #include <sys/agp/agpdefs.h>
 #include <sys/agp/agpmaster_io.h>

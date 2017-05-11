@@ -27,6 +27,7 @@
 /*
  * Copyright (c) 2015, Joyent, Inc. All rights reserved.
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 RackTop Systems.
  */
 
 #include <sys/types.h>
@@ -1102,9 +1103,8 @@ tmp_remove(
 	rw_enter(&parent->tn_rwlock, RW_WRITER);
 	rw_enter(&tp->tn_rwlock, RW_WRITER);
 
-	if (tp->tn_type != VDIR ||
-	    (error = secpolicy_fs_linkdir(cred, dvp->v_vfsp)) == 0)
-		error = tdirdelete(parent, tp, nm, DR_REMOVE, cred);
+	error = (tp->tn_type == VDIR) ? EPERM :
+	    tdirdelete(parent, tp, nm, DR_REMOVE, cred);
 
 	rw_exit(&tp->tn_rwlock);
 	rw_exit(&parent->tn_rwlock);
@@ -1139,8 +1139,7 @@ tmp_link(
 	parent = (struct tmpnode *)VTOTN(dvp);
 	from = (struct tmpnode *)VTOTN(srcvp);
 
-	if ((srcvp->v_type == VDIR &&
-	    secpolicy_fs_linkdir(cred, dvp->v_vfsp)) ||
+	if (srcvp->v_type == VDIR ||
 	    (from->tn_uid != crgetuid(cred) && secpolicy_basic_link(cred)))
 		return (EPERM);
 

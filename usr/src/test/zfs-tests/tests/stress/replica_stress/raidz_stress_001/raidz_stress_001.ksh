@@ -24,21 +24,13 @@
 # Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# ident	"@(#)raidz_stress_001.ksh	1.1	07/10/09 SMI"
-#
 
 . ${STF_SUITE}/include/libtest.shlib
 . ${STF_SUITE}/tests/stress/replica_stress/replica_stress_common.kshlib
 
-###############################################################################
-#
-# __stc_assertion_start
-#
-# ID: raidz_stress_001
-#
 # DESCRIPTION:
 #	Running multiple copies of dataset_create_write_destroy,
-#	dataset_create_write_destroy_attr and dataset_xattr on separate 
+#	dataset_create_write_destroy_attr and dataset_xattr on separate
 #	raidz pools. Create new filesystem and write file at the same time
 #	shall not cause the system to fail, hang or panic.
 #
@@ -59,19 +51,9 @@
 #          tests. The test is considered to have passed if the machine stays up
 #	   during the time the stress tests are running and doesn't hit the stf
 #	   time limit.
-#
-# TESTABILITY: explicit
-#
-# TEST_AUTOMATION_LEVEL: automated
-#
-# CODING_STATUS: COMPLETED (2006-06-08)
-#
-# __stc_assertion_end
-#
-###############################################################################
 
-log_assert "parallel dataset_create_write_destroy, " \
-	"dataset_create_write_destroy_attr , dataset_run_xattr " \
+log_assert "parallel dataset_create_write_destroy," \
+	"dataset_create_write_destroy_attr , dataset_run_xattr" \
 	"create three filesystems per pool and write files on them won't fail"
 
 log_onexit cleanup

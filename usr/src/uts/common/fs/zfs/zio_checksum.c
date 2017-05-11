@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
@@ -441,11 +441,11 @@ zio_checksum_error(zio_t *zio, zio_bad_cksum_t *info, int *zio_progress_p)
 	int error;
 
 	error = zio_checksum_error_impl(zio, info, zio_progress_p);
-	if (error != 0 && zio_injection_enabled && !zio->io_error &&
-	    (error = zio_handle_fault_injection(zio, ECKSUM)) != 0) {
 
-		info->zbc_injected = 1;
-		return (error);
+	if (zio_injection_enabled && error == 0 && zio->io_error == 0) {
+		error = zio_handle_fault_injection(zio, ECKSUM);
+		if (error != 0)
+			info->zbc_injected = 1;
 	}
 
 	return (error);
@@ -470,3 +470,4 @@ zio_checksum_templates_free(spa_t *spa)
 		}
 	}
 }
+

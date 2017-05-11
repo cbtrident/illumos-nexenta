@@ -40,6 +40,7 @@
 ./usr/has
 ./usr/has/bin
 ./usr/has/bin/patch
+./usr/include/sys/lvm
 ./usr/include/sys/pcmcia
 ./usr/include/sys/usb/clients/hwarc
 ./usr/include/sys/uwb
@@ -81,6 +82,7 @@
 ./usr/lib/nfs/lockd
 ./usr/lib/snmp
 ./usr/lib/snmp/mibiisa
+./usr/bin/iconv
 ./usr/bin/kbdcomp
 ./usr/bin/localedef
 ./usr/bin/od

@@ -23,7 +23,9 @@
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2012 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
+# Copyright 2016 Nexenta Systems, Inc.
 #
 
 #
@@ -47,6 +49,10 @@ usr/include/security/pam_impl.h
 usr/include/sys/clock_impl.h
 usr/include/sys/winlockio.h
 usr/include/scsi/plugins/ses/vendor/sun_impl.h
+#
+# Private lofi interface.
+#
+usr/include/sys/lofi_impl.h
 #
 # Private/Internal libraries of the Cryptographic Framework.
 #
@@ -286,15 +292,6 @@ usr/include/sys/ontrap.h
 usr/include/sys/sysmsg_impl.h
 usr/include/sys/vlan.h
 #
-# These files are installed in the proto area so lvm can use
-# them during the build process.
-#
-lib/llib-lmeta
-lib/llib-lmeta.ln
-usr/include/sdssc.h
-usr/lib/llib-lmeta
-usr/lib/llib-lmeta.ln
-#
 # non-public pci header
 #
 usr/include/sys/pci_impl.h
@@ -341,6 +338,7 @@ usr/platform/sun4u/include/sys/fcode.h				sparc
 #
 # Private net80211 headers
 #
+usr/include/sys/net80211_amrr.h
 usr/include/sys/net80211_crypto.h
 usr/include/sys/net80211_ht.h
 usr/include/sys/net80211_proto.h
@@ -698,9 +696,10 @@ usr/include/sys/kiconv_utf8_gb2312.h
 usr/include/sys/kiconv_utf8_hkscs.h
 usr/include/sys/kiconv_utf8_uhc.h
 #
-# At this time, the ttydefs.cleanup file is only useful on sun4u systems
+# At this time, the directory and its contents
+# are only useful on sun4u systems
 #
-etc/flash/postdeployment/ttydefs.cleanup	i386
+etc/flash/postdeployment			i386
 #
 # This header file is shared only between the power commands and
 # ppm/srn modules # and should not be in any package
@@ -996,3 +995,15 @@ usr/bin/test-getdc
 #
 usr/lib/fm/fmd/plugins/disk-lights.conf
 usr/lib/fm/fmd/plugins/disk-lights.so
+
+#
+# libficl-sys is private
+#
+usr/include/ficllocal.h
+usr/lib/amd64/llib-lficl-sys.ln		i386
+usr/lib/amd64/libficl-sys.so		i386
+usr/lib/sparcv9/llib-lficl-sys.ln	sparc
+usr/lib/sparcv9/libficl-sys.so		sparc
+usr/lib/llib-lficl-sys
+usr/lib/llib-lficl-sys.ln
+usr/lib/libficl-sys.so

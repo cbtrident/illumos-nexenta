@@ -35,6 +35,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2013, Joyent, Inc. All rights reserved.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 #include <sys/systm.h>
@@ -599,6 +600,10 @@ smbfs_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 	smi->smi_vfsp	= vfsp;
 	smbfs_zonelist_add(smi);	/* undo in smbfs_freevfs */
 
+	/* PSARC 2007/227 VFS Feature Registration */
+	vfs_set_feature(vfsp, VFSFT_XVATTR);
+	vfs_set_feature(vfsp, VFSFT_SYSATTR_VIEWS);
+
 	/*
 	 * Create the root vnode, which we need in unmount
 	 * for the call to smbfs_check_table(), etc.
@@ -985,7 +990,7 @@ smbfs_mount_label_policy(vfs_t *vfsp, void *ipaddr, int addr_type, cred_t *cr)
 	 * mounts into the global zone itself; restrict these to
 	 * read-only.)
 	 *
-	 * If the requestor is in some other zone, but his label
+	 * If the requestor is in some other zone, but their label
 	 * dominates the server, then allow read-down.
 	 *
 	 * Otherwise, access is denied.

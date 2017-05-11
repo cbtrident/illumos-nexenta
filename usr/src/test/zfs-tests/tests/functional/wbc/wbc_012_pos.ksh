@@ -68,15 +68,15 @@ log_onexit cleanup
 log_must create_pool $TESTPOOL
 log_must display_status $TESTPOOL
 log_must check_props_without_special
-log_must $ZPOOL add -f $TESTPOOL special $SSD_DISK1
+log_must zpool add -f $TESTPOOL special $SSD_DISK1
 log_must display_status $TESTPOOL
 log_must check_props_with_special
-log_must $ZPOOL remove $TESTPOOL $SSD_DISK1
+log_must zpool remove $TESTPOOL $SSD_DISK1
 log_must display_status $TESTPOOL
 log_must check_props_without_special
-log_must $ZPOOL scrub $TESTPOOL
+log_must zpool scrub $TESTPOOL
 while is_pool_scrubbing $TESTPOOL ; do
-	$SLEEP 1
+	sleep 1
 done
 log_must check_pool_errors $TESTPOOL
 log_must destroy_pool $TESTPOOL

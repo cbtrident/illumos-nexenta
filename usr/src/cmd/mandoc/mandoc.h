@@ -1,15 +1,15 @@
-/*	$Id: mandoc.h,v 1.201 2015/02/23 13:31:04 schwarze Exp $ */
+/*	$Id: mandoc.h,v 1.213 2017/01/09 01:37:03 schwarze Exp $ */
 /*
  * Copyright (c) 2010, 2011, 2014 Kristaps Dzonsons <kristaps@bsd.lv>
- * Copyright (c) 2010-2015 Ingo Schwarze <schwarze@openbsd.org>
+ * Copyright (c) 2010-2017 Ingo Schwarze <schwarze@openbsd.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
  * copyright notice and this permission notice appear in all copies.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHORS DISCLAIM ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR
  * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
@@ -65,10 +65,11 @@ enum	mandocerr {
 	MANDOCERR_DOC_EMPTY, /* no document body */
 	MANDOCERR_SEC_BEFORE, /* content before first section header: macro */
 	MANDOCERR_NAMESEC_FIRST, /* first section is not NAME: Sh title */
-	MANDOCERR_NAMESEC_NONM, /* NAME section without name */
+	MANDOCERR_NAMESEC_NONM, /* NAME section without Nm before Nd */
 	MANDOCERR_NAMESEC_NOND, /* NAME section without description */
 	MANDOCERR_NAMESEC_ND, /* description not at the end of NAME */
 	MANDOCERR_NAMESEC_BAD, /* bad NAME section content: macro */
+	MANDOCERR_NAMESEC_PUNCT, /* missing comma before name: Nm name */
 	MANDOCERR_ND_EMPTY, /* missing description line, using "" */
 	MANDOCERR_SEC_ORDER, /* sections out of conventional order: Sh title */
 	MANDOCERR_SEC_REP, /* duplicate section title: Sh title */
@@ -86,7 +87,6 @@ enum	mandocerr {
 	MANDOCERR_BLK_NEST, /* blocks badly nested: macro ... */
 	MANDOCERR_BD_NEST, /* nested displays are not portable: macro ... */
 	MANDOCERR_BL_MOVE, /* moving content out of list: macro */
-	MANDOCERR_VT_CHILD, /* .Vt block has child macro: macro */
 	MANDOCERR_FI_SKIP, /* fill mode already enabled, skipping: fi */
 	MANDOCERR_NF_SKIP, /* fill mode already disabled, skipping: nf */
 	MANDOCERR_BLK_LINE, /* line scope broken: macro breaks macro */
@@ -99,7 +99,7 @@ enum	mandocerr {
 	MANDOCERR_ARG_EMPTY, /* empty argument, using 0n: macro arg */
 	MANDOCERR_BD_NOTYPE, /* missing display type, using -ragged: Bd */
 	MANDOCERR_BL_LATETYPE, /* list type is not the first argument: Bl arg */
-	MANDOCERR_BL_NOWIDTH, /* missing -width in -tag list, using 8n */
+	MANDOCERR_BL_NOWIDTH, /* missing -width in -tag list, using 6n */
 	MANDOCERR_EX_NONAME, /* missing utility name, using "": Ex */
 	MANDOCERR_FO_NOHEAD, /* missing function name, using "": Fo */
 	MANDOCERR_IT_NOHEAD, /* empty head in list item: Bl -type It */
@@ -108,6 +108,7 @@ enum	mandocerr {
 	MANDOCERR_BF_BADFONT, /* unknown font type, using \fR: Bf font */
 	MANDOCERR_PF_SKIP, /* nothing follows prefix: Pf arg */
 	MANDOCERR_RS_EMPTY, /* empty reference block: Rs */
+	MANDOCERR_XR_NOSEC, /* missing section argument: Xr arg */
 	MANDOCERR_ARG_STD, /* missing -std argument, adding it: macro */
 	MANDOCERR_OP_EMPTY, /* missing option string, using "": OP */
 	MANDOCERR_UR_NOHEAD, /* missing resource identifier, using "": UR */
@@ -173,6 +174,7 @@ enum	mandocerr {
 	/* related to request and macro arguments */
 	MANDOCERR_NAMESC, /* escaped character not allowed in a name: name */
 	MANDOCERR_BD_FILE, /* NOT IMPLEMENTED: Bd -file */
+	MANDOCERR_BD_NOARG, /* skipping display without arguments: Bd */
 	MANDOCERR_BL_NOTYPE, /* missing list type, using -item: Bl */
 	MANDOCERR_NM_NONAME, /* missing manual name, using "": Nm */
 	MANDOCERR_OS_UNAME, /* uname(3) system call failed, using UNKNOWN */
@@ -408,37 +410,29 @@ enum	mandoc_esc {
 typedef	void	(*mandocmsg)(enum mandocerr, enum mandoclevel,
 			const char *, int, int, const char *);
 
-__BEGIN_DECLS
 
 struct	mparse;
-struct	mchars;
-struct	mdoc;
-struct	man;
+struct	roff_man;
 
 enum mandoc_esc	  mandoc_escape(const char **, const char **, int *);
-struct mchars	 *mchars_alloc(void);
-void		  mchars_free(struct mchars *);
+void		  mchars_alloc(void);
+void		  mchars_free(void);
 int		  mchars_num2char(const char *, size_t);
 const char	 *mchars_uc2str(int);
 int		  mchars_num2uc(const char *, size_t);
-int		  mchars_spec2cp(const struct mchars *,
-			const char *, size_t);
-const char	 *mchars_spec2str(const struct mchars *,
-			const char *, size_t, size_t *);
-struct mparse	 *mparse_alloc(int, enum mandoclevel, mandocmsg,
-			const struct mchars *, const char *);
+int		  mchars_spec2cp(const char *, size_t);
+const char	 *mchars_spec2str(const char *, size_t, size_t *);
+struct mparse	 *mparse_alloc(int, enum mandoclevel, mandocmsg, const char *);
 void		  mparse_free(struct mparse *);
 void		  mparse_keep(struct mparse *);
-enum mandoclevel  mparse_open(struct mparse *, int *, const char *);
+int		  mparse_open(struct mparse *, const char *);
 enum mandoclevel  mparse_readfd(struct mparse *, int, const char *);
 enum mandoclevel  mparse_readmem(struct mparse *, void *, size_t,
 			const char *);
 void		  mparse_reset(struct mparse *);
 void		  mparse_result(struct mparse *,
-			struct mdoc **, struct man **, char **);
+			struct roff_man **, char **);
 const char	 *mparse_getkeep(const struct mparse *);
 const char	 *mparse_strerror(enum mandocerr);
 const char	 *mparse_strlevel(enum mandoclevel);
-enum mandoclevel  mparse_wait(struct mparse *);
-
-__END_DECLS
+void		  mparse_updaterc(struct mparse *, enum mandoclevel *);

@@ -26,10 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -55,15 +52,15 @@ for type in "" "mirror" "raidz" "raidz2"
 do
 	for spare in "" "spare"
 	do
-		log_must $ZPOOL create $TESTPOOL $type $VDEV $spare $SDEV \
+		log_must zpool create $TESTPOOL $type $VDEV $spare $SDEV \
 			log mirror $LDEV mirror $LDEV2
 
 		ldev=$(random_get $LDEV $LDEV2)
-		log_must $ZPOOL offline $TESTPOOL $ldev
+		log_must zpool offline $TESTPOOL $ldev
 		log_must display_status $TESTPOOL
 		log_must verify_slog_device $TESTPOOL $ldev 'OFFLINE' 'mirror'
 
-		log_must $ZPOOL online $TESTPOOL $ldev
+		log_must zpool online $TESTPOOL $ldev
 		log_must display_status $TESTPOOL
 		log_must verify_slog_device $TESTPOOL $ldev 'ONLINE' 'mirror'
 

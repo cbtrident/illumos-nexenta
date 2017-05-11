@@ -26,10 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -57,10 +54,10 @@ do
 		for logtype in "raidz" "raidz1" "raidz2"
 		do
 			log=$(random_get_with_non "log")
-			log_must $ZPOOL create $TESTPOOL $type $VDEV \
+			log_must zpool create $TESTPOOL $type $VDEV \
 				$spare $SDEV $log $LDEV
 
-			log_mustnot $ZPOOL add $TESTPOOL log $logtype $LDEV2
+			log_mustnot zpool add $TESTPOOL log $logtype $LDEV2
 			ldev=$(random_get $LDEV2)
 			log_mustnot verify_slog_device \
 				$TESTPOOL $ldev 'ONLINE' $logtype

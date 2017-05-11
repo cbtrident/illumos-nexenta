@@ -61,7 +61,6 @@ MANIFEST_TOPDIRS=			\
 	oplhpd				\
 	pools				\
 	power				\
-	rexd				\
 	rmvolmgr			\
 	rpcbind				\
 	rpcsvc				\
@@ -123,12 +122,6 @@ MANIFEST_SUBDIRS=			\
 	krb5/kwarn			\
 	krb5/slave			\
 	lp/cmd/lpsched			\
-	lvm/rpc.mdcommd			\
-	lvm/rpc.metad			\
-	lvm/rpc.metamedd		\
-	lvm/rpc.metamhd			\
-	lvm/md_monitord			\
-	lvm/util			\
 	picl/picld			\
 	pools/poold			\
 	print/bsd-sysv-commands		\

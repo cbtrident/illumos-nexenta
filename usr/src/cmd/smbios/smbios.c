@@ -21,7 +21,7 @@
 
 /*
  * Copyright 2015 OmniTI Computer Consulting, Inc.  All rights reserved.
- * Copyright 2015 Joyent, Inc.
+ * Copyright 2016 Joyent, Inc.
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
@@ -175,38 +175,69 @@ check_oem(smbios_hdl_t *shp)
 }
 
 static void
-print_smbios(smbios_hdl_t *shp, FILE *fp)
+print_smbios_21(smbios_21_entry_t *ep, FILE *fp)
 {
-	smbios_entry_t ep;
 	int i;
 
-	smbios_info_smbios(shp, &ep);
-
 	oprintf(fp, "Entry Point Anchor Tag: %*.*s\n",
-	    (int)sizeof (ep.smbe_eanchor), (int)sizeof (ep.smbe_eanchor),
-	    ep.smbe_eanchor);
+	    (int)sizeof (ep->smbe_eanchor), (int)sizeof (ep->smbe_eanchor),
+	    ep->smbe_eanchor);
 
-	oprintf(fp, "Entry Point Checksum: 0x%x\n", ep.smbe_ecksum);
-	oprintf(fp, "Entry Point Length: %u\n", ep.smbe_elen);
+	oprintf(fp, "Entry Point Checksum: 0x%x\n", ep->smbe_ecksum);
+	oprintf(fp, "Entry Point Length: %u\n", ep->smbe_elen);
 	oprintf(fp, "Entry Point Version: %u.%u\n",
-	    ep.smbe_major, ep.smbe_minor);
-	oprintf(fp, "Max Structure Size: %u\n", ep.smbe_maxssize);
-	oprintf(fp, "Entry Point Revision: 0x%x\n", ep.smbe_revision);
+	    ep->smbe_major, ep->smbe_minor);
+	oprintf(fp, "Max Structure Size: %u\n", ep->smbe_maxssize);
+	oprintf(fp, "Entry Point Revision: 0x%x\n", ep->smbe_revision);
 
 	oprintf(fp, "Entry Point Revision Data:");
-	for (i = 0; i < sizeof (ep.smbe_format); i++)
-		oprintf(fp, " 0x%02x", ep.smbe_format[i]);
+	for (i = 0; i < sizeof (ep->smbe_format); i++)
+		oprintf(fp, " 0x%02x", ep->smbe_format[i]);
 	oprintf(fp, "\n");
 
 	oprintf(fp, "Intermediate Anchor Tag: %*.*s\n",
-	    (int)sizeof (ep.smbe_ianchor), (int)sizeof (ep.smbe_ianchor),
-	    ep.smbe_ianchor);
+	    (int)sizeof (ep->smbe_ianchor), (int)sizeof (ep->smbe_ianchor),
+	    ep->smbe_ianchor);
 
-	oprintf(fp, "Intermediate Checksum: 0x%x\n", ep.smbe_icksum);
-	oprintf(fp, "Structure Table Length: %u\n", ep.smbe_stlen);
-	oprintf(fp, "Structure Table Address: 0x%x\n", ep.smbe_staddr);
-	oprintf(fp, "Structure Table Entries: %u\n", ep.smbe_stnum);
-	oprintf(fp, "DMI BCD Revision: 0x%x\n", ep.smbe_bcdrev);
+	oprintf(fp, "Intermediate Checksum: 0x%x\n", ep->smbe_icksum);
+	oprintf(fp, "Structure Table Length: %u\n", ep->smbe_stlen);
+	oprintf(fp, "Structure Table Address: 0x%x\n", ep->smbe_staddr);
+	oprintf(fp, "Structure Table Entries: %u\n", ep->smbe_stnum);
+	oprintf(fp, "DMI BCD Revision: 0x%x\n", ep->smbe_bcdrev);
+}
+
+static void
+print_smbios_30(smbios_30_entry_t *ep, FILE *fp)
+{
+	oprintf(fp, "Entry Point Anchor Tag: %*.*s\n",
+	    (int)sizeof (ep->smbe_eanchor), (int)sizeof (ep->smbe_eanchor),
+	    ep->smbe_eanchor);
+
+	oprintf(fp, "Entry Point Checksum: 0x%x\n", ep->smbe_ecksum);
+	oprintf(fp, "Entry Point Length: %u\n", ep->smbe_elen);
+	oprintf(fp, "SMBIOS Version: %u.%u\n",
+	    ep->smbe_major, ep->smbe_minor);
+	oprintf(fp, "SMBIOS DocRev: 0x%x\n", ep->smbe_docrev);
+	oprintf(fp, "Entry Point Revision: 0x%x\n", ep->smbe_revision);
+
+	oprintf(fp, "Structure Table Length: %u\n", ep->smbe_stlen);
+	oprintf(fp, "Structure Table Address: 0x%" PRIx64 "\n",
+	    ep->smbe_staddr);
+}
+
+static void
+print_smbios(smbios_hdl_t *shp, FILE *fp)
+{
+	smbios_entry_t ep;
+
+	switch (smbios_info_smbios(shp, &ep)) {
+	case SMBIOS_ENTRY_POINT_21:
+		print_smbios_21(&ep.ep21, fp);
+		break;
+	case SMBIOS_ENTRY_POINT_30:
+		print_smbios_30(&ep.ep30, fp);
+		break;
+	}
 }
 
 static void
@@ -239,7 +270,7 @@ print_bios(smbios_hdl_t *shp, FILE *fp)
 	oprintf(fp, "  Version String: %s\n", b.smbb_version);
 	oprintf(fp, "  Release Date: %s\n", b.smbb_reldate);
 	oprintf(fp, "  Address Segment: 0x%x\n", b.smbb_segment);
-	oprintf(fp, "  ROM Size: %u bytes\n", b.smbb_romsize);
+	oprintf(fp, "  ROM Size: %" PRIu64 " bytes\n", b.smbb_extromsize);
 	oprintf(fp, "  Image Size: %u bytes\n", b.smbb_runsize);
 
 	flag64_printf(fp, "Characteristics",
@@ -340,7 +371,7 @@ print_chassis(smbios_hdl_t *shp, id_t id, FILE *fp)
 
 	oprintf(fp, "  OEM Data: 0x%x\n", c.smbc_oemdata);
 	oprintf(fp, "  SKU number: %s\n",
-	    c.smbc_sku == NULL ? "<unknown>" : c.smbc_sku);
+	    c.smbc_sku[0] == '\0' ? "<unknown>" : c.smbc_sku);
 	oprintf(fp, "  Lock Present: %s\n", c.smbc_lock ? "Y" : "N");
 
 	desc_printf(smbios_chassis_type_desc(c.smbc_type),
@@ -508,12 +539,15 @@ print_cache(smbios_hdl_t *shp, id_t id, FILE *fp)
 	(void) smbios_info_cache(shp, id, &c);
 
 	oprintf(fp, "  Level: %u\n", c.smba_level);
-	oprintf(fp, "  Maximum Installed Size: %u bytes\n", c.smba_maxsize);
+	oprintf(fp, "  Maximum Installed Size: %" PRIu64 " bytes\n",
+	    c.smba_maxsize2);
 
-	if (c.smba_size != 0)
-		oprintf(fp, "  Installed Size: %u bytes\n", c.smba_size);
-	else
+	if (c.smba_size2 != 0) {
+		oprintf(fp, "  Installed Size: %" PRIu64 " bytes\n",
+		    c.smba_size2);
+	} else {
 		oprintf(fp, "  Installed Size: Not Installed\n");
+	}
 
 	if (c.smba_speed != 0)
 		oprintf(fp, "  Speed: %uns\n", c.smba_speed);
@@ -570,10 +604,10 @@ static void
 print_slot(smbios_hdl_t *shp, id_t id, FILE *fp)
 {
 	smbios_slot_t s;
-	smbios_entry_t e;
+	smbios_version_t v;
 
 	(void) smbios_info_slot(shp, id, &s);
-	(void) smbios_info_smbios(shp, &e);
+	smbios_info_smbios_version(shp, &v);
 
 	oprintf(fp, "  Reference Designator: %s\n", s.smbl_name);
 	oprintf(fp, "  Slot ID: 0x%x\n", s.smbl_id);
@@ -598,7 +632,7 @@ print_slot(smbios_hdl_t *shp, id_t id, FILE *fp)
 	    s.smbl_ch2, sizeof (s.smbl_ch2) * NBBY,
 	    smbios_slot_ch2_name, smbios_slot_ch2_desc);
 
-	if (check_oem(shp) != 0 && (e.smbe_major < 2 || e.smbe_minor < 6))
+	if (check_oem(shp) != 0 && (v.smbv_major < 2 || v.smbv_minor < 6))
 		return;
 
 	oprintf(fp, "  Segment Group: %u\n", s.smbl_sg);
@@ -841,12 +875,12 @@ print_memdevice(smbios_hdl_t *shp, id_t id, FILE *fp)
 	    smbios_memdevice_flag_name, smbios_memdevice_flag_desc);
 
 	if (md.smbmd_speed != 0)
-		oprintf(fp, "  Speed: %u MHz\n", md.smbmd_speed);
+		oprintf(fp, "  Speed: %u MT/s\n", md.smbmd_speed);
 	else
 		oprintf(fp, "  Speed: Unknown\n");
 
 	if (md.smbmd_clkspeed != 0)
-		oprintf(fp, "  Configured Speed: %u MHz\n", md.smbmd_clkspeed);
+		oprintf(fp, "  Configured Speed: %u MT/s\n", md.smbmd_clkspeed);
 	else
 		oprintf(fp, "  Configured Speed: Unknown\n");
 
@@ -1331,6 +1365,11 @@ main(int argc, char *argv[])
 		    g_pname, smbios_errmsg(err));
 		return (SMBIOS_ERROR);
 	}
+
+	if (opt_i == -1 && opt_t == -1 && opt_e == 0 &&
+	    smbios_truncated(shp))
+		(void) fprintf(stderr, "%s: SMBIOS table is truncated\n",
+		    g_pname);
 
 	if (ofile != NULL) {
 		if ((fd = open(ofile, O_WRONLY|O_CREAT|O_TRUNC, 0666)) == -1) {

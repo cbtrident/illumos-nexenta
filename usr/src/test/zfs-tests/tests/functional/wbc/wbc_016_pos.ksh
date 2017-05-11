@@ -23,7 +23,8 @@
 #	Removing writecached datasets should decrement feature@wbc refcounter
 #
 # STRATEGY:
-#	1. Create pool with separated special devices and disabled write back cache
+#	1. Create pool with separated special devices and disabled write back
+#	   cache
 #	2. Display pool status
 #	3. Create a filesystem
 #	4. Check that "feature@wbc" is "enabled".
@@ -37,8 +38,8 @@
 
 function check_feature_wbc_enabled
 {
-	log_must eval "$ZPOOL get feature@wbc $TESTPOOL > /tmp/value.$$"
-	$GREP "enabled" /tmp/value.$$ > /dev/null 2>&1
+	log_must eval "zpool get feature@wbc $TESTPOOL > /tmp/value.$$"
+	grep "enabled" /tmp/value.$$ > /dev/null 2>&1
 	if [ $? -ne 0 ]
 	then
 		log_fail "feature@wbc is not 'enabled'"
@@ -47,8 +48,8 @@ function check_feature_wbc_enabled
 
 function check_feature_wbc_active
 {
-	log_must eval "$ZPOOL get feature@wbc $TESTPOOL > /tmp/value.$$"
-	$GREP "active" /tmp/value.$$ > /dev/null 2>&1
+	log_must eval "zpool get feature@wbc $TESTPOOL > /tmp/value.$$"
+	grep "active" /tmp/value.$$ > /dev/null 2>&1
 	if [ $? -ne 0 ]
 	then
 		log_fail "feature@wbc is not 'active'"
@@ -61,7 +62,7 @@ log_onexit cleanup
 log_must create_pool_special $TESTPOOL "none"
 log_must display_status $TESTPOOL
 
-log_must $ZFS create $TESTPOOL/wbc
+log_must zfs create $TESTPOOL/wbc
 datasetexists $TESTPOOL/wbc || \
 	log_fail "zfs create $TESTPOOL/wbc fail."
 
@@ -70,24 +71,24 @@ log_must enable_wbc $TESTPOOL/wbc
 check_feature_wbc_active
 
 log_must display_status $TESTPOOL
-log_must $SYNC
-log_must $ZPOOL scrub $TESTPOOL
+log_must sync
+log_must zpool scrub $TESTPOOL
 while is_pool_scrubbing $TESTPOOL ; do
-	$SLEEP 1
+	sleep 1
 done
 log_must check_pool_errors $TESTPOOL
 
-log_must $ZFS destroy -rR $TESTPOOL/wbc
+log_must zfs destroy -rR $TESTPOOL/wbc
 datasetnonexists $TESTPOOL/wbc || \
 	log_fail "zfs destroy -rR $TESTPOOL/wbc fail."
 
 check_feature_wbc_enabled
 
 log_must display_status $TESTPOOL
-log_must $SYNC
-log_must $ZPOOL scrub $TESTPOOL
+log_must sync
+log_must zpool scrub $TESTPOOL
 while is_pool_scrubbing $TESTPOOL ; do
-	$SLEEP 1
+	sleep 1
 done
 log_must check_pool_errors $TESTPOOL
 

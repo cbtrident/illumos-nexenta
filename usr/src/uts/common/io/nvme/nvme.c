@@ -199,6 +199,10 @@
 
 #include <sys/nvme.h>
 
+#ifdef __x86
+#include <sys/x86_archext.h>
+#endif
+
 #include "nvme_reg.h"
 #include "nvme_var.h"
 
@@ -277,6 +281,9 @@ static int nvme_bd_read(void *, bd_xfer_t *);
 static int nvme_bd_write(void *, bd_xfer_t *);
 static int nvme_bd_sync(void *, bd_xfer_t *);
 static int nvme_bd_devid(void *, dev_info_t *, ddi_devid_t *);
+
+static int nvme_prp_dma_constructor(void *, void *, int);
+static void nvme_prp_dma_destructor(void *, void *);
 
 static void nvme_prepare_devid(nvme_t *, uint32_t);
 
@@ -540,7 +547,7 @@ nvme_check_dma_hdl(nvme_dma_t *dma)
 }
 
 static void
-nvme_free_dma(nvme_dma_t *dma)
+nvme_free_dma_common(nvme_dma_t *dma)
 {
 	if (dma->nd_dmah != NULL)
 		(void) ddi_dma_unbind_handle(dma->nd_dmah);
@@ -548,15 +555,28 @@ nvme_free_dma(nvme_dma_t *dma)
 		ddi_dma_mem_free(&dma->nd_acch);
 	if (dma->nd_dmah != NULL)
 		ddi_dma_free_handle(&dma->nd_dmah);
-	kmem_free(dma, sizeof (nvme_dma_t));
+}
+
+static void
+nvme_free_dma(nvme_dma_t *dma)
+{
+	nvme_free_dma_common(dma);
+	kmem_free(dma, sizeof (*dma));
+}
+
+/* ARGSUSED */
+static void
+nvme_prp_dma_destructor(void *buf, void *private)
+{
+	nvme_dma_t *dma = (nvme_dma_t *)buf;
+
+	nvme_free_dma_common(dma);
 }
 
 static int
-nvme_zalloc_dma(nvme_t *nvme, size_t len, uint_t flags,
-    ddi_dma_attr_t *dma_attr, nvme_dma_t **ret)
+nvme_alloc_dma_common(nvme_t *nvme, nvme_dma_t *dma,
+    size_t len, uint_t flags, ddi_dma_attr_t *dma_attr)
 {
-	nvme_dma_t *dma = kmem_zalloc(sizeof (nvme_dma_t), KM_SLEEP);
-
 	if (ddi_dma_alloc_handle(nvme->n_dip, dma_attr, DDI_DMA_SLEEP, NULL,
 	    &dma->nd_dmah) != DDI_SUCCESS) {
 		/*
@@ -583,8 +603,23 @@ nvme_zalloc_dma(nvme_t *nvme, size_t len, uint_t flags,
 		dev_err(nvme->n_dip, CE_WARN,
 		    "!failed to bind DMA memory");
 		atomic_inc_32(&nvme->n_dma_bind_err);
+		nvme_free_dma_common(dma);
+		return (DDI_FAILURE);
+	}
+
+	return (DDI_SUCCESS);
+}
+
+static int
+nvme_zalloc_dma(nvme_t *nvme, size_t len, uint_t flags,
+    ddi_dma_attr_t *dma_attr, nvme_dma_t **ret)
+{
+	nvme_dma_t *dma = kmem_zalloc(sizeof (nvme_dma_t), KM_SLEEP);
+
+	if (nvme_alloc_dma_common(nvme, dma, len, flags, dma_attr) !=
+	    DDI_SUCCESS) {
 		*ret = NULL;
-		nvme_free_dma(dma);
+		kmem_free(dma, sizeof (nvme_dma_t));
 		return (DDI_FAILURE);
 	}
 
@@ -592,6 +627,28 @@ nvme_zalloc_dma(nvme_t *nvme, size_t len, uint_t flags,
 
 	*ret = dma;
 	return (DDI_SUCCESS);
+}
+
+/* ARGSUSED */
+static int
+nvme_prp_dma_constructor(void *buf, void *private, int flags)
+{
+	nvme_dma_t *dma = (nvme_dma_t *)buf;
+	nvme_t *nvme = (nvme_t *)private;
+
+	dma->nd_dmah = NULL;
+	dma->nd_acch = NULL;
+
+	if (nvme_alloc_dma_common(nvme, dma, nvme->n_pagesize,
+	    DDI_DMA_READ, &nvme->n_prp_dma_attr) != DDI_SUCCESS) {
+		return (-1);
+	}
+
+	ASSERT(dma->nd_ncookie == 1);
+
+	dma->nd_cached = B_TRUE;
+
+	return (0);
 }
 
 static int
@@ -712,7 +769,11 @@ static void
 nvme_free_cmd(nvme_cmd_t *cmd)
 {
 	if (cmd->nc_dma) {
-		nvme_free_dma(cmd->nc_dma);
+		if (cmd->nc_dma->nd_cached)
+			kmem_cache_free(cmd->nc_nvme->n_prp_cache,
+			    cmd->nc_dma);
+		else
+			nvme_free_dma(cmd->nc_dma);
 		cmd->nc_dma = NULL;
 	}
 
@@ -2526,6 +2587,10 @@ nvme_setup_interrupts(nvme_t *nvme, int intr_type, int nqpairs)
 			    __func__);
 			return (ret);
 		}
+#ifdef __x86
+		if (get_hwenv() == HW_VMWARE)
+			nvme->n_intr_types &= ~DDI_INTR_TYPE_MSIX;
+#endif
 	}
 
 	if ((nvme->n_intr_types & intr_type) == 0)
@@ -2743,6 +2808,14 @@ nvme_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto fail;
 	}
 
+	/*
+	 * Create PRP DMA cache
+	 */
+	(void) snprintf(name, sizeof (name), "%s%d_prp_cache",
+	    ddi_driver_name(dip), ddi_get_instance(dip));
+	nvme->n_prp_cache = kmem_cache_create(name, sizeof (nvme_dma_t),
+	    0, nvme_prp_dma_constructor, nvme_prp_dma_destructor,
+	    NULL, (void *)nvme, NULL, 0);
 
 	if (nvme_init(nvme) != DDI_SUCCESS)
 		goto fail;
@@ -2859,6 +2932,10 @@ nvme_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 		    (nvme->n_ioq_count + 1));
 	}
 
+	if (nvme->n_prp_cache != NULL) {
+		kmem_cache_destroy(nvme->n_prp_cache);
+	}
+
 	if (nvme->n_progress & NVME_REGS_MAPPED) {
 		nvme_shutdown(nvme, NVME_CC_SHN_NORMAL, B_FALSE);
 		(void) nvme_reset(nvme, B_FALSE);
@@ -2955,15 +3032,10 @@ nvme_fill_prp(nvme_cmd_t *cmd, bd_xfer_t *xfer)
 	 */
 	VERIFY(nprp == 1);
 
-	if (nvme_zalloc_dma(nvme, nvme->n_pagesize * nprp, DDI_DMA_READ,
-	    &nvme->n_prp_dma_attr, &cmd->nc_dma) != DDI_SUCCESS) {
-		dev_err(nvme->n_dip, CE_WARN, "!%s: nvme_zalloc_dma failed",
-		    __func__);
-		return (DDI_FAILURE);
-	}
+	cmd->nc_dma = kmem_cache_alloc(nvme->n_prp_cache, KM_SLEEP);
+	bzero(cmd->nc_dma->nd_memp, cmd->nc_dma->nd_len);
 
 	cmd->nc_sqe.sqe_dptr.d_prp[1] = cmd->nc_dma->nd_cookie.dmac_laddress;
-	ddi_dma_nextcookie(cmd->nc_dma->nd_dmah, &cmd->nc_dma->nd_cookie);
 
 	/*LINTED: E_PTR_BAD_CAST_ALIGN*/
 	for (prp = (uint64_t *)cmd->nc_dma->nd_memp;

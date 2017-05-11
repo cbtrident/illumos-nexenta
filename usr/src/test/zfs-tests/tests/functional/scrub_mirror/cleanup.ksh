@@ -26,8 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 #
 
@@ -37,10 +36,10 @@
 
 verify_runnable "global"
 
-$DF -F zfs -h | $GREP "$TESTFS " >/dev/null
-[[ $? == 0 ]] && log_must $ZFS umount -f $TESTDIR
+df -F zfs -h | grep "$TESTFS " >/dev/null
+[[ $? == 0 ]] && log_must zfs umount -f $TESTDIR
 destroy_pool $TESTPOOL
-[[ -e $TESTDIR ]] && log_must $RM -rf $TESTDIR
+[[ -e $TESTDIR ]] && log_must rm -rf $TESTDIR
 
 # recreate and destroy a zpool over the disks to restore the partitions to
 # normal

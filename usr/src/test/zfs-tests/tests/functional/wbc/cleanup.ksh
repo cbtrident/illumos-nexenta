@@ -21,5 +21,5 @@
 verify_runnable "global"
 log_must disable_krrp_debug
 log_must cleanup
-log_must $RM -rf $VDEV_DIR
+log_must rm -rf $VDEV_DIR
 log_pass

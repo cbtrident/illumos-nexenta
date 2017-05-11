@@ -23,7 +23,8 @@
 #	Write back cache can not be deactivated for child dataset
 #
 # STRATEGY:
-#	1. Create pool with separated special devices and enabled write back cache
+#	1. Create pool with separated special devices and enabled write back
+#	   cache
 #	2. Display pool status
 #	3. Create child dataset
 #	4. Try to disable write back cache for child dataset

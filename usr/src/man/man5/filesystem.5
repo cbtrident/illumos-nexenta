@@ -1,11 +1,25 @@
-'\" te
-.\" Copyright (c) 2008, Sun Microsystems, Inc. All Rights Reserved.
+.\"
+.\" The contents of this file are subject to the terms of the
+.\" Common Development and Distribution License (the "License").
+.\" You may not use this file except in compliance with the License.
+.\"
+.\" You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+.\" or http://www.opensolaris.org/os/licensing.
+.\" See the License for the specific language governing permissions
+.\" and limitations under the License.
+.\"
+.\" When distributing Covered Code, include this CDDL HEADER in each
+.\" file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+.\" If applicable, add the following below this CDDL HEADER, with the
+.\" fields enclosed by brackets "[]" replaced with your own identifying
+.\" information: Portions Copyright [yyyy] [name of copyright owner]
+.\"
+.\"
 .\" Copyright 1989 AT&T
-.\" Copyright 2014 PALO, Richard. All rights reserved.
-.\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License"). You may not use this file except in compliance with the License. You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.
-.\"  See the License for the specific language governing permissions and limitations under the License. When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE. If applicable, add the following below this CDDL HEADER, with the
-.\" fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.TH FILESYSTEM 5 "Dec 20, 2014"
+.\" Copyright (c) 2008, Sun Microsystems, Inc. All Rights Reserved.
+.\" Copyright 2016 Nexenta Systems, Inc.
+.\"
+.TH FILESYSTEM 5 "Feb 25, 2017"
 .SH NAME
 filesystem \- File system organization
 .SH SYNOPSIS
@@ -178,16 +192,6 @@ Frame buffer device files.
 .sp .6
 .RS 4n
 File descriptors.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB/dev/md\fR\fR
-.ad
-.sp .6
-.RS 4n
-Logical volume management meta-disk devices.
 .RE
 
 .sp
@@ -642,16 +646,6 @@ Configuration information for the printer subsystem.
 .sp
 .ne 2
 .na
-\fB\fB/etc/lvm\fR\fR
-.ad
-.sp .6
-.RS 4n
-Solaris Logical Volume Manager configuration files.
-.RE
-
-.sp
-.ne 2
-.na
 \fB\fB/etc/mail\fR\fR
 .ad
 .sp .6
@@ -787,16 +781,6 @@ Scripts for bringing the system up in single user mode.
 .sp .6
 .RS 4n
 Directory for reconfiguration manager (RCM) custom scripts.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB/etc/rpcsec\fR\fR
-.ad
-.sp .6
-.RS 4n
-This directory might contain an \fBNIS+\fR authentication configuration file.
 .RE
 
 .sp
@@ -1564,16 +1548,6 @@ NFS server log files.
 .sp
 .ne 2
 .na
-\fB\fB/var/nis\fR\fR
-.ad
-.sp .6
-.RS 4n
-NIS+ databases.
-.RE
-
-.sp
-.ne 2
-.na
 \fB\fB/var/ntp\fR\fR
 .ad
 .sp .6
@@ -1885,8 +1859,7 @@ property.
 .ad
 .sp .6
 .RS 4n
-Databases needed for backwards compatibility with \fBNIS\fR and
-\fBypbind\fR(1M); unnecessary after full transition to \fBNIS+\fR.
+Databases used by \fBNIS\fR and \fBypbind\fR(1M).
 .RE
 
 .SS "\fB/usr\fR File System"
@@ -2604,16 +2577,6 @@ Internet network services.
 .sp .6
 .RS 4n
 Auxiliary NFS-related programs and daemons.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB/usr/lib/nis\fR\fR
-.ad
-.sp .6
-.RS 4n
-Contains NIS+ administrative commands.
 .RE
 
 .sp

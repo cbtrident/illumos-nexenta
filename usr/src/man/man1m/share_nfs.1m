@@ -21,8 +21,9 @@
 .\"
 .\" Copyright (C) 2008, Sun Microsystems, Inc. All Rights Reserved
 .\" Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+.\" Copyright 2016 Jason King.
 .\"
-.Dd November 10, 2014
+.Dd February 25, 2017
 .Dt SHARE_NFS 1M
 .Os
 .Sh NAME
@@ -173,6 +174,13 @@ correctly when this option is used. In particular, files on different underlying
 filesystems may appear to have the same inode numbers. The
 .Sy nohide
 option only applies to NFS Version 2 and Version 3 requests.
+.It Sy noaclfab
+By default, the NFS server will fabricate POSIX-draft style ACLs in response
+to ACL requests from NFS Version 2 or Version 3 clients accessing shared
+file systems that do not support POSIX-draft ACLs (such as ZFS).
+Specifying
+.Sy noaclfab
+disables this behavior.
 .It Sy none Ns = Ns Ar access_list
 Access is not allowed to any client that matches the access list. The exception
 is when the access list is an asterisk (*), in which case
@@ -384,14 +392,12 @@ or
 .Sy ldap
 ahead of
 .Sy nis
-or
-.Sy nisplus ,
 since only DNS and LDAP return the full domain name of the host. Other name
-services like NIS or NIS+ cannot be used to resolve hostnames on the server
+services like NIS cannot be used to resolve hostnames on the server
 because when mapping an IP address to a hostname they do not return domain
 information. For example,
 .Bd -literal -offset indent
-NIS or NIS+   172.16.45.9 --> "myhost"
+NIS   172.16.45.9 --> "myhost"
 .Ed
 .Pp
 and
@@ -414,7 +420,7 @@ matches
 .Qq mydomain
 but not
 .Qq mydomain.mycompany.com .
-This feature can be used to match hosts resolved through NIS and NIS+ rather
+This feature can be used to match hosts resolved through NIS rather
 than DNS and LDAP.
 .It Sy network
 The network or subnet component is preceded by an at-sign (@). It can be either
@@ -535,6 +541,7 @@ share -o uidmap=100:joe:@10.0.0.1 /export
 .Xr getnetbyname 3SOCKET ,
 .Xr netgroup 4 ,
 .Xr nfslog.conf 4 ,
+.Xr acl 5 ,
 .Xr attributes 5 ,
 .Xr nfssec 5
 .Sh NOTES

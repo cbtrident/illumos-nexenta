@@ -20,6 +20,14 @@
  */
 
 /*
+ * Copyright (c) 2016 STRATO AG. All rights reserved.
+ */
+
+/*
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ */
+
+/*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
@@ -31,7 +39,6 @@
 
 /*
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/param.h>
@@ -109,7 +116,7 @@ typedef enum nfs4_acl_op {
 	NFS4_ACL_SET
 } nfs4_acl_op_t;
 
-static struct lm_sysid *nfs4_find_sysid(mntinfo4_t *mi);
+static struct lm_sysid *nfs4_find_sysid(mntinfo4_t *);
 
 static void	nfs4_update_dircaches(change_info4 *, vnode_t *, vnode_t *,
 			char *, dirattr_info_t *);
@@ -366,17 +373,17 @@ void *lockt_denied_debug;
  */
 static int confirm_retry_sec = 30;
 
-volatile int nfs4_lookup_neg_cache = 1;
+static int nfs4_lookup_neg_cache = 1;
 
 /*
  * number of pages to read ahead
  * optimized for 100 base-T.
  */
-volatile int nfs4_nra = 4;
+static int nfs4_nra = 4;
 
-volatile int nfs4_do_symlink_cache = 1;
+static int nfs4_do_symlink_cache = 1;
 
-volatile int nfs4_pathconf_disable_cache = 0;
+static int nfs4_pathconf_disable_cache = 0;
 
 /*
  * These are the vnode ops routines which implement the vnode interface to
@@ -2226,7 +2233,6 @@ nfs4_open_non_reg_file(vnode_t **vpp, int flag, cred_t *cr)
 	    (rp->r_dir == NULL && !nfs4_has_pages(*vpp)))
 		return (0);
 
-	gar.n4g_va.va_mask = AT_ALL;
 	return (nfs4_getattr_otw(*vpp, &gar, cr, 0));
 }
 
@@ -2236,7 +2242,7 @@ nfs4_open_non_reg_file(vnode_t **vpp, int flag, cred_t *cr)
 /* ARGSUSED */
 static int
 nfs4_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
-	caller_context_t *ct)
+    caller_context_t *ct)
 {
 	rnode4_t	*rp;
 	int		 error = 0;
@@ -2299,6 +2305,8 @@ nfs4_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 		} else {
 			cleanlocks(vp, ttoproc(curthread)->p_pid,
 			    (lm_sysidt(lmsid) | LM_SYSID_CLIENT));
+
+			lm_rel_sysid(lmsid);
 		}
 		return (e.error);
 	}
@@ -2570,10 +2578,20 @@ nfs4close_otw(rnode4_t *rp, cred_t *cred_otw, nfs4_open_owner_t *oop,
 	ASSERT(osp->os_ref_count >= 2);
 	osp->os_ref_count--;
 
-	if (!ep->error)
+	if (ep->error == 0) {
+		/*
+		 * Avoid a deadlock with the r_serial thread waiting for
+		 * os_sync_lock in nfs4_get_otw_cred_by_osp() which might be
+		 * held by us. We will wait in nfs4_attr_cache() for the
+		 * completion of the r_serial thread.
+		 */
+		mutex_exit(&osp->os_sync_lock);
+		*have_sync_lockp = 0;
+
 		nfs4_attr_cache(vp,
 		    &res.array[1].nfs_resop4_u.opgetattr.ga_res,
 		    t, cred_otw, TRUE, NULL);
+	}
 
 	NFS4_DEBUG(nfs4_client_state_debug, (CE_NOTE, "nfs4close_otw:"
 	    " returning %d", ep->error));
@@ -3613,7 +3631,7 @@ recov_retry:
 /* ARGSUSED */
 static int
 nfs4_ioctl(vnode_t *vp, int cmd, intptr_t arg, int flag, cred_t *cr, int *rvalp,
-	caller_context_t *ct)
+    caller_context_t *ct)
 {
 	if (nfs_zone() != VTOMI4(vp)->mi_zone)
 		return (EIO);
@@ -6508,8 +6526,8 @@ recov_retry:
 /* ARGSUSED */
 static int
 nfs4_create(vnode_t *dvp, char *nm, struct vattr *va, enum vcexcl exclusive,
-	int mode, vnode_t **vpp, cred_t *cr, int flags, caller_context_t *ct,
-	vsecattr_t *vsecp)
+    int mode, vnode_t **vpp, cred_t *cr, int flags, caller_context_t *ct,
+    vsecattr_t *vsecp)
 {
 	int error;
 	vnode_t *vp = NULL;
@@ -8898,7 +8916,7 @@ nfs4_symlink(vnode_t *dvp, char *lnm, struct vattr *tva, char *tnm, cred_t *cr,
 /* ARGSUSED */
 static int
 nfs4_readdir(vnode_t *vp, struct uio *uiop, cred_t *cr, int *eofp,
-	caller_context_t *ct, int flags)
+    caller_context_t *ct, int flags)
 {
 	int error;
 	uint_t count;
@@ -9725,7 +9743,7 @@ nfs4_seek(vnode_t *vp, offset_t ooff, offset_t *noffp, caller_context_t *ct)
 static int
 nfs4_getpage(vnode_t *vp, offset_t off, size_t len, uint_t *protp,
     page_t *pl[], size_t plsz, struct seg *seg, caddr_t addr,
-	enum seg_rw rw, cred_t *cr, caller_context_t *ct)
+    enum seg_rw rw, cred_t *cr, caller_context_t *ct)
 {
 	rnode4_t *rp;
 	int error;
@@ -10196,7 +10214,7 @@ nfs4_readahead(vnode_t *vp, u_offset_t blkoff, caddr_t addr, struct seg *seg,
 /* ARGSUSED */
 static int
 nfs4_putpage(vnode_t *vp, offset_t off, size_t len, int flags, cred_t *cr,
-	caller_context_t *ct)
+    caller_context_t *ct)
 {
 	int error;
 	rnode4_t *rp;
@@ -10488,7 +10506,6 @@ nfs4_map(vnode_t *vp, offset_t off, struct as *as, caddr_t *addrp,
 		atomic_dec_uint(&rp->r_inmap);
 		return (EINTR);
 	}
-
 
 	if (vp->v_flag & VNOCACHE) {
 		error = EAGAIN;
@@ -10927,8 +10944,9 @@ nfs4_frlock(vnode_t *vp, int cmd, struct flock64 *bfp, int flag,
 				}
 				if (lwp != NULL)
 					lwp->lwp_nostop--;
-				} else
-					cv_wait(&rp->r_cv, &rp->r_statelock);
+			} else {
+				cv_wait(&rp->r_cv, &rp->r_statelock);
+			}
 		}
 		mutex_exit(&rp->r_statelock);
 		if (rc != 0)
@@ -11318,7 +11336,7 @@ nfs4_have_xattrs(vnode_t *vp, ulong_t *valp, cred_t *cr)
 /* ARGSUSED */
 int
 nfs4_pathconf(vnode_t *vp, int cmd, ulong_t *valp, cred_t *cr,
-	caller_context_t *ct)
+    caller_context_t *ct)
 {
 	int error;
 	hrtime_t t;
@@ -11472,7 +11490,7 @@ nfs4_sync_pageio(vnode_t *vp, page_t *pp, u_offset_t io_off, size_t io_len,
 /* ARGSUSED */
 static int
 nfs4_pageio(vnode_t *vp, page_t *pp, u_offset_t io_off, size_t io_len,
-	int flags, cred_t *cr, caller_context_t *ct)
+    int flags, cred_t *cr, caller_context_t *ct)
 {
 	int error;
 	rnode4_t *rp;
@@ -11503,7 +11521,7 @@ nfs4_pageio(vnode_t *vp, page_t *pp, u_offset_t io_off, size_t io_len,
 /* ARGSUSED */
 static void
 nfs4_dispose(vnode_t *vp, page_t *pp, int fl, int dn, cred_t *cr,
-	caller_context_t *ct)
+    caller_context_t *ct)
 {
 	int error;
 	rnode4_t *rp;
@@ -12256,7 +12274,7 @@ do_nfs4_async_commit(vnode_t *vp, page_t *plist, offset3 offset, count3 count,
 /*ARGSUSED*/
 static int
 nfs4_setsecattr(vnode_t *vp, vsecattr_t *vsecattr, int flag, cred_t *cr,
-	caller_context_t *ct)
+    caller_context_t *ct)
 {
 	int		error = 0;
 	mntinfo4_t	*mi;
@@ -12305,7 +12323,7 @@ nfs4_setsecattr(vnode_t *vp, vsecattr_t *vsecattr, int flag, cred_t *cr,
 /* ARGSUSED */
 int
 nfs4_getsecattr(vnode_t *vp, vsecattr_t *vsecattr, int flag, cred_t *cr,
-	caller_context_t *ct)
+    caller_context_t *ct)
 {
 	int		error;
 	mntinfo4_t	*mi;
@@ -12357,9 +12375,8 @@ nfs4_getsecattr(vnode_t *vp, vsecattr_t *vsecattr, int flag, cred_t *cr,
 		/*
 		 * The getattr otw call will always get both the acl, in
 		 * the form of a list of nfsace4's, and the number of acl
-		 * entries; independent of the value of gar.n4g_vsa.vsa_mask.
+		 * entries; independent of the value of gar.n4g_va.va_mask.
 		 */
-		gar.n4g_va.va_mask = AT_ALL;
 		error =  nfs4_getattr_otw(vp, &gar, cr, 1);
 		if (error) {
 			vs_ace4_destroy(&gar.n4g_vsa);
@@ -12987,7 +13004,7 @@ nfs4frlock_pre_setup(clock_t *tick_delayp, nfs4_recov_state_t *recov_statep,
 /*
  * Initialize and allocate the data structures necessary for
  * the nfs4frlock call.
- * Allocates argsp's op array, frees up the saved_rqstpp if there is one.
+ * Allocates argsp's op array.
  */
 static void
 nfs4frlock_call_init(COMPOUND4args_clnt *argsp, COMPOUND4args_clnt **argspp,
@@ -13336,12 +13353,7 @@ nfs4frlock_setup_locku_args(nfs4_lock_call_type_t ctype, nfs_argop4 *argop,
 	locku_args = &argop->nfs_argop4_u.oplocku;
 	*locku_argsp = locku_args;
 
-	/*
-	 * XXX what should locku_args->locktype be?
-	 * setting to ALWAYS be READ_LT so at least
-	 * it is a valid locktype.
-	 */
-
+	/* locktype should be set to any legal value */
 	locku_args->locktype = READ_LT;
 
 	pid = ctype == NFS4_LCK_CTYPE_NORM ? curproc->p_pidp->pid_id :
@@ -13479,8 +13491,6 @@ out:
 /*
  * After we get the reply from the server, record the proper information
  * for possible resend lock requests.
- *
- * Allocates memory for the saved_rqstp if we have a lost lock to save.
  */
 static void
 nfs4frlock_save_lost_rqst(nfs4_lock_call_type_t ctype, int error,
@@ -13981,7 +13991,7 @@ nfs4frlock_update_state(LOCK4args *lock_args, LOCKU4args *locku_args,
 		 * Clean that up here.  It's unclear whether we should do
 		 * this even if the filesystem has been forcibly unmounted.
 		 * For most servers, it's probably wasted effort, but
-		 * RFC3530 lets servers require that unlocks exactly match
+		 * RFC 7530 lets servers require that unlocks exactly match
 		 * the locks that are held.
 		 */
 		if (resend_rqstp != NULL &&
@@ -14258,7 +14268,6 @@ recov_retry:
 
 		switch (cmd) {
 		case F_GETLK:
-		case F_O_GETLK:
 			nfs4frlock_setup_lockt_args(ctype, &argop[1],
 			    &lockt_args, argsp, flk, rp);
 			break;
@@ -15873,7 +15882,7 @@ nfs4_reinstitute_local_lock_state(vnode_t *vp, flock64_t *lost_flp, cred_t *cr,
 	 * Now we have the list of intersections with the lost lock. These are
 	 * the locks that were/are active before the server replied to the
 	 * last/lost lock. Issue these locks to the server here. Playing these
-	 * locks to the server will re-establish aur current local locking state
+	 * locks to the server will re-establish our current local locking state
 	 * with the v4 server.
 	 * If we get an error, send SIGLOST to the application for that lock.
 	 */

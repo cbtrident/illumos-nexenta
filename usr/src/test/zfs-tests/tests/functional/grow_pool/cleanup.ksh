@@ -26,8 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 #
 
@@ -36,21 +35,20 @@
 
 verify_runnable "global"
 
-ismounted $TESTFS && \
-        log_must $ZFS umount $TESTDIR
-destroy_pool "$TESTPOOL"
-[[ -e $TESTDIR ]] && log_must $RM -rf $TESTDIR
+ismounted $TESTFS && log_must zfs umount $TESTDIR
+destroy_pool $TESTPOOL
+[[ -e $TESTDIR ]] && log_must rm -rf $TESTDIR
 
 #
 # Here we create & destroy a zpool using the disks
 # because this resets the partitions to normal
 #
 if [[ -z $DISK ]]; then
-        create_pool ZZZ "$DISK0 $DISK1"
-        destroy_pool ZZZ
+	create_pool ZZZ "$DISK0 $DISK1"
+	destroy_pool ZZZ
 else
-        create_pool ZZZ "$DISK"
-        destroy_pool ZZZ
+	create_pool ZZZ "$DISK"
+	destroy_pool ZZZ
 fi
 
 log_pass

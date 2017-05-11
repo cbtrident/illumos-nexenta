@@ -26,6 +26,7 @@
 #
 
 #
+# Copyright (c) 2016 by Delphix. All rights reserved.
 # Copyright 2017 Nexenta Systems, Inc.
 #
 
@@ -35,6 +36,8 @@
 #
 # DESCRIPTION:
 # Verify that read-only properties are immutable.
+# Note that we can only check properties that have no possibility of
+# changing while we are running (which excludes e.g. "available").
 #
 # STRATEGY:
 # 1. Create pool, fs, vol, fs@snap & vol@snap.
@@ -48,16 +51,16 @@ verify_runnable "both"
 set -A values filesystem volume snapshot -3 0 1 50K 10G 80G \
 	2005/06/17 30K 20x yes no \
 	on off default pool/fs@snap $TESTDIR
-set -A dataset $TESTPOOL $TESTPOOL/$TESTFS $TESTPOOL/$TESTVOL \
+set -A dataset $TESTPOOL/$TESTFS $TESTPOOL/$TESTVOL \
 	$TESTPOOL/$TESTCTR/$TESTFS1 $TESTPOOL/$TESTFS@$TESTSNAP \
 	$TESTPOOL/$TESTVOL@$TESTSNAP
-typeset ro_props="type used available avail creation referenced refer compressratio \
+typeset ro_props="type used creation referenced refer compressratio \
 	mounted origin modified"
 typeset snap_ro_props="volsize recordsize recsize quota reservation reserv mountpoint \
 	sharenfs checksum compression compress atime devices exec readonly rdonly \
 	setuid zoned"
 
-$ZFS upgrade -v > /dev/null 2>&1
+zfs upgrade -v > /dev/null 2>&1
 if [[ $? -eq 0 ]]; then
 	snap_ro_props="$snap_ro_props version"
 fi
@@ -77,8 +80,8 @@ log_onexit cleanup
 create_snapshot $TESTPOOL/$TESTFS $TESTSNAP
 create_snapshot $TESTPOOL/$TESTVOL $TESTSNAP
 
-# Sometimes the update of the counters is delayed. 
-$SLEEP 10
+# Sometimes the update of the counters is delayed.
+sleep 10
 typeset -i i=0
 typeset -i j=0
 typeset cur_value=""
@@ -104,7 +107,7 @@ while (( i < ${#dataset[@]} )); do
 			# equal to values[j].
 			#
 			if [[ $cur_value == ${values[j]} ]]; then
-				log_mustnot $ZFS set $prop=${values[j]} \
+				log_mustnot zfs set $prop=${values[j]} \
 					${dataset[i]}
 			else
 				set_n_check_prop ${values[j]} $prop \

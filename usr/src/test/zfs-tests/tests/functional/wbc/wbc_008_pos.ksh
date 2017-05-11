@@ -38,17 +38,17 @@ log_onexit cleanup
 for wbc_mode in "on" "off" ; do
 	log_must create_pool $TESTPOOL $pool_type
 	log_must display_status $TESTPOOL
-	log_must $ZPOOL add -f $TESTPOOL special $SSD_DISK1
+	log_must zpool add -f $TESTPOOL special $SSD_DISK1
 	log_must set_wbc_mode $TESTPOOL $wbc_mode
 	log_must display_status $TESTPOOL
-	log_must $ZPOOL attach $TESTPOOL $SSD_DISK1 $SSD_DISK2
+	log_must zpool attach $TESTPOOL $SSD_DISK1 $SSD_DISK2
 	log_must display_status $TESTPOOL
 	while is_pool_resilvering $TESTPOOL ; do
-		$SLEEP 1
+		sleep 1
 	done
-	log_must $ZPOOL scrub $TESTPOOL
+	log_must zpool scrub $TESTPOOL
 	while is_pool_scrubbing $TESTPOOL ; do
-		$SLEEP 1
+		sleep 1
 	done
 	log_must check_pool_errors $TESTPOOL
 	log_must destroy_pool $TESTPOOL

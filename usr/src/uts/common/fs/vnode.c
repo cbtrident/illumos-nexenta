@@ -1640,7 +1640,7 @@ vn_rename(char *from, char *to, enum uio_seg seg)
 
 int
 vn_renameat(vnode_t *fdvp, char *fname, vnode_t *tdvp,
-		char *tname, enum uio_seg seg)
+    char *tname, enum uio_seg seg)
 {
 	int error;
 	struct vattr vattr;

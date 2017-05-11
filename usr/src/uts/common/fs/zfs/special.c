@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -487,6 +487,8 @@ spa_select_class(spa_t *spa, zio_t *zio)
 	if (match)
 		return (spa_special_class(spa));
 
+	/* drop 'use special class' */
+	zp->zp_usesc = B_FALSE;
 	return (spa_normal_class(spa));
 }
 

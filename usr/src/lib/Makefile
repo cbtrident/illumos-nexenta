@@ -26,6 +26,7 @@
 # Copyright (c) 2013 Gary Mills
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright (c) 2015 Gary Mills
+# Copyright 2016 Toomas Soome <tsoome@me.com>
 # Copyright 2017 Nexenta Systems, Inc.
 #
 
@@ -125,6 +126,7 @@ SUBDIRS +=				\
 	libexacct/demo	\
 	libfakekernel	\
 	libfcoe		\
+	libficl		\
 	libfru		\
 	libfruutils	\
 	libfsmgt	\
@@ -242,7 +244,6 @@ SUBDIRS +=				\
 	libzoneinfo	\
 	libzonestat	\
 	libzpool	\
-	lvm		\
 	madv		\
 	mpapi		\
 	mpss		\
@@ -292,8 +293,7 @@ sparc_SUBDIRS=		\
 #
 NOWAIT_SUBDIRS= $(SUBDIRS:.WAIT=)
 
-DCSUBDIRS =		\
-	lvm
+DCSUBDIRS=
 
 MSGSUBDIRS=		\
 	abi		\
@@ -350,7 +350,6 @@ MSGSUBDIRS=		\
 	libwanbootutil	\
 	libzfs		\
 	libzonecfg	\
-	lvm		\
 	madv		\
 	mpss		\
 	pam_modules	\
@@ -488,7 +487,6 @@ HDRSUBDIRS=				\
 	libzfs_jni	\
 	libzoneinfo	\
 	libzonestat	\
-	lvm		\
 	mpapi		\
 	passwdutil	\
 	pkcs11		\
@@ -589,10 +587,10 @@ krb5:		gss_mechs/mech_krb5 libtecla libldap5
 libadt_jni:	libbsm
 libadutils: 	libldap5 libresolv2
 libaoe:		libdladm libscf
-libbe: 		libzfs libinstzones libuuid libgen libdevinfo libefi
+libbe:		libzfs libinstzones libuuid libgen libdevinfo libefi libficl
 libbsm:		libinetutil libscf libsecdb libtsol
 libcfgadm:	libdevinfo
-libcmd: 	libsum libast
+libcmd:		libsum libast
 libcmdutils:	libavl
 libcpc:		libpctx
 libcrypt:	libgen
@@ -616,6 +614,7 @@ libeti:		libcurses
 libexacct/demo:	libexacct libproject
 libfakekernel:	libumem libcryptoutil
 libfcoe:	libdladm
+libficl:	libuuid libumem
 libfru:		libfruutils
 libfsmgt:	libkstat
 libgrubmgmt:	libdevinfo libzfs libfstyp libefi
@@ -657,6 +656,7 @@ libshell:	libast libcmd libdll libsecdb
 libsip:		libmd5
 libsldap:	libldap5 libscf
 libsmbfs:	libkrb5 libsec libidmap pkcs11
+libsmbios:	libdevinfo
 libsrpt:	libstmf
 libstmf:	libscf
 libstmfproxy: 	libstmf libpthread
@@ -682,7 +682,6 @@ libzonecfg:	libuuid libsysevent libsec libbrand libpool libscf libproc \
 		libuutil libbsm libsecdb
 libzonestat:	libcmdutils libumem
 libzpool:	libavl libumem libcmdutils libsysevent
-lvm:		libadm libdevid libdevinfo libefi libgen libscf
 madv:		libgen
 mpapi:		libpthread libdevinfo libsysevent
 mpss:		libgen

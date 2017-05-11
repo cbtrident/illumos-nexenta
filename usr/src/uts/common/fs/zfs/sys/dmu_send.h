@@ -24,7 +24,7 @@
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef _DMU_SEND_H
@@ -46,18 +46,16 @@ struct dmu_replay_record;
 extern const char *recv_clone_name;
 
 int dmu_send(const char *tosnap, const char *fromsnap, boolean_t embedok,
-    boolean_t large_block_ok, int outfd, uint64_t resumeobj, uint64_t resumeoff,
+    boolean_t large_block_ok, boolean_t compressok, int outfd,
+    uint64_t resumeobj, uint64_t resumeoff,
     struct vnode *vp, offset_t *off);
 int dmu_send_estimate(struct dsl_dataset *ds, struct dsl_dataset *fromds,
-    uint64_t *sizep);
+    boolean_t stream_compressed, uint64_t *sizep);
 int dmu_send_estimate_from_txg(struct dsl_dataset *ds, uint64_t fromtxg,
-    uint64_t *sizep);
+    boolean_t stream_compressed, uint64_t *sizep);
 int dmu_send_obj(const char *pool, uint64_t tosnap, uint64_t fromsnap,
-    boolean_t embedok, boolean_t large_block_ok,
-    int outfd, vnode_t *vp, offset_t *off);
-int dmu_send_obj_ss(const char *pool, uint64_t tosnap, uint64_t fromsnap,
-    boolean_t embedok, boolean_t large_block_ok,
-    int outfd, vnode_t *vp, offset_t *off, boolean_t sendsize);
+    boolean_t embedok, boolean_t large_block_ok, boolean_t compressok,
+    int outfd, struct vnode *vp, offset_t *off, boolean_t sendsize);
 
 typedef struct dmu_recv_cookie {
 	struct dsl_dataset *drc_ds;
@@ -82,10 +80,11 @@ int dmu_recv_impl(int fd, char *tofs, char *tosnap, char *origin,
     nvlist_t *errors, uint64_t *errf,
     int cfd, uint64_t *ahdl, uint64_t *sz, boolean_t force,
     dmu_krrp_task_t *krrp_task);
-int dmu_send_impl(void *tag, dsl_pool_t *dp, dsl_dataset_t *ds,
-    zfs_bookmark_phys_t *fromzb, boolean_t is_clone, boolean_t embedok,
-    boolean_t large_block_ok, int outfd, uint64_t resumeobj, uint64_t resumeoff,
-    vnode_t *vp, offset_t *off, dmu_krrp_task_t *krrp_task);
+int dmu_send_impl(void *tag, dsl_pool_t *dp, dsl_dataset_t *to_ds,
+    zfs_bookmark_phys_t *ancestor_zb, boolean_t is_clone, boolean_t embedok,
+    boolean_t large_block_ok, boolean_t compressok, int outfd,
+    uint64_t resumeobj, uint64_t resumeoff, vnode_t *vp, offset_t *off,
+    dmu_krrp_task_t *krrp_task);
 int dmu_recv_begin(char *tofs, char *tosnap,
     struct dmu_replay_record *drr_begin,
     boolean_t force, boolean_t resumable, boolean_t force_cksum, char *origin,

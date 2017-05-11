@@ -18,10 +18,11 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #include <sys/types.h>
@@ -63,7 +64,6 @@ static char class_file[] = CLASSFILE;
 static char dafile[] = DAFILE;
 static char dacffile[] = DACFFILE;
 
-char *self_assembly = "/etc/system.d/.self-assembly";
 char *systemfile = "/etc/system";	/* name of ascii system file */
 
 static struct sysparam *sysparam_hd;	/* head of parameters list */
@@ -71,7 +71,6 @@ static struct sysparam *sysparam_tl;	/* tail of parameters list */
 static vmem_t *mod_sysfile_arena;	/* parser memory */
 
 char obp_bootpath[BO_MAXOBJNAME];	/* bootpath from obp */
-char svm_bootpath[BO_MAXOBJNAME];	/* bootpath redirected via rootdev */
 
 #if defined(_PSM_MODULES)
 
@@ -752,80 +751,67 @@ bad:
 	return (NULL);
 }
 
-static void
-read_system_file(char *name)
+void
+mod_read_system_file(int ask)
 {
 	register struct sysparam *sp;
 	register struct _buf *file;
 	register token_t token, last_tok;
 	char tokval[MAXLINESIZE];
 
-	if ((file = kobj_open_file(name)) ==
-	    (struct _buf *)-1) {
-		if (strcmp(name, systemfile) == 0)
-			cmn_err(CE_WARN, "cannot open system file: %s",
-			    name);
-	} else {
-		if (sysparam_tl == NULL)
-			sysparam_tl = (struct sysparam *)&sysparam_hd;
-
-		last_tok = NEWLINE;
-		while ((token = kobj_lex(file, tokval,
-		    sizeof (tokval))) != EOF) {
-			switch (token) {
-			case STAR:
-			case POUND:
-				/*
-				 * Skip comments.
-				 */
-				kobj_find_eol(file);
-				break;
-			case NEWLINE:
-				kobj_newline(file);
-				last_tok = NEWLINE;
-				break;
-			case NAME:
-				if (last_tok != NEWLINE) {
-					kobj_file_err(CE_WARN, file,
-					    extra_err, tokval);
-					kobj_find_eol(file);
-				} else if ((sp = do_sysfile_cmd(file,
-				    tokval)) != NULL) {
-					sp->sys_next = NULL;
-					sysparam_tl->sys_next = sp;
-					sysparam_tl = sp;
-				}
-				last_tok = NAME;
-				break;
-			default:
-				kobj_file_err(CE_WARN,
-				    file, tok_err, tokval);
-				kobj_find_eol(file);
-				break;
-			}
-		}
-		kobj_close_file(file);
-	}
-}
-
-void
-mod_read_system_file(int ask)
-{
 	mod_sysfile_arena = vmem_create("mod_sysfile", NULL, 0, 8,
 	    segkmem_alloc, segkmem_free, heap_arena, 0, VM_SLEEP);
 
 	if (ask)
 		mod_askparams();
 
-	/*
-	 * Read the user self-assembly file first
-	 * to preserve existing system settings.
-	 */
-	if (self_assembly != NULL)
-		read_system_file(self_assembly);
+	if (systemfile != NULL) {
 
-	if (systemfile != NULL)
-		read_system_file(systemfile);
+		if ((file = kobj_open_file(systemfile)) ==
+		    (struct _buf *)-1) {
+			cmn_err(CE_WARN, "cannot open system file: %s",
+			    systemfile);
+		} else {
+			sysparam_tl = (struct sysparam *)&sysparam_hd;
+
+			last_tok = NEWLINE;
+			while ((token = kobj_lex(file, tokval,
+			    sizeof (tokval))) != EOF) {
+				switch (token) {
+				case STAR:
+				case POUND:
+					/*
+					 * Skip comments.
+					 */
+					kobj_find_eol(file);
+					break;
+				case NEWLINE:
+					kobj_newline(file);
+					last_tok = NEWLINE;
+					break;
+				case NAME:
+					if (last_tok != NEWLINE) {
+						kobj_file_err(CE_WARN, file,
+						    extra_err, tokval);
+						kobj_find_eol(file);
+					} else if ((sp = do_sysfile_cmd(file,
+					    tokval)) != NULL) {
+						sp->sys_next = NULL;
+						sysparam_tl->sys_next = sp;
+						sysparam_tl = sp;
+					}
+					last_tok = NAME;
+					break;
+				default:
+					kobj_file_err(CE_WARN,
+					    file, tok_err, tokval);
+					kobj_find_eol(file);
+					break;
+				}
+			}
+			kobj_close_file(file);
+		}
+	}
 
 	/*
 	 * Sanity check of /etc/system.
@@ -1518,11 +1504,6 @@ setparams()
 			bootobjp = &rootfs;
 
 		switch (sysp->sys_type) {
-		case MOD_ROOTDEV:
-			root_is_svm = 1;
-			(void) copystr(sysp->sys_ptr, svm_bootpath,
-			    BO_MAXOBJNAME, NULL);
-			break;
 		case MOD_SWAPDEV:
 			bootobjp->bo_flags |= BO_VALID;
 			(void) copystr(sysp->sys_ptr, bootobjp->bo_name,
@@ -1534,6 +1515,7 @@ setparams()
 			(void) copystr(sysp->sys_ptr, bootobjp->bo_fstype,
 			    BO_MAXOBJNAME, NULL);
 			break;
+		case MOD_ROOTDEV:
 		default:
 			break;
 		}

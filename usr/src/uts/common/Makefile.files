@@ -26,6 +26,8 @@
 # Copyright 2016 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Joyent, Inc.
 # Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2016 OmniTI Computer Consulting, Inc.  All rights reserved.
+# Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 #
 
 #
@@ -178,6 +180,7 @@ GENUNIX_OBJS +=	\
 		fem.o		\
 		ffs.o		\
 		fio.o		\
+		firmload.o	\
 		flock.o		\
 		fm.o		\
 		fork.o		\
@@ -273,6 +276,7 @@ GENUNIX_OBJS +=	\
 		priv.o		\
 		priv_const.o	\
 		proc.o		\
+		psecflags.o	\
 		procset.o	\
 		processor_bind.o	\
 		processor_info.o	\
@@ -298,12 +302,14 @@ GENUNIX_OBJS +=	\
 		sched.o		\
 		schedctl.o	\
 		sctp_crc32.o	\
+		secflags.o	\
 		seg_dev.o	\
 		seg_kp.o	\
 		seg_kpm.o	\
 		seg_map.o	\
 		seg_vn.o	\
 		seg_spt.o	\
+		seg_umap.o	\
 		semaphore.o	\
 		sendfile.o	\
 		session.o	\
@@ -676,7 +682,7 @@ NET80211_OBJS += net80211.o net80211_proto.o net80211_input.o \
 		 net80211_output.o net80211_node.o net80211_crypto.o \
 		 net80211_crypto_none.o net80211_crypto_wep.o net80211_ioctl.o \
 		 net80211_crypto_tkip.o net80211_crypto_ccmp.o	\
-		 net80211_ht.o
+		 net80211_ht.o net80211_amrr.o
 
 VNIC_OBJS +=	vnic_ctl.o vnic_dev.o
 
@@ -1365,30 +1371,6 @@ SMBFS_OBJS +=	smbfs_vfsops.o	smbfs_vnops.o	smbfs_node.o	\
 
 BOOTFS_OBJS +=	bootfs_construct.o bootfs_vfsops.o bootfs_vnops.o
 
-#
-#			LVM modules
-#
-MD_OBJS	+= md.o md_error.o md_ioctl.o md_mddb.o md_names.o \
-	md_med.o md_rename.o md_subr.o
-
-MD_COMMON_OBJS = md_convert.o md_crc.o md_revchk.o
-
-MD_DERIVED_OBJS = metamed_xdr.o meta_basic_xdr.o
-
-SOFTPART_OBJS += sp.o sp_ioctl.o
-
-STRIPE_OBJS += stripe.o stripe_ioctl.o
-
-HOTSPARES_OBJS += hotspares.o
-
-RAID_OBJS += raid.o raid_ioctl.o raid_replay.o raid_resync.o raid_hotspare.o
-
-MIRROR_OBJS += mirror.o mirror_ioctl.o mirror_resync.o
-
-NOTIFY_OBJS += md_notify.o
-
-TRANS_OBJS += mdtrans.o trans_ioctl.o trans_log.o
-
 ZFS_COMMON_OBJS +=		\
 	arc.o			\
 	autosnap.o		\
@@ -1685,7 +1667,15 @@ CONSCONFIG_OBJS += consconfig.o
 
 CONSCONFIG_DACF_OBJS  += consconfig_dacf.o consplat.o
 
-TEM_OBJS += tem.o tem_safe.o 6x10.o 7x14.o 12x22.o
+TEM_OBJS += tem.o tem_safe.o
+
+#
+#	Font data for generated 8x16 font
+#
+VGATEXT_FONT	= 8x16
+VGATEXT_FONT_SRC= 8859-1
+VGATEXT_FONT_DIR= $(UTSBASE)/common/font
+FONT_OBJS += font.o 6x10.o 7x14.o 8x16.o 12x22.o
 
 KBTRANS_OBJS +=				\
 		kbtrans.o		\
@@ -1811,6 +1801,10 @@ UHCI_OBJS += uhci.o uhciutil.o uhcitgt.o uhcihub.o uhcipolled.o
 
 EHCI_OBJS += ehci.o ehci_hub.o ehci_xfer.o ehci_intr.o ehci_util.o ehci_polled.o ehci_isoch.o ehci_isoch_util.o
 
+XHCI_OBJS += xhci.o xhci_quirks.o xhci_dma.o xhci_context.o xhci_intr.o \
+	     xhci_ring.o xhci_command.o xhci_event.o xhci_usba.o \
+	     xhci_endpoint.o xhci_hub.o
+
 HUBD_OBJS += hubd.o
 
 USB_MID_OBJS += usb_mid.o
@@ -1888,6 +1882,8 @@ IWI_OBJS += ipw2200_hw.o ipw2200.o
 IWH_OBJS += iwh.o
 
 IWK_OBJS += iwk2.o
+
+IWN_OBJS += if_iwn.o
 
 IWP_OBJS += iwp.o
 
@@ -1977,7 +1973,7 @@ CH_COM_OBJS =	ch_mac.o ch_subr.o cspi.o espi.o ixf1010.o mc3.o mc4.o mc5.o \
 #
 #	Chelsio Terminator 4 10G NIC nexus driver module
 #
-CXGBE_FW_OBJS  =	t4_fw.o t4_cfg.o
+CXGBE_FW_OBJS  =	t4_fw.o t4_cfg.o t5_cfg.o t5_fw.o
 CXGBE_COM_OBJS =	t4_hw.o common.o
 CXGBE_NEX_OBJS =	t4_nexus.o t4_sge.o t4_mac.o t4_ioctl.o shared.o \
 			t4_l2t.o adapter.o osdep.o
@@ -2038,12 +2034,16 @@ IPRB_OBJS =	iprb.o
 #
 #       Intel 10GbE PCIE NIC driver module
 #
-IXGBE_OBJS =    ixgbe_82598.o ixgbe_82599.o ixgbe_api.o		\
-                ixgbe_common.o ixgbe_phy.o			\
-                ixgbe_buf.o ixgbe_debug.o ixgbe_gld.o           \
-                ixgbe_log.o ixgbe_main.o 	                \
-                ixgbe_osdep.o ixgbe_rx.o ixgbe_stat.o           \
-                ixgbe_tx.o  ixgbe_x540.o ixgbe_mbx.o
+
+# illumos-written source files
+IXGBE_OBJS =    ixgbe_buf.o ixgbe_debug.o ixgbe_gld.o ixgbe_log.o ixgbe_main.o \
+		ixgbe_osdep.o ixgbe_rx.o ixgbe_stat.o ixgbe_tx.o
+
+# Intel-written source files
+IXGBE_INTC_OBJS	=	ixgbe_82598.o ixgbe_82599.o ixgbe_api.o ixgbe_common.o \
+			ixgbe_phy.o ixgbe_dcb.o ixgbe_dcb_82598.o \
+			ixgbe_dcb_82599.o ixgbe_mbx.o ixgbe_vf.o ixgbe_x540.o \
+			ixgbe_x550.o
 
 #
 #	Intel 40GbE PCIe NIC driver module
@@ -2179,7 +2179,7 @@ ISCSI_INITIATOR_OBJS =	chap.o iscsi_io.o iscsi_thread.o	\
 #	ntxn 10Gb/1Gb NIC driver module
 #
 NTXN_OBJS =	unm_nic_init.o unm_gem.o unm_nic_hw.o unm_ndd.o	\
-			unm_nic_main.o unm_nic_isr.o unm_nic_ctx.o niu.o
+		unm_nic_main.o unm_nic_isr.o unm_nic_ctx.o niu.o
 
 #
 #	Myricom 10Gb NIC driver module
@@ -2191,6 +2191,15 @@ MYRI10GE_OBJS =	myri10ge.o myri10ge_lro.o
 NULLDRIVER_OBJS =	nulldriver.o
 
 TPM_OBJS =	tpm.o tpm_hcall.o
+
+#
+# USB Fast ethernet drivers
+#
+USBGEM_OBJS = usbgem.o
+AXF_OBJS = axf_usbgem.o
+UDMF_OBJS = udmf_usbgem.o
+URF_OBJS = urf_usbgem.o
+UPF_OBJS = upf_usbgem.o
 
 #
 #	BNXE objects

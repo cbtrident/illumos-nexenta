@@ -155,10 +155,9 @@ static void	bit_to_pix24(struct tem_vt_state *tem, uchar_t c,
 		    text_color_t fg_color, text_color_t bg_color);
 
 /* BEGIN CSTYLED */
-/*                                      Bk  Rd  Gr  Br  Bl  Mg  Cy  Wh */
-static text_color_t fg_dim_xlate[] = {  1,  5,  3,  7,  2,  6,  4,  8 };
-static text_color_t fg_brt_xlate[] = {  9, 13, 11, 15, 10, 14, 12,  0 };
-static text_color_t bg_xlate[] = {      1,  5,  3,  7,  2,  6,  4,  0 };
+/*                                  Bk  Rd  Gr  Br  Bl  Mg  Cy  Wh */
+static text_color_t dim_xlate[] = {  1,  5,  3,  7,  2,  6,  4,  8 };
+static text_color_t brt_xlate[] = {  9, 13, 11, 15, 10, 14, 12,  0 };
 /* END CSTYLED */
 
 
@@ -172,35 +171,10 @@ text_cmap_t cmap4_to_24 = {
 /* END CSTYLED */
 };
 
-#define	PIX4TO32(pix4) (pixel32_t)(  \
+#define	PIX4TO32(pix4) (uint32_t)(  \
     cmap4_to_24.red[pix4] << 16 |  \
     cmap4_to_24.green[pix4] << 8 | \
     cmap4_to_24.blue[pix4])
-
-/*
- * Fonts are statically linked with this module. At some point an
- * RFE might be desireable to allow dynamic font loading.  The
- * original intention to facilitate dynamic fonts can be seen
- * by examining the data structures and set_font().  As much of
- * the original code is retained but modified to be suited to
- * traversing a list of static fonts.
- */
-extern struct fontlist fonts[];
-
-#define	DEFAULT_FONT_DATA font_data_12x22
-
-extern bitmap_data_t font_data_12x22;
-extern bitmap_data_t font_data_7x14;
-extern bitmap_data_t font_data_6x10;
-/*
- * Must be sorted by font size in descending order
- */
-struct fontlist fonts[] = {
-	{  &font_data_12x22,	NULL  },
-	{  &font_data_7x14,	NULL  },
-	{  &font_data_6x10,	NULL  },
-	{  NULL, NULL  }
-};
 
 #define	INVERSE(ch) (ch ^ 0xff)
 
@@ -270,6 +244,118 @@ tem_safe_polled_write(
 	tem_safe_terminal_emulate(tem, buf, len, NULL, CALLED_FROM_STANDALONE);
 }
 
+/* Process partial UTF-8 sequence. */
+static void
+tem_safe_input_partial(struct tem_vt_state *tem, cred_t *credp,
+    enum called_from called_from)
+{
+	int i;
+	uint8_t c;
+
+	if (tem->tvs_utf8_left == 0)
+		return;
+
+	for (i = 0; i < sizeof (tem->tvs_utf8_partial); i++) {
+		c = (tem->tvs_utf8_partial >> (24 - (i << 3))) & 0xff;
+		if (c != 0) {
+			tem_safe_parse(tem, c, credp, called_from);
+		}
+	}
+	tem->tvs_utf8_left = 0;
+	tem->tvs_utf8_partial = 0;
+}
+
+/*
+ * Handle UTF-8 sequences.
+ */
+static void
+tem_safe_input_byte(struct tem_vt_state *tem, uchar_t c, cred_t *credp,
+    enum called_from called_from)
+{
+	/*
+	 * Check for UTF-8 code points. In case of error fall back to
+	 * 8-bit code. As we only have 8859-1 fonts for console, this will set
+	 * the limits on what chars we actually can display, therefore we
+	 * have to return to this code once we have solved the font issue.
+	 */
+	if ((c & 0x80) == 0x00) {
+		/* One-byte sequence. */
+		tem_safe_input_partial(tem, credp, called_from);
+		tem_safe_parse(tem, c, credp, called_from);
+		return;
+	}
+	if ((c & 0xe0) == 0xc0) {
+		/* Two-byte sequence. */
+		tem_safe_input_partial(tem, credp, called_from);
+		tem->tvs_utf8_left = 1;
+		tem->tvs_utf8_partial = c;
+		return;
+	}
+	if ((c & 0xf0) == 0xe0) {
+		/* Three-byte sequence. */
+		tem_safe_input_partial(tem, credp, called_from);
+		tem->tvs_utf8_left = 2;
+		tem->tvs_utf8_partial = c;
+		return;
+	}
+	if ((c & 0xf8) == 0xf0) {
+		/* Four-byte sequence. */
+		tem_safe_input_partial(tem, credp, called_from);
+		tem->tvs_utf8_left = 3;
+		tem->tvs_utf8_partial = c;
+		return;
+	}
+	if ((c & 0xc0) == 0x80) {
+		/* Invalid state? */
+		if (tem->tvs_utf8_left == 0) {
+			tem_safe_parse(tem, c, credp, called_from);
+			return;
+		}
+		tem->tvs_utf8_left--;
+		tem->tvs_utf8_partial = (tem->tvs_utf8_partial << 8) | c;
+		if (tem->tvs_utf8_left == 0) {
+			tem_char_t v, u;
+			uint8_t b;
+
+			/*
+			 * Transform the sequence of 2 to 4 bytes to
+			 * unicode number.
+			 */
+			v = 0;
+			u = tem->tvs_utf8_partial;
+			b = (u >> 24) & 0xff;
+			if (b != 0) {		/* Four-byte sequence */
+				v = b & 0x07;
+				b = (u >> 16) & 0xff;
+				v = (v << 6) | (b & 0x3f);
+				b = (u >> 8) & 0xff;
+				v = (v << 6) | (b & 0x3f);
+				b = u & 0xff;
+				v = (v << 6) | (b & 0x3f);
+			} else if ((b = (u >> 16) & 0xff) != 0) {
+				v = b & 0x0f;	/* Three-byte sequence */
+				b = (u >> 8) & 0xff;
+				v = (v << 6) | (b & 0x3f);
+				b = u & 0xff;
+				v = (v << 6) | (b & 0x3f);
+			} else if ((b = (u >> 8) & 0xff) != 0) {
+				v = b & 0x1f;	/* Two-byte sequence */
+				b = u & 0xff;
+				v = (v << 6) | (b & 0x3f);
+			}
+
+			/* Use '?' as replacement if needed. */
+			if (v > 0xff)
+				v = '?';
+			tem_safe_parse(tem, v, credp, called_from);
+			tem->tvs_utf8_partial = 0;
+		}
+		return;
+	}
+	/* Anything left is illegal in UTF-8 sequence. */
+	tem_safe_input_partial(tem, credp, called_from);
+	tem_safe_parse(tem, c, credp, called_from);
+}
 
 /*
  * This is the main entry point into the terminal emulator.
@@ -296,7 +382,7 @@ tem_safe_terminal_emulate(
 		    VIS_HIDE_CURSOR, credp, called_from);
 
 	for (; len > 0; len--, buf++)
-		tem_safe_parse(tem, *buf, credp, called_from);
+		tem_safe_input_byte(tem, *buf, credp, called_from);
 
 	/*
 	 * Send the data we just got to the framebuffer.
@@ -314,10 +400,8 @@ tem_safe_terminal_emulate(
  * from quiesced or normal (ie. use polled I/O vs. layered ioctls)
  */
 static void
-tems_safe_display(
-	struct vis_consdisplay *pda,
-	cred_t *credp,
-	enum called_from called_from)
+tems_safe_display(struct vis_consdisplay *pda, cred_t *credp,
+    enum called_from called_from)
 {
 	if (called_from == CALLED_FROM_STANDALONE)
 		tems.ts_fb_polledio->display(tems.ts_fb_polledio->arg, pda);
@@ -331,10 +415,8 @@ tems_safe_display(
  * from, quiesced or normal (ie. use polled I/O vs. layered ioctls)
  */
 void
-tems_safe_copy(
-	struct vis_conscopy *pca,
-	cred_t *credp,
-	enum called_from called_from)
+tems_safe_copy(struct vis_conscopy *pca, cred_t *credp,
+    enum called_from called_from)
 {
 	if (called_from == CALLED_FROM_STANDALONE)
 		tems.ts_fb_polledio->copy(tems.ts_fb_polledio->arg, pca);
@@ -349,10 +431,8 @@ tems_safe_copy(
  * normal (ie. use polled I/O vs. layered ioctls).
  */
 static void
-tems_safe_cursor(
-	struct vis_conscursor *pca,
-	cred_t *credp,
-	enum called_from called_from)
+tems_safe_cursor(struct vis_conscursor *pca, cred_t *credp,
+    enum called_from called_from)
 {
 	if (called_from == CALLED_FROM_STANDALONE)
 		tems.ts_fb_polledio->cursor(tems.ts_fb_polledio->arg, pca);
@@ -366,11 +446,8 @@ tems_safe_cursor(
  */
 
 static void
-tem_safe_control(
-	struct tem_vt_state *tem,
-	uchar_t ch,
-	cred_t *credp,
-	enum called_from called_from)
+tem_safe_control(struct tem_vt_state *tem, uchar_t ch, cred_t *credp,
+    enum called_from called_from)
 {
 	tem->tvs_state = A_STATE_START;
 	switch (ch) {
@@ -509,13 +586,18 @@ tem_safe_selgraph(struct tem_vt_state *tem)
 		case 36: /* cyan	(light cyan) 	foreground */
 		case 37: /* white	(bright white) 	foreground */
 			tem->tvs_fg_color = param - 30;
+			tem->tvs_flags &= ~TEM_ATTR_BRIGHT_FG;
 			break;
 
 		case 39:
 			/*
-			 * Reset the foreground colour.
+			 * Reset the foreground colour and brightness.
 			 */
 			tem->tvs_fg_color = tems.ts_init_color.fg_color;
+			if (tems.ts_init_color.a_flags & TEM_ATTR_BRIGHT_FG)
+				tem->tvs_flags |= TEM_ATTR_BRIGHT_FG;
+			else
+				tem->tvs_flags &= ~TEM_ATTR_BRIGHT_FG;
 			break;
 
 		case 40: /* black	(grey) 		background */
@@ -527,13 +609,42 @@ tem_safe_selgraph(struct tem_vt_state *tem)
 		case 46: /* cyan	(light cyan) 	background */
 		case 47: /* white	(bright white) 	background */
 			tem->tvs_bg_color = param - 40;
+			tem->tvs_flags &= ~TEM_ATTR_BRIGHT_BG;
 			break;
 
 		case 49:
 			/*
-			 * Reset the background colour.
+			 * Reset the background colour and brightness.
 			 */
 			tem->tvs_bg_color = tems.ts_init_color.bg_color;
+			if (tems.ts_init_color.a_flags & TEM_ATTR_BRIGHT_BG)
+				tem->tvs_flags |= TEM_ATTR_BRIGHT_BG;
+			else
+				tem->tvs_flags &= ~TEM_ATTR_BRIGHT_BG;
+			break;
+
+		case 90: /* black	(grey)		foreground */
+		case 91: /* red		(light red)	foreground */
+		case 92: /* green	(light green)	foreground */
+		case 93: /* brown	(yellow)	foreground */
+		case 94: /* blue	(light blue)	foreground */
+		case 95: /* magenta	(light magenta)	foreground */
+		case 96: /* cyan	(light cyan)	foreground */
+		case 97: /* white	(bright white)	foreground */
+			tem->tvs_fg_color = param - 90;
+			tem->tvs_flags |= TEM_ATTR_BRIGHT_FG;
+			break;
+
+		case 100: /* black	(grey)		background */
+		case 101: /* red	(light red)	background */
+		case 102: /* green	(light green)	background */
+		case 103: /* brown	(yellow)	background */
+		case 104: /* blue	(light blue)	background */
+		case 105: /* magenta	(light magenta)	background */
+		case 106: /* cyan	(light cyan)	background */
+		case 107: /* white	(bright white)	background */
+			tem->tvs_bg_color = param - 100;
+			tem->tvs_flags |= TEM_ATTR_BRIGHT_BG;
 			break;
 
 		default:
@@ -552,11 +663,8 @@ tem_safe_selgraph(struct tem_vt_state *tem)
  *                It assumes that the next lower level will do so.
  */
 static void
-tem_safe_chkparam(
-	struct tem_vt_state *tem,
-	uchar_t ch,
-	cred_t *credp,
-	enum called_from called_from)
+tem_safe_chkparam(struct tem_vt_state *tem, uchar_t ch, cred_t *credp,
+    enum called_from called_from)
 {
 	int	i;
 	int	row;
@@ -1172,8 +1280,7 @@ tem_safe_bell(struct tem_vt_state *tem, enum called_from called_from)
 
 static void
 tem_safe_scroll(struct tem_vt_state *tem, int start, int end, int count,
-    int direction,
-	cred_t *credp, enum called_from called_from)
+    int direction, cred_t *credp, enum called_from called_from)
 {
 	int	row;
 	int	lines_affected;
@@ -1217,10 +1324,10 @@ tem_safe_scroll(struct tem_vt_state *tem, int start, int end, int count,
 
 static void
 tem_safe_copy_area(struct tem_vt_state *tem,
-	screen_pos_t s_col, screen_pos_t s_row,
-	screen_pos_t e_col, screen_pos_t e_row,
-	screen_pos_t t_col, screen_pos_t t_row,
-	cred_t *credp, enum called_from called_from)
+    screen_pos_t s_col, screen_pos_t s_row,
+    screen_pos_t e_col, screen_pos_t e_row,
+    screen_pos_t t_col, screen_pos_t t_row,
+    cred_t *credp, enum called_from called_from)
 {
 	int rows;
 	int cols;
@@ -1262,7 +1369,7 @@ tem_safe_copy_area(struct tem_vt_state *tem,
 
 static void
 tem_safe_clear_chars(struct tem_vt_state *tem, int count, screen_pos_t row,
-	screen_pos_t col, cred_t *credp, enum called_from called_from)
+    screen_pos_t col, cred_t *credp, enum called_from called_from)
 {
 	ASSERT((MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&tem->tvs_lock)) ||
 	    called_from == CALLED_FROM_STANDALONE);
@@ -1291,9 +1398,9 @@ tem_safe_clear_chars(struct tem_vt_state *tem, int count, screen_pos_t row,
 /*ARGSUSED*/
 void
 tem_safe_text_display(struct tem_vt_state *tem, uchar_t *string,
-	int count, screen_pos_t row, screen_pos_t col,
-	text_color_t fg_color, text_color_t bg_color,
-	cred_t *credp, enum called_from called_from)
+    int count, screen_pos_t row, screen_pos_t col,
+    text_color_t fg_color, text_color_t bg_color,
+    cred_t *credp, enum called_from called_from)
 {
 	struct vis_consdisplay da;
 
@@ -1324,8 +1431,8 @@ tem_safe_text_display(struct tem_vt_state *tem, uchar_t *string,
 /*ARGSUSED*/
 static void
 tem_safe_image_display(struct tem_vt_state *tem, uchar_t *image,
-	int height, int width, screen_pos_t row, screen_pos_t col,
-	cred_t *credp, enum called_from called_from)
+    int height, int width, screen_pos_t row, screen_pos_t col,
+    cred_t *credp, enum called_from called_from)
 {
 	struct vis_consdisplay da;
 
@@ -1348,10 +1455,10 @@ tem_safe_image_display(struct tem_vt_state *tem, uchar_t *image,
 /*ARGSUSED*/
 void
 tem_safe_text_copy(struct tem_vt_state *tem,
-	screen_pos_t s_col, screen_pos_t s_row,
-	screen_pos_t e_col, screen_pos_t e_row,
-	screen_pos_t t_col, screen_pos_t t_row,
-	cred_t *credp, enum called_from called_from)
+    screen_pos_t s_col, screen_pos_t s_row,
+    screen_pos_t e_col, screen_pos_t e_row,
+    screen_pos_t t_col, screen_pos_t t_row,
+    cred_t *credp, enum called_from called_from)
 {
 	struct vis_conscopy da;
 
@@ -1370,8 +1477,8 @@ tem_safe_text_copy(struct tem_vt_state *tem,
 
 void
 tem_safe_text_cls(struct tem_vt_state *tem,
-	int count, screen_pos_t row, screen_pos_t col, cred_t *credp,
-	enum called_from called_from)
+    int count, screen_pos_t row, screen_pos_t col, cred_t *credp,
+    enum called_from called_from)
 {
 	struct vis_consdisplay da;
 
@@ -1388,14 +1495,12 @@ tem_safe_text_cls(struct tem_vt_state *tem,
 	tems_safe_display(&da, credp, called_from);
 }
 
-
-
 void
 tem_safe_pix_display(struct tem_vt_state *tem,
-	uchar_t *string, int count,
-	screen_pos_t row, screen_pos_t col,
-	text_color_t fg_color, text_color_t bg_color,
-	cred_t *credp, enum called_from called_from)
+    uchar_t *string, int count,
+    screen_pos_t row, screen_pos_t col,
+    text_color_t fg_color, text_color_t bg_color,
+    cred_t *credp, enum called_from called_from)
 {
 	struct vis_consdisplay da;
 	int	i;
@@ -1418,11 +1523,11 @@ tem_safe_pix_display(struct tem_vt_state *tem,
 
 void
 tem_safe_pix_copy(struct tem_vt_state *tem,
-	screen_pos_t s_col, screen_pos_t s_row,
-	screen_pos_t e_col, screen_pos_t e_row,
-	screen_pos_t t_col, screen_pos_t t_row,
-	cred_t *credp,
-	enum called_from called_from)
+    screen_pos_t s_col, screen_pos_t s_row,
+    screen_pos_t e_col, screen_pos_t e_row,
+    screen_pos_t t_col, screen_pos_t t_row,
+    cred_t *credp,
+    enum called_from called_from)
 {
 	struct vis_conscopy ma;
 	static boolean_t need_clear = B_TRUE;
@@ -1509,8 +1614,8 @@ tem_safe_pix_bit2pix(struct tem_vt_state *tem, unsigned char c,
  */
 void
 tem_safe_pix_cls(struct tem_vt_state *tem, int count,
-	screen_pos_t row, screen_pos_t col, cred_t *credp,
-	enum called_from called_from)
+    screen_pos_t row, screen_pos_t col, cred_t *credp,
+    enum called_from called_from)
 {
 	ASSERT((MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&tem->tvs_lock)) ||
 	    called_from == CALLED_FROM_STANDALONE);
@@ -1942,230 +2047,55 @@ tem_safe_pix_cursor(struct tem_vt_state *tem, short action,
 	tems_safe_cursor(&ca, credp, called_from);
 }
 
-#define	BORDER_PIXELS 10
-void
-set_font(struct font *f, short *rows, short *cols, short height, short width)
-{
-	bitmap_data_t	*font_selected = NULL;
-	struct fontlist	*fl;
-
-	/*
-	 * Find best font for these dimensions, or use default
-	 *
-	 * A 1 pixel border is the absolute minimum we could have
-	 * as a border around the text window (BORDER_PIXELS = 2),
-	 * however a slightly larger border not only looks better
-	 * but for the fonts currently statically built into the
-	 * emulator causes much better font selection for the
-	 * normal range of screen resolutions.
-	 */
-	for (fl = fonts; fl->data; fl++) {
-		if ((((*rows * fl->data->height) + BORDER_PIXELS) <= height) &&
-		    (((*cols * fl->data->width) + BORDER_PIXELS) <= width)) {
-			font_selected = fl->data;
-			break;
-		}
-	}
-	/*
-	 * The minus 2 is to make sure we have at least a 1 pixel
-	 * boarder around the entire screen.
-	 */
-	if (font_selected == NULL) {
-		if (((*rows * DEFAULT_FONT_DATA.height) > height) ||
-		    ((*cols * DEFAULT_FONT_DATA.width) > width)) {
-			*rows = (height - 2) / DEFAULT_FONT_DATA.height;
-			*cols = (width - 2) / DEFAULT_FONT_DATA.width;
-		}
-		font_selected = &DEFAULT_FONT_DATA;
-	}
-
-	f->width = font_selected->width;
-	f->height = font_selected->height;
-	bcopy((caddr_t)font_selected->encoding, (caddr_t)f->char_ptr,
-	    sizeof (f->char_ptr));
-	f->image_data = font_selected->image;
-
-}
-
-/*
- * bit_to_pix4 is for 4-bit frame buffers.  It will write one output byte
- * for each 2 bits of input bitmap.  It inverts the input bits before
- * doing the output translation, for reverse video.
- *
- * Assuming foreground is 0001 and background is 0000...
- * An input data byte of 0x53 will output the bit pattern
- * 00000001 00000001 00000000 00010001.
- */
-
 static void
-bit_to_pix4(
-    struct tem_vt_state *tem,
-    uchar_t c,
-    text_color_t fg_color,
+bit_to_pix4(struct tem_vt_state *tem, uchar_t c, text_color_t fg_color,
     text_color_t bg_color)
 {
-	int	row;
-	int	byte;
-	int	i;
-	uint8_t	*cp;
-	uint8_t	data;
-	uint8_t	nibblett;
-	int	bytes_wide;
-	uint8_t *dest;
-
-	dest = (uint8_t *)tem->tvs_pix_data;
-
-	cp = tems.ts_font.char_ptr[c];
-	bytes_wide = (tems.ts_font.width + 7) / 8;
-
-	for (row = 0; row < tems.ts_font.height; row++) {
-		for (byte = 0; byte < bytes_wide; byte++) {
-			data = *cp++;
-			for (i = 0; i < 4; i++) {
-				nibblett = (data >> ((3-i) * 2)) & 0x3;
-				switch (nibblett) {
-				case 0x0:
-					*dest++ = bg_color << 4 | bg_color;
-					break;
-				case 0x1:
-					*dest++ = bg_color << 4 | fg_color;
-					break;
-				case 0x2:
-					*dest++ = fg_color << 4 | bg_color;
-					break;
-				case 0x3:
-					*dest++ = fg_color << 4 | fg_color;
-					break;
-				}
-			}
-		}
-	}
+	uint8_t *dest = (uint8_t *)tem->tvs_pix_data;
+	font_bit_to_pix4(&tems.ts_font, dest, c, fg_color, bg_color);
 }
 
-/*
- * bit_to_pix8 is for 8-bit frame buffers.  It will write one output byte
- * for each bit of input bitmap.  It inverts the input bits before
- * doing the output translation, for reverse video.
- *
- * Assuming foreground is 00000001 and background is 00000000...
- * An input data byte of 0x53 will output the bit pattern
- * 0000000 000000001 00000000 00000001 00000000 00000000 00000001 00000001.
- */
-
 static void
-bit_to_pix8(
-    struct tem_vt_state *tem,
-    uchar_t c,
-    text_color_t fg_color,
+bit_to_pix8(struct tem_vt_state *tem, uchar_t c, text_color_t fg_color,
     text_color_t bg_color)
 {
-	int	row;
-	int	byte;
-	int	i;
-	uint8_t	*cp;
-	uint8_t	data;
-	int	bytes_wide;
-	uint8_t	mask;
-	int	bitsleft, nbits;
-	uint8_t *dest;
-
-	dest = (uint8_t *)tem->tvs_pix_data;
-
-	cp = tems.ts_font.char_ptr[c];
-	bytes_wide = (tems.ts_font.width + 7) / 8;
-
-	for (row = 0; row < tems.ts_font.height; row++) {
-		bitsleft = tems.ts_font.width;
-		for (byte = 0; byte < bytes_wide; byte++) {
-			data = *cp++;
-			mask = 0x80;
-			nbits = MIN(8, bitsleft);
-			bitsleft -= nbits;
-			for (i = 0; i < nbits; i++) {
-				*dest++ = (data & mask ? fg_color: bg_color);
-				mask = mask >> 1;
-			}
-		}
-	}
+	uint8_t *dest = (uint8_t *)tem->tvs_pix_data;
+	font_bit_to_pix8(&tems.ts_font, dest, c, fg_color, bg_color);
 }
 
-/*
- * bit_to_pix24 is for 24-bit frame buffers.  It will write four output bytes
- * for each bit of input bitmap.  It inverts the input bits before
- * doing the output translation, for reverse video.  Note that each
- * 24-bit RGB value is finally stored in a 32-bit unsigned int, with the
- * high-order byte set to zero.
- *
- * Assuming foreground is 00000000 11111111 11111111 11111111
- * and background is 00000000 00000000 00000000 00000000
- * An input data byte of 0x53 will output the bit pattern
- *
- * 00000000 00000000 00000000 00000000
- * 00000000 11111111 11111111 11111111
- * 00000000 00000000 00000000 00000000
- * 00000000 11111111 11111111 11111111
- * 00000000 00000000 00000000 00000000
- * 00000000 00000000 00000000 00000000
- * 00000000 11111111 11111111 11111111
- * 00000000 11111111 11111111 11111111
- *
- */
-typedef uint32_t pixel32_t;
-
 static void
-bit_to_pix24(
-	struct tem_vt_state *tem,
-	uchar_t c,
-	text_color_t fg_color4,
-	text_color_t bg_color4)
+bit_to_pix24(struct tem_vt_state *tem, uchar_t c, text_color_t fg_color4,
+    text_color_t bg_color4)
 {
-	int	row;
-	int	byte;
-	int	i;
-	uint8_t	*cp;
-	uint8_t	data;
-	int	bytes_wide;
-	int	bitsleft, nbits;
-
-	pixel32_t fg_color32, bg_color32, *destp;
+	uint32_t fg_color32, bg_color32, *dest;
 
 	ASSERT(fg_color4 < 16 && bg_color4 < 16);
 
 	fg_color32 = PIX4TO32(fg_color4);
 	bg_color32 = PIX4TO32(bg_color4);
 
-	destp = (pixel32_t *)tem->tvs_pix_data;
-	cp = tems.ts_font.char_ptr[c];
-	bytes_wide = (tems.ts_font.width + 7) / 8;
-
-	for (row = 0; row < tems.ts_font.height; row++) {
-		bitsleft = tems.ts_font.width;
-		for (byte = 0; byte < bytes_wide; byte++) {
-			data = *cp++;
-			nbits = MIN(8, bitsleft);
-			bitsleft -= nbits;
-			for (i = 0; i < nbits; i++) {
-				*destp++ = ((data << i) & 0x80 ?
-				    fg_color32 : bg_color32);
-			}
-		}
-	}
+	dest = (uint32_t *)tem->tvs_pix_data;
+	font_bit_to_pix24(&tems.ts_font, dest, c, fg_color32, bg_color32);
 }
 
-/* ARGSUSED */
 static text_color_t
 ansi_bg_to_solaris(struct tem_vt_state *tem, int ansi)
 {
-	return (bg_xlate[ansi]);
+	if (tem->tvs_flags & TEM_ATTR_BRIGHT_BG)
+		return (brt_xlate[ansi]);
+	else
+		return (dim_xlate[ansi]);
 }
 
 static text_color_t
 ansi_fg_to_solaris(struct tem_vt_state *tem, int ansi)
 {
-	if (tem->tvs_flags & TEM_ATTR_BOLD)
-		return (fg_brt_xlate[ansi]);
-	else
-		return (fg_dim_xlate[ansi]);
+	if (tem->tvs_flags & TEM_ATTR_BRIGHT_FG ||
+	    tem->tvs_flags & TEM_ATTR_BOLD) {
+		return (brt_xlate[ansi]);
+	} else {
+		return (dim_xlate[ansi]);
+	}
 }
 
 /*
@@ -2203,10 +2133,10 @@ tem_safe_get_color(struct tem_vt_state *tem, text_color_t *fg,
  */
 void
 tem_safe_pix_cls_range(struct tem_vt_state *tem,
-	screen_pos_t row, int nrows, int offset_y,
-	screen_pos_t col, int ncols, int offset_x,
-	boolean_t sroll_up, cred_t *credp,
-	enum called_from called_from)
+    screen_pos_t row, int nrows, int offset_y,
+    screen_pos_t col, int ncols, int offset_x,
+    boolean_t sroll_up, cred_t *credp,
+    enum called_from called_from)
 {
 	struct vis_consdisplay da;
 	int	i, j;
@@ -2243,8 +2173,8 @@ tem_safe_pix_cls_range(struct tem_vt_state *tem,
  */
 static void
 tem_safe_virtual_display(struct tem_vt_state *tem, unsigned char *string,
-	int count, screen_pos_t row, screen_pos_t col,
-	text_color_t fg_color, text_color_t bg_color)
+    int count, screen_pos_t row, screen_pos_t col,
+    text_color_t fg_color, text_color_t bg_color)
 {
 	int i, width;
 	unsigned char *addr;
@@ -2269,9 +2199,9 @@ tem_safe_virtual_display(struct tem_vt_state *tem, unsigned char *string,
 
 static void
 i_virtual_copy(unsigned char *base,
-	screen_pos_t s_col, screen_pos_t s_row,
-	screen_pos_t e_col, screen_pos_t e_row,
-	screen_pos_t t_col, screen_pos_t t_row)
+    screen_pos_t s_col, screen_pos_t s_row,
+    screen_pos_t e_col, screen_pos_t e_row,
+    screen_pos_t t_col, screen_pos_t t_row)
 {
 	unsigned char   *from;
 	unsigned char   *to;
@@ -2318,9 +2248,9 @@ i_virtual_copy(unsigned char *base,
 
 static void
 tem_safe_virtual_copy(struct tem_vt_state *tem,
-	screen_pos_t s_col, screen_pos_t s_row,
-	screen_pos_t e_col, screen_pos_t e_row,
-	screen_pos_t t_col, screen_pos_t t_row)
+    screen_pos_t s_col, screen_pos_t s_row,
+    screen_pos_t e_col, screen_pos_t e_row,
+    screen_pos_t t_col, screen_pos_t t_row)
 {
 	screen_size_t chars_per_row;
 	screen_size_t   rows_to_move;
@@ -2358,7 +2288,7 @@ tem_safe_virtual_copy(struct tem_vt_state *tem,
 
 static void
 tem_safe_virtual_cls(struct tem_vt_state *tem,
-	int count, screen_pos_t row, screen_pos_t col)
+    int count, screen_pos_t row, screen_pos_t col)
 {
 	text_color_t fg_color;
 	text_color_t bg_color;
@@ -2373,7 +2303,7 @@ tem_safe_virtual_cls(struct tem_vt_state *tem,
  */
 void
 tem_safe_blank_screen(struct tem_vt_state *tem, cred_t *credp,
-	enum called_from called_from)
+    enum called_from called_from)
 {
 	int	row;
 
@@ -2397,7 +2327,7 @@ tem_safe_blank_screen(struct tem_vt_state *tem, cred_t *credp,
  */
 void
 tem_safe_unblank_screen(struct tem_vt_state *tem, cred_t *credp,
-	enum called_from called_from)
+    enum called_from called_from)
 {
 	text_color_t fg_color, fg_last;
 	text_color_t bg_color, bg_last;

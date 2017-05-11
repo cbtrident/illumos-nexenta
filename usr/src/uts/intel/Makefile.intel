@@ -266,6 +266,7 @@ DRV_KMODS	+= ipsecesp
 DRV_KMODS	+= ipw
 DRV_KMODS	+= iwh
 DRV_KMODS	+= iwi
+DRV_KMODS	+= iwn
 DRV_KMODS	+= iwk
 DRV_KMODS	+= iwp
 DRV_KMODS	+= iwscn
@@ -492,6 +493,16 @@ DRV_KMODS	+= usbskel
 DRV_KMODS	+= usbvc
 DRV_KMODS	+= usbftdi
 DRV_KMODS	+= usbecm
+DRV_KMODS	+= xhci
+
+#
+#	USBGEM modules
+#
+DRV_KMODS	+= usbgem
+DRV_KMODS	+= axf
+DRV_KMODS	+= udmf 
+DRV_KMODS	+= upf
+DRV_KMODS	+= urf 
 
 #
 #	1394 modules
@@ -506,13 +517,6 @@ DRV_KMODS	+= dcam1394
 #
 DRV_KMODS	+= ib ibp eibnx eoib rdsib sdp iser daplt hermon tavor sol_ucma sol_uverbs
 DRV_KMODS	+= sol_umad
-
-#
-#	LVM modules
-#
-DRV_KMODS	+= md
-MISC_KMODS	+= md_stripe md_hotspares md_mirror md_raid md_trans md_notify
-MISC_KMODS	+= md_sp
 
 #
 #	Brand modules

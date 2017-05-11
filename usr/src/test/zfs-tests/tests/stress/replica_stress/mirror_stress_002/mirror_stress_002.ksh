@@ -24,18 +24,10 @@
 # Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# ident	"@(#)mirror_stress_002.ksh	1.3	07/10/09 SMI"
-#
 
 . ${STF_SUITE}/include/libtest.shlib
 . ${STF_SUITE}/tests/stress/replica_stress/replica_stress_common.kshlib
 
-###############################################################################
-#
-# __stc_assertion_start
-#
-# ID: mirror_stress_002
-#
 # DESCRIPTION:
 #	running multiple copies of zfs_dataset_create_write_destroy on
 #	separate mirrored pools shall not cause the system to fail, hang
@@ -51,18 +43,8 @@
 #       tests.
 #	The test is considered to have passed if the machine stays up during the
 #       time the stress tests are running and doesn't hit the stf time limit.
-#
-# TESTABILITY: explicit
-#
-# TEST_AUTOMATION_LEVEL: automated
-#
-# CODING_STATUS: COMPLETED (2006-06-08)
-#
-# __stc_assertion_end
-#
-###############################################################################
 
-log_assert "parallel dataset_create_write_destroy's on multiple mirrored " \
+log_assert "parallel dataset_create_write_destroy's on multiple mirrored" \
 	"pools won't fail"
 
 log_onexit cleanup
@@ -86,7 +68,7 @@ stress_timeout $STRESS_TIMEOUT $child_pids
 
 while (( child > 0 )); do
 	(( child -= 1 ))
-	log_must $RM -f $stresslog.$child
+	log_must rm -f $stresslog.$child
 done
 
 log_pass

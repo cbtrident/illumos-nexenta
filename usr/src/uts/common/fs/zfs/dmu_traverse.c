@@ -40,8 +40,6 @@
 #include <sys/zfeature.h>
 
 int32_t zfs_pd_bytes_max = 50 * 1024 * 1024;	/* 50MB */
-
-/* temporarily disable birth_hole feature */
 boolean_t send_holes_without_birth_time = B_TRUE;
 
 typedef struct prefetch_data {

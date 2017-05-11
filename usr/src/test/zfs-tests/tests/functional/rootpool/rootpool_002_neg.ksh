@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2014 Nexenta Systems, Inc.
 #
 
@@ -54,16 +54,16 @@ typeset tmpfile="/tmp/mounted-datasets.$$"
 # damage done by the attempted pool destroy. The destroy itself should fail,
 # but some filesystems can become unmounted in the process, and aren't
 # automatically remounted.
-$MOUNT -p | $AWK '{if ($4 == "zfs") print $1}' > $tmpfile
+mount -p | awk '{if ($4 == "zfs") print $1}' > $tmpfile
 
-log_mustnot $ZPOOL destroy $rootpool
+log_mustnot zpool destroy $rootpool
 
 # Remount any filesystems that the destroy attempt unmounted.
 while read ds; do
-	mounted $ds || log_must $ZFS mount $ds
+	mounted $ds || log_must zfs mount $ds
 done < $tmpfile
-$RM -f $tmpfile
+rm -f $tmpfile
 
-log_mustnot $ZFS destroy $rootpool
+log_mustnot zfs destroy $rootpool
 
 log_pass "rootpool/rootfs can not be destroyed"

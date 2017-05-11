@@ -21,7 +21,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2015, Joyent, Inc.
+ * Copyright 2016 Joyent, Inc.
  */
 
 /*
@@ -237,7 +237,8 @@ enum {
 	VMxo,		/* VMx instruction with optional prefix */
 	SVM,		/* AMD SVM instructions */
 	BLS,		/* BLSR, BLSMSK, BLSI */
-	FMA		/* FMA instructions, all VEX_RMrX */
+	FMA,		/* FMA instructions, all VEX_RMrX */
+	ADX		/* ADX instructions, support REX.w, mod_rm->mod_reg */
 };
 
 /*
@@ -569,7 +570,7 @@ const instable_t dis_op0FC7[8] = {
 const instable_t dis_op0FC7m3[8] = {
 
 /*  [0]  */	INVALID,		INVALID,	INVALID,		INVALID,
-/*  [4]  */	INVALID,		INVALID,	TNS("rdrand",MG9),	INVALID,
+/*  [4]  */	INVALID,		INVALID,	TNS("rdrand",MG9),	TNS("rdseed", MG9),
 };
 
 /*
@@ -688,7 +689,7 @@ const instable_t dis_opSIMDdata16[256] = {
 /*  [70]  */	TNSZ("pshufd",XMMP,16),	INVALID,		INVALID,		INVALID,
 /*  [74]  */	TNSZ("pcmpeqb",XMM,16),	TNSZ("pcmpeqw",XMM,16),	TNSZ("pcmpeqd",XMM,16),	INVALID,
 /*  [78]  */	TNSZ("extrq",XMM2I,16),	TNSZ("extrq",XMM,16), INVALID,		INVALID,
-/*  [7C]  */	INVALID,		INVALID,		TNSZ("movd",XMM3MXS,4),	TNSZ("movdqa",XMMS,16),
+/*  [7C]  */	TNSZ("haddpd",XMM,16),	TNSZ("hsubpd",XMM,16),	TNSZ("movd",XMM3MXS,4),	TNSZ("movdqa",XMMS,16),
 
 /*  [80]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [84]  */	INVALID,		INVALID,		INVALID,		INVALID,
@@ -715,7 +716,7 @@ const instable_t dis_opSIMDdata16[256] = {
 /*  [C8]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [CC]  */	INVALID,		INVALID,		INVALID,		INVALID,
 
-/*  [D0]  */	INVALID,		TNSZ("psrlw",XMM,16),	TNSZ("psrld",XMM,16),	TNSZ("psrlq",XMM,16),
+/*  [D0]  */	TNSZ("addsubpd",XMM,16),TNSZ("psrlw",XMM,16),	TNSZ("psrld",XMM,16),	TNSZ("psrlq",XMM,16),
 /*  [D4]  */	TNSZ("paddq",XMM,16),	TNSZ("pmullw",XMM,16),	TNSZ("movq",XMMS,8),	TNS("pmovmskb",XMMX3),
 /*  [D8]  */	TNSZ("psubusb",XMM,16),	TNSZ("psubusw",XMM,16),	TNSZ("pminub",XMM,16),	TNSZ("pand",XMM,16),
 /*  [DC]  */	TNSZ("paddusb",XMM,16),	TNSZ("paddusw",XMM,16),	TNSZ("pmaxub",XMM,16),	TNSZ("pandn",XMM,16),
@@ -822,7 +823,7 @@ const instable_t dis_opSIMDrepnz[256] = {
 /*  [08]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [0C]  */	INVALID,		INVALID,		INVALID,		INVALID,
 
-/*  [10]  */	TNSZ("movsd",XMM,8),	TNSZ("movsd",XMMS,8),	INVALID,		INVALID,
+/*  [10]  */	TNSZ("movsd",XMM,8),	TNSZ("movsd",XMMS,8),	TNSZ("movddup",XMM,8),	INVALID,
 /*  [14]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [18]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [1C]  */	INVALID,		INVALID,		INVALID,		INVALID,
@@ -855,7 +856,7 @@ const instable_t dis_opSIMDrepnz[256] = {
 /*  [70]  */	TNSZ("pshuflw",XMMP,16),INVALID,		INVALID,		INVALID,
 /*  [74]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [78]  */	TNSZ("insertq",XMMX2I,16),TNSZ("insertq",XMM,8),INVALID,		INVALID,
-/*  [7C]  */	INVALID,		INVALID,		INVALID,		INVALID,
+/*  [7C]  */	TNSZ("haddps",XMM,16),	TNSZ("hsubps",XMM,16),	INVALID,		INVALID,
 
 /*  [80]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [84]  */	INVALID,		INVALID,		INVALID,		INVALID,
@@ -882,7 +883,7 @@ const instable_t dis_opSIMDrepnz[256] = {
 /*  [C8]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [CC]  */	INVALID,		INVALID,		INVALID,		INVALID,
 
-/*  [D0]  */	INVALID,		INVALID,		INVALID,		INVALID,
+/*  [D0]  */	TNSZ("addsubps",XMM,16),INVALID,		INVALID,		INVALID,
 /*  [D4]  */	INVALID,		INVALID,		TNS("movdq2q",XMMXM),	INVALID,
 /*  [D8]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [DC]  */	INVALID,		INVALID,		INVALID,		INVALID,
@@ -892,7 +893,7 @@ const instable_t dis_opSIMDrepnz[256] = {
 /*  [E8]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [EC]  */	INVALID,		INVALID,		INVALID,		INVALID,
 
-/*  [F0]  */	INVALID,		INVALID,		INVALID,		INVALID,
+/*  [F0]  */	TNS("lddqu",XMMM),	INVALID,		INVALID,		INVALID,
 /*  [F4]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [F8]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [FC]  */	INVALID,		INVALID,		INVALID,		INVALID,
@@ -1234,8 +1235,8 @@ const instable_t dis_opSIMDrepz[256] = {
 /*  [08]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [0C]  */	INVALID,		INVALID,		INVALID,		INVALID,
 
-/*  [10]  */	TNSZ("movss",XMM,4),	TNSZ("movss",XMMS,4),	INVALID,		INVALID,
-/*  [14]  */	INVALID,		INVALID,		INVALID,		INVALID,
+/*  [10]  */	TNSZ("movss",XMM,4),	TNSZ("movss",XMMS,4),	TNSZ("movsldup",XMM,16),INVALID,
+/*  [14]  */	INVALID,		INVALID,		TNSZ("movshdup",XMM,16),INVALID,
 /*  [18]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [1C]  */	INVALID,		INVALID,		INVALID,		INVALID,
 
@@ -1405,6 +1406,15 @@ const instable_t dis_op0F38F1[2] = {
 		TS("movbe",MOVBE),
 };
 
+/*
+ * The following table is used to distinguish between adox and adcx which share
+ * the same opcodes.
+ */
+const instable_t dis_op0F38F6[2] = {
+/*  [00]  */	TNS("adcx",ADX),
+		TNS("adox",ADX),
+};
+
 const instable_t dis_op0F38[256] = {
 /*  [00]  */	TNSZ("pshufb",XMM_66o,16),TNSZ("phaddw",XMM_66o,16),TNSZ("phaddd",XMM_66o,16),TNSZ("phaddsw",XMM_66o,16),
 /*  [04]  */	TNSZ("pmaddubsw",XMM_66o,16),TNSZ("phsubw",XMM_66o,16),	TNSZ("phsubd",XMM_66o,16),TNSZ("phsubsw",XMM_66o,16),
@@ -1468,8 +1478,8 @@ const instable_t dis_op0F38[256] = {
 
 /*  [C0]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [C4]  */	INVALID,		INVALID,		INVALID,		INVALID,
-/*  [C8]  */	INVALID,		INVALID,		INVALID,		INVALID,
-/*  [CC]  */	INVALID,		INVALID,		INVALID,		INVALID,
+/*  [C8]  */	TNSZ("sha1nexte",XMM,16),TNSZ("sha1msg1",XMM,16),TNSZ("sha1msg2",XMM,16),TNSZ("sha256rnds2",XMM,16),
+/*  [CC]  */	TNSZ("sha256msg1",XMM,16),TNSZ("sha256msg2",XMM,16),INVALID,		INVALID,
 
 /*  [D0]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [D4]  */	INVALID,		INVALID,		INVALID,		INVALID,
@@ -1481,7 +1491,7 @@ const instable_t dis_op0F38[256] = {
 /*  [E8]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [EC]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [F0]  */	IND(dis_op0F38F0),	IND(dis_op0F38F1),	INVALID,		INVALID,
-/*  [F4]  */	INVALID,		INVALID,		INVALID,		INVALID,
+/*  [F4]  */	INVALID,		INVALID,		IND(dis_op0F38F6),	INVALID,
 /*  [F8]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [FC]  */	INVALID,		INVALID,		INVALID,		INVALID,
 };
@@ -1531,8 +1541,6 @@ const instable_t dis_opAVX660F38[256] = {
 /*  [84]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [88]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [8C]  */	TSaZ("vpmaskmov",VEX_RMrX,16),INVALID,		TSaZ("vpmaskmov",VEX_RRM,16),INVALID,
-
-/* XXX All of the gather things are a bit wrong. We're not properly changing the last character */
 
 /*  [90]  */	TNSZ("vpgatherd",VEX_SbVM,16),TNSZ("vpgatherq",VEX_SbVM,16),TNSZ("vgatherdp",VEX_SbVM,16),TNSZ("vgatherqp",VEX_SbVM,16),
 /*  [94]  */	INVALID,		INVALID,		TNSZ("vfmaddsub132p",FMA,16),TNSZ("vfmsubadd132p",FMA,16),
@@ -1633,7 +1641,7 @@ const instable_t dis_op0F3A[256] = {
 /*  [C0]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [C4]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [C8]  */	INVALID,		INVALID,		INVALID,		INVALID,
-/*  [CC]  */	INVALID,		INVALID,		INVALID,		INVALID,
+/*  [CC]  */	TNSZ("sha1rnds4",XMMP,16),INVALID,		INVALID,		INVALID,
 
 /*  [D0]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [D4]  */	INVALID,		INVALID,		INVALID,		INVALID,
@@ -1734,6 +1742,15 @@ const instable_t dis_opAVX660F3A[256] = {
 };
 
 /*
+ * 	Decode table for 0x0F0D which uses the first byte of the mod_rm to
+ * 	indicate a sub-code.
+ */
+const instable_t dis_op0F0D[8] = {
+/*  [00]  */	INVALID,		TNS("prefetchw",PREF),	TNS("prefetchwt1",PREF),INVALID,
+/*  [04]  */	INVALID,		INVALID,		INVALID,		INVALID,
+};
+
+/*
  *	Decode table for 0x0F opcodes
  */
 
@@ -1742,7 +1759,7 @@ const instable_t dis_op0F[16][16] = {
 /*  [00]  */	IND(dis_op0F00),	IND(dis_op0F01),	TNS("lar",MR),		TNS("lsl",MR),
 /*  [04]  */	INVALID,		TNS("syscall",NORM),	TNS("clts",NORM),	TNS("sysret",NORM),
 /*  [08]  */	TNS("invd",NORM),	TNS("wbinvd",NORM),	INVALID,		TNS("ud2",NORM),
-/*  [0C]  */	INVALID,		INVALID,		INVALID,		INVALID,
+/*  [0C]  */	INVALID,		IND(dis_op0F0D),	INVALID,		INVALID,
 }, {
 /*  [10]  */	TNSZ("movups",XMMO,16),	TNSZ("movups",XMMOS,16),TNSZ("movlps",XMMO,8),	TNSZ("movlps",XMMOS,8),
 /*  [14]  */	TNSZ("unpcklps",XMMO,16),TNSZ("unpckhps",XMMO,16),TNSZ("movhps",XMMOM,8),TNSZ("movhps",XMMOMS,8),
@@ -1755,7 +1772,7 @@ const instable_t dis_op0F[16][16] = {
 /*  [2C]  */	TNSZ("cvttps2pi",XMMOXMM,8),TNSZ("cvtps2pi",XMMOXMM,8),TNSZ("ucomiss",XMMO,4),TNSZ("comiss",XMMO,4),
 }, {
 /*  [30]  */	TNS("wrmsr",NORM),	TNS("rdtsc",NORM),	TNS("rdmsr",NORM),	TNS("rdpmc",NORM),
-/*  [34]  */	TNSx("sysenter",NORM),	TNSx("sysexit",NORM),	INVALID,		INVALID,
+/*  [34]  */	TNS("sysenter",NORM),	TNS("sysexit",NORM),	INVALID,		INVALID,
 /*  [38]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [3C]  */	INVALID,		INVALID,		INVALID,		INVALID,
 }, {
@@ -2061,19 +2078,19 @@ const instable_t dis_opFP1n2[8][8] = {
 /*  [2,0]  */	TNS("fiaddl",M),	TNS("fimull",M),	TNS("ficoml",M),	TNS("ficompl",M),
 /*  [2,4]  */	TNS("fisubl",M),	TNS("fisubrl",M),	TNS("fidivl",M),	TNS("fidivrl",M),
 }, {
-/*  [3,0]  */	TNS("fildl",M),		INVALID,		TNS("fistl",M),		TNS("fistpl",M),
+/*  [3,0]  */	TNS("fildl",M),		TNSZ("tisttpl",M,4),	TNS("fistl",M),		TNS("fistpl",M),
 /*  [3,4]  */	INVALID,		TNSZ("fldt",M,10),	INVALID,		TNSZ("fstpt",M,10),
 }, {
 /*  [4,0]  */	TNSZ("faddl",M,8),	TNSZ("fmull",M,8),	TNSZ("fcoml",M,8),	TNSZ("fcompl",M,8),
 /*  [4,1]  */	TNSZ("fsubl",M,8),	TNSZ("fsubrl",M,8),	TNSZ("fdivl",M,8),	TNSZ("fdivrl",M,8),
 }, {
-/*  [5,0]  */	TNSZ("fldl",M,8),	INVALID,		TNSZ("fstl",M,8),	TNSZ("fstpl",M,8),
+/*  [5,0]  */	TNSZ("fldl",M,8),	TNSZ("fisttpll",M,8),	TNSZ("fstl",M,8),	TNSZ("fstpl",M,8),
 /*  [5,4]  */	TNSZ("frstor",M,108),	INVALID,		TNSZ("fnsave",M,108),	TNSZ("fnstsw",M,2),
 }, {
 /*  [6,0]  */	TNSZ("fiadd",M,2),	TNSZ("fimul",M,2),	TNSZ("ficom",M,2),	TNSZ("ficomp",M,2),
 /*  [6,4]  */	TNSZ("fisub",M,2),	TNSZ("fisubr",M,2),	TNSZ("fidiv",M,2),	TNSZ("fidivr",M,2),
 }, {
-/*  [7,0]  */	TNSZ("fild",M,2),	INVALID,		TNSZ("fist",M,2),	TNSZ("fistp",M,2),
+/*  [7,0]  */	TNSZ("fild",M,2),	TNSZ("fisttp",M,2),	TNSZ("fist",M,2),	TNSZ("fistp",M,2),
 /*  [7,4]  */	TNSZ("fbld",M,10),	TNSZ("fildll",M,8),	TNSZ("fbstp",M,10),	TNSZ("fistpll",M,8),
 } };
 
@@ -3269,12 +3286,15 @@ dtrace_disx86(dis86_t *x, uint_t cpu_mode)
 				goto error;
 #endif
 			switch (dp->it_adrmode) {
+				case XMMP:
+					break;
 				case XMMP_66r:
 				case XMMPRM_66r:
 				case XMM3PM_66r:
 					if (opnd_size_prefix == 0) {
 						goto error;
 					}
+
 					break;
 				case XMMP_66o:
 					if (opnd_size_prefix == 0) {
@@ -3310,11 +3330,50 @@ dtrace_disx86(dis86_t *x, uint_t cpu_mode)
 					dp++;
 				}
 			}
+
+			/*
+			 * The adx family of instructions (adcx and adox)
+			 * continue the classic Intel tradition of abusing
+			 * arbitrary prefixes without actually meaning the
+			 * prefix bit. Therefore, if we find either the
+			 * opnd_size_prefix or rep_prefix we end up zeroing it
+			 * out after making our determination so as to ensure
+			 * that we don't get confused and accidentally print
+			 * repz prefixes and the like on these instructions.
+			 *
+			 * In addition, these instructions are actually much
+			 * closer to AVX instructions in semantics. Importantly,
+			 * they always default to having 32-bit operands.
+			 * However, if the CPU is in 64-bit mode, then and only
+			 * then, does it use REX.w promotes things to 64-bits
+			 * and REX.r allows 64-bit mode to use register r8-r15.
+			 */
+			if (dp->it_indirect == (instable_t *)dis_op0F38F6) {
+				dp = dp->it_indirect;
+				if (opnd_size_prefix == 0 &&
+				    rep_prefix == 0xf3) {
+					/* It is adox */
+					dp++;
+				} else if (opnd_size_prefix != 0x66 &&
+				    rep_prefix != 0) {
+					/* It isn't adcx */
+					goto error;
+				}
+				opnd_size_prefix = 0;
+				rep_prefix = 0;
+				opnd_size = SIZE32;
+				if (rex_prefix & REX_W)
+					opnd_size = SIZE64;
+			}
+
 #ifdef DIS_TEXT
 			if (strcmp(dp->it_name, "INVALID") == 0)
 				goto error;
 #endif
 			switch (dp->it_adrmode) {
+				case ADX:
+				case XMM:
+					break;
 				case RM_66r:
 				case XMM_66r:
 				case XMMM_66r:
@@ -3404,9 +3463,12 @@ dtrace_disx86(dis86_t *x, uint_t cpu_mode)
 		goto error;
 
 	/*
-	 * deal with MMX/SSE opcodes which are changed by prefixes
+	 * Deal with MMX/SSE opcodes which are changed by prefixes. Note, we do
+	 * need to include UNKNOWN below, as we may have instructions that
+	 * actually have a prefix, but don't exist in any other form.
 	 */
 	switch (dp->it_adrmode) {
+	case UNKNOWN:
 	case MMO:
 	case MMOIMPL:
 	case MMO3P:
@@ -3719,6 +3781,7 @@ dtrace_disx86(dis86_t *x, uint_t cpu_mode)
 
 	/* memory or register operand to register, with 'w' bit	*/
 	case MRw:
+	case ADX:
 		wbit = WBIT(opcode2);
 		STANDARD_MODRM(x, mode, reg, r_m, rex_prefix, wbit, 0);
 		break;
@@ -4015,6 +4078,18 @@ just_mem:
 			} else if (r_m == 1) {
 #ifdef DIS_TEXT
 				(void) strncpy(x->d86_mnem, "mwait", OPLEN);
+#endif
+				NOMEM;
+				break;
+			} else if (r_m == 2) {
+#ifdef DIS_TEXT
+				(void) strncpy(x->d86_mnem, "clac", OPLEN);
+#endif
+				NOMEM;
+				break;
+			} else if (r_m == 3) {
+#ifdef DIS_TEXT
+				(void) strncpy(x->d86_mnem, "stac", OPLEN);
 #endif
 				NOMEM;
 				break;
@@ -4367,6 +4442,44 @@ xmmprm:
 			x->d86_opnd[0] = x->d86_opnd[1];
 			x->d86_opnd[1] = x->d86_opnd[2];
 			x->d86_numopnds = 2;
+		}
+
+		/*
+		 * The pclmulqdq instruction has a series of alternate names for
+		 * various encodings of the immediate byte. As such, if we
+		 * happen to find it and the immediate value matches, we'll
+		 * rewrite the mnemonic.
+		 */
+		if (strcmp(dp->it_name, "pclmulqdq") == 0) {
+			boolean_t changed = B_TRUE;
+			switch (x->d86_opnd[0].d86_value) {
+			case 0x00:
+				(void) strncpy(x->d86_mnem, "pclmullqlqdq",
+				    OPLEN);
+				break;
+			case 0x01:
+				(void) strncpy(x->d86_mnem, "pclmulhqlqdq",
+				    OPLEN);
+				break;
+			case 0x10:
+				(void) strncpy(x->d86_mnem, "pclmullqhqdq",
+				    OPLEN);
+				break;
+			case 0x11:
+				(void) strncpy(x->d86_mnem, "pclmulhqhqdq",
+				    OPLEN);
+				break;
+			default:
+				changed = B_FALSE;
+				break;
+			}
+
+			if (changed == B_TRUE) {
+				x->d86_opnd[0].d86_value_size = 0;
+				x->d86_opnd[0] = x->d86_opnd[1];
+				x->d86_opnd[1] = x->d86_opnd[2];
+				x->d86_numopnds = 2;
+			}
 		}
 #endif
 		break;

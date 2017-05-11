@@ -10,35 +10,14 @@
 #
 
 #
-# Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
-# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 include $(SRC)/Makefile.master
 
-SRCS = delphix.run openindiana.run omnios.run consistent.run \
-    perf-regression.run \
-    consistent.functional.run consistent.functional.cli_root.run \
-    consistent.stress.run functional.run functional.cli_root.run \
-    nexenta.run stress.run 
-
 ROOTOPTPKG = $(ROOT)/opt/zfs-tests
-RUNFILES = $(ROOTOPTPKG)/runfiles
+TARGETDIR = $(ROOTOPTPKG)/runfiles
 
-CMDS = $(SRCS:%=$(RUNFILES)/%)
-$(CMDS) := FILEMODE = 0444
-
-all: $(SRCS)
-
-install: $(CMDS)
-
-clean lint clobber:
-
-$(CMDS): $(RUNFILES) $(SRCS)
-
-$(RUNFILES):
-	$(INS.dir)
-
-$(RUNFILES)/%: %
-	$(INS.file)
+include $(SRC)/test/zfs-tests/Makefile.com

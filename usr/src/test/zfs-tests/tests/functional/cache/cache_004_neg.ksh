@@ -26,10 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -54,15 +51,15 @@ log_onexit cleanup
 
 for type in "" "mirror" "raidz" "raidz2"
 do
-	log_must $ZPOOL create $TESTPOOL $type $VDEV \
+	log_must zpool create $TESTPOOL $type $VDEV \
 		cache $LDEV
 
 	ldev=$(random_get $LDEV)
 	typeset ldev2=$(random_get $LDEV2)
-	log_mustnot $ZPOOL attach $TESTPOOL $ldev $ldev2
+	log_mustnot zpool attach $TESTPOOL $ldev $ldev2
 	log_must check_vdev_state $TESTPOOL $ldev2 ""
 
-	log_must destroy_pool  $TESTPOOL
+	log_must destroy_pool $TESTPOOL
 done
 
 log_pass "Attaching a cache device fails for an existing cache device."

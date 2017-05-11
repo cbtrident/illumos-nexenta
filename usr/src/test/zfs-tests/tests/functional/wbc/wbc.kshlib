@@ -31,9 +31,9 @@ function disk_vendor
 	typeset disk=$1
 
 	if $(is_physical_device $disk) ; then
-		$ECHO inquiry | $FORMAT $disk | $NAWK  '/Vendor:/{print $NF}'
+		echo inquiry | format $disk | nawk  '/Vendor:/{print $NF}'
 	else
-		$ECHO UNKNOWN
+		echo UNKNOWN
 	fi
 }
 
@@ -42,9 +42,9 @@ function disk_model
 	typeset disk=$1
 
 	if $(is_physical_device $disk) ; then
-		$ECHO inquiry | $FORMAT $disk | $NAWK  '/Product:/{print $NF}'
+		echo inquiry | format $disk | nawk  '/Product:/{print $NF}'
 	else
-		$ECHO UNKNOWN
+		echo UNKNOWN
 	fi
 }
 
@@ -54,7 +54,7 @@ function disk_info
 	typeset vendor=$(disk_vendor $disk)
 	typeset model=$(disk_model $disk)
 
-	$ECHO "$vendor-$model"
+	echo "$vendor-$model"
 }
 
 function disk_is_ssd
@@ -62,7 +62,7 @@ function disk_is_ssd
 	typeset disk=$1
 
 	if $(is_physical_device $disk) ; then
-		if disk_info $disk | $EGREP -i "$SSD_MODELS" >/dev/null 2>&1 ; then
+		if disk_info $disk | egrep -i "$SSD_MODELS" >/dev/null 2>&1 ; then
 			return 0
 		fi
 	fi
@@ -107,7 +107,7 @@ function set_disks
 
 	# diskless setup
 	if [[ $HDD_COUNT -lt $MIN_HDD_COUNT || $SSD_COUNT -lt $MIN_SSD_COUNT ]] ; then
-		$MKDIR -p $VDEV_DIR
+		mkdir -p $VDEV_DIR
 
 		for HDD_COUNT in {1..$MIN_HDD_COUNT} ; do
 			eval "HDD_DISK$HDD_COUNT=\"$VDEV_DIR/hdd$HDD_COUNT\""
@@ -132,16 +132,16 @@ function set_disks
 		export SSD_DISK$item
 	done
 
-	export SSD_COUNT SSD_DISKS 
+	export SSD_COUNT SSD_DISKS
 }
 
 function test_disks
 {
-	$ECHO "SSD_COUNT=$SSD_COUNT"
-	$ECHO "HDD_COUNT=$HDD_COUNT"
+	echo "SSD_COUNT=$SSD_COUNT"
+	echo "HDD_COUNT=$HDD_COUNT"
 
-	$ECHO "SSD_DISKS = $SSD_DISKS"
-	$ECHO "HDD_DISKS = $HDD_DISKS"
+	echo "SSD_DISKS = $SSD_DISKS"
+	echo "HDD_DISKS = $HDD_DISKS"
 }
 
 function create_disks
@@ -154,15 +154,15 @@ function create_disks
 
 	for item in {1..$HDD_COUNT} ; do
 		eval "disk=\$HDD_DISK$item"
-		echo $MKFILE $VDEV_SIZE $disk
-		$MKFILE $VDEV_SIZE $disk
+		echo mkfile $VDEV_SIZE $disk
+		mkfile $VDEV_SIZE $disk
 		((ret |= $?))
 	done
 
 	for item in {1..$SSD_COUNT} ; do
 		eval "disk=\$SSD_DISK$item"
-		echo $MKFILE $VDEV_SIZE $disk
-		$MKFILE $VDEV_SIZE $disk
+		echo mkfile $VDEV_SIZE $disk
+		mkfile $VDEV_SIZE $disk
 		((ret |= $?))
 	done
 
@@ -174,7 +174,7 @@ function create_disks
 #
 function enable_krrp_debug
 {
-	$ECHO krrp_debug/W 1 | $MDB -kw
+	echo krrp_debug/W 1 | mdb -kw
 }
 
 #
@@ -182,7 +182,7 @@ function enable_krrp_debug
 #
 function disable_krrp_debug
 {
-	$ECHO krrp_debug/W 0 | $MDB -kw
+	echo krrp_debug/W 0 | mdb -kw
 }
 
 #
@@ -195,20 +195,20 @@ function display_status
 	typeset pool=$1
 	typeset -i ret=0
 
-	$ZPOOL status -xv $pool >/dev/null 2>&1
+	zpool status -xv $pool >/dev/null 2>&1
 	ret=$?
 
-	$ZPOOL iostat >/dev/null 2>&1
+	zpool iostat >/dev/null 2>&1
 	((ret |= $?))
 
 	typeset mntpnt=$(get_prop mountpoint $pool)
-	$DD if=/dev/urandom of=$mntpnt/testfile.$$ &
+	dd if=/dev/urandom of=$mntpnt/testfile.$$ &
 	typeset pid=$!
 
-	$ZPOOL iostat -v 1 60 > /dev/null
+	zpool iostat -v 1 60 > /dev/null
 	((ret |= $?))
 
-	$KILL -9 $pid
+	kill -9 $pid
 
 	return $ret
 }
@@ -224,10 +224,10 @@ function create_dataset # <dataset> [size]
 	fi
 
 	if [[ -d /$dataset_name ]] ; then
-		$RM -rf /$dataset_name
+		rm -rf /$dataset_name
 	fi
 
-	$ZFS create -p $dataset_name $size
+	zfs create -p $dataset_name $size
 
 	return $?
 }
@@ -259,7 +259,7 @@ function create_pool #pool_name
 	fi
 
 	if [[ -d /$pool_name ]] ; then
-		$RM -rf /$pool_name
+		rm -rf /$pool_name
 	fi
 
 	if [[ -z $pool_type ]] ; then
@@ -278,7 +278,7 @@ function create_pool #pool_name
 		pool_type=""
 	fi
 
-	$ZPOOL create -f \
+	zpool create -f \
 		-O compression=$compression \
 		-O recordsize=$recordsize \
 		-o cachefile=none \
@@ -319,7 +319,7 @@ function create_pool_special #pool_name
 	fi
 
 	if [[ -d /$pool_name ]] ; then
-		$RM -rf /$pool_name
+		rm -rf /$pool_name
 	fi
 
 	if [[ -z $pool_type ]] ; then
@@ -354,7 +354,7 @@ function create_pool_special #pool_name
 		special_type=""
 	fi
 
-	$ZPOOL create -f \
+	zpool create -f \
 		-O compression=$compression \
 		-O recordsize=$recordsize \
 		-o cachefile=none \
@@ -395,7 +395,7 @@ function get_wbc_mode # <dataset>
 		return 1
 	fi
 
-	$ZFS get -H -o value wbc_mode $dataset
+	zfs get -H -o value wbc_mode $dataset
 
 	return $?
 }
@@ -415,7 +415,7 @@ function set_wbc_mode # <dataset> <mode>
 		return 1
 	fi
 
-	$ZFS set wbc_mode=$mode $dataset
+	zfs set wbc_mode=$mode $dataset
 	value=$(get_wbc_mode $dataset)
 
 	if [[ "$mode" != "$value" ]] ; then
@@ -470,21 +470,21 @@ function check_pool_errors # <pool> [<vdev>]
 	typeset c_cksum=0
 	typeset tmpfile=/var/tmp/file.$$
 	typeset healthstr="pool '$pool' is healthy"
-	typeset output=$($ZPOOL status -x $pool)
+	typeset output=$(zpool status -x $pool)
 
 	if [[ "$output" == "$healthstr" ]] ; then
 		return $errnum
 	fi
 
-	$ZPOOL status -x $pool | $EGREP -v "^$" | \
-		$EGREP -v "special|pool:|state:|config:|errors:" >$tmpfile
+	zpool status -x $pool | egrep -v "^$" | \
+		egrep -v "special|pool:|state:|config:|errors:" >$tmpfile
 
 	typeset line
 	typeset -i fetchbegin=1
 
 	while read line; do
 		if [[ $fetchbegin -ne 0 ]] ; then
-			$ECHO $line | $GREP "NAME" >/dev/null 2>&1
+			echo $line | grep "NAME" >/dev/null 2>&1
 			if [[ $? -eq 0 ]] ; then
 				fetchbegin=0
 				continue
@@ -492,14 +492,14 @@ function check_pool_errors # <pool> [<vdev>]
 		fi
 
 		if [[ -n $checkvdev ]] ; then
-			$ECHO $line | $GREP $checkvdev >/dev/null 2>&1
+			echo $line | grep $checkvdev >/dev/null 2>&1
 			if [[ $? -ne 0 ]] ; then
 				continue
 			fi
 
-			c_read=`$ECHO $line | $AWK '{print $3}'`
-			c_write=`$ECHO $line | $AWK '{print $4}'`
-			c_cksum=`$ECHO $line | $AWK '{print $5}'`
+			c_read=`echo $line | awk '{print $3}'`
+			c_write=`echo $line | awk '{print $4}'`
+			c_cksum=`echo $line | awk '{print $5}'`
 
 			if [[ $c_read != 0 || $c_write != 0 || $c_cksum != 0 ]] ; then
 				(( errnum = errnum + 1 ))
@@ -508,9 +508,9 @@ function check_pool_errors # <pool> [<vdev>]
 			break
 		fi
 
-		c_read=`$ECHO $line | $AWK '{print $3}'`
-		c_write=`$ECHO $line | $AWK '{print $4}'`
-		c_cksum=`$ECHO $line | $AWK '{print $5}'`
+		c_read=`echo $line | awk '{print $3}'`
+		c_write=`echo $line | awk '{print $4}'`
+		c_cksum=`echo $line | awk '{print $5}'`
 
 		if [[ $c_read != 0 || $c_write != 0 || $c_cksum != 0 ]] ; then
 			(( errnum = errnum + 1 ))
@@ -518,7 +518,7 @@ function check_pool_errors # <pool> [<vdev>]
 
 	done <$tmpfile
 
-	$RM -f $tmpfile
+	rm -f $tmpfile
 
 	return $errnum
 }
@@ -541,13 +541,13 @@ function get_pool_prop # <property> <pool>
 		log_fail "Pool '$pool' does not exist."
 	fi
 
-	value=$($ZPOOL get -H -o value $property $pool)
+	value=$(zpool get -H -o value $property $pool)
 
 	if [[ $? != 0 ]]; then
 		log_fail "Unable to get property '$property' for pool '$pool'."
 	fi
 
-	$ECHO $value
+	echo $value
 
 	return 0
 }
@@ -571,7 +571,7 @@ function set_pool_prop # <property> <value> <pool>
 		log_fail "The pool name is not defined."
 	fi
 
-	$ZPOOL set $property=$value $pool
+	zpool set $property=$value $pool
 
 	if [[ $? != 0 ]]; then
 		log_note "Unable to set '$property' property to" \

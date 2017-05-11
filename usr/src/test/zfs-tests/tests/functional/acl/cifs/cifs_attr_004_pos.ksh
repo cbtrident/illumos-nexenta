@@ -52,10 +52,10 @@ function cleanup
 
 	for fs in $TESTPOOL/$TESTFS $TESTPOOL ; do
 		mtpt=$(get_prop mountpoint $fs)
-		log_must $RM -rf $mtpt/file.* $mtpt/dir.*
+		log_must rm -rf $mtpt/file.* $mtpt/dir.*
 	done
 
-	[[ -f $TESTFILE ]] && $RM $TESTFILE
+	[[ -f $TESTFILE ]] && rm $TESTFILE
 }
 
 #
@@ -75,7 +75,7 @@ function set_attribute
 			attr="${attr}q"
 		fi
 	fi
-	$CHMOD S+c${attr} $object
+	chmod S+c${attr} $object
 	return $?
 }
 
@@ -101,7 +101,7 @@ function clear_attribute
 		fi
 	fi
 
-	$CHMOD S-c${attr} $object
+	chmod S-c${attr} $object
 	return $?
 }
 
@@ -120,19 +120,19 @@ log_assert "Verify writable open handle still works after " \
     "setting the DOS Readonly flag on a file."
 log_onexit cleanup
 
-$ECHO "$TESTSTR" > $TESTFILE
+echo "$TESTSTR" > $TESTFILE
 
 typeset gobject
 typeset gattr
 for fs in $FS ; do
 	mtpt=$(get_prop mountpoint $fs)
-	$CHMOD 777 $mtpt
+	chmod 777 $mtpt
 	for user in root $ZFS_ACL_STAFF1; do
 		log_must set_cur_usr $user
 		for file in $FILES ; do
 			gobject=$mtpt/$file
 			create_object "file" $gobject $ZFS_ACL_CUR_USER
-			log_must $DOS_RO_CMD $gobject
+			log_must dos_ro $gobject
 			destroy_object $gobject
 		done
 	done

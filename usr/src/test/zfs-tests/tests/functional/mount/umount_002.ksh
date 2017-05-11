@@ -32,20 +32,21 @@
 
 for fs in 1 2 3; do
 	log_must mounted $TESTDIR.$fs
-	log_must $ZFS umount $TESTPOOL/$TESTFS.$fs
+	log_must zfs umount $TESTPOOL/$TESTFS.$fs
 	log_must unmounted $TESTDIR.$fs
-	log_must $ZFS mount $TESTPOOL/$TESTFS.$fs
+	log_must zfs mount $TESTPOOL/$TESTFS.$fs
 	log_must mounted $TESTDIR.$fs
 
 	for fn in $(seq 1 8096); do
-		log_must $DD if=/dev/urandom of=$TESTDIR.$fs/file$fn bs=1024 count=1
+		log_must dd if=/dev/urandom of=$TESTDIR.$fs/file$fn bs=1024 \
+		    count=1
 	done
 
-	log_must $ZFS umount $TESTPOOL/$TESTFS.$fs
+	log_must zfs umount $TESTPOOL/$TESTFS.$fs
 	log_must unmounted $TESTDIR.$fs
-	log_must $ZFS mount $TESTPOOL/$TESTFS.$fs
+	log_must zfs mount $TESTPOOL/$TESTFS.$fs
 	log_must mounted $TESTDIR.$fs
-	log_must $RM -f $TESTDIR.$fs/file*
+	log_must rm -f $TESTDIR.$fs/file*
 done
 
 log_pass "All file systems are unmounted"

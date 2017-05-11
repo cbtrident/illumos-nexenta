@@ -26,8 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 #
 
@@ -36,10 +35,10 @@
 log_must destroy_pool $TESTPOOL
 
 for i in 1 2 3; do
-        dir=$TESTDIR.$i
-        [[ -e $dir ]] && log_must $RM -rf $dir
+	dir=$TESTDIR.$i
+	[[ -e $dir ]] && log_must rm -rf $dir
 done
 
 for dir in $TESTDIRS; do
-	$RM -rf $dir
+	rm -rf $dir
 done

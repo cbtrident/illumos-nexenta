@@ -25,7 +25,7 @@
 #
 
 #
-# Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 #
 
 PROG= zhack
@@ -48,9 +48,6 @@ CFLAGS += $(CCVERBOSE)
 CFLAGS64 += $(CCVERBOSE)
 CPPFLAGS += -D_LARGEFILE64_SOURCE=1 -D_REENTRANT -DDEBUG $(INCS)
 
-# lint complains about unused inline functions, even though
-# they are "inline", not "static inline", with "extern inline"
-# implementations and usage in libzpool.
 LINTFLAGS += -erroff=E_STATIC_UNUSED
 LINTFLAGS64 += -erroff=E_STATIC_UNUSED
 

@@ -36,6 +36,10 @@ VERS=		.1
 CPP=		/usr/lib/cpp
 TARGET_ARCH=	amd64
 
+# include comm page definitions
+include $(SRC)/lib/commpage/Makefile.shared.com
+include $(SRC)/lib/commpage/Makefile.shared.targ
+
 # objects are grouped by source directory
 
 # local objects
@@ -106,6 +110,7 @@ COMOBJS=			\
 	strtoull.o
 
 GENOBJS=			\
+	$(COMMPAGE_OBJS)	\
 	_getsp.o		\
 	abs.o			\
 	alloca.o		\
@@ -241,6 +246,7 @@ COMSYSOBJS=			\
 	processor_bind.o	\
 	processor_info.o	\
 	profil.o		\
+	psecflagsset.o		\
 	putmsg.o		\
 	putpmsg.o		\
 	pwrite.o		\
@@ -281,6 +287,7 @@ COMSYSOBJS=			\
 
 SYSOBJS=			\
 	__clock_gettime.o	\
+	__clock_gettime_sys.o	\
 	__getcontext.o		\
 	__uadmin.o		\
 	_lwp_mutex_unlock.o	\
@@ -493,6 +500,7 @@ PORTGEN=			\
 	priocntl.o		\
 	privlib.o		\
 	priv_str_xlate.o	\
+	psecflags.o		\
 	psiginfo.o		\
 	psignal.o		\
 	pt.o			\
@@ -806,6 +814,9 @@ RTOBJS=				\
 	shm.o			\
 	sigev_thread.o
 
+SECFLAGSOBJS=			\
+	secflags.o
+
 TPOOLOBJS=			\
 	thread_pool.o
 
@@ -958,6 +969,7 @@ MOSTOBJS=			\
 	$(PORTSYS64)		\
 	$(AIOOBJS)		\
 	$(RTOBJS)		\
+	$(SECFLAGSOBJS)		\
 	$(TPOOLOBJS)		\
 	$(THREADSOBJS)		\
 	$(THREADSMACHOBJS)	\
@@ -1059,7 +1071,7 @@ BUILD.AR= $(RM) $@ ; \
 	$(AR) q $@ `$(LORDER) $(MOSTOBJS:%=$(DIR)/%) | $(GREP) -v ' L ' | $(TSORT)`
 
 # extra files for the clean target
-CLEANFILES=			\
+CLEANFILES +=			\
 	$(LIBCDIR)/port/gen/errlst.c	\
 	$(LIBCDIR)/port/gen/new_list.c	\
 	assym.h			\
@@ -1086,6 +1098,7 @@ SRCS=							\
 	$(PORTSYS:%.o=$(LIBCDIR)/port/sys/%.c)			\
 	$(AIOOBJS:%.o=$(LIBCDIR)/port/aio/%.c)			\
 	$(RTOBJS:%.o=$(LIBCDIR)/port/rt/%.c)			\
+	$(SECFLAGSOBJS:%.o=$(SRC)/common/secflags/%.c)		\
 	$(TPOOLOBJS:%.o=$(LIBCDIR)/port/tpool/%.c)		\
 	$(THREADSOBJS:%.o=$(LIBCDIR)/port/threads/%.c)		\
 	$(THREADSMACHOBJS:%.o=threads/%.c)		\
@@ -1182,6 +1195,8 @@ $(PORTI18N_COND:%=pics/%) := \
 	CPPFLAGS += -D_WCS_LONGLONG
 
 pics/arc4random.o :=	CPPFLAGS += -I$(SRC)/common/crypto/chacha
+
+pics/__clock_gettime.o := CPPFLAGS += $(COMMPAGE_CPPFLAGS)
 
 .KEEP_STATE:
 

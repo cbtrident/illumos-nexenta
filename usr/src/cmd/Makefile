@@ -21,10 +21,11 @@
 
 #
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright (c) 2012 Joyent, Inc.  All rights reserved.
+# Copyright 2016 Joyent, Inc.
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright (c) 2013 DEY Storage Systems, Inc. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
+# Copyright 2016 Toomas Soome <tsoome@me.com>
 # Copyright 2016 Nexenta Systems, Inc.
 #
 
@@ -160,6 +161,7 @@ COMMON_SUBDIRS=		\
 	fdetach		\
 	fdformat	\
 	fdisk		\
+	ficl		\
 	filesync	\
 	fgrep		\
 	file		\
@@ -191,6 +193,7 @@ COMMON_SUBDIRS=		\
 	grep		\
 	grep_xpg4	\
 	groups		\
+	growfs		\
 	grpck		\
 	gss		\
 	hal		\
@@ -202,6 +205,7 @@ COMMON_SUBDIRS=		\
 	hotplugd	\
 	hwdata		\
 	ibd_upgrade	\
+	iconv		\
 	id		\
 	idmap		\
 	infocmp		\
@@ -251,7 +255,6 @@ COMMON_SUBDIRS=		\
 	look		\
 	ls		\
 	luxadm		\
-	lvm		\
 	mach		\
 	mail		\
 	mailwrapper	\
@@ -347,7 +350,6 @@ COMMON_SUBDIRS=		\
 	refer		\
 	regcmp		\
 	renice		\
-	rexd		\
 	rm		\
 	rmdir		\
 	rmformat	\
@@ -457,6 +459,7 @@ COMMON_SUBDIRS=		\
 	wracct		\
 	write		\
 	xargs		\
+	xhci		\
 	xstr		\
 	yes		\
 	ypcmd		\
@@ -480,6 +483,7 @@ COMMON_SUBDIRS=		\
 	ztest
 
 i386_SUBDIRS=		\
+	acpi		\
 	acpihpd		\
 	addbadsec	\
 	biosdev		\
@@ -604,6 +608,7 @@ MSGSUBDIRS=		\
 	head		\
 	hostname	\
 	hotplug		\
+	iconv		\
 	id		\
 	idmap		\
 	isaexec		\
@@ -625,7 +630,6 @@ MSGSUBDIRS=		\
 	logins		\
 	ls		\
 	luxadm		\
-	lvm		\
 	mailx		\
 	make		\
 	man		\

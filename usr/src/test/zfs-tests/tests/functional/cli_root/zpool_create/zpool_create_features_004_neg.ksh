@@ -21,10 +21,7 @@
 #
 
 #
-# Copyright (c) 2012 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -58,7 +55,7 @@ log_assert "'zpool create' with invalid feature names/states fails"
 log_onexit cleanup
 
 for prop in $properties; do
-	log_mustnot $ZPOOL create -f -o "$prop" $TESTPOOL $DISKS
+	log_mustnot zpool create -f -o "$prop" $TESTPOOL $DISKS
 	log_mustnot datasetexists $TESTPOOL
 done
 

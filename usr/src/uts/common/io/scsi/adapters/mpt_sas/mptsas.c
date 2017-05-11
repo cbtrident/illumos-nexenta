@@ -2075,7 +2075,6 @@ mptsas_do_detach(dev_info_t *dip)
 	ASSERT(TAILQ_EMPTY(&mpt->m_fminj_cmdq));
 #endif
 
-
 	mptsas_smp_teardown(mpt);
 	mptsas_hba_teardown(mpt);
 

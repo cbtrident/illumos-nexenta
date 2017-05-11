@@ -57,6 +57,7 @@ DOCAPIDESTDIR=$(DOCDESTDIR)/api
 DOCEXAMPLESDESTDIR=$(DOCDESTDIR)/examples
 DOCHTMLDESTDIR=$(DOCDESTDIR)/html
 DOCIMAGESDESTDIR=$(DOCDESTDIR)/images
+$(BLD_JAVA_8)XDOCLINT_OPTION=-Xdoclint:none
 
 $(JARDESTDIR)/%: $(JARS)/%
 	$(INS.file)
@@ -191,7 +192,7 @@ $(DOCAPIDESTDIR)/index.html: $(DTRACE_API_CLASSES)
 		-@mkdir -p $(DOCAPIDESTDIR)
 		-$(RM) -r $(DOCAPIDESTDIR)/*
 		cd $(APIJAVASRC); umask 022; \
-		$(JAVADOC) -protected -use -notimestamp \
+		$(JAVADOC) -protected -use -notimestamp $(XDOCLINT_OPTION) \
 		-classpath $(APICLASSPATH) -d $(DOCAPIDESTDIR) \
 		$(PKGNAME)
 

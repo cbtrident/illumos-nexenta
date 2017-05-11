@@ -24,21 +24,13 @@
 # Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# ident	"@(#)raidz_stress_002.ksh	1.1	07/10/09 SMI"
-#
 
 . ${STF_SUITE}/include/libtest.shlib
 . ${STF_SUITE}/tests/stress/replica_stress/replica_stress_common.kshlib
 
-###############################################################################
-#
-# __stc_assertion_start
-#
-# ID: raidz_stress_002
-#
 # DESCRIPTION:
 #	Running multiple copies of dataset_create_write_destroy,
-#	dataset_create_write_destroy_attr and dataset_xattr on separate 
+#	dataset_create_write_destroy_attr and dataset_xattr on separate
 #	raidz pools. Create new filesystem and write file at the same time.
 # 	At the same time, synchronize it every 10 seconds.
 #	The system shall not cause the system to fail, hang or panic.
@@ -61,19 +53,9 @@
 #          tests. The test is considered to have passed if the machine stays up
 #	   during the time the stress tests are running and doesn't hit the stf
 #	   time limit.
-#
-# TESTABILITY: explicit
-#
-# TEST_AUTOMATION_LEVEL: automated
-#
-# CODING_STATUS: COMPLETED (2006-06-08)
-#
-# __stc_assertion_end
-#
-###############################################################################
 
-log_assert "parallel dataset_create_write_destroy, " \
-	"dataset_create_write_destroy_attr , dataset_run_xattr " \
+log_assert "parallel dataset_create_write_destroy," \
+	"dataset_create_write_destroy_attr , dataset_run_xattr" \
 	"create separated filesystem and create files on them." \
 	"Then synchronize per 10 seconds won't fail"
 
@@ -82,8 +64,8 @@ function regular_sync #<seconds>
 	typeset -i timeout=$1
 
 	while true; do
-		$SLEEP $timeout
-		$SYNC
+		sleep $timeout
+		sync
 	done
 
 	exit 0
@@ -117,6 +99,6 @@ typeset sync_pid=$!
 # Monitor stress processes until they exit or timed out
 #
 stress_timeout $STRESS_TIMEOUT $child_pids
-$KILL -9 $sync_pid
+kill -9 $sync_pid
 
 log_pass

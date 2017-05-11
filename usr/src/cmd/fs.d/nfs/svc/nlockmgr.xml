@@ -22,6 +22,7 @@
 
 	Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
 	Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+	Copyright (c) 2012, 2015 by Delphix. All rights reserved.
 
 	NOTE:  This service manifest is not editable; its contents will
 	be overwritten by package or patch operations, including
@@ -38,7 +39,7 @@
 <service
 	name='network/nfs/nlockmgr'
 	type='service'
-	version='1'>
+	version='2'>
 
 	<dependency name='network'
 	    grouping='require_any'
@@ -72,7 +73,7 @@
 	    type='method'
 	    name='start'
 	    exec='/lib/svc/method/nlockmgr'
-	    timeout_seconds='60' />
+	    timeout_seconds='300' />
 
 	<exec_method
 	    type='method'

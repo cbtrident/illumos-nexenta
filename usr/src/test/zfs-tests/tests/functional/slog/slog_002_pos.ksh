@@ -26,10 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -57,8 +54,8 @@ do
 	do
 		for logtype in "" "mirror"
 		do
-			log_must $ZPOOL create $TESTPOOL $type $VDEV $spare $SDEV
-			log_must $ZPOOL add $TESTPOOL log $logtype $LDEV
+			log_must zpool create $TESTPOOL $type $VDEV $spare $SDEV
+			log_must zpool add $TESTPOOL log $logtype $LDEV
 			log_must display_status $TESTPOOL
 			typeset ldev=$(random_get $LDEV)
 			log_must verify_slog_device \

@@ -70,9 +70,9 @@ typeset dataset=$TESTPOOL/$TESTFS
 
 function cleanup
 {
-	log_must $RM $streamfile
-	log_must $ZFS destroy -rf $dataset/src
-	log_must $ZFS destroy -rf $dataset/dst
+	log_must rm $streamfile
+	log_must zfs destroy -rf $dataset/src
+	log_must zfs destroy -rf $dataset/dst
 }
 
 
@@ -80,31 +80,31 @@ log_assert "'zfs receive -FK' destroy file systems and do not destroy " \
 	"snapshots that do not exist on the sending side."
 log_onexit cleanup
 
-log_must $ZFS create $dataset/src
-log_must $ZFS create $dataset/src/fs1
-log_must $ZFS create $dataset/src/fs2
-log_must $ZFS snapshot -r $dataset/src@snap1
-log_must $ZFS send -R $dataset/src@snap1 > $streamfile
-log_must $ZFS receive $dataset/dst < $streamfile
+log_must zfs create $dataset/src
+log_must zfs create $dataset/src/fs1
+log_must zfs create $dataset/src/fs2
+log_must zfs snapshot -r $dataset/src@snap1
+log_must zfs send -R $dataset/src@snap1 > $streamfile
+log_must zfs receive $dataset/dst < $streamfile
 
-log_must $ZFS snapshot -r $dataset/src@snap2
-log_must $ZFS send -R -I $dataset/src@snap1 $dataset/src@snap2 > $streamfile
-log_must $ZFS receive $dataset/dst < $streamfile
-log_must $ZFS list $dataset/dst/fs1@snap1
-log_must $ZFS list $dataset/dst/fs1@snap2
-log_must $ZFS list $dataset/dst/fs2@snap1
-log_must $ZFS list $dataset/dst/fs2@snap2
+log_must zfs snapshot -r $dataset/src@snap2
+log_must zfs send -R -I $dataset/src@snap1 $dataset/src@snap2 > $streamfile
+log_must zfs receive $dataset/dst < $streamfile
+log_must zfs list $dataset/dst/fs1@snap1
+log_must zfs list $dataset/dst/fs1@snap2
+log_must zfs list $dataset/dst/fs2@snap1
+log_must zfs list $dataset/dst/fs2@snap2
 
-log_must $ZFS create $dataset/src/fs3
-log_must $ZFS snapshot -r $dataset/src@snap3
-log_must $ZFS destroy -r $dataset/src@snap1
-log_must $ZFS destroy -r $dataset/src/fs1
-log_must $ZFS send -R -I $dataset/src@snap2 $dataset/src@snap3 > $streamfile
-log_must $ZFS receive -FK $dataset/dst < $streamfile
-log_must $ZFS list $dataset/dst/fs2@snap1
-log_must $ZFS list $dataset/dst/fs2@snap2
-log_must $ZFS list $dataset/dst/fs2@snap3
-log_must $ZFS list $dataset/dst/fs3@snap3
-log_mustnot $ZFS list $dataset/dst/fs1
+log_must zfs create $dataset/src/fs3
+log_must zfs snapshot -r $dataset/src@snap3
+log_must zfs destroy -r $dataset/src@snap1
+log_must zfs destroy -r $dataset/src/fs1
+log_must zfs send -R -I $dataset/src@snap2 $dataset/src@snap3 > $streamfile
+log_must zfs receive -FK $dataset/dst < $streamfile
+log_must zfs list $dataset/dst/fs2@snap1
+log_must zfs list $dataset/dst/fs2@snap2
+log_must zfs list $dataset/dst/fs2@snap3
+log_must zfs list $dataset/dst/fs3@snap3
+log_mustnot zfs list $dataset/dst/fs1
 
 log_pass "Verifying 'zfs receive -FK' succeeds."

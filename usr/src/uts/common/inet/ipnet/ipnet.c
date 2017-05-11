@@ -22,6 +22,11 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
+ */
+
+/*
+ * Copyright (c) 2016, Joyent, Inc. All rights reserved.
  */
 
 /*
@@ -1970,7 +1975,7 @@ ipobs_register_hook(netstack_t *ns, pfv_t func)
 	VERIFY(hook != NULL);
 
 	/*
-	 * To register multiple hooks with he same callback function,
+	 * To register multiple hooks with the same callback function,
 	 * a unique name is needed.
 	 */
 	(void) snprintf(name, sizeof (name), "ipobserve_%p", (void *)hook);
@@ -2181,14 +2186,15 @@ ipnet_promisc_add(void *handle, uint_t how, void *data, uintptr_t *mhandle,
 	int		error;
 
 	ifp = (ipnetif_t *)handle;
+
+	if (how != DL_PROMISC_PHYS && how != DL_PROMISC_MULTI)
+		return (EINVAL);
+
 	ns = netstack_find_by_zoneid(ifp->if_zoneid);
 
-	if ((how == DL_PROMISC_PHYS) || (how == DL_PROMISC_MULTI)) {
-		error = ipnet_join_allmulti(ifp, ns->netstack_ipnet);
-		if (error != 0)
-			return (error);
-	} else {
-		return (EINVAL);
+	if ((error = ipnet_join_allmulti(ifp, ns->netstack_ipnet)) != 0) {
+		netstack_rele(ns);
+		return (error);
 	}
 
 	ipnet = kmem_zalloc(sizeof (*ipnet), KM_SLEEP);

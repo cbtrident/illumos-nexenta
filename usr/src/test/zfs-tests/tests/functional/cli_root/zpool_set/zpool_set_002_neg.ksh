@@ -26,6 +26,7 @@
 #
 
 #
+# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -49,7 +50,7 @@ verify_runnable "global"
 function cleanup {
 
 	destroy_pool_no_force bootfs
-	$RM /tmp/zpool_set_002.$$.dat
+	rm /tmp/zpool_set_002.$$.dat
 }
 
 log_assert "Malformed zpool set commands are rejected"
@@ -103,20 +104,20 @@ arguments[${#arguments[@]}]="bootfs=$bigname"
 # Create a pool called bootfs (so-called, so as to trip any clashes between
 # property name, and pool name)
 # Also create a filesystem in this pool
-log_must $MKFILE 64m /tmp/zpool_set_002.$$.dat
-log_must $ZPOOL create bootfs /tmp/zpool_set_002.$$.dat
-log_must $ZFS create bootfs/root
+log_must mkfile $MINVDEVSIZE /tmp/zpool_set_002.$$.dat
+log_must zpool create bootfs /tmp/zpool_set_002.$$.dat
+log_must zfs create bootfs/root
 
 typeset -i i=0;
 while [ $i -lt "${#arguments[@]}" ]
 do
-	log_mustnot eval "$ZPOOL set ${arguments[$i]} > /dev/null 2>&1"
+	log_mustnot eval "zpool set ${arguments[$i]} > /dev/null 2>&1"
 
 	# now also try with a valid pool in the argument list
-	log_mustnot eval "$ZPOOL set ${arguments[$i]}bootfs > /dev/null 2>&1"
+	log_mustnot eval "zpool set ${arguments[$i]}bootfs > /dev/null 2>&1"
 
 	# now also try with two valid pools in the argument list
-	log_mustnot eval "$ZPOOL set ${arguments[$i]}bootfs bootfs > /dev/null"
+	log_mustnot eval "zpool set ${arguments[$i]}bootfs bootfs > /dev/null"
 	i=$(( $i + 1))
 done
 

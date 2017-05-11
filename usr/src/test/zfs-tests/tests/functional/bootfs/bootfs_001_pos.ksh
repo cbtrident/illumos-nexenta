@@ -24,6 +24,9 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+
+#
+# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.
 #
 
@@ -47,11 +50,11 @@ function cleanup {
 	fi
 
 	if [[ -f $VDEV ]]; then
-		log_must $RM -f $VDEV
+		log_must rm -f $VDEV
 	fi
 }
 
-$ZPOOL set 2>&1 | $GREP bootfs > /dev/null
+zpool set 2>&1 | grep bootfs > /dev/null
 if [ $? -ne 0 ]
 then
         log_unsupported "bootfs pool property not supported on this release."
@@ -62,17 +65,17 @@ log_onexit cleanup
 
 typeset VDEV=/bootfs_001_pos_a.$$.dat
 
-log_must $MKFILE 400m $VDEV
+log_must mkfile $MINVDEVSIZE $VDEV
 create_pool "$TESTPOOL" "$VDEV"
-log_must $ZFS create $TESTPOOL/$TESTFS
+log_must zfs create $TESTPOOL/$TESTFS
 
-log_must $ZFS snapshot $TESTPOOL/$TESTFS@snap
-log_must $ZFS clone $TESTPOOL/$TESTFS@snap $TESTPOOL/clone
+log_must zfs snapshot $TESTPOOL/$TESTFS@snap
+log_must zfs clone $TESTPOOL/$TESTFS@snap $TESTPOOL/clone
 
-log_must $ZPOOL set bootfs=$TESTPOOL/$TESTFS $TESTPOOL
-log_must $ZPOOL set bootfs=$TESTPOOL/$TESTFS@snap $TESTPOOL
-log_must $ZPOOL set bootfs=$TESTPOOL/clone $TESTPOOL
+log_must zpool set bootfs=$TESTPOOL/$TESTFS $TESTPOOL
+log_must zpool set bootfs=$TESTPOOL/$TESTFS@snap $TESTPOOL
+log_must zpool set bootfs=$TESTPOOL/clone $TESTPOOL
 
-log_must $ZFS promote $TESTPOOL/clone
-log_must $ZPOOL set bootfs=$TESTPOOL/clone $TESTPOOL
+log_must zfs promote $TESTPOOL/clone
+log_must zpool set bootfs=$TESTPOOL/clone $TESTPOOL
 log_pass "Valid datasets are accepted as bootfs property values"

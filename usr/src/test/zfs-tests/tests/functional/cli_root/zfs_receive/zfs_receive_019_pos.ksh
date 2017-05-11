@@ -60,31 +60,31 @@ typeset dst=dst.$$
 
 function cleanup
 {
-	log_must $RM -f $streamfile
-	log_must $ZFS destroy -rf $dataset/$src
-	log_must $ZFS destroy -rf $dataset/$dst
+	log_must rm -f $streamfile
+	log_must zfs destroy -rf $dataset/$src
+	log_must zfs destroy -rf $dataset/$dst
 }
 
 log_assert "Verifying that receiving an incremental send works correctly" \
 	"after flip the direction of replication for cloned datasets."
 log_onexit cleanup
 
-log_must $ZFS create $dataset/$src
-log_must $ZFS create $dataset/$src/a
-log_must $ZFS snapshot $dataset/$src/a@b
-log_must $ZFS clone $dataset/$src/a@b $dataset/$src/b
-log_must $ZFS snapshot $dataset/$src/b@c
-log_must $ZFS clone $dataset/$src/b@c $dataset/$src/c
-log_must $ZFS snapshot -r $dataset/$src@r1
-log_must $ZFS send -v $dataset/$src@r1 > $streamfile
-log_must $ZFS receive -v $dataset/$dst < $streamfile
-log_must $ZFS send -v $dataset/$src/b@r1 > $streamfile
-log_must $ZFS receive -v $dataset/$dst/b < $streamfile
-log_must $ZFS send -v $dataset/$src/c@r1 > $streamfile
-log_must $ZFS receive -v $dataset/$dst/c < $streamfile
-log_must $ZFS snapshot -r $dataset/$dst@r2
-log_must $ZFS send -Rv -I $dataset/$dst@r1 $dataset/$dst@r2 > $streamfile
-log_must $ZFS receive -v $dataset/$src < $streamfile
+log_must zfs create $dataset/$src
+log_must zfs create $dataset/$src/a
+log_must zfs snapshot $dataset/$src/a@b
+log_must zfs clone $dataset/$src/a@b $dataset/$src/b
+log_must zfs snapshot $dataset/$src/b@c
+log_must zfs clone $dataset/$src/b@c $dataset/$src/c
+log_must zfs snapshot -r $dataset/$src@r1
+log_must zfs send -v $dataset/$src@r1 > $streamfile
+log_must zfs receive -v $dataset/$dst < $streamfile
+log_must zfs send -v $dataset/$src/b@r1 > $streamfile
+log_must zfs receive -v $dataset/$dst/b < $streamfile
+log_must zfs send -v $dataset/$src/c@r1 > $streamfile
+log_must zfs receive -v $dataset/$dst/c < $streamfile
+log_must zfs snapshot -r $dataset/$dst@r2
+log_must zfs send -Rv -I $dataset/$dst@r1 $dataset/$dst@r2 > $streamfile
+log_must zfs receive -v $dataset/$src < $streamfile
 
 log_pass "Verifying that receiving an incremental send works correctly" \
 	"after flip the direction of replication for cloned datasets."

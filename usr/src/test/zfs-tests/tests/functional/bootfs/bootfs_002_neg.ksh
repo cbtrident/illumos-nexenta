@@ -24,6 +24,9 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+
+#
+# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.
 #
 
@@ -36,7 +39,7 @@
 #
 # STRATEGY:
 #
-# 1. Create a zvol 
+# 1. Create a zvol
 # 2. Verify that we can't set the bootfs to that dataset
 #
 
@@ -45,19 +48,19 @@ verify_runnable "global"
 function cleanup {
 	if datasetexists $TESTPOOL/vol
 	then
-		log_must $ZFS destroy $TESTPOOL/vol
+		log_must zfs destroy $TESTPOOL/vol
 	fi
 	if poolexists $TESTPOOL
 	then
 		log_must destroy_pool_no_force $TESTPOOL
 	fi
 	if [[ -f $VDEV ]]; then
-		log_must $RM -f $VDEV
+		log_must rm -f $VDEV
 	fi
 }
 
 
-$ZPOOL set 2>&1 | $GREP bootfs > /dev/null
+zpool set 2>&1 | grep bootfs > /dev/null
 if [ $? -ne 0 ]
 then
 	log_unsupported "bootfs pool property not supported on this release."
@@ -68,10 +71,10 @@ log_onexit cleanup
 
 typeset VDEV=/bootfs_002_neg_a.$$.dat
 
-log_must $MKFILE 400m $VDEV
+log_must mkfile 400m $VDEV
 create_pool "$TESTPOOL" "$VDEV"
-log_must $ZFS create -V 10m $TESTPOOL/vol
+log_must zfs create -V 10m $TESTPOOL/vol
 
-log_mustnot $ZPOOL set bootfs=$TESTPOOL/vol $TESTPOOL
+log_mustnot zpool set bootfs=$TESTPOOL/vol $TESTPOOL
 
 log_pass "Invalid datasets are rejected as boot property values"

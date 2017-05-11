@@ -28,11 +28,14 @@
 #
 
 verify_runnable "global"
-log_assert "Write back cache can not be deactivated during the creation of the pool."
+log_assert "Write back cache can not be deactivated during the creation of" \
+    "the pool."
 log_onexit cleanup
 for pool_type in "stripe" "mirror" ; do
 	for special_type in "stripe" "mirror" ; do
-		log_mustnot create_pool_special $TESTPOOL "off" $pool_type $special_type
+		log_mustnot create_pool_special $TESTPOOL "off" $pool_type \
+		    $special_type
 	done
 done
-log_pass "Write back cache can not be deactivated during the creation of the pool."
+log_pass "Write back cache can not be deactivated during the creation of the" \
+    "pool."

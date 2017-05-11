@@ -1,4 +1,4 @@
-#!/usr/bin/python2.6
+#!@PYTHON@
 #
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License version 2
@@ -210,7 +210,7 @@ def gen_files(root, parent, paths, exclude):
                 # invocations of git().
                 continue
             empty = not res.readline()
-            if (os.path.exists(f) and not empty and select(f) and not exclude(f)):
+            if (os.path.isfile(f) and not empty and select(f) and not exclude(f)):
                 yield f
     return ret
 
@@ -298,7 +298,7 @@ def manlint(root, parent, flist, output):
         fh = open(f, 'r')
         ret |= ManLint.manlint(fh, output=output, picky=True)
         ret |= SpellCheck.spellcheck(fh, output=output)
-	fh.close()
+        fh.close()
     return ret
 
 def keywords(root, parent, flist, output):
@@ -342,7 +342,7 @@ def nits(root, parent, paths):
             hdrchk,
             jstyle,
             keywords,
-	    manlint,
+            manlint,
             mapfilechk]
     run_checks(root, parent, cmds, paths)
 
@@ -354,7 +354,7 @@ def pbchk(root, parent, paths):
             hdrchk,
             jstyle,
             keywords,
-	    manlint,
+            manlint,
             mapfilechk]
     run_checks(root, parent, cmds)
 

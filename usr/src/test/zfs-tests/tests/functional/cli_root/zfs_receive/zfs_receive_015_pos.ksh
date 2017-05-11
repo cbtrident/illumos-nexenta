@@ -44,24 +44,24 @@ typeset prop_source=default
 
 function cleanup
 {
-	log_must $RM $streamfile
-	log_must $ZFS destroy -rf $dataset/src
-	log_must $ZFS destroy -rf $dataset/dst
+	log_must rm $streamfile
+	log_must zfs destroy -rf $dataset/src
+	log_must zfs destroy -rf $dataset/dst
 }
 
 log_assert "Verifying 'zfs receive -x <property>' works."
 log_onexit cleanup
 
-log_must $ZFS create $dataset/src
-log_must $ZFS set $prop_name=$prop_value $dataset/src
-log_must $ZFS snapshot -r $dataset/src@snap1
-log_must $ZFS send -R $dataset/src@snap1 > $streamfile
-log_must $ZFS receive -x $prop_name $dataset/dst < $streamfile
+log_must zfs create $dataset/src
+log_must zfs set $prop_name=$prop_value $dataset/src
+log_must zfs snapshot -r $dataset/src@snap1
+log_must zfs send -R $dataset/src@snap1 > $streamfile
+log_must zfs receive -x $prop_name $dataset/dst < $streamfile
 
-typeset src_value=$($ZFS get -H -o source $prop_name $dataset/dst)
+typeset src_value=$(zfs get -H -o source $prop_name $dataset/dst)
 if [[ "$src_value" != "$prop_source" ]] ; then
-	log_fail "The '$dataset/dst' '$prop_name' source '$src_value' " \
-	         "not equal to the expected value '$prop_source'"
+	log_fail "The '$dataset/dst' '$prop_name' source '$src_value'" \
+	    "not equal to the expected value '$prop_source'"
 fi
 
 log_pass "Verifying 'zfs receive -x <property>' works."

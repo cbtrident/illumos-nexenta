@@ -746,11 +746,11 @@ zfs_send_one_ds(dmu_krrp_task_t *krrp_task, zfs_snap_avl_node_t *snap_el,
 		is_clone = (snap_ds_prev->ds_dir != snap_ds->ds_dir);
 
 		err = dmu_send_impl(FTAG, dp, snap_ds, &zb, is_clone,
-		    embedok, B_FALSE, -1, resumeobj, resumeoff, NULL,
+		    embedok, B_FALSE, B_FALSE, -1, resumeobj, resumeoff, NULL,
 		    &off, krrp_task);
 	} else {
 		err = dmu_send_impl(FTAG, dp, snap_ds, NULL, B_FALSE,
-		    embedok, B_FALSE, -1, resumeobj, resumeoff, NULL,
+		    embedok, B_FALSE, B_FALSE, -1, resumeobj, resumeoff, NULL,
 		    &off, krrp_task);
 	}
 

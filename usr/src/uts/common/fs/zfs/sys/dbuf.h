@@ -362,7 +362,6 @@ boolean_t dbuf_meta_is_l2cacheable(dmu_buf_impl_t *db);
 	(dbuf_is_metadata(_db) &&					\
 	((_db)->db_objset->os_primary_cache == ZFS_CACHE_METADATA)))
 
-
 /*
  * Checks whether we need to cache dbuf in l2arc.
  * Metadata is l2cacheable if it is not placed on special device

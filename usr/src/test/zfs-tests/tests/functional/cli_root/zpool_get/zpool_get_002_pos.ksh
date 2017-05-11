@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -57,11 +57,11 @@ if ! is_global_zone ; then
 	TESTPOOL=${TESTPOOL%%/*}
 fi
 
-log_must $ZPOOL get all $TESTPOOL
-$ZPOOL get all $TESTPOOL > /tmp/values.$$
+log_must zpool get all $TESTPOOL
+zpool get all $TESTPOOL > /tmp/values.$$
 
 log_note "Checking zpool get all output for a header"
-$GREP ^"NAME " /tmp/values.$$ > /dev/null 2>&1
+grep ^"NAME " /tmp/values.$$ > /dev/null 2>&1
 if [ $? -ne 0 ]
 then
 	log_fail "The header was not found in zpool get all output"
@@ -71,7 +71,7 @@ fi
 while [ $i -lt "${#properties[@]}" ]
 do
 	log_note "Checking for ${properties[$i]} property"
-	$GREP "$TESTPOOL *${properties[$i]}" /tmp/values.$$ > /dev/null 2>&1
+	grep "$TESTPOOL *${properties[$i]}" /tmp/values.$$ > /dev/null 2>&1
 	if [ $? -ne 0 ]
 	then
 		log_fail "zpool property ${properties[$i]} was not found" \
@@ -83,14 +83,12 @@ done
 # increment the counter to include the header line
 i=$(( $i + 1 ))
 
-COUNT=$($WC /tmp/values.$$ | $AWK '{print $1}')
+COUNT=$(wc /tmp/values.$$ | awk '{print $1}')
 if [ $i -ne $COUNT ]
 then
 	log_fail "Length of output $COUNT is not equal to number of props and" \
 	    "header"
 fi
 
-
-
-$RM /tmp/values.$$
+rm /tmp/values.$$
 log_pass "zpool get all works as expected"

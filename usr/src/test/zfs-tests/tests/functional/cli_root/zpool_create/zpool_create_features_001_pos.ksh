@@ -21,10 +21,7 @@
 #
 
 #
-# Copyright (c) 2012 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -54,8 +51,8 @@ function cleanup
 
 function check_features
 {
-	for state in $($ZPOOL get all $TESTPOOL | $EGREP -v feature@wbc | \
-	    $AWK '$2 ~ /feature@/ { print $3 }'); do
+	for state in $(zpool get all $TESTPOOL | egrep -v feature@wbc | \
+	    awk '$2 ~ /feature@/ { print $3 }'); do
 		if [[ "$state" != "enabled" && "$state" != "active" ]]; then
 			log_fail "some features are not enabled on new pool"
 	        fi
@@ -66,11 +63,11 @@ log_onexit cleanup
 
 log_assert "'zpool create' creates pools with all features enabled"
 
-log_must $ZPOOL create -f $TESTPOOL $DISKS
+log_must zpool create -f $TESTPOOL $DISKS
 check_features
 log_must destroy_pool $TESTPOOL
 
-log_must $ZPOOL create -f -o feature@async_destroy=enabled $TESTPOOL $DISKS
+log_must zpool create -f -o feature@async_destroy=enabled $TESTPOOL $DISKS
 check_features
 
 log_pass "'zpool create' creates pools with all features enabled"

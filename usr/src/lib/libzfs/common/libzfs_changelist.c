@@ -470,9 +470,10 @@ change_one(zfs_handle_t *zhp, void *data)
 			 * this one in the list. This produces a list in
 			 * reverse dataset name order.
 			 * This is necessary when the original mountpoint
-			 * is legacy or none.
+			 * is legacy or none (see changelist_gather() for details).
 			 */
-			ASSERT(!clp->cl_alldependents);
+			ASSERT(!clp->cl_alldependents ||
+			    clp->cl_realprop == ZFS_PROP_NAME);
 			verify(uu_list_insert_before(clp->cl_list,
 			    uu_list_first(clp->cl_list), cn) == 0);
 		}

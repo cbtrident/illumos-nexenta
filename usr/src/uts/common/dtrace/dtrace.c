@@ -23,7 +23,6 @@
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2016, Joyent, Inc. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -15443,12 +15442,9 @@ dtrace_helpers_create(proc_t *p)
 static void
 dtrace_helpers_destroy(proc_t *p)
 {
-	int i;
 	dtrace_helpers_t *help;
 	dtrace_vstate_t *vstate;
-
-	if (p == NULL)
-		p = curproc;
+	int i;
 
 	mutex_enter(&dtrace_lock);
 
@@ -15462,10 +15458,21 @@ dtrace_helpers_destroy(proc_t *p)
 	 * We're now going to lose the help from this process.
 	 */
 	p->p_dtrace_helpers = NULL;
-	dtrace_sync();
+	if (p == curproc) {
+		dtrace_sync();
+	} else {
+		/*
+		 * It is sometimes necessary to clean up dtrace helpers from a
+		 * an incomplete child process as part of a failed fork
+		 * operation.  In such situations, a dtrace_sync() call should
+		 * be unnecessary as the process should be devoid of threads,
+		 * much less any in probe context.
+		 */
+		VERIFY(p->p_stat == SIDL);
+	}
 
 	/*
-	 * Destory the helper actions.
+	 * Destroy the helper actions.
 	 */
 	for (i = 0; i < DTRACE_NHELPER_ACTIONS; i++) {
 		dtrace_helper_action_t *h, *next;

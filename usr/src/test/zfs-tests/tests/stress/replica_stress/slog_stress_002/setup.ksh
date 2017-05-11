@@ -24,8 +24,6 @@
 # Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# ident	"@(#)setup.ksh	1.1	07/10/09 SMI"
-#
 
 . ${STF_SUITE}/include/libtest.shlib
 . ${STF_SUITE}/tests/stress/replica_stress/replica_stress_common.kshlib
@@ -34,10 +32,10 @@ setup_raidzs $NUMBER_OF_MIRRORS $DISKS
 
 ln=0
 for pool in $(get_pools); do
-        $MKFILE 64m /var/tmp/slog.002.${ln}
+	mkfile 64m /var/tmp/slog.002.${ln}
 
-        $ZPOOL add $pool /var/tmp/slog.002.${ln}
-        (( ln = ln + 1 ))
+	zpool add $pool /var/tmp/slog.002.${ln}
+	(( ln = ln + 1 ))
 done
 
 log_pass

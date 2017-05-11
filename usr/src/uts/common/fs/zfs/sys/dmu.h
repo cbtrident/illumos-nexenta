@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright 2013 DEY Storage Systems, Inc.
  * Copyright 2014 HybridCluster. All rights reserved.
@@ -48,6 +48,7 @@
 #include <sys/inttypes.h>
 #include <sys/cred.h>
 #include <sys/fs/zfs.h>
+#include <sys/zio_compress.h>
 #include <sys/zio_priority.h>
 
 #ifdef	__cplusplus
@@ -78,6 +79,7 @@ struct sa_handle;
 typedef struct objset objset_t;
 typedef struct dmu_tx dmu_tx_t;
 typedef struct dsl_dir dsl_dir_t;
+typedef struct dnode dnode_t;
 
 typedef enum dmu_object_byteswap {
 	DMU_BSWAP_UINT8,
@@ -448,8 +450,8 @@ dmu_write_embedded(objset_t *os, uint64_t object, uint64_t offset,
 #define	WP_GET_SPECIALCLASS(flags) \
 	((flags & WP_SPECIALCLASS_MASK)	>> WP_SPECIALCLASS_SHIFT)
 
-void dmu_write_policy(objset_t *os, struct dnode *dn, int level, int wp,
-    struct zio_prop *zp);
+void dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp,
+    enum zio_compress compress_override, struct zio_prop *zp);
 /*
  * The bonus data is accessed more or less like a regular buffer.
  * You must dmu_bonus_hold() to get the buffer, which will give you a
@@ -474,7 +476,7 @@ int dmu_rm_spill(objset_t *, uint64_t, dmu_tx_t *);
  */
 
 int dmu_spill_hold_by_bonus(dmu_buf_t *bonus, void *tag, dmu_buf_t **dbp);
-int dmu_spill_hold_by_dnode(struct dnode *dn, uint32_t flags,
+int dmu_spill_hold_by_dnode(dnode_t *dn, uint32_t flags,
     void *tag, dmu_buf_t **dbp);
 int dmu_spill_hold_existing(dmu_buf_t *bonus, void *tag, dmu_buf_t **dbp);
 
@@ -494,6 +496,8 @@ int dmu_spill_hold_existing(dmu_buf_t *bonus, void *tag, dmu_buf_t **dbp);
  */
 int dmu_buf_hold(objset_t *os, uint64_t object, uint64_t offset,
     void *tag, dmu_buf_t **, int flags);
+int dmu_buf_hold_by_dnode(dnode_t *dn, uint64_t offset,
+    void *tag, dmu_buf_t **dbp, int flags);
 
 /*
  * Add a reference to a dmu buffer that has already been held via
@@ -568,7 +572,7 @@ typedef struct dmu_buf_user {
 	/*
 	 * This instance's eviction function pointers.
 	 *
-	 * dbu_evict_func_sync is called synchronously while
+	 * dbu_evict_func_sync is called synchronously and then
 	 * dbu_evict_func_async is executed asynchronously on a taskq.
 	 */
 	dmu_buf_evict_func_t *dbu_evict_func_sync;
@@ -592,26 +596,22 @@ typedef struct dmu_buf_user {
  * NOTE: This function should only be called once on a given dmu_buf_user_t.
  *       To allow enforcement of this, dbu must already be zeroed on entry.
  */
-#ifdef __lint
-/* Very ugly, but it beats issuing suppression directives in many Makefiles. */
-extern void
-dmu_buf_init_user(dmu_buf_user_t *dbu, dmu_buf_evict_func_t *evict_func_sync,
-    dmu_buf_evict_func_t *evict_func_async, dmu_buf_t **clear_on_evict_dbufp);
-#else /* __lint */
+/*ARGSUSED*/
 inline void
 dmu_buf_init_user(dmu_buf_user_t *dbu, dmu_buf_evict_func_t *evict_func_sync,
     dmu_buf_evict_func_t *evict_func_async, dmu_buf_t **clear_on_evict_dbufp)
 {
 	ASSERT(dbu->dbu_evict_func_sync == NULL);
 	ASSERT(dbu->dbu_evict_func_async == NULL);
-	ASSERT(evict_func_async != NULL);
+
+	/* must have at least one evict func */
+	IMPLY(evict_func_sync == NULL, evict_func_async != NULL);
 	dbu->dbu_evict_func_sync = evict_func_sync;
 	dbu->dbu_evict_func_async = evict_func_async;
 #ifdef ZFS_DEBUG
 	dbu->dbu_clear_on_evict_dbufp = clear_on_evict_dbufp;
 #endif
 }
-#endif /* __lint */
 
 /*
  * Attach user data to a dbuf and mark it for normal (when the dbuf's
@@ -654,6 +654,10 @@ void *dmu_buf_remove_user(dmu_buf_t *db, dmu_buf_user_t *user);
  */
 void *dmu_buf_get_user(dmu_buf_t *db);
 
+objset_t *dmu_buf_get_objset(dmu_buf_t *db);
+dnode_t *dmu_buf_dnode_enter(dmu_buf_t *db);
+void dmu_buf_dnode_exit(dmu_buf_t *db);
+
 /* Block until any in-progress dmu buf user evictions complete. */
 void dmu_buf_user_evict_wait(void);
 
@@ -671,11 +675,6 @@ struct blkptr *dmu_buf_get_blkptr(dmu_buf_t *db);
  */
 void dmu_buf_will_dirty(dmu_buf_t *db, dmu_tx_t *tx);
 void dmu_buf_will_dirty_sc(dmu_buf_t *db, dmu_tx_t *tx, boolean_t sc);
-
-/*
- * Tells if the given dbuf is freeable.
- */
-boolean_t dmu_buf_freeable(dmu_buf_t *);
 
 /*
  * You must create a transaction, then hold the objects which you will
@@ -776,8 +775,8 @@ int dmu_xuio_add(struct xuio *uio, struct arc_buf *abuf, offset_t off,
 int dmu_xuio_cnt(struct xuio *uio);
 struct arc_buf *dmu_xuio_arcbuf(struct xuio *uio, int i);
 void dmu_xuio_clear(struct xuio *uio, int i);
-void xuio_stat_wbuf_copied();
-void xuio_stat_wbuf_nocopy();
+void xuio_stat_wbuf_copied(void);
+void xuio_stat_wbuf_nocopy(void);
 
 extern boolean_t zfs_prefetch_disable;
 extern int zfs_max_recordsize;
@@ -830,7 +829,7 @@ extern const dmu_object_byteswap_info_t dmu_ot_byteswap[DMU_BSWAP_NUMFUNCS];
  */
 int dmu_object_info(objset_t *os, uint64_t object, dmu_object_info_t *doi);
 /* Like dmu_object_info, but faster if you have a held dnode in hand. */
-void dmu_object_info_from_dnode(struct dnode *dn, dmu_object_info_t *doi);
+void dmu_object_info_from_dnode(dnode_t *dn, dmu_object_info_t *doi);
 /* Like dmu_object_info, but faster if you have a held dbuf in hand. */
 void dmu_object_info_from_db(dmu_buf_t *db, dmu_object_info_t *doi);
 /*

@@ -21,10 +21,7 @@
 #
 
 #
-# Copyright (c) 2012 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -61,12 +58,12 @@ function cleanup
 log_assert "'zfs snapshot pool1@snap1 pool2@snap2' should fail since snapshots are in different pools."
 log_onexit cleanup
 
-log_must $MKFILE 64m $SNAPDEV1
-log_must $MKFILE 64m $SNAPDEV2
+log_must mkfile $MINVDEVSIZE $SNAPDEV1
+log_must mkfile $MINVDEVSIZE $SNAPDEV2
 
-log_must $ZPOOL create $SNAPPOOL1 $SNAPDEV1
-log_must $ZPOOL create $SNAPPOOL2 $SNAPDEV2
+log_must zpool create $SNAPPOOL1 $SNAPDEV1
+log_must zpool create $SNAPPOOL2 $SNAPDEV2
 
-log_mustnot $ZFS snapshot $SNAPPOOL1@snap1 $SNAPPOOL2@snap2
+log_mustnot zfs snapshot $SNAPPOOL1@snap1 $SNAPPOOL2@snap2
 
 log_pass "'zfs snapshot pool1@snap1 pool2@snap2' should fail since snapshots are in different pools."

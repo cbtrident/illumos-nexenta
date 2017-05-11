@@ -32,7 +32,7 @@
  * Portions Copyright 2009 Advanced Micro Devices, Inc.
  */
 /*
- * Copyright (c) 2015, Joyent, Inc. All rights reserved.
+ * Copyright 2016 Joyent, Inc.
  */
 /*
  * Various routines to handle identification
@@ -57,6 +57,8 @@
 #include <sys/auxv_386.h>
 #include <sys/memnode.h>
 #include <sys/pci_cfgspace.h>
+#include <sys/comm_page.h>
+#include <sys/tsc.h>
 
 #ifdef __xpv
 #include <sys/hypervisor.h>
@@ -171,7 +173,9 @@ static char *x86_feature_names[NUM_X86_FEATURES] = {
 	"bmi2",
 	"fma",
 	"smep",
-	"smap"
+	"smap",
+	"adx",
+	"rdseed"
 };
 
 boolean_t
@@ -1264,6 +1268,11 @@ cpuid_pass1(cpu_t *cpu, uchar_t *featureset)
 		    disable_smap == 0)
 			add_x86_feature(featureset, X86FSET_SMAP);
 #endif
+		if (ecp->cp_ebx & CPUID_INTC_EBX_7_0_RDSEED)
+			add_x86_feature(featureset, X86FSET_RDSEED);
+
+		if (ecp->cp_ebx & CPUID_INTC_EBX_7_0_ADX)
+			add_x86_feature(featureset, X86FSET_ADX);
 	}
 
 	/*
@@ -1786,8 +1795,10 @@ cpuid_pass2(cpu_t *cpu)
 		 *
 		 * Note: we need to explicitly initialize %ecx here, since
 		 * function 4 may have been previously invoked.
+		 *
+		 * The same is all true for CPUID function 7.
 		 */
-		if (n == 4)
+		if (n == 4 || n == 7)
 			cp->cp_ecx = 0;
 
 		(void) __cpuid_insn(cp);
@@ -2739,6 +2750,10 @@ cpuid_pass4(cpu_t *cpu, uint_t *hwcap_out)
 			*ebx &= ~CPUID_INTC_EBX_7_0_BMI2;
 		if (!is_x86_feature(x86_featureset, X86FSET_AVX2))
 			*ebx &= ~CPUID_INTC_EBX_7_0_AVX2;
+		if (!is_x86_feature(x86_featureset, X86FSET_RDSEED))
+			*ebx &= ~CPUID_INTC_EBX_7_0_RDSEED;
+		if (!is_x86_feature(x86_featureset, X86FSET_ADX))
+			*ebx &= ~CPUID_INTC_EBX_7_0_ADX;
 
 		/*
 		 * [no explicit support required beyond x87 fp context]
@@ -2808,6 +2823,11 @@ cpuid_pass4(cpu_t *cpu, uint_t *hwcap_out)
 
 		if (*ecx & CPUID_INTC_ECX_RDRAND)
 			hwcap_flags_2 |= AV_386_2_RDRAND;
+		if (*ebx & CPUID_INTC_EBX_7_0_ADX)
+			hwcap_flags_2 |= AV_386_2_ADX;
+		if (*ebx & CPUID_INTC_EBX_7_0_RDSEED)
+			hwcap_flags_2 |= AV_386_2_RDSEED;
+
 	}
 
 	if (cpi->cpi_xmaxeax < 0x80000001)
@@ -4591,27 +4611,30 @@ patch_tsc_read(int flag)
 	size_t cnt;
 
 	switch (flag) {
-	case X86_NO_TSC:
+	case TSC_NONE:
 		cnt = &_no_rdtsc_end - &_no_rdtsc_start;
 		(void) memcpy((void *)tsc_read, (void *)&_no_rdtsc_start, cnt);
 		break;
-	case X86_HAVE_TSCP:
-		cnt = &_tscp_end - &_tscp_start;
-		(void) memcpy((void *)tsc_read, (void *)&_tscp_start, cnt);
-		break;
-	case X86_TSC_MFENCE:
+	case TSC_RDTSC_MFENCE:
 		cnt = &_tsc_mfence_end - &_tsc_mfence_start;
 		(void) memcpy((void *)tsc_read,
 		    (void *)&_tsc_mfence_start, cnt);
 		break;
-	case X86_TSC_LFENCE:
+	case TSC_RDTSC_LFENCE:
 		cnt = &_tsc_lfence_end - &_tsc_lfence_start;
 		(void) memcpy((void *)tsc_read,
 		    (void *)&_tsc_lfence_start, cnt);
 		break;
+	case TSC_TSCP:
+		cnt = &_tscp_end - &_tscp_start;
+		(void) memcpy((void *)tsc_read, (void *)&_tscp_start, cnt);
+		break;
 	default:
+		/* Bail for unexpected TSC types. (TSC_NONE covers 0) */
+		cmn_err(CE_PANIC, "Unrecogized TSC type: %d", flag);
 		break;
 	}
+	tsc_type = flag;
 }
 
 int

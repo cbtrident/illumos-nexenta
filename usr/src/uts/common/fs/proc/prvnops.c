@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2014, Joyent, Inc. All rights reserved.
+ * Copyright 2016 Joyent, Inc.
  */
 
 /*	Copyright (c) 1984,	 1986, 1987, 1988, 1989 AT&T	*/
@@ -162,8 +162,10 @@ static prdirent_t piddir[] = {
 		"path" },
 	{ PR_CTDIR,	26 * sizeof (prdirent_t), sizeof (prdirent_t),
 		"contracts" },
+	{ PR_SECFLAGS,	27 * sizeof (prdirent_t), sizeof (prdirent_t),
+		"secflags" },
 #if defined(__x86)
-	{ PR_LDT,	27 * sizeof (prdirent_t), sizeof (prdirent_t),
+	{ PR_LDT,	28 * sizeof (prdirent_t), sizeof (prdirent_t),
 		"ldt" },
 #endif
 };
@@ -414,7 +416,7 @@ out:
 /* ARGSUSED */
 static int
 prclose(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
-	caller_context_t *ct)
+    caller_context_t *ct)
 {
 	prnode_t *pnp = VTOP(vp);
 	prcommon_t *pcp = pnp->pr_pcommon;
@@ -585,7 +587,7 @@ static int pr_read_inval(), pr_read_as(), pr_read_status(),
 	pr_read_usage(), pr_read_lusage(), pr_read_pagedata(),
 	pr_read_watch(), pr_read_lwpstatus(), pr_read_lwpsinfo(),
 	pr_read_lwpusage(), pr_read_xregs(), pr_read_priv(),
-	pr_read_spymaster(),
+	pr_read_spymaster(), pr_read_secflags(),
 #if defined(__sparc)
 	pr_read_gwindows(), pr_read_asrs(),
 #endif
@@ -639,6 +641,7 @@ static int (*pr_read_function[PR_NFILES])() = {
 	pr_read_inval,		/* /proc/<pid>/path/xxx			*/
 	pr_read_inval,		/* /proc/<pid>/contracts		*/
 	pr_read_inval,		/* /proc/<pid>/contracts/<ctid>		*/
+	pr_read_secflags,	/* /proc/<pid>/secflags			*/
 	pr_read_pidfile,	/* old process file			*/
 	pr_read_pidfile,	/* old lwp file				*/
 	pr_read_opagedata,	/* old pagedata file			*/
@@ -1601,6 +1604,25 @@ pr_read_spymaster(prnode_t *pnp, uio_t *uiop)
 	return (pr_uioread(&psinfo, sizeof (psinfo), uiop));
 }
 
+static int
+pr_read_secflags(prnode_t *pnp, uio_t *uiop)
+{
+	prsecflags_t ret;
+	int error;
+	proc_t *p;
+
+	ASSERT(pnp->pr_type == PR_SECFLAGS);
+
+	if ((error = prlock(pnp, ZNO)) != 0)
+		return (error);
+
+	p = pnp->pr_common->prc_proc;
+	prgetsecflags(p, &ret);
+	prunlock(pnp);
+
+	return (pr_uioread(&ret, sizeof (ret), uiop));
+}
+
 #if defined(__sparc)
 
 static int
@@ -1796,6 +1818,7 @@ static int (*pr_read_function_32[PR_NFILES])() = {
 	pr_read_inval,		/* /proc/<pid>/path/xxx			*/
 	pr_read_inval,		/* /proc/<pid>/contracts		*/
 	pr_read_inval,		/* /proc/<pid>/contracts/<ctid>		*/
+	pr_read_secflags,	/* /proc/<pid>/secflags			*/
 	pr_read_pidfile,	/* old process file			*/
 	pr_read_pidfile,	/* old lwp file				*/
 	pr_read_opagedata_32,	/* old pagedata file			*/
@@ -2772,7 +2795,7 @@ prwrite(vnode_t *vp, uio_t *uiop, int ioflag, cred_t *cr, caller_context_t *ct)
 
 static int
 prgetattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
-	caller_context_t *ct)
+    caller_context_t *ct)
 {
 	prnode_t *pnp = VTOP(vp);
 	prnodetype_t type = pnp->pr_type;
@@ -3038,6 +3061,9 @@ prgetattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 		break;
 	case PR_PRIV:
 		vap->va_size = prgetprivsize();
+		break;
+	case PR_SECFLAGS:
+		vap->va_size = sizeof (prsecflags_t);
 		break;
 	case PR_SIGACT:
 		nsig = PROC_IS_BRANDED(curproc)? BROP(curproc)->b_nsig : NSIG;
@@ -3336,6 +3362,7 @@ static vnode_t *(*pr_lookup_function[PR_NFILES])() = {
 	pr_lookup_notdir,	/* /proc/<pid>/path/xxx			*/
 	pr_lookup_ctdir,	/* /proc/<pid>/contracts		*/
 	pr_lookup_notdir,	/* /proc/<pid>/contracts/<ctid>		*/
+	pr_lookup_notdir,	/* /proc/<pid>/secflags			*/
 	pr_lookup_notdir,	/* old process file			*/
 	pr_lookup_notdir,	/* old lwp file				*/
 	pr_lookup_notdir,	/* old pagedata file			*/
@@ -3343,8 +3370,8 @@ static vnode_t *(*pr_lookup_function[PR_NFILES])() = {
 
 static int
 prlookup(vnode_t *dp, char *comp, vnode_t **vpp, pathname_t *pathp,
-	int flags, vnode_t *rdir, cred_t *cr, caller_context_t *ct,
-	int *direntflags, pathname_t *realpnp)
+    int flags, vnode_t *rdir, cred_t *cr, caller_context_t *ct,
+    int *direntflags, pathname_t *realpnp)
 {
 	prnode_t *pnp = VTOP(dp);
 	prnodetype_t type = pnp->pr_type;
@@ -3394,28 +3421,41 @@ prlookup(vnode_t *dp, char *comp, vnode_t **vpp, pathname_t *pathp,
 /* ARGSUSED */
 static int
 prcreate(vnode_t *dp, char *comp, vattr_t *vap, vcexcl_t excl,
-	int mode, vnode_t **vpp, cred_t *cr, int flag, caller_context_t *ct,
-	vsecattr_t *vsecp)
+    int mode, vnode_t **vpp, cred_t *cr, int flag, caller_context_t *ct,
+    vsecattr_t *vsecp)
 {
 	int error;
 
 	if ((error = prlookup(dp, comp, vpp, NULL, 0, NULL, cr,
 	    ct, NULL, NULL)) != 0) {
-		if (error == ENOENT)	/* can't O_CREAT nonexistent files */
-			error = EACCES;		/* unwriteable directories */
-	} else {
-		if (excl == EXCL)			/* O_EXCL */
-			error = EEXIST;
-		else if (vap->va_mask & AT_SIZE) {	/* O_TRUNC */
-			vnode_t *vp = *vpp;
-			uint_t mask;
+		if (error == ENOENT) {
+			/* One can't O_CREAT nonexistent files in /proc. */
+			error = EACCES;
+		}
+		return (error);
+	}
 
-			if (vp->v_type == VDIR)
+	if (excl == EXCL) {
+		/* Disallow the O_EXCL case */
+		error = EEXIST;
+	} else if ((error = praccess(*vpp, mode, 0, cr, ct)) == 0) {
+		/* Before proceeding, handle O_TRUNC if necessary. */
+		if (vap->va_mask & AT_SIZE) {
+			vnode_t *vp = *vpp;
+
+			if (vp->v_type == VDIR) {
+				/* Only allow O_TRUNC on files */
 				error = EISDIR;
-			else if (vp->v_type != VPROC ||
-			    VTOP(vp)->pr_type != PR_FD)
+			} else if (vp->v_type != VPROC ||
+			    VTOP(vp)->pr_type != PR_FD) {
+				/*
+				 * Disallow for files outside of the
+				 * /proc/<pid>/fd/<n> entries
+				 */
 				error = EACCES;
-			else {		/* /proc/<pid>/fd/<n> */
+			} else {
+				uint_t mask;
+
 				vp = VTOP(vp)->pr_realvp;
 				mask = vap->va_mask;
 				vap->va_mask = AT_SIZE;
@@ -3423,10 +3463,11 @@ prcreate(vnode_t *dp, char *comp, vattr_t *vap, vcexcl_t excl,
 				vap->va_mask = mask;
 			}
 		}
-		if (error) {
-			VN_RELE(*vpp);
-			*vpp = NULL;
-		}
+	}
+
+	if (error) {
+		VN_RELE(*vpp);
+		*vpp = NULL;
 	}
 	return (error);
 }
@@ -4685,6 +4726,7 @@ static int (*pr_readdir_function[PR_NFILES])() = {
 	pr_readdir_notdir,	/* /proc/<pid>/path/xxx			*/
 	pr_readdir_ctdir,	/* /proc/<pid>/contracts		*/
 	pr_readdir_notdir,	/* /proc/<pid>/contracts/<ctid>		*/
+	pr_readdir_notdir,	/* /proc/<pid>/secflags			*/
 	pr_readdir_notdir,	/* old process file			*/
 	pr_readdir_notdir,	/* old lwp file				*/
 	pr_readdir_notdir,	/* old pagedata file			*/
@@ -4693,7 +4735,7 @@ static int (*pr_readdir_function[PR_NFILES])() = {
 /* ARGSUSED */
 static int
 prreaddir(vnode_t *vp, uio_t *uiop, cred_t *cr, int *eofp,
-	caller_context_t *ct, int flags)
+    caller_context_t *ct, int flags)
 {
 	prnode_t *pnp = VTOP(vp);
 
@@ -5909,7 +5951,7 @@ prrealvp(vnode_t *vp, vnode_t **vpp, caller_context_t *ct)
 /*ARGSUSED5*/
 static int
 prpoll(vnode_t *vp, short events, int anyyet, short *reventsp,
-	pollhead_t **phpp, caller_context_t *ct)
+    pollhead_t **phpp, caller_context_t *ct)
 {
 	prnode_t *pnp = VTOP(vp);
 	prcommon_t *pcp = pnp->pr_common;

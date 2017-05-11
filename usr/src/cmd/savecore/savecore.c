@@ -76,6 +76,7 @@ static long	bounds = -1;		/* numeric suffix */
 static long	pagesize;		/* dump pagesize */
 static int	dumpfd = -1;		/* dumpfile descriptor */
 static boolean_t skip_event = B_FALSE;	/* do not raise an event */
+static boolean_t have_dumpfile = B_TRUE;	/* dumpfile existence */
 static dumphdr_t corehdr, dumphdr;	/* initial and terminal dumphdrs */
 static boolean_t dump_incomplete;	/* dumphdr indicates incomplete */
 static boolean_t fm_panic;		/* dump is the result of fm_panic */
@@ -243,7 +244,8 @@ logprint(uint32_t flags, char *message, ...)
 
 	case SC_EXIT_ERR:
 	default:
-		if (!mflag && logprint_raised++ == 0 && !skip_event)
+		if (!mflag && logprint_raised++ == 0 && !skip_event &&
+		    have_dumpfile)
 			raise_event(SC_EVENT_SAVECORE_FAILURE, buf);
 		code = 1;
 		break;
@@ -270,8 +272,8 @@ static void
 Fread(void *buf, size_t size, FILE *f)
 {
 	if (fread(buf, size, 1, f) != 1)
-		logprint(SC_SL_ERR | SC_EXIT_ERR, "fread: ferror %d feof %d",
-		    ferror(f), feof(f));
+		logprint(SC_SL_ERR | SC_EXIT_ERR, "fread: %s",
+		    strerror(errno));
 }
 
 static void
@@ -309,6 +311,7 @@ Stat(const char *fname, Stat_t *sb)
 		 * to not go further (raise an event).
 		 */
 		skip_event = B_TRUE;
+		have_dumpfile = B_FALSE;
 		logprint(SC_SL_ERR | SC_EXIT_ERR, "failed to get status "
 		    "of file %s", fname);
 	}
@@ -1733,6 +1736,7 @@ main(int argc, char *argv[])
 		dumpfile = Zalloc(MAXPATHLEN);
 		if (ioctl(dumpfd, DIOCGETDEV, dumpfile) == -1) {
 			skip_event = B_TRUE;
+			have_dumpfile = B_FALSE;
 			logprint(SC_SL_NONE | SC_IF_ISATTY | SC_EXIT_ERR,
 			    "no dump device configured");
 		}

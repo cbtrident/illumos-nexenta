@@ -23,11 +23,11 @@
 #
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
-# Copyright (c) 2015, Nexenta Systems, Inc. All rights reserved.
 #
 
 #
-# Copyright (c) 2015 by Delphix. All rights reserved.
+# Copyright (c) 2015, 2016 by Delphix. All rights reserved.
+# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -78,7 +78,7 @@ log_assert "'zpool create -O' should return an error with badly formed parameter
 
 typeset -i i=0
 while (( $i < ${#args[*]} )); do
-	log_mustnot $ZPOOL create -O ${args[i]} -f $TESTPOOL $DISKS
+	log_mustnot zpool create -O ${args[i]} -f $TESTPOOL $DISKS
 	((i = i + 1))
 done
 

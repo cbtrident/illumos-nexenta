@@ -26,10 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -48,7 +45,7 @@ fi
 
 if [[ -f /tmp/zfstest_datastream.dat ]]
 then
-	log_must $RM -f /tmp/zfstest_datastream.dat
+	log_must rm -f /tmp/zfstest_datastream.dat
 fi
 
 default_cleanup

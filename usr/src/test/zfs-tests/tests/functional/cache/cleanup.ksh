@@ -26,10 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -45,6 +42,6 @@ if datasetexists $TESTPOOL2 ; then
 	log_must destroy_pool $TESTPOOL2
 fi
 
-log_must $RM -rf $VDIR $VDIR2
+log_must rm -rf $VDIR $VDIR2
 
 log_pass

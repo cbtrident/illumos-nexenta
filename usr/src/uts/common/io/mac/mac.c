@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Joyent, Inc.
+ * Copyright 2016 Joyent, Inc.
  * Copyright 2015 Garrett D'Amore <garrett@damore.org>
  */
 
@@ -3042,8 +3042,12 @@ mac_prop_check_size(mac_prop_id_t id, uint_t valsize, boolean_t is_range)
 	case MAC_PROP_EN_2500FDX_CAP:
 	case MAC_PROP_ADV_100GFDX_CAP:
 	case MAC_PROP_EN_100GFDX_CAP:
+	case MAC_PROP_ADV_50GFDX_CAP:
+	case MAC_PROP_EN_50GFDX_CAP:
 	case MAC_PROP_ADV_40GFDX_CAP:
 	case MAC_PROP_EN_40GFDX_CAP:
+	case MAC_PROP_ADV_25GFDX_CAP:
+	case MAC_PROP_EN_25GFDX_CAP:
 	case MAC_PROP_ADV_10GFDX_CAP:
 	case MAC_PROP_EN_10GFDX_CAP:
 	case MAC_PROP_ADV_1000HDX_CAP:
@@ -3140,6 +3144,9 @@ mac_prop_check_size(mac_prop_id_t id, uint_t valsize, boolean_t is_range)
 		break;
 	case MAC_PROP_WL_MLME:
 		minsize = sizeof (wl_mlme_t);
+		break;
+	case MAC_PROP_VN_PROMISC_FILTERED:
+		minsize = sizeof (boolean_t);
 		break;
 	}
 

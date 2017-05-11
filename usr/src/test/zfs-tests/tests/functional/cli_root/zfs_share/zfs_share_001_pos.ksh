@@ -24,6 +24,9 @@
 # Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+
+#
+# Copyright (c) 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 #
 
@@ -53,24 +56,24 @@ function cleanup
 {
 	typeset -i i=0
 	while (( i < ${#fs[*]} )); do
-		log_must $ZFS set sharenfs=off ${fs[((i+1))]}
+		log_must zfs set sharenfs=off ${fs[((i+1))]}
 		unshare_fs ${fs[i]}
 
 		((i = i + 2))
 	done
 
 	if mounted $TESTPOOL/$TESTFS-clone; then
-		log_must $ZFS unmount $TESTDIR2
+		log_must zfs unmount $TESTDIR2
 	fi
 
 	datasetexists $TESTPOOL/$TESTFS-clone && \
-		log_must $ZFS destroy -f $TESTPOOL/$TESTFS-clone
+		log_must zfs destroy -f $TESTPOOL/$TESTFS-clone
 
 	if snapexists "$TESTPOOL/$TESTFS@snapshot"; then
-		log_must $ZFS destroy -f $TESTPOOL/$TESTFS@snapshot
+		log_must zfs destroy -f $TESTPOOL/$TESTFS@snapshot
 	fi
 
-	[[ -e $TESTDIR2 ]] && log_must $RM -rf $TESTDIR2
+	[[ -e $TESTDIR2 ]] && log_must rm -rf $TESTDIR2
 }
 
 
@@ -88,31 +91,31 @@ function test_share # mntp filesystem
 	not_shared $mntp || \
 	    log_fail "File system $filesystem is already shared."
 
-	log_must $ZFS set sharenfs=on $filesystem
+	log_must zfs set sharenfs=on $filesystem
 	is_shared $mntp || \
 	    log_fail "File system $filesystem is not shared (set sharenfs)."
 
 	#
 	# Verify 'zfs share' works as well.
 	#
-	log_must $ZFS unshare $filesystem
+	log_must zfs unshare $filesystem
 	is_shared $mntp && \
 	    log_fail "File system $filesystem is still shared."
 
-	log_must $ZFS share $filesystem
+	log_must zfs share $filesystem
 	is_shared $mntp || \
 	    log_fail "file system $filesystem is not shared (zfs share)."
 
 	log_note "Sharing a shared file system fails."
-	log_mustnot $ZFS share $filesystem
+	log_mustnot zfs share $filesystem
 }
 
 log_assert "Verify that 'zfs share' succeeds as root."
 log_onexit cleanup
 
-log_must $ZFS snapshot $TESTPOOL/$TESTFS@snapshot
-log_must $ZFS clone $TESTPOOL/$TESTFS@snapshot $TESTPOOL/$TESTFS-clone
-log_must $ZFS set mountpoint=$TESTDIR2 $TESTPOOL/$TESTFS-clone
+log_must zfs snapshot $TESTPOOL/$TESTFS@snapshot
+log_must zfs clone $TESTPOOL/$TESTFS@snapshot $TESTPOOL/$TESTFS-clone
+log_must zfs set mountpoint=$TESTDIR2 $TESTPOOL/$TESTFS-clone
 
 typeset -i i=0
 while (( i < ${#fs[*]} )); do
@@ -136,7 +139,7 @@ done
 #
 # Try a zfs share -a and verify all file systems are shared.
 #
-log_must $ZFS share -a
+log_must zfs share -a
 
 i=0
 while (( i < ${#fs[*]} )); do
@@ -146,4 +149,4 @@ while (( i < ${#fs[*]} )); do
 	((i = i + 2))
 done
 
-log_pass "'$ZFS share [ -a ] <filesystem>' succeeds as root."
+log_pass "'zfs share [ -a ] <filesystem>' succeeds as root."

@@ -24,18 +24,10 @@
 # Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# ident	"@(#)mirror_stress_003.ksh	1.3	07/10/09 SMI"
-#
 
 . ${STF_SUITE}/include/libtest.shlib
 . ${STF_SUITE}/tests/stress/replica_stress/replica_stress_common.kshlib
 
-###############################################################################
-#
-# __stc_assertion_start
-#
-# ID: mirror_stress_003
-#
 # DESCRIPTION:
 #	running multiple copies of zfs_dataset_create_write_destroy and
 #       zfs_dataset_create_write_destroy_attr on separate mirrored pools
@@ -43,27 +35,17 @@
 #
 # STRATEGY:
 #	the setup phase will have created several mirrored pools
-#	multiple copies of zfs_dataset_create_write_destroy and 
+#	multiple copies of zfs_dataset_create_write_destroy and
 #         zfs_dataset_create_write_destroy_attr are fired off
 #	  one per mirror in the background
 #	Wait for our stress timeout value to finish, and kill any remaining
 #       tests.
 #	The test is considered to have passed if the machine stays up during the
 #       time the stress tests are running and doesn't hit the stf time limit.
-#
-# TESTABILITY: explicit
-#
-# TEST_AUTOMATION_LEVEL: automated
-#
-# CODING_STATUS: COMPLETED (2006-06-08)
-#
-# __stc_assertion_end
-#
-###############################################################################
 
-log_assert "parallel dataset_create_write_destroy's and " \
-        "dataset_create_write_destroy_exattr's on multiple mirrored " \
-	"pools won't fail"
+log_assert "parallel dataset_create_write_destroy's and" \
+    "dataset_create_write_destroy_exattr's on multiple mirrored" \
+    "pools won't fail"
 
 log_onexit cleanup
 
@@ -80,7 +62,7 @@ for pool in $(get_pools); do
 
 	log_note "$CREATE_WRITE_DESTROY_EXATTR_SCRIPT $pool > " \
 		"$stresslog.$child"
-        $CREATE_WRITE_DESTROY_EXATTR_SCRIPT $pool > \
+	$CREATE_WRITE_DESTROY_EXATTR_SCRIPT $pool > \
 		$stresslog.$child 2>&1 &
 	child_pids="$child_pids $!"
 	(( child += 1 ))
@@ -93,7 +75,7 @@ stress_timeout $STRESS_TIMEOUT $child_pids
 
 while (( child > 0 )); do
 	(( child -= 1 ))
-	log_must $RM -f $stresslog.$child
+	log_must rm -f $stresslog.$child
 done
 
 log_pass

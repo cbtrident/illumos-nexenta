@@ -48,9 +48,9 @@ then
 	log_fail "1. 'modified' property should be 'no'"
 fi
 
-log_must $TOUCH $TEST_FILE
+log_must touch $TEST_FILE
 # We need to wait for at least one "sync"
-log_must $SLEEP 6
+log_must sleep 6
 RESULT=$(get_prop "modified" $TESTPOOL/$TESTFS@$TESTSNAP1)
 if [[ $RESULT != "yes" ]]
 then
@@ -64,7 +64,7 @@ then
 	log_fail "3. 'modified' property should be 'no'"
 fi
 
-log_must $ZFS rollback -r $TESTPOOL/$TESTFS@$TESTSNAP1
+log_must zfs rollback -r $TESTPOOL/$TESTFS@$TESTSNAP1
 RESULT=$(get_prop "modified" $TESTPOOL/$TESTFS@$TESTSNAP1)
 if [[ $RESULT != "no" ]]
 then

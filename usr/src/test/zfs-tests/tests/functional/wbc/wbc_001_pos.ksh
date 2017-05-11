@@ -35,12 +35,13 @@ log_onexit cleanup
 for pool_type in "stripe" "mirror" "raidz" "raidz2" "raidz3" ; do
 	for special_type in "stripe" "mirror" ; do
 		for wbc_mode in "none" "on" ; do
-			log_must create_pool_special $TESTPOOL $wbc_mode $pool_type $special_type
+			log_must create_pool_special $TESTPOOL $wbc_mode \
+			    $pool_type $special_type
 			log_must display_status $TESTPOOL
-			log_must $SYNC
-			log_must $ZPOOL scrub $TESTPOOL
+			log_must sync
+			log_must zpool scrub $TESTPOOL
 			while is_pool_scrubbing $TESTPOOL ; do
-				$SLEEP 1
+				sleep 1
 			done
 			log_must check_pool_errors $TESTPOOL
 			log_must destroy_pool $TESTPOOL

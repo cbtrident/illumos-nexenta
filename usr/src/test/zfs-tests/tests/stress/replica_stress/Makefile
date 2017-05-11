@@ -10,35 +10,13 @@
 #
 
 #
-# Copyright (c) 2012 by Delphix. All rights reserved.
-# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
-.PARALLEL: $(SUBDIRS)
 
 include $(SRC)/Makefile.master
 
 ROOTOPTPKG = $(ROOT)/opt/zfs-tests
-TESTDIR = $(ROOTOPTPKG)/tests/stress/replica_stress
+TARGETDIR = $(ROOTOPTPKG)/tests/stress/replica_stress
 
-FILES = default.cfg replica_stress_common.kshlib 
-
-CONFIG = $(FILES:%=$(TESTDIR)/%)
-$(CONFIG) := FILEMODE = 0555
-
-all lint clean clobber:
-
-install: $(CONFIG)
-
-$(CONFIG): $(TESTDIR)
-
-$(TESTDIR):
-	$(INS.dir)
-
-$(TESTDIR)/%: %
-	$(INS.file)
-
-SUBDIRS = mirror_stress_002 mirror_stress_003 mirror_stress_004 \
-	mirror_stress_005 mirror_stress_006 raidz_stress_001 \
-	raidz_stress_002 slog_stress_001 slog_stress_002
-
+include $(SRC)/test/zfs-tests/Makefile.com
 include $(SRC)/test/Makefile.com

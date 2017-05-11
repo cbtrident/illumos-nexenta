@@ -18,10 +18,12 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2016 Toomas Soome <tsoome@me.com>
+ * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -469,7 +471,6 @@ void	vn_reclaim(vnode_t *);
 void	vn_invalid(vnode_t *);
 
 int	rootconf(void);
-int	svm_rootconf(void);
 int	domount(char *, struct mounta *, vnode_t *, struct cred *,
 	    struct vfs **);
 int	dounmount(struct vfs *, int, cred_t *);
@@ -513,7 +514,6 @@ int	vfs_optionisset(const struct vfs *, const char *, char **);
 int	vfs_settag(uint_t, uint_t, const char *, const char *, cred_t *);
 int	vfs_clrtag(uint_t, uint_t, const char *, const char *, cred_t *);
 void	vfs_syncall(void);
-void	vfs_syncprogress(void);
 void	vfsinit(void);
 void	vfs_unmountall(void);
 void	vfs_make_fsid(fsid_t *, dev_t, int);

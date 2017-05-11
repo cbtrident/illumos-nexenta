@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
@@ -108,12 +108,19 @@ struct objset {
 	uint64_t os_wbc_root_ds_obj;
 	uint64_t os_wbc_off_txg;
 
+	/*
+	 * Pointer is constant; the blkptr it points to is protected by
+	 * os_dsl_dataset->ds_bp_rwlock
+	 */
+	blkptr_t *os_rootbp;
+
 	/* no lock needed: */
 	struct dmu_tx *os_synctx; /* XXX sketchy */
-	blkptr_t *os_rootbp;
 	zil_header_t os_zil_header;
 	list_t os_synced_dnodes;
 	uint64_t os_flags;
+	uint64_t os_freed_dnodes;
+	boolean_t os_rescan_dnodes;
 
 	/* Protected by os_obj_lock */
 	kmutex_t os_obj_lock;
@@ -185,6 +192,7 @@ boolean_t dmu_objset_userspace_present(objset_t *os);
 int dmu_fsname(const char *snapname, char *buf);
 
 void dmu_objset_evict_done(objset_t *os);
+void dmu_objset_willuse_space(objset_t *os, int64_t space, dmu_tx_t *tx);
 
 void dmu_objset_init(void);
 void dmu_objset_fini(void);

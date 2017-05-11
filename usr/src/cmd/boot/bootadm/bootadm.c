@@ -18,14 +18,13 @@
  *
  * CDDL HEADER END
  */
-/*
- * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- */
 
 /*
+ * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Milan Jurik. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2015 by Delphix. All rights reserved.
+ * Copyright 2016 Toomas Soome <tsoome@me.com>
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 /*
@@ -69,6 +68,7 @@
 #include <sys/lockfs.h>
 #include <sys/filio.h>
 #include <libbe.h>
+#include <deflt.h>
 #ifdef i386
 #include <libfdisk.h>
 #endif
@@ -86,7 +86,6 @@
 #include <locale.h>
 #include <sys/mkdev.h>
 
-#include "message.h"
 #include "bootadm.h"
 
 #ifndef TEXT_DOMAIN
@@ -101,19 +100,6 @@ typedef enum {
 	BAM_ARCHIVE,
 	BAM_INSTALL
 } subcmd_t;
-
-typedef enum {
-    OPT_ABSENT = 0,	/* No option */
-    OPT_REQ,		/* option required */
-    OPT_OPTIONAL	/* option may or may not be present */
-} option_t;
-
-typedef struct {
-	char	*subcmd;
-	option_t option;
-	error_t (*handler)();
-	int	unpriv;			/* is this an unprivileged command */
-} subcmd_defn_t;
 
 #define	LINE_INIT	0	/* lineNum initial value */
 #define	ENTRY_INIT	-1	/* entryNum initial value */
@@ -137,6 +123,10 @@ typedef struct {
 #define	GRUBSIGN_LU_PREFIX	"BE_"
 #define	UFS_SIGNATURE_LIST	"/var/run/grub_ufs_signatures"
 #define	ZFS_LEGACY_MNTPT	"/tmp/bootadm_mnt_zfs_legacy"
+
+/* BE defaults */
+#define	BE_DEFAULTS		"/etc/default/be"
+#define	BE_DFLT_BE_HAS_GRUB	"BE_HAS_GRUB="
 
 #define	BOOTADM_RDONLY_TEST	"BOOTADM_RDONLY_TEST"
 
@@ -166,14 +156,6 @@ typedef struct {
 
 #define	ETC_SYSTEM_DIR		"etc/system.d"
 #define	SELF_ASSEMBLY		"etc/system.d/.self-assembly"
-
-typedef enum zfs_mnted {
-	ZFS_MNT_ERROR = -1,
-	LEGACY_MOUNTED = 1,
-	LEGACY_ALREADY,
-	ZFS_MOUNTED,
-	ZFS_ALREADY
-} zfs_mnted_t;
 
 /*
  * Default file attributes
@@ -230,10 +212,10 @@ int bam_force;
 int bam_debug;
 static char *prog;
 static subcmd_t bam_cmd;
-static char *bam_root;
-static int bam_rootlen;
+char *bam_root;
+int bam_rootlen;
 static int bam_root_readonly;
-static int bam_alt_root;
+int bam_alt_root;
 static int bam_extend = 0;
 static int bam_purge = 0;
 static char *bam_subcmd;
@@ -247,7 +229,7 @@ static int bam_smf_check;
 static int bam_lock_fd = -1;
 static int bam_zfs;
 static int bam_mbr;
-static char rootbuf[PATH_MAX] = "/";
+char rootbuf[PATH_MAX] = "/";
 static char self_assembly[PATH_MAX];
 static int bam_update_all;
 static int bam_alt_platform;
@@ -293,14 +275,9 @@ static char *expand_path(const char *);
 static long s_strtol(char *);
 static int s_fputs(char *, FILE *);
 
-static int is_zfs(char *root);
-static int is_ufs(char *root);
-static int is_pcfs(char *root);
 static int is_amd64(void);
 static char *get_machine(void);
 static void append_to_flist(filelist_t *, char *);
-static char *mount_top_dataset(char *pool, zfs_mnted_t *mnted);
-static int umount_top_dataset(char *pool, zfs_mnted_t mnted, char *mntpt);
 static int ufs_add_to_sign_list(char *sign);
 static error_t synchronize_BE_menu(void);
 static boolean_t sync_etc_system = B_FALSE;
@@ -542,7 +519,7 @@ sanitize_env()
 int
 main(int argc, char *argv[])
 {
-	error_t ret;
+	error_t ret = BAM_SUCCESS;
 
 	(void) setlocale(LC_ALL, "");
 	(void) textdomain(TEXT_DOMAIN);
@@ -561,7 +538,13 @@ main(int argc, char *argv[])
 
 	switch (bam_cmd) {
 		case BAM_MENU:
-			ret = bam_menu(bam_subcmd, bam_opt, bam_argc, bam_argv);
+			if (is_grub(bam_alt_root ? bam_root : "/")) {
+				ret = bam_menu(bam_subcmd, bam_opt,
+				    bam_argc, bam_argv);
+			} else {
+				ret = bam_loader_menu(bam_subcmd, bam_opt,
+				    bam_argc, bam_argv);
+			}
 			break;
 		case BAM_ARCHIVE:
 			ret = bam_archive(bam_subcmd, bam_opt);
@@ -677,7 +660,8 @@ parse_args_internal(int argc, char *argv[])
 		case 'a':
 			if (bam_cmd) {
 				error = 1;
-				bam_error(MULT_CMDS, c);
+				bam_error(
+				    _("multiple commands specified: -%c\n"), c);
 			}
 			bam_cmd = BAM_ARCHIVE;
 			bam_subcmd = optarg;
@@ -685,7 +669,8 @@ parse_args_internal(int argc, char *argv[])
 		case 'd':
 			if (bam_debug) {
 				error = 1;
-				bam_error(DUP_OPT, c);
+				bam_error(
+				    _("duplicate options specified: -%c\n"), c);
 			}
 			bam_debug = s_strtol(optarg);
 			break;
@@ -698,7 +683,8 @@ parse_args_internal(int argc, char *argv[])
 		case 'i':
 			if (bam_cmd) {
 				error = 1;
-				bam_error(MULT_CMDS, c);
+				bam_error(
+				    _("multiple commands specified: -%c\n"), c);
 			}
 			bam_cmd = BAM_INSTALL;
 			bam_subcmd = optarg;
@@ -706,7 +692,8 @@ parse_args_internal(int argc, char *argv[])
 		case 'm':
 			if (bam_cmd) {
 				error = 1;
-				bam_error(MULT_CMDS, c);
+				bam_error(
+				    _("multiple commands specified: -%c\n"), c);
 			}
 			bam_cmd = BAM_MENU;
 			bam_subcmd = optarg;
@@ -733,7 +720,8 @@ parse_args_internal(int argc, char *argv[])
 		case 'o':
 			if (bam_opt) {
 				error = 1;
-				bam_error(DUP_OPT, c);
+				bam_error(
+				    _("duplicate options specified: -%c\n"), c);
 			}
 			bam_opt = optarg;
 			break;
@@ -746,19 +734,21 @@ parse_args_internal(int argc, char *argv[])
 		case 'P':
 			if (bam_pool != NULL) {
 				error = 1;
-				bam_error(DUP_OPT, c);
+				bam_error(
+				    _("duplicate options specified: -%c\n"), c);
 			}
 			bam_pool = optarg;
 			break;
 		case 'R':
 			if (bam_root) {
 				error = 1;
-				bam_error(DUP_OPT, c);
+				bam_error(
+				    _("duplicate options specified: -%c\n"), c);
 				break;
 			} else if (realpath(optarg, rootbuf) == NULL) {
 				error = 1;
-				bam_error(CANT_RESOLVE, optarg,
-				    strerror(errno));
+				bam_error(_("cannot resolve path %s: %s\n"),
+				    optarg, strerror(errno));
 				break;
 			}
 			bam_alt_root = 1;
@@ -772,7 +762,9 @@ parse_args_internal(int argc, char *argv[])
 			    (strcmp(bam_platform, "sun4u") != 0) &&
 			    (strcmp(bam_platform, "sun4v") != 0)) {
 				error = 1;
-				bam_error(INVALID_PLAT, bam_platform);
+				bam_error(_("invalid platform %s - must be "
+				    "one of sun4u, sun4v or i86pc\n"),
+				    bam_platform);
 			}
 			break;
 		case 'X':
@@ -786,11 +778,13 @@ parse_args_internal(int argc, char *argv[])
 			break;
 		case '?':
 			error = 1;
-			bam_error(BAD_OPT, optopt);
+			bam_error(_("invalid option or missing option "
+			    "argument: -%c\n"), optopt);
 			break;
 		default :
 			error = 1;
-			bam_error(BAD_OPT, c);
+			bam_error(_("invalid option or missing option "
+			    "argument: -%c\n"), c);
 			break;
 		}
 	}
@@ -811,7 +805,7 @@ parse_args_internal(int argc, char *argv[])
 			usage();
 			bam_exit(0);
 		}
-		bam_error(NEED_CMD);
+		bam_error(_("a command option must be specified\n"));
 		error = 1;
 	}
 
@@ -821,7 +815,7 @@ parse_args_internal(int argc, char *argv[])
 	}
 
 	if (optind > argc) {
-		bam_error(INT_ERROR, "parse_args");
+		bam_error(_("Internal error: %s\n"), "parse_args");
 		bam_exit(1);
 	} else if (optind < argc) {
 		bam_argv = &argv[optind];
@@ -843,7 +837,7 @@ parse_args_internal(int argc, char *argv[])
 		bam_verbose = 1;
 }
 
-static error_t
+error_t
 check_subcmd_and_options(
 	char *subcmd,
 	char *opt,
@@ -853,17 +847,17 @@ check_subcmd_and_options(
 	int i;
 
 	if (subcmd == NULL) {
-		bam_error(NEED_SUBCMD);
+		bam_error(_("this command requires a sub-command\n"));
 		return (BAM_ERROR);
 	}
 
 	if (strcmp(subcmd, "set_option") == 0) {
 		if (bam_argc == 0 || bam_argv == NULL || bam_argv[0] == NULL) {
-			bam_error(MISSING_ARG);
+			bam_error(_("missing argument for sub-command\n"));
 			usage();
 			return (BAM_ERROR);
 		} else if (bam_argc > 1 || bam_argv[1] != NULL) {
-			bam_error(TRAILING_ARGS);
+			bam_error(_("invalid trailing arguments\n"));
 			usage();
 			return (BAM_ERROR);
 		}
@@ -874,7 +868,7 @@ check_subcmd_and_options(
 		 */
 		if (bam_argc > 1 || (bam_argc == 1 &&
 		    strcmp(bam_argv[0], "fastboot") != 0)) {
-			bam_error(TRAILING_ARGS);
+			bam_error(_("invalid trailing arguments\n"));
 			usage();
 			return (BAM_ERROR);
 		}
@@ -886,7 +880,7 @@ check_subcmd_and_options(
 		 * Of the remaining subcommands, only "enable_hypervisor" and
 		 * "list_setting" take trailing arguments.
 		 */
-		bam_error(TRAILING_ARGS);
+		bam_error(_("invalid trailing arguments\n"));
 		usage();
 		return (BAM_ERROR);
 	}
@@ -903,12 +897,12 @@ check_subcmd_and_options(
 	}
 
 	if (table[i].subcmd == NULL) {
-		bam_error(INVALID_SUBCMD, subcmd);
+		bam_error(_("invalid sub-command specified: %s\n"), subcmd);
 		return (BAM_ERROR);
 	}
 
 	if (table[i].unpriv == 0 && geteuid() != 0) {
-		bam_error(MUST_BE_ROOT);
+		bam_error(_("you must be root to run this command\n"));
 		return (BAM_ERROR);
 	}
 
@@ -922,9 +916,11 @@ check_subcmd_and_options(
 	if (table[i].option != OPT_OPTIONAL) {
 		if ((table[i].option == OPT_REQ) ^ (opt != NULL)) {
 			if (opt)
-				bam_error(NO_OPT_REQ, subcmd);
+				bam_error(_("this sub-command (%s) does not "
+				    "take options\n"), subcmd);
 			else
-				bam_error(MISS_OPT, subcmd);
+				bam_error(_("an option is required for this "
+				    "sub-command: %s\n"), subcmd);
 			return (BAM_ERROR);
 		}
 	}
@@ -938,7 +934,7 @@ check_subcmd_and_options(
  * NOTE: A single "/" is also considered a trailing slash and will
  * be deleted.
  */
-static void
+void
 elide_trailing_slash(const char *src, char *dst, size_t dstsize)
 {
 	size_t dstlen;
@@ -960,22 +956,25 @@ is_safe_exec(char *path)
 	struct stat	sb;
 
 	if (lstat(path, &sb) != 0) {
-		bam_error(STAT_FAIL, path, strerror(errno));
+		bam_error(_("stat of file failed: %s: %s\n"), path,
+		    strerror(errno));
 		return (BAM_ERROR);
 	}
 
 	if (!S_ISREG(sb.st_mode)) {
-		bam_error(PATH_EXEC_LINK, path);
+		bam_error(_("%s is not a regular file, skipping\n"), path);
 		return (BAM_ERROR);
 	}
 
 	if (sb.st_uid != getuid()) {
-		bam_error(PATH_EXEC_OWNER, path, getuid());
+		bam_error(_("%s is not owned by %d, skipping\n"),
+		    path, getuid());
 		return (BAM_ERROR);
 	}
 
 	if (sb.st_mode & S_IWOTH || sb.st_mode & S_IWGRP) {
-		bam_error(PATH_EXEC_PERMS, path);
+		bam_error(_("%s is others or group writable, skipping\n"),
+		    path);
 		return (BAM_ERROR);
 	}
 
@@ -1019,7 +1018,7 @@ list_setting(menu_t *mp, char *which, char *setting)
 		;
 
 	if (!ent) {
-		bam_error(NO_MATCH_ENTRY);
+		bam_error(_("no matching entry found\n"));
 		return (BAM_ERROR);
 	}
 
@@ -1027,9 +1026,9 @@ list_setting(menu_t *mp, char *which, char *setting)
 
 	for (lp = ent->start; lp != NULL; lp = lp->next) {
 		if ((*setting == NULL) && (lp->flags != BAM_COMMENT))
-			bam_print(PRINT, lp->line);
+			bam_print("%s\n", lp->line);
 		else if (lp->cmd != NULL && strcmp(setting, lp->cmd) == 0) {
-			bam_print(PRINT, lp->arg);
+			bam_print("%s\n", lp->arg);
 			found = 1;
 		}
 
@@ -1038,7 +1037,7 @@ list_setting(menu_t *mp, char *which, char *setting)
 	}
 
 	if (!found) {
-		bam_error(NO_MATCH_ENTRY);
+		bam_error(_("no matching entry found\n"));
 		return (BAM_ERROR);
 	}
 
@@ -1056,11 +1055,11 @@ install_bootloader(void)
 	be_node_list_t	*be_nodes, *node;
 	FILE		*fp;
 	char		*root_ds = NULL;
-	int		ret;
+	int		ret = BAM_ERROR;
 
 	if (nvlist_alloc(&nvl, NV_UNIQUE_NAME, 0) != 0) {
 		bam_error(_("out of memory\n"));
-		return (BAM_ERROR);
+		return (ret);
 	}
 
 	/*
@@ -1074,13 +1073,13 @@ install_bootloader(void)
 
 	if (bam_alt_root) {
 		if (stat(bam_root, &statbuf) != 0) {
-			bam_error(STAT_FAIL, bam_root, strerror(errno));
-			ret = BAM_ERROR;
+			bam_error(_("stat of file failed: %s: %s\n"), bam_root,
+			    strerror(errno));
 			goto done;
 		}
 		if ((fp = fopen(MNTTAB, "r")) == NULL) {
-			bam_error(OPEN_FAIL, MNTTAB, strerror(errno));
-			ret = BAM_ERROR;
+			bam_error(_("failed to open file: %s: %s\n"),
+			    MNTTAB, strerror(errno));
 			goto done;
 		}
 		resetmnttab(fp);
@@ -1095,19 +1094,17 @@ install_bootloader(void)
 		(void) fclose(fp);
 
 		if (found == 0) {
-			bam_error(NOT_IN_MNTTAB, bam_root);
-			ret = BAM_ERROR;
+			bam_error(_("alternate root %s not in mnttab\n"),
+			    bam_root);
 			goto done;
 		}
 		if (root_ds == NULL) {
 			bam_error(_("out of memory\n"));
-			ret = BAM_ERROR;
 			goto done;
 		}
 
 		if (be_list(NULL, &be_nodes) != BE_SUCCESS) {
 			bam_error(_("No BE's found\n"));
-			ret = BAM_ERROR;
 			goto done;
 		}
 		for (node = be_nodes; node != NULL; node = node->be_next_node)
@@ -1121,7 +1118,6 @@ install_bootloader(void)
 		root_ds = NULL;
 		if (node == NULL) {
 			be_free_list(be_nodes);
-			ret = BAM_ERROR;
 			goto done;
 		}
 		ret = nvlist_add_string(nvl, BE_ATTR_ORIG_BE_NAME,
@@ -1129,7 +1125,7 @@ install_bootloader(void)
 		ret |= nvlist_add_string(nvl, BE_ATTR_ORIG_BE_ROOT,
 		    node->be_root_ds);
 		be_free_list(be_nodes);
-		if (ret) {
+		if (ret != 0) {
 			ret = BAM_ERROR;
 			goto done;
 		}
@@ -1144,6 +1140,7 @@ install_bootloader(void)
 
 	if (nvlist_add_uint16(nvl, BE_ATTR_INSTALL_FLAGS, flags) != 0) {
 		bam_error(_("out of memory\n"));
+		ret = BAM_ERROR;
 		goto done;
 	}
 
@@ -1154,13 +1151,13 @@ install_bootloader(void)
 	 */
 	if (bam_pool != NULL) {
 		ret = nvlist_add_string(nvl, BE_ATTR_ORIG_BE_POOL, bam_pool);
-		if (ret) {
+		if (ret != 0) {
 			ret = BAM_ERROR;
 			goto done;
 		}
 		if (found) {
 			ret = be_installboot(nvl);
-			if (ret)
+			if (ret != 0)
 				ret = BAM_ERROR;
 			goto done;
 		}
@@ -1193,12 +1190,12 @@ install_bootloader(void)
 		ret |= nvlist_add_string(nvl, BE_ATTR_ORIG_BE_ROOT,
 		    node->be_root_ds);
 		be_free_list(be_nodes);
-		if (ret) {
+		if (ret != 0) {
 			ret = BAM_ERROR;
 			goto done;
 		}
 		ret = be_installboot(nvl);
-		if (ret)
+		if (ret != 0)
 			ret = BAM_ERROR;
 		goto done;
 	}
@@ -1207,7 +1204,8 @@ install_bootloader(void)
 	 * get dataset for "/" and fill up the args.
 	 */
 	if ((fp = fopen(MNTTAB, "r")) == NULL) {
-		bam_error(OPEN_FAIL, MNTTAB, strerror(errno));
+		bam_error(_("failed to open file: %s: %s\n"),
+		    MNTTAB, strerror(errno));
 		ret = BAM_ERROR;
 		be_free_list(be_nodes);
 		goto done;
@@ -1224,7 +1222,7 @@ install_bootloader(void)
 	(void) fclose(fp);
 
 	if (found == 0) {
-		bam_error(NOT_IN_MNTTAB, "/");
+		bam_error(_("alternate root %s not in mnttab\n"), "/");
 		ret = BAM_ERROR;
 		be_free_list(be_nodes);
 		goto done;
@@ -1255,7 +1253,7 @@ install_bootloader(void)
 	ret |= nvlist_add_string(nvl, BE_ATTR_ORIG_BE_POOL, node->be_rpool);
 	be_free_list(be_nodes);
 
-	if (ret)
+	if (ret != 0)
 		ret = BAM_ERROR;
 	else
 		ret = be_installboot(nvl) ? BAM_ERROR : 0;
@@ -1291,10 +1289,10 @@ bam_menu(char *subcmd, char *opt, int largc, char *largv[])
 	char			menu_root[PATH_MAX];
 	struct stat		sb;
 	error_t (*f)(menu_t *mp, char *menu_path, char *opt);
-	char			*special;
+	char			*special = NULL;
 	char			*pool = NULL;
 	zfs_mnted_t		zmnted;
-	char			*zmntpt;
+	char			*zmntpt = NULL;
 	char			*osdev;
 	char			*osroot;
 	const char		*fcn = "bam_menu()";
@@ -1303,7 +1301,8 @@ bam_menu(char *subcmd, char *opt, int largc, char *largv[])
 	 * Menu sub-command only applies to GRUB (i.e. x86)
 	 */
 	if (!is_grub(bam_alt_root ? bam_root : "/")) {
-		bam_error(NOT_GRUB_BOOT);
+		bam_error(_("not a GRUB 0.97 based Illumos instance. "
+		    "Operation not supported\n"));
 		return (BAM_ERROR);
 	}
 
@@ -1329,8 +1328,8 @@ bam_menu(char *subcmd, char *opt, int largc, char *largv[])
 		if (osroot) {
 			/* fixup bam_root so that it points at osroot */
 			if (realpath(osroot, rootbuf) == NULL) {
-				bam_error(CANT_RESOLVE, osroot,
-				    strerror(errno));
+				bam_error(_("cannot resolve path %s: %s\n"),
+				    osroot, strerror(errno));
 				return (BAM_ERROR);
 			}
 			bam_alt_root = 1;
@@ -1344,16 +1343,16 @@ bam_menu(char *subcmd, char *opt, int largc, char *largv[])
 	 * not the OS root
 	 */
 	if (is_pcfs(bam_root)) {
-		bam_error(PCFS_ROOT_NOTSUP, bam_root);
+		bam_error(_("root <%s> on PCFS is not supported\n"), bam_root);
 		return (BAM_ERROR);
 	}
 
 	if (stat(menu_root, &sb) == -1) {
-		bam_error(CANNOT_LOCATE_GRUB_MENU);
+		bam_error(_("cannot find GRUB menu\n"));
 		return (BAM_ERROR);
 	}
 
-	BAM_DPRINTF((D_MENU_ROOT, fcn, menu_root));
+	BAM_DPRINTF(("%s: menu root is %s\n", fcn, menu_root));
 
 	/*
 	 * We no longer use the GRUB slice file. If it exists, then
@@ -1370,58 +1369,62 @@ bam_menu(char *subcmd, char *opt, int largc, char *largv[])
 	}
 
 	if (bam_verbose && stat(path, &sb) == 0)
-		bam_error(GRUB_SLICE_FILE_EXISTS, path);
+		bam_error(_("unsupported GRUB slice file (%s) exists - "
+		    "ignoring.\n"), path);
 
 	if (is_zfs(menu_root)) {
 		assert(strcmp(menu_root, bam_root) == 0);
 		special = get_special(menu_root);
 		INJECT_ERROR1("Z_MENU_GET_SPECIAL", special = NULL);
 		if (special == NULL) {
-			bam_error(CANT_FIND_SPECIAL, menu_root);
+			bam_error(_("cant find special file for "
+			    "mount-point %s\n"), menu_root);
 			return (BAM_ERROR);
 		}
 		pool = strtok(special, "/");
 		INJECT_ERROR1("Z_MENU_GET_POOL", pool = NULL);
 		if (pool == NULL) {
 			free(special);
-			bam_error(CANT_FIND_POOL, menu_root);
+			bam_error(_("cant find pool for mount-point %s\n"),
+			    menu_root);
 			return (BAM_ERROR);
 		}
-		BAM_DPRINTF((D_Z_MENU_GET_POOL_FROM_SPECIAL, fcn, pool));
+		BAM_DPRINTF(("%s: derived pool=%s from special\n", fcn, pool));
 
 		zmntpt = mount_top_dataset(pool, &zmnted);
 		INJECT_ERROR1("Z_MENU_MOUNT_TOP_DATASET", zmntpt = NULL);
 		if (zmntpt == NULL) {
-			bam_error(CANT_MOUNT_POOL_DATASET, pool);
+			bam_error(_("cannot mount pool dataset for pool: %s\n"),
+			    pool);
 			free(special);
 			return (BAM_ERROR);
 		}
-		BAM_DPRINTF((D_Z_GET_MENU_MOUNT_TOP_DATASET, fcn, zmntpt));
+		BAM_DPRINTF(("%s: top dataset mountpoint=%s\n", fcn, zmntpt));
 
 		(void) strlcpy(menu_root, zmntpt, sizeof (menu_root));
-		BAM_DPRINTF((D_Z_GET_MENU_MENU_ROOT, fcn, menu_root));
+		BAM_DPRINTF(("%s: zfs menu_root=%s\n", fcn, menu_root));
 	}
 
 	elide_trailing_slash(menu_root, clean_menu_root,
 	    sizeof (clean_menu_root));
 
-	BAM_DPRINTF((D_CLEAN_MENU_ROOT, fcn, clean_menu_root));
+	BAM_DPRINTF(("%s: cleaned menu root is <%s>\n", fcn, clean_menu_root));
 
 	(void) strlcpy(menu_path, clean_menu_root, sizeof (menu_path));
 	(void) strlcat(menu_path, GRUB_MENU, sizeof (menu_path));
 
-	BAM_DPRINTF((D_MENU_PATH, fcn, menu_path));
+	BAM_DPRINTF(("%s: menu path is: %s\n", fcn, menu_path));
 
 	/*
 	 * If listing the menu, display the menu location
 	 */
 	if (strcmp(subcmd, "list_entry") == 0)
-		bam_print(GRUB_MENU_PATH, menu_path);
+		bam_print(_("the location for the active GRUB menu is: %s\n"),
+		    menu_path);
 
 	if ((menu = menu_read(menu_path)) == NULL) {
-		bam_error(CANNOT_LOCATE_GRUB_MENU_FILE, menu_path);
-		if (special != NULL)
-			free(special);
+		bam_error(_("cannot find GRUB menu file: %s\n"), menu_path);
+		free(special);
 
 		return (BAM_ERROR);
 	}
@@ -1441,7 +1444,7 @@ bam_menu(char *subcmd, char *opt, int largc, char *largv[])
 
 	ret = get_boot_cap(bam_root);
 	if (ret != BAM_SUCCESS) {
-		BAM_DPRINTF((D_BOOT_GET_CAP_FAILED, fcn));
+		BAM_DPRINTF(("%s: Failed to get boot capability\n", fcn));
 		goto out;
 	}
 
@@ -1460,14 +1463,16 @@ bam_menu(char *subcmd, char *opt, int largc, char *largv[])
 		    ((largc > 1) ? largv[1] : ""));
 	} else if (strcmp(subcmd, "disable_hypervisor") == 0) {
 		if (is_sparc()) {
-			bam_error(NO_SPARC, subcmd);
+			bam_error(_("%s operation unsupported on SPARC "
+			    "machines\n"), subcmd);
 			ret = BAM_ERROR;
 		} else {
 			ret = f(menu, bam_root, NULL);
 		}
 	} else if (strcmp(subcmd, "enable_hypervisor") == 0) {
 		if (is_sparc()) {
-			bam_error(NO_SPARC, subcmd);
+			bam_error(_("%s operation unsupported on SPARC "
+			    "machines\n"), subcmd);
 			ret = BAM_ERROR;
 		} else {
 			char *extra_args = NULL;
@@ -1514,7 +1519,8 @@ bam_menu(char *subcmd, char *opt, int largc, char *largv[])
 		ret = f(menu, NULL, opt);
 
 	if (ret == BAM_WRITE) {
-		BAM_DPRINTF((D_WRITING_MENU_ROOT, fcn, clean_menu_root));
+		BAM_DPRINTF(("%s: writing menu to clean-menu-root: <%s>\n",
+		    fcn, clean_menu_root));
 		ret = menu_write(clean_menu_root, menu);
 	}
 
@@ -1556,7 +1562,7 @@ bam_archive(
 
 	ret = get_boot_cap(rootbuf);
 	if (ret != BAM_SUCCESS) {
-		BAM_DPRINTF((D_BOOT_GET_CAP_FAILED, fcn));
+		BAM_DPRINTF(("%s: Failed to get boot capability\n", fcn));
 		return (ret);
 	}
 
@@ -1566,7 +1572,8 @@ bam_archive(
 	 * information for each BE.
 	 */
 	if (bam_check && strcmp(subcmd, "update_all") == 0) {
-		bam_error(CHECK_NOT_SUPPORTED, subcmd);
+		bam_error(_("the check option is not supported with "
+		    "subcmd: %s\n"), subcmd);
 		return (BAM_ERROR);
 	}
 
@@ -1658,7 +1665,8 @@ bam_lock(void)
 			return;
 		}
 
-		bam_error(OPEN_FAIL, BAM_LOCK_FILE, strerror(errno));
+		bam_error(_("failed to open file: %s: %s\n"),
+		    BAM_LOCK_FILE, strerror(errno));
 		bam_exit(1);
 	}
 
@@ -1669,21 +1677,25 @@ bam_lock(void)
 
 	if (fcntl(bam_lock_fd, F_SETLK, &lock) == -1) {
 		if (errno != EACCES && errno != EAGAIN) {
-			bam_error(LOCK_FAIL, BAM_LOCK_FILE, strerror(errno));
+			bam_error(_("failed to lock file: %s: %s\n"),
+			    BAM_LOCK_FILE, strerror(errno));
 			(void) close(bam_lock_fd);
 			bam_lock_fd = -1;
 			bam_exit(1);
 		}
 		pid = 0;
 		(void) pread(bam_lock_fd, &pid, sizeof (pid_t), 0);
-		bam_print(FILE_LOCKED, pid);
+		bam_print(
+		    _("another instance of bootadm (pid %lu) is running\n"),
+		    pid);
 
 		lock.l_type = F_WRLCK;
 		lock.l_whence = SEEK_SET;
 		lock.l_start = 0;
 		lock.l_len = 0;
 		if (fcntl(bam_lock_fd, F_SETLKW, &lock) == -1) {
-			bam_error(LOCK_FAIL, BAM_LOCK_FILE, strerror(errno));
+			bam_error(_("failed to lock file: %s: %s\n"),
+			    BAM_LOCK_FILE, strerror(errno));
 			(void) close(bam_lock_fd);
 			bam_lock_fd = -1;
 			bam_exit(1);
@@ -1713,11 +1725,13 @@ bam_unlock(void)
 	unlock.l_len = 0;
 
 	if (fcntl(bam_lock_fd, F_SETLK, &unlock) == -1) {
-		bam_error(UNLOCK_FAIL, BAM_LOCK_FILE, strerror(errno));
+		bam_error(_("failed to unlock file: %s: %s\n"),
+		    BAM_LOCK_FILE, strerror(errno));
 	}
 
 	if (close(bam_lock_fd) == -1) {
-		bam_error(CLOSE_FAIL, BAM_LOCK_FILE, strerror(errno));
+		bam_error(_("failed to close file: %s: %s\n"),
+		    BAM_LOCK_FILE, strerror(errno));
 	}
 	bam_lock_fd = -1;
 }
@@ -1739,7 +1753,7 @@ list_archive(char *root, char *opt)
 	assert(flistp->head && flistp->tail);
 
 	for (lp = flistp->head; lp; lp = lp->next) {
-		bam_print(PRINT, lp->line);
+		bam_print(_("%s\n"), lp->line);
 	}
 
 	filelist_free(flistp);
@@ -1771,9 +1785,11 @@ list2file(char *root, char *tmp, char *final, line_t *start)
 	if (start == NULL) {
 		/* Empty GRUB menu */
 		if (stat(path, &sb) != -1) {
-			bam_print(UNLINK_EMPTY, path);
+			bam_print(_("file is empty, deleting file: %s\n"),
+			    path);
 			if (unlink(path) != 0) {
-				bam_error(UNLINK_FAIL, path, strerror(errno));
+				bam_error(_("failed to unlink file: %s: %s\n"),
+				    path, strerror(errno));
 				return (BAM_ERROR);
 			} else {
 				return (BAM_SUCCESS);
@@ -1796,14 +1812,16 @@ list2file(char *root, char *tmp, char *final, line_t *start)
 		if ((pw = getpwnam(DEFAULT_DEV_USER)) != NULL) {
 			root_uid = pw->pw_uid;
 		} else {
-			bam_error(CANT_FIND_USER,
+			bam_error(_("getpwnam: uid for %s failed, "
+			    "defaulting to %d\n"),
 			    DEFAULT_DEV_USER, DEFAULT_DEV_UID);
 			root_uid = (uid_t)DEFAULT_DEV_UID;
 		}
 		if ((gp = getgrnam(DEFAULT_DEV_GROUP)) != NULL) {
 			sys_gid = gp->gr_gid;
 		} else {
-			bam_error(CANT_FIND_GROUP,
+			bam_error(_("getgrnam: gid for %s failed, "
+			    "defaulting to %d\n"),
 			    DEFAULT_DEV_GROUP, DEFAULT_DEV_GID);
 			sys_gid = (gid_t)DEFAULT_DEV_GID;
 		}
@@ -1814,20 +1832,23 @@ list2file(char *root, char *tmp, char *final, line_t *start)
 	/* Truncate tmpfile first */
 	fp = fopen(tmpfile, "w");
 	if (fp == NULL) {
-		bam_error(OPEN_FAIL, tmpfile, strerror(errno));
+		bam_error(_("failed to open file: %s: %s\n"), tmpfile,
+		    strerror(errno));
 		return (BAM_ERROR);
 	}
 	ret = fclose(fp);
 	INJECT_ERROR1("LIST2FILE_TRUNC_FCLOSE", ret = EOF);
 	if (ret == EOF) {
-		bam_error(CLOSE_FAIL, tmpfile, strerror(errno));
+		bam_error(_("failed to close file: %s: %s\n"),
+		    tmpfile, strerror(errno));
 		return (BAM_ERROR);
 	}
 
 	/* Now open it in append mode */
 	fp = fopen(tmpfile, "a");
 	if (fp == NULL) {
-		bam_error(OPEN_FAIL, tmpfile, strerror(errno));
+		bam_error(_("failed to open file: %s: %s\n"), tmpfile,
+		    strerror(errno));
 		return (BAM_ERROR);
 	}
 
@@ -1835,7 +1856,8 @@ list2file(char *root, char *tmp, char *final, line_t *start)
 		ret = s_fputs(start->line, fp);
 		INJECT_ERROR1("LIST2FILE_FPUTS", ret = EOF);
 		if (ret == EOF) {
-			bam_error(WRITE_FAIL, tmpfile, strerror(errno));
+			bam_error(_("write to file failed: %s: %s\n"),
+			    tmpfile, strerror(errno));
 			(void) fclose(fp);
 			return (BAM_ERROR);
 		}
@@ -1844,7 +1866,8 @@ list2file(char *root, char *tmp, char *final, line_t *start)
 	ret = fclose(fp);
 	INJECT_ERROR1("LIST2FILE_APPEND_FCLOSE", ret = EOF);
 	if (ret == EOF) {
-		bam_error(CLOSE_FAIL, tmpfile, strerror(errno));
+		bam_error(_("failed to close file: %s: %s\n"),
+		    tmpfile, strerror(errno));
 		return (BAM_ERROR);
 	}
 
@@ -1856,14 +1879,16 @@ list2file(char *root, char *tmp, char *final, line_t *start)
 	ret = chmod(tmpfile, mode);
 	if (ret == -1 &&
 	    errno != EINVAL && errno != ENOTSUP) {
-		bam_error(CHMOD_FAIL, tmpfile, strerror(errno));
+		bam_error(_("chmod operation on %s failed - %s\n"),
+		    tmpfile, strerror(errno));
 		return (BAM_ERROR);
 	}
 
 	ret = chown(tmpfile, root_uid, sys_gid);
 	if (ret == -1 &&
 	    errno != EINVAL && errno != ENOTSUP) {
-		bam_error(CHOWN_FAIL, tmpfile, strerror(errno));
+		bam_error(_("chgrp operation on %s failed - %s\n"),
+		    tmpfile, strerror(errno));
 		return (BAM_ERROR);
 	}
 
@@ -1873,11 +1898,12 @@ list2file(char *root, char *tmp, char *final, line_t *start)
 	ret = rename(tmpfile, path);
 	INJECT_ERROR1("LIST2FILE_RENAME", ret = -1);
 	if (ret != 0) {
-		bam_error(RENAME_FAIL, path, strerror(errno));
+		bam_error(_("rename to file failed: %s: %s\n"), path,
+		    strerror(errno));
 		return (BAM_ERROR);
 	}
 
-	BAM_DPRINTF((D_WROTE_FILE, fcn, path));
+	BAM_DPRINTF(("%s: wrote file successfully: %s\n", fcn, path));
 	return (BAM_SUCCESS);
 }
 
@@ -1900,10 +1926,12 @@ setup_path(char *path)
 			/* best effort attempt, mkdirp will catch the error */
 			(void) unlink(path);
 			if (bam_verbose)
-				bam_print(NEED_DIRPATH, path);
+				bam_print(_("need to create directory "
+				    "path for %s\n"), path);
 			ret = mkdirp(path, DIR_PERMS);
 			if (ret == -1) {
-				bam_error(MKDIR_FAILED, path, strerror(errno));
+				bam_error(_("mkdir of %s failed: %s\n"),
+				    path, strerror(errno));
 				*p = '/';
 				return (BAM_ERROR);
 			}
@@ -1941,7 +1969,8 @@ setup_file(char *base, const char *path, cachefile *cf)
 
 	ret = snprintf(cf->path, sizeof (cf->path), "%s/%s", base, strip);
 	if (ret >= sizeof (cf->path)) {
-		bam_error(PATH_TOO_LONG, rootbuf);
+		bam_error(_("unable to create path on mountpoint %s, "
+		    "path too long\n"), rootbuf);
 		return (BAM_ERROR);
 	}
 
@@ -1951,7 +1980,8 @@ setup_file(char *base, const char *path, cachefile *cf)
 
 	if (bam_direct == BAM_DIRECT_DBOOT) {
 		if ((cf->out.gzfile = gzopen(cf->path, "wb")) == NULL) {
-			bam_error(OPEN_FAIL, cf->path, strerror(errno));
+			bam_error(_("failed to open file: %s: %s\n"),
+			    cf->path, strerror(errno));
 			return (BAM_ERROR);
 		}
 		(void) gzsetparams(cf->out.gzfile, Z_BEST_SPEED,
@@ -1959,7 +1989,8 @@ setup_file(char *base, const char *path, cachefile *cf)
 	} else {
 		if ((cf->out.fdfile = open(cf->path, O_WRONLY | O_CREAT, 0644))
 		    == -1) {
-			bam_error(OPEN_FAIL, cf->path, strerror(errno));
+			bam_error(_("failed to open file: %s: %s\n"),
+			    cf->path, strerror(errno));
 			return (BAM_ERROR);
 		}
 	}
@@ -1974,15 +2005,18 @@ cache_write(cachefile cf, char *buf, int size)
 
 	if (bam_direct == BAM_DIRECT_DBOOT) {
 		if (gzwrite(cf.out.gzfile, buf, size) < 1) {
-			bam_error(GZ_WRITE_FAIL, gzerror(cf.out.gzfile, &err));
+			bam_error(_("failed to write to %s\n"),
+			    gzerror(cf.out.gzfile, &err));
 			if (err == Z_ERRNO && bam_verbose) {
-				bam_error(WRITE_FAIL, cf.path, strerror(errno));
+				bam_error(_("write to file failed: %s: %s\n"),
+				    cf.path, strerror(errno));
 			}
 			return (BAM_ERROR);
 		}
 	} else {
 		if (write(cf.out.fdfile, buf, size) < 1) {
-			bam_error(WRITE_FAIL, cf.path, strerror(errno));
+			bam_error(_("write to file failed: %s: %s\n"),
+			    cf.path, strerror(errno));
 			return (BAM_ERROR);
 		}
 	}
@@ -1998,7 +2032,8 @@ cache_close(cachefile cf)
 		if (cf.out.gzfile) {
 			ret = gzclose(cf.out.gzfile);
 			if (ret != Z_OK) {
-				bam_error(CLOSE_FAIL, cf.path, strerror(errno));
+				bam_error(_("failed to close file: %s: %s\n"),
+				    cf.path, strerror(errno));
 				return (BAM_ERROR);
 			}
 		}
@@ -2006,7 +2041,8 @@ cache_close(cachefile cf)
 		if (cf.out.fdfile != -1) {
 			ret = close(cf.out.fdfile);
 			if (ret != 0) {
-				bam_error(CLOSE_FAIL, cf.path, strerror(errno));
+				bam_error(_("failed to close file: %s: %s\n"),
+				    cf.path, strerror(errno));
 				return (BAM_ERROR);
 			}
 		}
@@ -2032,7 +2068,8 @@ dircache_updatefile(const char *path, int what)
 		return (BAM_SUCCESS);
 
 	if ((infile = fopen(path, "rb")) == NULL) {
-		bam_error(OPEN_FAIL, path, strerror(errno));
+		bam_error(_("failed to open file: %s: %s\n"), path,
+		    strerror(errno));
 		return (BAM_ERROR);
 	}
 
@@ -2088,7 +2125,8 @@ dircache_updatedir(const char *path, int what, int updt)
 	    get_updatedir(what) : get_cachedir(what), strip);
 
 	if (ret >= sizeof (dpath)) {
-		bam_error(PATH_TOO_LONG, rootbuf);
+		bam_error(_("unable to create path on mountpoint %s, "
+		    "path too long\n"), rootbuf);
 		set_flag(UPDATE_ERROR);
 		return (BAM_ERROR);
 	}
@@ -2135,7 +2173,8 @@ update_dircache(const char *path, int flags)
 		_elfhdr	elf;
 
 		if ((fd = open(path, O_RDONLY)) < 0) {
-			bam_error(OPEN_FAIL, path, strerror(errno));
+			bam_error(_("failed to open file: %s: %s\n"),
+			    path, strerror(errno));
 			set_flag(UPDATE_ERROR);
 			rc = BAM_ERROR;
 			break;
@@ -2147,7 +2186,8 @@ update_dircache(const char *path, int flags)
 		 * _FILE_OFFSET_BITS is != 32 ...
 		 */
 		if (read(fd, (void *)&elf, sizeof (_elfhdr)) < 0) {
-			bam_error(READ_FAIL, path, strerror(errno));
+			bam_error(_("read failed for file: %s: %s\n"),
+			    path, strerror(errno));
 			set_flag(UPDATE_ERROR);
 			(void) close(fd);
 			rc = BAM_ERROR;
@@ -2178,7 +2218,8 @@ update_dircache(const char *path, int flags)
 			} else if (elf.e_ident[EI_CLASS] == ELFCLASS64) {
 				rc = dircache_updatefile(path, FILE64);
 			} else {
-				bam_print(NO3264ELF, path);
+				bam_print(_("WARNING: file %s is neither a "
+				    "32-bit nor a 64-bit ELF\n"), path);
 				/* paranoid */
 				rc  = dircache_updatefile(path, FILE32);
 				if (rc == BAM_SUCCESS)
@@ -2252,7 +2293,8 @@ cmpstat(
 		error = nvlist_add_uint64_array(walk_arg.new_nvlp,
 		    file + bam_rootlen, filestat, 2);
 		if (error)
-			bam_error(NVADD_FAIL, file, strerror(error));
+			bam_error(_("failed to update stat data for: %s: %s\n"),
+			    file, strerror(error));
 	}
 
 	/*
@@ -2265,8 +2307,9 @@ cmpstat(
 			return (0);
 
 		/* read in list of safe files */
-		if (safefiles == NULL)
-			if (fp = fopen("/boot/solaris/filelist.safe", "r")) {
+		if (safefiles == NULL) {
+			fp = fopen("/boot/solaris/filelist.safe", "r");
+			if (fp != NULL) {
 				safefiles = s_calloc(1,
 				    sizeof (struct safefile));
 				safefilep = safefiles;
@@ -2284,6 +2327,7 @@ cmpstat(
 				}
 				(void) fclose(fp);
 			}
+		}
 	}
 
 	/*
@@ -2305,7 +2349,7 @@ cmpstat(
 	 */
 	if (is_flag_on(NEED_CACHE_DIR)) {
 		if (bam_verbose)
-			bam_print(PARSEABLE_NEW_FILE, file);
+			bam_print(_("    new     %s\n"), file);
 
 		if (is_flag_on(IS_SPARC_TARGET)) {
 			set_dir_flag(FILE64, NEED_UPDATE);
@@ -2314,7 +2358,8 @@ cmpstat(
 
 		ret = update_dircache(file, flags);
 		if (ret == BAM_ERROR) {
-			bam_error(UPDT_CACHE_FAIL, file);
+			bam_error(_("directory cache update failed for %s\n"),
+			    file);
 			return (-1);
 		}
 
@@ -2335,7 +2380,8 @@ cmpstat(
 		} else {
 			ret = update_dircache(file, flags);
 			if (ret == BAM_ERROR) {
-				bam_error(UPDT_CACHE_FAIL, file);
+				bam_error(_("directory cache update "
+				    "failed for %s\n"), file);
 				return (-1);
 			}
 		}
@@ -2351,7 +2397,7 @@ cmpstat(
 		}
 
 		if (bam_verbose)
-			bam_print(PARSEABLE_NEW_FILE, file);
+			bam_print(_("    new     %s\n"), file);
 		return (0);
 	}
 
@@ -2406,7 +2452,8 @@ cmpstat(
 		} else {
 			ret = update_dircache(file, flags);
 			if (ret == BAM_ERROR) {
-				bam_error(UPDT_CACHE_FAIL, file);
+				bam_error(_("directory cache update failed "
+				    "for %s\n"), file);
 				return (-1);
 			}
 		}
@@ -2416,11 +2463,12 @@ cmpstat(
 			sync_etc_system = B_TRUE;
 		}
 
-		if (bam_verbose)
+		if (bam_verbose) {
 			if (bam_smf_check)
 				bam_print("    %s\n", file);
 			else
-				bam_print(PARSEABLE_OUT_DATE, file);
+				bam_print(_("    changed %s\n"), file);
+		}
 	}
 
 	return (0);
@@ -2440,7 +2488,7 @@ rmdir_r(char *path)
 	if ((dir = opendir(path)) == NULL)
 		return (-1);
 
-	while (d = readdir(dir)) {
+	while ((d = readdir(dir)) != NULL) {
 		if ((strcmp(d->d_name, ".") != 0) &&
 		    (strcmp(d->d_name, "..") != 0)) {
 			(void) snprintf(tpath, sizeof (tpath), "%s/%s",
@@ -2473,7 +2521,8 @@ set_cache_dir(char *root, int what)
 	    "/amd64" : "", CACHEDIR_SUFFIX);
 
 	if (ret >= sizeof (get_cachedir(what))) {
-		bam_error(PATH_TOO_LONG, rootbuf);
+		bam_error(_("unable to create path on mountpoint %s, "
+		    "path too long\n"), rootbuf);
 		return (BAM_ERROR);
 	}
 
@@ -2485,11 +2534,12 @@ set_cache_dir(char *root, int what)
 		(void) unlink(get_cachedir(what));
 
 		if (bam_verbose)
-			bam_print(UPDATE_CDIR_MISS, get_cachedir(what));
+			bam_print(_("archive cache directory not found: %s\n"),
+			    get_cachedir(what));
 		ret = mkdir(get_cachedir(what), DIR_PERMS);
 		if (ret < 0) {
-			bam_error(MKDIR_FAILED, get_cachedir(what),
-			    strerror(errno));
+			bam_error(_("mkdir of %s failed: %s\n"),
+			    get_cachedir(what), strerror(errno));
 			get_cachedir(what)[0] = '\0';
 			return (ret);
 		}
@@ -2524,7 +2574,8 @@ set_update_dir(char *root, int what)
 		    ARCHIVE_PREFIX, get_machine(), UPDATEDIR_SUFFIX);
 
 	if (ret >= sizeof (get_updatedir(what))) {
-		bam_error(PATH_TOO_LONG, rootbuf);
+		bam_error(_("unable to create path on mountpoint %s, "
+		    "path too long\n"), rootbuf);
 		return (BAM_ERROR);
 	}
 
@@ -2561,13 +2612,14 @@ is_valid_archive(char *root, int what)
 		    root, ARCHIVE_PREFIX, get_machine(), ARCHIVE_SUFFIX);
 
 	if (ret >= sizeof (archive_path)) {
-		bam_error(PATH_TOO_LONG, rootbuf);
+		bam_error(_("unable to create path on mountpoint %s, "
+		    "path too long\n"), rootbuf);
 		return (BAM_ERROR);
 	}
 
 	if (stat(archive_path, &sb) != 0) {
 		if (bam_verbose && !bam_check)
-			bam_print(UPDATE_ARCH_MISS, archive_path);
+			bam_print(_("archive not found: %s\n"), archive_path);
 		set_dir_flag(what, NEED_UPDATE);
 		set_dir_flag(what, NO_MULTI);
 		return (BAM_SUCCESS);
@@ -2588,14 +2640,16 @@ is_valid_archive(char *root, int what)
 	    FILE_STAT_TIMESTAMP);
 
 	if (ret >= sizeof (timestamp_path)) {
-		bam_error(PATH_TOO_LONG, rootbuf);
+		bam_error(_("unable to create path on mountpoint %s, "
+		    "path too long\n"), rootbuf);
 		return (BAM_ERROR);
 	}
 
 	if (stat(timestamp_path, &timestamp) != 0 ||
 	    sb.st_mtime > timestamp.st_mtime) {
 		if (bam_verbose && !bam_check)
-			bam_print(UPDATE_CACHE_OLD);
+			bam_print(
+			    _("archive cache is out of sync. Rebuilding.\n"));
 		/*
 		 * Don't generate a false positive for the boot-archive service
 		 * but trigger an update of the archive cache in
@@ -2617,7 +2671,8 @@ is_valid_archive(char *root, int what)
 
 	if (bam_extend && sb.st_size > BA_SIZE_MAX) {
 		if (bam_verbose && !bam_check)
-			bam_print(MULTI_SIZE, archive_path, BA_SIZE_MAX);
+			bam_print(_("archive %s is bigger than %d bytes and "
+			    "will be rebuilt\n"), archive_path, BA_SIZE_MAX);
 		set_dir_flag(what, NO_MULTI);
 	}
 
@@ -2669,7 +2724,8 @@ check_flags_and_files(char *root)
 		    ARCHIVE_PREFIX, get_machine(), CACHEDIR_SUFFIX);
 
 		if (ret >= sizeof (get_cachedir(FILE64))) {
-			bam_error(PATH_TOO_LONG, rootbuf);
+			bam_error(_("unable to create path on mountpoint %s, "
+			    "path too long\n"), rootbuf);
 			return (BAM_ERROR);
 		}
 
@@ -2680,8 +2736,8 @@ check_flags_and_files(char *root)
 
 		walk_arg.sparcfile = fopen(get_cachedir(FILE64), "w");
 		if (walk_arg.sparcfile == NULL) {
-			bam_error(OPEN_FAIL, get_cachedir(FILE64),
-			    strerror(errno));
+			bam_error(_("failed to open file: %s: %s\n"),
+			    get_cachedir(FILE64), strerror(errno));
 			return (BAM_ERROR);
 		}
 
@@ -2709,7 +2765,7 @@ check_flags_and_files(char *root)
 			set_dir_flag(FILE32, NEED_UPDATE);
 		set_dir_flag(FILE64, NEED_UPDATE);
 		if (bam_verbose)
-			bam_print(UPDATE_FORCE);
+			bam_print(_("forced update of archive requested\n"));
 		return (BAM_SUCCESS);
 	}
 
@@ -2728,7 +2784,8 @@ read_one_list(char *root, filelist_t  *flistp, char *filelist)
 
 	fp = fopen(path, "r");
 	if (fp == NULL) {
-		BAM_DPRINTF((D_FLIST_FAIL, fcn, path, strerror(errno)));
+		BAM_DPRINTF(("%s: failed to open archive filelist: %s: %s\n",
+		    fcn, path, strerror(errno)));
 		return (BAM_ERROR);
 	}
 	while (s_fgets(buf, sizeof (buf), fp) != NULL) {
@@ -2738,7 +2795,8 @@ read_one_list(char *root, filelist_t  *flistp, char *filelist)
 		append_to_flist(flistp, buf);
 	}
 	if (fclose(fp) != 0) {
-		bam_error(CLOSE_FAIL, path, strerror(errno));
+		bam_error(_("failed to close file: %s: %s\n"),
+		    path, strerror(errno));
 		return (BAM_ERROR);
 	}
 	return (BAM_SUCCESS);
@@ -2760,7 +2818,7 @@ read_list(char *root, filelist_t  *flistp)
 	 */
 	n = snprintf(path, sizeof (path), "%s%s", root, EXTRACT_BOOT_FILELIST);
 	if (n >= sizeof (path)) {
-		bam_error(NO_FLIST);
+		bam_error(_("archive filelist is empty\n"));
 		return (BAM_ERROR);
 	}
 
@@ -2799,11 +2857,12 @@ read_list(char *root, filelist_t  *flistp)
 		free(platarg);
 		free(rootarg);
 		if (n >= sizeof (cmd)) {
-			bam_error(NO_FLIST);
+			bam_error(_("archive filelist is empty\n"));
 			return (BAM_ERROR);
 		}
 		if (exec_cmd(cmd, flistp) != 0) {
-			BAM_DPRINTF((D_FLIST_FAIL, fcn, path, strerror(errno)));
+			BAM_DPRINTF(("%s: failed to open archive "
+			    "filelist: %s: %s\n", fcn, path, strerror(errno)));
 			return (BAM_ERROR);
 		}
 	} else {
@@ -2817,7 +2876,7 @@ read_list(char *root, filelist_t  *flistp)
 	}
 
 	if (flistp->head == NULL) {
-		bam_error(NO_FLIST);
+		bam_error(_("archive filelist is empty\n"));
 		return (BAM_ERROR);
 	}
 
@@ -2836,19 +2895,22 @@ getoldstat(char *root)
 	fd = open(path, O_RDONLY);
 	if (fd == -1) {
 		if (bam_verbose)
-			bam_print(OPEN_FAIL, path, strerror(errno));
+			bam_print(_("failed to open file: %s: %s\n"),
+			    path, strerror(errno));
 		goto out_err;
 	}
 
 	if (fstat(fd, &sb) != 0) {
-		bam_error(STAT_FAIL, path, strerror(errno));
+		bam_error(_("stat of file failed: %s: %s\n"), path,
+		    strerror(errno));
 		goto out_err;
 	}
 
 	ostat = s_calloc(1, sb.st_size);
 
 	if (read(fd, ostat, sb.st_size) != sb.st_size) {
-		bam_error(READ_FAIL, path, strerror(errno));
+		bam_error(_("read failed for file: %s: %s\n"), path,
+		    strerror(errno));
 		free(ostat);
 		goto out_err;
 	}
@@ -2862,7 +2924,8 @@ getoldstat(char *root)
 	free(ostat);
 
 	if (error) {
-		bam_error(UNPACK_FAIL, path, strerror(error));
+		bam_error(_("failed to unpack stat data: %s: %s\n"),
+		    path, strerror(error));
 		walk_arg.old_nvlp = NULL;
 		goto out_err;
 	} else {
@@ -2937,7 +3000,7 @@ check4stale(char *root)
 			int	what;
 
 			if (bam_verbose)
-				bam_print(PARSEABLE_STALE_FILE, path);
+				bam_print(_("    stale %s\n"), path);
 
 			if (strncmp(file, ETC_SYSTEM_DIR,
 			    strlen(ETC_SYSTEM_DIR)) == 0) {
@@ -2966,7 +3029,8 @@ create_newstat(void)
 		 * Not fatal - we can still create archive
 		 */
 		walk_arg.new_nvlp = NULL;
-		bam_error(NVALLOC_FAIL, strerror(error));
+		bam_error(_("failed to create stat data: %s\n"),
+		    strerror(error));
 	}
 }
 
@@ -2993,7 +3057,8 @@ walk_list(char *root, filelist_t *flistp)
 			 * Emit verbose message only
 			 */
 			if (bam_verbose)
-				bam_print(NFTW_FAIL, path, strerror(errno));
+				bam_print(_("cannot find: %s: %s\n"),
+				    path, strerror(errno));
 		}
 	}
 
@@ -3018,8 +3083,10 @@ update_timestamp(char *root)
 	 * the user of the performance issue.
 	 */
 	if (creat(timestamp_path, FILE_STAT_MODE) < 0) {
-		bam_error(OPEN_FAIL, timestamp_path, strerror(errno));
-		bam_error(TIMESTAMP_FAIL);
+		bam_error(_("failed to open file: %s: %s\n"), timestamp_path,
+		    strerror(errno));
+		bam_error(_("failed to update the timestamp file, next"
+		    " archive update may experience reduced performance\n"));
 	}
 }
 
@@ -3038,20 +3105,23 @@ savenew(char *root)
 	error = nvlist_pack(walk_arg.new_nvlp, &nstat, &sz,
 	    NV_ENCODE_XDR, 0);
 	if (error) {
-		bam_error(PACK_FAIL, strerror(error));
+		bam_error(_("failed to pack stat data: %s\n"),
+		    strerror(error));
 		return;
 	}
 
 	(void) snprintf(path, sizeof (path), "%s%s", root, FILE_STAT_TMP);
 	fd = open(path, O_RDWR|O_CREAT|O_TRUNC, FILE_STAT_MODE);
 	if (fd == -1) {
-		bam_error(OPEN_FAIL, path, strerror(errno));
+		bam_error(_("failed to open file: %s: %s\n"), path,
+		    strerror(errno));
 		free(nstat);
 		return;
 	}
 	wrote = write(fd, nstat, sz);
 	if (wrote != sz) {
-		bam_error(WRITE_FAIL, path, strerror(errno));
+		bam_error(_("write to file failed: %s: %s\n"), path,
+		    strerror(errno));
 		(void) close(fd);
 		free(nstat);
 		return;
@@ -3061,7 +3131,8 @@ savenew(char *root)
 
 	(void) snprintf(path2, sizeof (path2), "%s%s", root, FILE_STAT);
 	if (rename(path, path2) != 0) {
-		bam_error(RENAME_FAIL, path2, strerror(errno));
+		bam_error(_("rename to file failed: %s: %s\n"), path2,
+		    strerror(errno));
 	}
 }
 
@@ -3165,14 +3236,15 @@ update_required(char *root)
 	/* something went wrong */
 
 	if (ret == BAM_ERROR) {
-		bam_error(CACHE_FAIL);
+		bam_error(_("Failed to gather cache files, archives "
+		    "generation aborted\n"));
 		return (BAM_ERROR);
 	}
 
 	if (walk_arg.new_nvlp == NULL) {
 		if (walk_arg.sparcfile != NULL)
 			(void) fclose(walk_arg.sparcfile);
-		bam_error(NO_NEW_STAT);
+		bam_error(_("cannot create new stat data\n"));
 	}
 
 	/* If nothing was updated, discard newstat. */
@@ -3250,7 +3322,7 @@ check_archive(char *dest)
 
 	if (stat(dest, &sb) != 0 || !S_ISREG(sb.st_mode) ||
 	    sb.st_size < 10000) {
-		bam_error(ARCHIVE_BAD, dest);
+		bam_error(_("archive file %s not generated correctly\n"), dest);
 		(void) unlink(dest);
 		return (BAM_ERROR);
 	}
@@ -3331,7 +3403,7 @@ create_sparc_archive(char *archive, char *tempname, char *bootblk, char *list)
 	const char	*func = "create_sparc_archive()";
 
 	if (access(bootblk, R_OK) == 1) {
-		bam_error(BOOTBLK_FAIL, bootblk);
+		bam_error(_("unable to access bootblk file : %s\n"), bootblk);
 		return (BAM_ERROR);
 	}
 
@@ -3342,7 +3414,7 @@ create_sparc_archive(char *archive, char *tempname, char *bootblk, char *list)
 	    "-path-list \"%s\" 2>&1", MKISOFS_PATH, MKISO_PARAMS, bootblk,
 	    tempname, list);
 
-	BAM_DPRINTF((D_CMDLINE, func, cmdline));
+	BAM_DPRINTF(("%s: executing: %s\n", func, cmdline));
 
 	ret = exec_cmd(cmdline, &flist);
 	if (ret != 0 || check_cmdline(flist) == BAM_ERROR) {
@@ -3360,7 +3432,7 @@ create_sparc_archive(char *archive, char *tempname, char *bootblk, char *list)
 	    " bs=1b oseek=1 count=15 conv=notrunc conv=sync 2>&1", DD_PATH_USR,
 	    bootblk, tempname);
 
-	BAM_DPRINTF((D_CMDLINE, func, cmdline));
+	BAM_DPRINTF(("%s: executing: %s\n", func, cmdline));
 
 	ret = exec_cmd(cmdline, &flist);
 	if (ret != 0 || check_cmdline(flist) == BAM_ERROR)
@@ -3376,7 +3448,7 @@ create_sparc_archive(char *archive, char *tempname, char *bootblk, char *list)
 
 out_err:
 	filelist_free(&flist);
-	bam_error(ARCHIVE_FAIL, cmdline);
+	bam_error(_("boot-archive creation FAILED, command: '%s'\n"), cmdline);
 	(void) unlink(tempname);
 	return (BAM_ERROR);
 }
@@ -3403,6 +3475,40 @@ to_733(unsigned char *s, unsigned int val)
 }
 
 /*
+ * creates sha1 hash of archive
+ */
+static int
+digest_archive(const char *archive)
+{
+	char *archive_hash;
+	char *hash;
+	int ret;
+	FILE *fp;
+
+	(void) asprintf(&archive_hash, "%s.hash", archive);
+	if (archive_hash == NULL)
+		return (BAM_ERROR);
+
+	if ((ret = bootadm_digest(archive, &hash)) == BAM_ERROR) {
+		free(archive_hash);
+		return (ret);
+	}
+
+	fp = fopen(archive_hash, "w");
+	if (fp == NULL) {
+		free(archive_hash);
+		free(hash);
+		return (BAM_ERROR);
+	}
+
+	(void) fprintf(fp, "%s\n", hash);
+	(void) fclose(fp);
+	free(hash);
+	free(archive_hash);
+	return (BAM_SUCCESS);
+}
+
+/*
  * Extends the current boot archive without recreating it from scratch
  */
 static int
@@ -3418,7 +3524,8 @@ extend_iso_archive(char *archive, char *tempname, char *update_dir)
 	fd = open(archive, O_RDWR);
 	if (fd == -1) {
 		if (bam_verbose)
-			bam_error(OPEN_FAIL, archive, strerror(errno));
+			bam_error(_("failed to open file: %s: %s\n"),
+			    archive, strerror(errno));
 		goto out_err;
 	}
 
@@ -3429,13 +3536,15 @@ extend_iso_archive(char *archive, char *tempname, char *update_dir)
 	    VOLDESC_OFF * CD_BLOCK);
 	if (ret != sizeof (saved_desc)) {
 		if (bam_verbose)
-			bam_error(READ_FAIL, archive, strerror(errno));
+			bam_error(_("read failed for file: %s: %s\n"),
+			    archive, strerror(errno));
 		goto out_err;
 	}
 
 	if (memcmp(saved_desc[0].type, "\1CD001", 6)) {
 		if (bam_verbose)
-			bam_error(SIGN_FAIL, archive);
+			bam_error(_("iso descriptor signature for %s is "
+			    "invalid\n"), archive);
 		goto out_err;
 	}
 
@@ -3449,12 +3558,13 @@ extend_iso_archive(char *archive, char *tempname, char *update_dir)
 	    "%s\" \"%s\" 2>&1", MKISOFS_PATH, next_session, archive,
 	    MKISO_PARAMS, tempname, update_dir);
 
-	BAM_DPRINTF((D_CMDLINE, func, cmdline));
+	BAM_DPRINTF(("%s: executing: %s\n", func, cmdline));
 
 	ret = exec_cmd(cmdline, &flist);
 	if (ret != 0 || check_cmdline(flist) == BAM_ERROR) {
 		if (bam_verbose) {
-			bam_error(MULTI_FAIL, cmdline);
+			bam_error(_("Command '%s' failed while generating "
+			    "multisession archive\n"), cmdline);
 			dump_errormsg(flist);
 		}
 		goto out_flist_err;
@@ -3464,7 +3574,8 @@ extend_iso_archive(char *archive, char *tempname, char *update_dir)
 	newfd = open(tempname, O_RDONLY);
 	if (newfd == -1) {
 		if (bam_verbose)
-			bam_error(OPEN_FAIL, archive, strerror(errno));
+			bam_error(_("failed to open file: %s: %s\n"),
+			    archive, strerror(errno));
 		goto out_err;
 	}
 
@@ -3472,13 +3583,15 @@ extend_iso_archive(char *archive, char *tempname, char *update_dir)
 	    VOLDESC_OFF * CD_BLOCK);
 	if (ret != sizeof (saved_desc)) {
 		if (bam_verbose)
-			bam_error(READ_FAIL, archive, strerror(errno));
+			bam_error(_("read failed for file: %s: %s\n"),
+			    archive, strerror(errno));
 		goto out_err;
 	}
 
 	if (memcmp(saved_desc[0].type, "\1CD001", 6)) {
 		if (bam_verbose)
-			bam_error(SIGN_FAIL, archive);
+			bam_error(_("iso descriptor signature for %s is "
+			    "invalid\n"), archive);
 		goto out_err;
 	}
 
@@ -3501,7 +3614,8 @@ extend_iso_archive(char *archive, char *tempname, char *update_dir)
 	ret = pwrite64(fd, saved_desc, DVD_BLOCK, VOLDESC_OFF*CD_BLOCK);
 	if (ret != DVD_BLOCK) {
 		if (bam_verbose)
-			bam_error(WRITE_FAIL, archive, strerror(errno));
+			bam_error(_("write to file failed: %s: %s\n"),
+			    archive, strerror(errno));
 		goto out_err;
 	}
 	(void) close(newfd);
@@ -3514,7 +3628,8 @@ extend_iso_archive(char *archive, char *tempname, char *update_dir)
 	ret = close(fd);
 	if (ret != 0) {
 		if (bam_verbose)
-			bam_error(CLOSE_FAIL, archive, strerror(errno));
+			bam_error(_("failed to close file: %s: %s\n"),
+			    archive, strerror(errno));
 		return (BAM_ERROR);
 	}
 	fd = -1;
@@ -3523,17 +3638,21 @@ extend_iso_archive(char *archive, char *tempname, char *update_dir)
 	    "seek=%d conv=sync 2>&1", DD_PATH_USR, tempname, archive,
 	    (next_session/16));
 
-	BAM_DPRINTF((D_CMDLINE, func, cmdline));
+	BAM_DPRINTF(("%s: executing: %s\n", func, cmdline));
 
 	ret = exec_cmd(cmdline, &flist);
 	if (ret != 0 || check_cmdline(flist) == BAM_ERROR) {
 		if (bam_verbose)
-			bam_error(MULTI_FAIL, cmdline);
+			bam_error(_("Command '%s' failed while generating "
+			    "multisession archive\n"), cmdline);
 		goto out_flist_err;
 	}
 	filelist_free(&flist);
 
 	(void) unlink(tempname);
+
+	if (digest_archive(archive) == BAM_ERROR && bam_verbose)
+		bam_print("boot archive hashing failed\n");
 
 	if (flushfs(bam_root) != 0)
 		sync();
@@ -3564,11 +3683,12 @@ create_x86_archive(char *archive, char *tempname, char *update_dir)
 	(void) snprintf(cmdline, sizeof (cmdline), "%s %s -o \"%s\" \"%s\" "
 	    "2>&1", MKISOFS_PATH, MKISO_PARAMS, tempname, update_dir);
 
-	BAM_DPRINTF((D_CMDLINE, func, cmdline));
+	BAM_DPRINTF(("%s: executing: %s\n", func, cmdline));
 
 	ret = exec_cmd(cmdline, &flist);
 	if (ret != 0 || check_cmdline(flist) == BAM_ERROR) {
-		bam_error(ARCHIVE_FAIL, cmdline);
+		bam_error(_("boot-archive creation FAILED, command: '%s'\n"),
+		    cmdline);
 		dump_errormsg(flist);
 		filelist_free(&flist);
 		(void) unlink(tempname);
@@ -3663,13 +3783,17 @@ mkisofs_archive(char *root, int what)
 		    get_cachedir(what));
 	}
 
+	if (digest_archive(boot_archive) == BAM_ERROR && bam_verbose)
+		bam_print("boot archive hashing failed\n");
+
 	if (ret == BAM_SUCCESS && bam_verbose)
 		bam_print("Successfully created %s\n", boot_archive);
 
 	return (ret);
 
 out_path_err:
-	bam_error(PATH_TOO_LONG, root);
+	bam_error(_("unable to create path on mountpoint %s, path too long\n"),
+	    root);
 	return (BAM_ERROR);
 }
 
@@ -3796,13 +3920,15 @@ create_ramdisk(char *root)
 
 	/*
 	 * Else setup command args for create_ramdisk.ksh for the UFS archives
+	 * Note: we will not create hash here, CREATE_RAMDISK should create it.
 	 */
 	if (bam_verbose)
 		bam_print("mkisofs not found, creating UFS archive\n");
 
 	(void) snprintf(path, sizeof (path), "%s/%s", root, CREATE_RAMDISK);
 	if (stat(path, &sb) != 0) {
-		bam_error(ARCH_EXEC_MISS, path, strerror(errno));
+		bam_error(_("archive creation file not found: %s: %s\n"),
+		    path, strerror(errno));
 		return (BAM_ERROR);
 	}
 
@@ -3828,7 +3954,8 @@ create_ramdisk(char *root)
 		(void) snprintf(cmdline, len, "%s", path);
 
 	if (exec_cmd(cmdline, NULL) != 0) {
-		bam_error(ARCHIVE_FAIL, cmdline);
+		bam_error(_("boot-archive creation FAILED, command: '%s'\n"),
+		    cmdline);
 		free(cmdline);
 		return (BAM_ERROR);
 	}
@@ -3868,7 +3995,8 @@ is_ramdisk(char *root)
 	 */
 	fp = fopen(MNTTAB, "r");
 	if (fp == NULL) {
-		bam_error(OPEN_FAIL, MNTTAB, strerror(errno));
+		bam_error(_("failed to open file: %s: %s\n"),
+		    MNTTAB, strerror(errno));
 		return (0);
 	}
 
@@ -3893,7 +4021,8 @@ is_ramdisk(char *root)
 
 	if (!found) {
 		if (bam_verbose)
-			bam_error(NOT_IN_MNTTAB, mntpt);
+			bam_error(_("alternate root %s not in mnttab\n"),
+			    mntpt);
 		(void) fclose(fp);
 		return (0);
 	}
@@ -3901,7 +4030,7 @@ is_ramdisk(char *root)
 	if (strncmp(mnt.mnt_special, RAMDISK_SPECIAL,
 	    strlen(RAMDISK_SPECIAL)) == 0) {
 		if (bam_verbose)
-			bam_error(IS_RAMDISK, bam_root);
+			bam_error(_("%s is on a ramdisk device\n"), bam_root);
 		(void) fclose(fp);
 		return (1);
 	}
@@ -3927,12 +4056,14 @@ is_boot_archive(char *root)
 	INJECT_ERROR1("NOT_ARCHIVE_BASED", error = -1);
 	if (error == -1) {
 		if (bam_verbose)
-			bam_print(FILE_MISS, path);
-		BAM_DPRINTF((D_NOT_ARCHIVE_BOOT, fcn, root));
+			bam_print(_("file not found: %s\n"), path);
+		BAM_DPRINTF(("%s: not a boot archive based Solaris "
+		    "instance: %s\n", fcn, root));
 		return (0);
 	}
 
-	BAM_DPRINTF((D_IS_ARCHIVE_BOOT, fcn, root));
+	BAM_DPRINTF(("%s: *IS* a boot archive based Solaris instance: %s\n",
+	    fcn, root));
 	return (1);
 }
 
@@ -3950,18 +4081,36 @@ is_grub(const char *root)
 {
 	char path[PATH_MAX];
 	struct stat sb;
+	void *defp;
+	boolean_t grub = B_TRUE;
+	const char *res = NULL;
 	const char *fcn = "is_grub()";
 
-	(void) snprintf(path, sizeof (path), "%s%s", root, GRUB_STAGE2);
-	if (stat(path, &sb) == -1) {
-		BAM_DPRINTF((D_NO_GRUB_DIR, fcn, path));
-		return (0);
+	/* grub is enabled by default */
+	if ((defp = defopen_r(BE_DEFAULTS)) != NULL) {
+		res = defread_r(BE_DFLT_BE_HAS_GRUB, defp);
+		if (res != NULL && res[0] != '\0') {
+			if (strcasecmp(res, "false") == 0)
+				grub = B_FALSE;
+		}
+		defclose_r(defp);
 	}
 
-	return (1);
+	if (grub == B_TRUE) {
+		(void) snprintf(path, sizeof (path), "%s%s", root, GRUB_STAGE2);
+		if (stat(path, &sb) == -1) {
+			BAM_DPRINTF(("%s: Missing GRUB directory: %s\n",
+			    fcn, path));
+			return (0);
+		} else {
+			return (1);
+		}
+	}
+
+	return (0);
 }
 
-static int
+int
 is_zfs(char *root)
 {
 	struct statvfs		vfs;
@@ -3971,43 +4120,21 @@ is_zfs(char *root)
 	ret = statvfs(root, &vfs);
 	INJECT_ERROR1("STATVFS_ZFS", ret = 1);
 	if (ret != 0) {
-		bam_error(STATVFS_FAIL, root, strerror(errno));
+		bam_error(_("statvfs failed for %s: %s\n"), root,
+		    strerror(errno));
 		return (0);
 	}
 
 	if (strncmp(vfs.f_basetype, "zfs", strlen("zfs")) == 0) {
-		BAM_DPRINTF((D_IS_ZFS, fcn, root));
+		BAM_DPRINTF(("%s: is a ZFS filesystem: %s\n", fcn, root));
 		return (1);
 	} else {
-		BAM_DPRINTF((D_IS_NOT_ZFS, fcn, root));
+		BAM_DPRINTF(("%s: is *NOT* a ZFS filesystem: %s\n", fcn, root));
 		return (0);
 	}
 }
 
-static int
-is_ufs(char *root)
-{
-	struct statvfs		vfs;
-	int			ret;
-	const char		*fcn = "is_ufs()";
-
-	ret = statvfs(root, &vfs);
-	INJECT_ERROR1("STATVFS_UFS", ret = 1);
-	if (ret != 0) {
-		bam_error(STATVFS_FAIL, root, strerror(errno));
-		return (0);
-	}
-
-	if (strncmp(vfs.f_basetype, "ufs", strlen("ufs")) == 0) {
-		BAM_DPRINTF((D_IS_UFS, fcn, root));
-		return (1);
-	} else {
-		BAM_DPRINTF((D_IS_NOT_UFS, fcn, root));
-		return (0);
-	}
-}
-
-static int
+int
 is_pcfs(char *root)
 {
 	struct statvfs		vfs;
@@ -4017,15 +4144,17 @@ is_pcfs(char *root)
 	ret = statvfs(root, &vfs);
 	INJECT_ERROR1("STATVFS_PCFS", ret = 1);
 	if (ret != 0) {
-		bam_error(STATVFS_FAIL, root, strerror(errno));
+		bam_error(_("statvfs failed for %s: %s\n"), root,
+		    strerror(errno));
 		return (0);
 	}
 
 	if (strncmp(vfs.f_basetype, "pcfs", strlen("pcfs")) == 0) {
-		BAM_DPRINTF((D_IS_PCFS, fcn, root));
+		BAM_DPRINTF(("%s: is a PCFS filesystem: %s\n", fcn, root));
 		return (1);
 	} else {
-		BAM_DPRINTF((D_IS_NOT_PCFS, fcn, root));
+		BAM_DPRINTF(("%s: is *NOT* a PCFS filesystem: %s\n",
+		    fcn, root));
 		return (0);
 	}
 }
@@ -4053,16 +4182,17 @@ is_readonly(char *root)
 	error = errno;
 	INJECT_ERROR2("RDONLY_TEST_ERROR", fd = -1, error = EACCES);
 	if (fd == -1 && error == EROFS) {
-		BAM_DPRINTF((D_RDONLY_FS, fcn, root));
+		BAM_DPRINTF(("%s: is a READONLY filesystem: %s\n", fcn, root));
 		return (1);
 	} else if (fd == -1) {
-		bam_error(RDONLY_TEST_ERROR, root, strerror(error));
+		bam_error(_("error during read-only test on %s: %s\n"),
+		    root, strerror(error));
 	}
 
 	(void) close(fd);
 	(void) unlink(testfile);
 
-	BAM_DPRINTF((D_RDWR_FS, fcn, root));
+	BAM_DPRINTF(("%s: is a RDWR filesystem: %s\n", fcn, root));
 	return (0);
 }
 
@@ -4091,7 +4221,8 @@ update_archive(char *root, char *opt)
 		 * If in update_all, emit only if verbose flag is set.
 		 */
 		if (!bam_update_all || bam_verbose)
-			bam_print(NOT_ARCHIVE_BOOT, root);
+			bam_print(_("%s: not a boot archive based Solaris "
+			    "instance\n"), root);
 		return (BAM_ERROR);
 	}
 
@@ -4140,7 +4271,8 @@ update_archive(char *root, char *opt)
 		if (is_flag_on(RDONLY_FSCHK)) {
 			bam_check = bam_saved_check;
 			if (ret > 0)
-				bam_error(RDONLY_FS, root);
+				bam_error(_("%s filesystem is read-only, "
+				    "skipping archives update\n"), root);
 			if (bam_update_all)
 				return ((ret != 0) ? BAM_ERROR : BAM_SUCCESS);
 		}
@@ -4208,38 +4340,41 @@ synchronize_BE_menu(void)
 	int		ret;
 	const char	*fcn = "synchronize_BE_menu()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY0, fcn));
+	BAM_DPRINTF(("%s: entered. No args\n", fcn));
 
 	/* Check if findroot enabled LU BE */
 	if (stat(FINDROOT_INSTALLGRUB, &sb) != 0) {
-		BAM_DPRINTF((D_NOT_LU_BE, fcn));
+		BAM_DPRINTF(("%s: not a Live Upgrade BE\n", fcn));
 		return (BAM_SUCCESS);
 	}
 
 	if (stat(LU_MENU_CKSUM, &sb) != 0) {
-		BAM_DPRINTF((D_NO_CKSUM_FILE, fcn, LU_MENU_CKSUM));
+		BAM_DPRINTF(("%s: checksum file absent: %s\n",
+		    fcn, LU_MENU_CKSUM));
 		goto menu_sync;
 	}
 
 	cfp = fopen(LU_MENU_CKSUM, "r");
 	INJECT_ERROR1("CKSUM_FILE_MISSING", cfp = NULL);
 	if (cfp == NULL) {
-		bam_error(CANNOT_READ_LU_CKSUM, LU_MENU_CKSUM);
+		bam_error(_("failed to read GRUB menu checksum file: %s\n"),
+		    LU_MENU_CKSUM);
 		goto menu_sync;
 	}
-	BAM_DPRINTF((D_CKSUM_FILE_OPENED, fcn, LU_MENU_CKSUM));
+	BAM_DPRINTF(("%s: opened checksum file: %s\n", fcn, LU_MENU_CKSUM));
 
 	found = 0;
 	while (s_fgets(cksum_line, sizeof (cksum_line), cfp) != NULL) {
 		INJECT_ERROR1("MULTIPLE_CKSUM", found = 1);
 		if (found) {
-			bam_error(MULTIPLE_LU_CKSUM, LU_MENU_CKSUM);
+			bam_error(_("multiple checksums for GRUB menu in "
+			    "checksum file: %s\n"), LU_MENU_CKSUM);
 			(void) fclose(cfp);
 			goto menu_sync;
 		}
 		found = 1;
 	}
-	BAM_DPRINTF((D_CKSUM_FILE_READ, fcn, LU_MENU_CKSUM));
+	BAM_DPRINTF(("%s: read checksum file: %s\n", fcn, LU_MENU_CKSUM));
 
 
 	old_cksum_str = strtok(cksum_line, " \t");
@@ -4250,17 +4385,19 @@ synchronize_BE_menu(void)
 	INJECT_ERROR1("OLD_SIZE_NULL", old_size_str = NULL);
 	INJECT_ERROR1("OLD_FILE_NULL", old_file = NULL);
 	if (old_cksum_str == NULL || old_size_str == NULL || old_file == NULL) {
-		bam_error(CANNOT_PARSE_LU_CKSUM, LU_MENU_CKSUM);
+		bam_error(_("error parsing GRUB menu checksum file: %s\n"),
+		    LU_MENU_CKSUM);
 		goto menu_sync;
 	}
-	BAM_DPRINTF((D_CKSUM_FILE_PARSED, fcn, LU_MENU_CKSUM));
+	BAM_DPRINTF(("%s: parsed checksum file: %s\n", fcn, LU_MENU_CKSUM));
 
 	/* Get checksum of current menu */
 	pool = find_root_pool();
 	if (pool) {
 		mntpt = mount_top_dataset(pool, &mnted);
 		if (mntpt == NULL) {
-			bam_error(FAIL_MNT_TOP_DATASET, pool);
+			bam_error(_("failed to mount top dataset for %s\n"),
+			    pool);
 			free(pool);
 			return (BAM_ERROR);
 		}
@@ -4277,18 +4414,18 @@ synchronize_BE_menu(void)
 	}
 	INJECT_ERROR1("GET_CURR_CKSUM", ret = 1);
 	if (ret != 0) {
-		bam_error(MENU_CKSUM_FAIL);
+		bam_error(_("error generating checksum of GRUB menu\n"));
 		return (BAM_ERROR);
 	}
-	BAM_DPRINTF((D_CKSUM_GEN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: successfully generated checksum\n", fcn));
 
 	INJECT_ERROR1("GET_CURR_CKSUM_OUTPUT", flist.head = NULL);
 	if ((flist.head == NULL) || (flist.head != flist.tail)) {
-		bam_error(BAD_CKSUM);
+		bam_error(_("bad checksum generated for GRUB menu\n"));
 		filelist_free(&flist);
 		return (BAM_ERROR);
 	}
-	BAM_DPRINTF((D_CKSUM_GEN_OUTPUT_VALID, fcn));
+	BAM_DPRINTF(("%s: generated checksum output valid\n", fcn));
 
 	curr_cksum_str = strtok(flist.head->line, " \t");
 	curr_size_str = strtok(NULL, " \t");
@@ -4299,27 +4436,28 @@ synchronize_BE_menu(void)
 	INJECT_ERROR1("CURR_FILE_NULL", curr_file = NULL);
 	if (curr_cksum_str == NULL || curr_size_str == NULL ||
 	    curr_file == NULL) {
-		bam_error(BAD_CKSUM_PARSE);
+		bam_error(_("error parsing checksum generated "
+		    "for GRUB menu\n"));
 		filelist_free(&flist);
 		return (BAM_ERROR);
 	}
-	BAM_DPRINTF((D_CKSUM_GEN_PARSED, fcn));
+	BAM_DPRINTF(("%s: successfully parsed generated checksum\n", fcn));
 
 	if (strcmp(old_cksum_str, curr_cksum_str) == 0 &&
 	    strcmp(old_size_str, curr_size_str) == 0 &&
 	    strcmp(old_file, curr_file) == 0) {
 		filelist_free(&flist);
-		BAM_DPRINTF((D_CKSUM_NO_CHANGE, fcn));
+		BAM_DPRINTF(("%s: no change in checksum of GRUB menu\n", fcn));
 		return (BAM_SUCCESS);
 	}
 
 	filelist_free(&flist);
 
 	/* cksum doesn't match - the menu has changed */
-	BAM_DPRINTF((D_CKSUM_HAS_CHANGED, fcn));
+	BAM_DPRINTF(("%s: checksum of GRUB menu has changed\n", fcn));
 
 menu_sync:
-	bam_print(PROP_GRUB_MENU);
+	bam_print(_("propagating updated GRUB menu\n"));
 
 	(void) snprintf(cmdline, sizeof (cmdline),
 	    "/bin/sh -c '. %s > /dev/null; %s %s yes > /dev/null'",
@@ -4327,20 +4465,22 @@ menu_sync:
 	ret = exec_cmd(cmdline, NULL);
 	INJECT_ERROR1("PROPAGATE_MENU", ret = 1);
 	if (ret != 0) {
-		bam_error(MENU_PROP_FAIL);
+		bam_error(_("error propagating updated GRUB menu\n"));
 		return (BAM_ERROR);
 	}
-	BAM_DPRINTF((D_PROPAGATED_MENU, fcn));
+	BAM_DPRINTF(("%s: successfully propagated GRUB menu\n", fcn));
 
 	(void) snprintf(cmdline, sizeof (cmdline), "/bin/cp %s %s > /dev/null",
 	    GRUB_MENU, GRUB_BACKUP_MENU);
 	ret = exec_cmd(cmdline, NULL);
 	INJECT_ERROR1("CREATE_BACKUP", ret = 1);
 	if (ret != 0) {
-		bam_error(MENU_BACKUP_FAIL, GRUB_BACKUP_MENU);
+		bam_error(_("failed to create backup for GRUB menu: %s\n"),
+		    GRUB_BACKUP_MENU);
 		return (BAM_ERROR);
 	}
-	BAM_DPRINTF((D_CREATED_BACKUP, fcn, GRUB_BACKUP_MENU));
+	BAM_DPRINTF(("%s: successfully created backup GRUB menu: %s\n",
+	    fcn, GRUB_BACKUP_MENU));
 
 	(void) snprintf(cmdline, sizeof (cmdline),
 	    "/bin/sh -c '. %s > /dev/null; %s %s no > /dev/null'",
@@ -4348,20 +4488,24 @@ menu_sync:
 	ret = exec_cmd(cmdline, NULL);
 	INJECT_ERROR1("PROPAGATE_BACKUP", ret = 1);
 	if (ret != 0) {
-		bam_error(BACKUP_PROP_FAIL, GRUB_BACKUP_MENU);
+		bam_error(_("error propagating backup GRUB menu: %s\n"),
+		    GRUB_BACKUP_MENU);
 		return (BAM_ERROR);
 	}
-	BAM_DPRINTF((D_PROPAGATED_BACKUP, fcn, GRUB_BACKUP_MENU));
+	BAM_DPRINTF(("%s: successfully propagated backup GRUB menu: %s\n",
+	    fcn, GRUB_BACKUP_MENU));
 
 	(void) snprintf(cmdline, sizeof (cmdline), "%s %s > %s",
 	    CKSUM, GRUB_MENU, LU_MENU_CKSUM);
 	ret = exec_cmd(cmdline, NULL);
 	INJECT_ERROR1("CREATE_CKSUM_FILE", ret = 1);
 	if (ret != 0) {
-		bam_error(MENU_CKSUM_WRITE_FAIL, LU_MENU_CKSUM);
+		bam_error(_("failed to write GRUB menu checksum file: %s\n"),
+		    LU_MENU_CKSUM);
 		return (BAM_ERROR);
 	}
-	BAM_DPRINTF((D_CREATED_CKSUM_FILE, fcn, LU_MENU_CKSUM));
+	BAM_DPRINTF(("%s: successfully created checksum file: %s\n",
+	    fcn, LU_MENU_CKSUM));
 
 	(void) snprintf(cmdline, sizeof (cmdline),
 	    "/bin/sh -c '. %s > /dev/null; %s %s no > /dev/null'",
@@ -4369,10 +4513,12 @@ menu_sync:
 	ret = exec_cmd(cmdline, NULL);
 	INJECT_ERROR1("PROPAGATE_MENU_CKSUM_FILE", ret = 1);
 	if (ret != 0) {
-		bam_error(MENU_CKSUM_PROP_FAIL, LU_MENU_CKSUM);
+		bam_error(_("error propagating GRUB menu checksum file: %s\n"),
+		    LU_MENU_CKSUM);
 		return (BAM_ERROR);
 	}
-	BAM_DPRINTF((D_PROPAGATED_CKSUM_FILE, fcn, LU_MENU_CKSUM));
+	BAM_DPRINTF(("%s: successfully propagated checksum file: %s\n",
+	    fcn, LU_MENU_CKSUM));
 
 	return (BAM_SUCCESS);
 }
@@ -4392,7 +4538,8 @@ update_all(char *root, char *opt)
 
 	if (bam_rootlen != 1 || *root != '/') {
 		elide_trailing_slash(root, multibt, sizeof (multibt));
-		bam_error(ALT_ROOT_INVALID, multibt);
+		bam_error(_("an alternate root (%s) cannot be used with this "
+		    "sub-command\n"), multibt);
 		return (BAM_ERROR);
 	}
 
@@ -4411,7 +4558,8 @@ update_all(char *root, char *opt)
 	 */
 	fp = fopen(MNTTAB, "r");
 	if (fp == NULL) {
-		bam_error(OPEN_FAIL, MNTTAB, strerror(errno));
+		bam_error(_("failed to open file: %s: %s\n"),
+		    MNTTAB, strerror(errno));
 		ret = BAM_ERROR;
 		goto out;
 	}
@@ -4459,7 +4607,8 @@ out:
 	 * updates
 	 */
 	if (stat(GRUB_fdisk, &sb) == 0 || stat(GRUB_fdisk_target, &sb) == 0) {
-		bam_error(FDISK_FILES_FOUND, GRUB_fdisk, GRUB_fdisk_target);
+		bam_error(_("Deferred FDISK update file(s) found: %s, %s. "
+		    "Not supported.\n"), GRUB_fdisk, GRUB_fdisk_target);
 	}
 
 	/*
@@ -4509,13 +4658,13 @@ boot_entry_new(menu_t *mp, line_t *start, line_t *end)
 	assert(end);
 
 	ent = s_calloc(1, sizeof (entry_t));
-	BAM_DPRINTF((D_ENTRY_NEW, fcn));
+	BAM_DPRINTF(("%s: new boot entry alloced\n", fcn));
 	ent->start = start;
 	ent->end = end;
 
 	if (mp->entries == NULL) {
 		mp->entries = ent;
-		BAM_DPRINTF((D_ENTRY_NEW_FIRST, fcn));
+		BAM_DPRINTF(("%s: (first) new boot entry created\n", fcn));
 		return (ent);
 	}
 
@@ -4524,7 +4673,7 @@ boot_entry_new(menu_t *mp, line_t *start, line_t *end)
 		prev = prev->next;
 	prev->next = ent;
 	ent->prev = prev;
-	BAM_DPRINTF((D_ENTRY_NEW_LINKED, fcn));
+	BAM_DPRINTF(("%s: new boot entry linked in\n", fcn));
 	return (ent);
 }
 
@@ -4547,12 +4696,12 @@ check_cmd(const char *cmd, const int which, const char *arg, const char *str)
 	int			ret;
 	const char		*fcn = "check_cmd()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY2, fcn, arg, str));
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", fcn, arg, str));
 
 	if (cmd != NULL) {
 		if ((strcmp(cmd, menu_cmds[which]) != 0) &&
 		    (strcmp(cmd, menu_cmds[which + 1]) != 0)) {
-			BAM_DPRINTF((D_CHECK_CMD_CMD_NOMATCH,
+			BAM_DPRINTF(("%s: command %s does not match %s\n",
 			    fcn, cmd, menu_cmds[which]));
 			return (0);
 		}
@@ -4561,9 +4710,9 @@ check_cmd(const char *cmd, const int which, const char *arg, const char *str)
 		ret = 0;
 
 	if (ret) {
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	} else {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	}
 
 	return (ret);
@@ -4580,47 +4729,53 @@ kernel_parser(entry_t *entry, char *cmd, char *arg, int linenum)
 
 	if (strcmp(cmd, menu_cmds[KERNEL_CMD]) != 0 &&
 	    strcmp(cmd, menu_cmds[KERNEL_DOLLAR_CMD]) != 0) {
-		BAM_DPRINTF((D_NOT_KERNEL_CMD, fcn, cmd));
+		BAM_DPRINTF(("%s: not a kernel command: %s\n", fcn, cmd));
 		return (BAM_ERROR);
 	}
 
 	if (strncmp(arg, DIRECT_BOOT_32, sizeof (DIRECT_BOOT_32) - 1) == 0) {
-		BAM_DPRINTF((D_SET_DBOOT_32, fcn, arg));
+		BAM_DPRINTF(("%s: setting DBOOT|DBOOT_32 flag: %s\n",
+		    fcn, arg));
 		entry->flags |= BAM_ENTRY_DBOOT | BAM_ENTRY_32BIT;
 	} else if (strncmp(arg, DIRECT_BOOT_KERNEL,
 	    sizeof (DIRECT_BOOT_KERNEL) - 1) == 0) {
-		BAM_DPRINTF((D_SET_DBOOT, fcn, arg));
+		BAM_DPRINTF(("%s: setting DBOOT flag: %s\n", fcn, arg));
 		entry->flags |= BAM_ENTRY_DBOOT;
 	} else if (strncmp(arg, DIRECT_BOOT_64,
 	    sizeof (DIRECT_BOOT_64) - 1) == 0) {
-		BAM_DPRINTF((D_SET_DBOOT_64, fcn, arg));
+		BAM_DPRINTF(("%s: setting DBOOT|DBOOT_64 flag: %s\n",
+		    fcn, arg));
 		entry->flags |= BAM_ENTRY_DBOOT | BAM_ENTRY_64BIT;
 	} else if (strncmp(arg, DIRECT_BOOT_FAILSAFE_KERNEL,
 	    sizeof (DIRECT_BOOT_FAILSAFE_KERNEL) - 1) == 0) {
-		BAM_DPRINTF((D_SET_DBOOT_FAILSAFE, fcn, arg));
+		BAM_DPRINTF(("%s: setting DBOOT|DBOOT_FAILSAFE flag: %s\n",
+		    fcn, arg));
 		entry->flags |= BAM_ENTRY_DBOOT | BAM_ENTRY_FAILSAFE;
 	} else if (strncmp(arg, DIRECT_BOOT_FAILSAFE_32,
 	    sizeof (DIRECT_BOOT_FAILSAFE_32) - 1) == 0) {
-		BAM_DPRINTF((D_SET_DBOOT_FAILSAFE_32, fcn, arg));
+		BAM_DPRINTF(("%s: setting DBOOT|DBOOT_FAILSAFE|DBOOT_32 "
+		    "flag: %s\n", fcn, arg));
 		entry->flags |= BAM_ENTRY_DBOOT | BAM_ENTRY_FAILSAFE
 		    | BAM_ENTRY_32BIT;
 	} else if (strncmp(arg, DIRECT_BOOT_FAILSAFE_64,
 	    sizeof (DIRECT_BOOT_FAILSAFE_64) - 1) == 0) {
-		BAM_DPRINTF((D_SET_DBOOT_FAILSAFE_64, fcn, arg));
+		BAM_DPRINTF(("%s: setting DBOOT|DBOOT_FAILSAFE|DBOOT_64 "
+		    "flag: %s\n", fcn, arg));
 		entry->flags |= BAM_ENTRY_DBOOT | BAM_ENTRY_FAILSAFE
 		    | BAM_ENTRY_64BIT;
 	} else if (strncmp(arg, MULTI_BOOT, sizeof (MULTI_BOOT) - 1) == 0) {
-		BAM_DPRINTF((D_SET_MULTIBOOT, fcn, arg));
+		BAM_DPRINTF(("%s: setting MULTIBOOT flag: %s\n", fcn, arg));
 		entry->flags |= BAM_ENTRY_MULTIBOOT;
 	} else if (strncmp(arg, MULTI_BOOT_FAILSAFE,
 	    sizeof (MULTI_BOOT_FAILSAFE) - 1) == 0) {
-		BAM_DPRINTF((D_SET_MULTIBOOT_FAILSAFE, fcn, arg));
+		BAM_DPRINTF(("%s: setting MULTIBOOT|MULTIBOOT_FAILSAFE "
+		    "flag: %s\n", fcn, arg));
 		entry->flags |= BAM_ENTRY_MULTIBOOT | BAM_ENTRY_FAILSAFE;
 	} else if (strstr(arg, XEN_KERNEL_SUBSTR)) {
-		BAM_DPRINTF((D_SET_HV, fcn, arg));
+		BAM_DPRINTF(("%s: setting XEN HV flag: %s\n", fcn, arg));
 		entry->flags |= BAM_ENTRY_HV;
 	} else if (!(entry->flags & (BAM_ENTRY_BOOTADM|BAM_ENTRY_LU))) {
-		BAM_DPRINTF((D_SET_HAND_KERNEL, fcn, arg));
+		BAM_DPRINTF(("%s: is HAND kernel flag: %s\n", fcn, arg));
 		return (BAM_ERROR);
 	} else if (strncmp(arg, KERNEL_PREFIX, strlen(KERNEL_PREFIX)) == 0 &&
 	    strstr(arg, UNIX_SPACE)) {
@@ -4629,8 +4784,9 @@ kernel_parser(entry_t *entry, char *cmd, char *arg, int linenum)
 	    strstr(arg, AMD_UNIX_SPACE)) {
 		entry->flags |= BAM_ENTRY_DBOOT | BAM_ENTRY_64BIT;
 	} else {
-		BAM_DPRINTF((D_IS_UNKNOWN_KERNEL, fcn, arg));
-		bam_error(UNKNOWN_KERNEL_LINE, linenum);
+		BAM_DPRINTF(("%s: is UNKNOWN kernel entry: %s\n", fcn, arg));
+		bam_error(_("kernel command on line %d not recognized.\n"),
+		    linenum);
 		return (BAM_ERROR);
 	}
 
@@ -4648,7 +4804,7 @@ module_parser(entry_t *entry, char *cmd, char *arg, int linenum)
 
 	if (strcmp(cmd, menu_cmds[MODULE_CMD]) != 0 &&
 	    strcmp(cmd, menu_cmds[MODULE_DOLLAR_CMD]) != 0) {
-		BAM_DPRINTF((D_NOT_MODULE_CMD, fcn, cmd));
+		BAM_DPRINTF(("%s: not module cmd: %s\n", fcn, cmd));
 		return (BAM_ERROR);
 	}
 
@@ -4661,16 +4817,17 @@ module_parser(entry_t *entry, char *cmd, char *arg, int linenum)
 	    strcmp(arg, FAILSAFE_ARCHIVE_64) == 0 ||
 	    strcmp(arg, XEN_KERNEL_MODULE_LINE) == 0 ||
 	    strcmp(arg, XEN_KERNEL_MODULE_LINE_ZFS) == 0) {
-		BAM_DPRINTF((D_BOOTADM_LU_MODULE, fcn, arg));
+		BAM_DPRINTF(("%s: bootadm or LU module cmd: %s\n", fcn, arg));
 		return (BAM_SUCCESS);
 	} else if (!(entry->flags & BAM_ENTRY_BOOTADM) &&
 	    !(entry->flags & BAM_ENTRY_LU)) {
 		/* don't emit warning for hand entries */
-		BAM_DPRINTF((D_IS_HAND_MODULE, fcn, arg));
+		BAM_DPRINTF(("%s: is HAND module: %s\n", fcn, arg));
 		return (BAM_ERROR);
 	} else {
-		BAM_DPRINTF((D_IS_UNKNOWN_MODULE, fcn, arg));
-		bam_error(UNKNOWN_MODULE_LINE, linenum);
+		BAM_DPRINTF(("%s: is UNKNOWN module: %s\n", fcn, arg));
+		bam_error(_("module command on line %d not recognized.\n"),
+		    linenum);
 		return (BAM_ERROR);
 	}
 }
@@ -4698,6 +4855,7 @@ line_parser(menu_t *mp, char *str, int *lineNum, int *entryNum)
 	menu_flag_t flag = BAM_INVALID;
 	const char *fcn = "line_parser()";
 
+	cmd = NULL;
 	if (str == NULL) {
 		return;
 	}
@@ -4780,12 +4938,14 @@ line_parser(menu_t *mp, char *str, int *lineNum, int *entryNum)
 			prev->entryNum = lp->entryNum;
 			curr_ent = boot_entry_new(mp, prev, lp);
 			curr_ent->flags |= BAM_ENTRY_BOOTADM;
-			BAM_DPRINTF((D_IS_BOOTADM_ENTRY, fcn, arg));
+			BAM_DPRINTF(("%s: is bootadm(1M) entry: %s\n",
+			    fcn, arg));
 		} else {
 			curr_ent = boot_entry_new(mp, lp, lp);
 			if (in_liveupgrade) {
 				curr_ent->flags |= BAM_ENTRY_LU;
-				BAM_DPRINTF((D_IS_LU_ENTRY, fcn, arg));
+				BAM_DPRINTF(("%s: is LU entry: %s\n",
+				    fcn, arg));
 			}
 		}
 		curr_ent->entryNum = *entryNum;
@@ -4806,17 +4966,18 @@ line_parser(menu_t *mp, char *str, int *lineNum, int *entryNum)
 
 			if (cmd && arg) {
 				if (strcmp(cmd, menu_cmds[ROOT_CMD]) == 0) {
-					BAM_DPRINTF((D_IS_ROOT_CMD, fcn, arg));
+					BAM_DPRINTF(("%s: setting ROOT: %s\n",
+					    fcn, arg));
 					curr_ent->flags |= BAM_ENTRY_ROOT;
 				} else if (strcmp(cmd, menu_cmds[FINDROOT_CMD])
 				    == 0) {
-					BAM_DPRINTF((D_IS_FINDROOT_CMD, fcn,
-					    arg));
+					BAM_DPRINTF(("%s: setting "
+					    "FINDROOT: %s\n", fcn, arg));
 					curr_ent->flags |= BAM_ENTRY_FINDROOT;
 				} else if (strcmp(cmd,
 				    menu_cmds[CHAINLOADER_CMD]) == 0) {
-					BAM_DPRINTF((D_IS_CHAINLOADER_CMD, fcn,
-					    arg));
+					BAM_DPRINTF(("%s: setting "
+					    "CHAINLOADER: %s\n", fcn, arg));
 					curr_ent->flags |=
 					    BAM_ENTRY_CHAINLOADER;
 				} else if (kernel_parser(curr_ent, cmd, arg,
@@ -4985,7 +5146,8 @@ menu_read(char *menu_path)
 	}
 
 	if (fclose(fp) == EOF) {
-		bam_error(CLOSE_FAIL, menu_path, strerror(errno));
+		bam_error(_("failed to close file: %s: %s\n"), menu_path,
+		    strerror(errno));
 	}
 
 	return (mp);
@@ -5011,7 +5173,7 @@ selector(menu_t *mp, char *opt, int *entry, char **title)
 
 	eq = strchr(opt_dup, '=');
 	if (eq == NULL) {
-		bam_error(INVALID_OPT, opt);
+		bam_error(_("invalid option: %s\n"), opt);
 		free(opt_dup);
 		return (BAM_ERROR);
 	}
@@ -5021,7 +5183,7 @@ selector(menu_t *mp, char *opt, int *entry, char **title)
 		assert(mp->end);
 		entryNum = s_strtol(eq + 1);
 		if (entryNum < 0 || entryNum > mp->end->entryNum) {
-			bam_error(INVALID_ENTRY, eq + 1);
+			bam_error(_("invalid boot entry number: %s\n"), eq + 1);
 			free(opt_dup);
 			return (BAM_ERROR);
 		}
@@ -5029,7 +5191,7 @@ selector(menu_t *mp, char *opt, int *entry, char **title)
 	} else if (title && strcmp(opt_dup, menu_cmds[TITLE_CMD]) == 0) {
 		*title = opt + (eq - opt_dup) + 1;
 	} else {
-		bam_error(INVALID_OPT, opt);
+		bam_error(_("invalid option: %s\n"), opt);
 		free(opt_dup);
 		return (BAM_ERROR);
 	}
@@ -5057,11 +5219,11 @@ list_entry(menu_t *mp, char *menu_path, char *opt)
 	assert(menu_path);
 
 	/* opt is optional */
-	BAM_DPRINTF((D_FUNC_ENTRY2, "list_entry", menu_path,
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", "list_entry", menu_path,
 	    opt ? opt : "<NULL>"));
 
 	if (mp->start == NULL) {
-		bam_error(NO_MENU, menu_path);
+		bam_error(_("menu file not found: %s\n"), menu_path);
 		return (BAM_ERROR);
 	}
 
@@ -5080,13 +5242,13 @@ list_entry(menu_t *mp, char *menu_path, char *opt)
 		if (lp->flags == BAM_COMMENT || lp->flags == BAM_EMPTY)
 			continue;
 		if (opt == NULL && lp->flags == BAM_TITLE) {
-			bam_print(PRINT_TITLE, lp->entryNum,
+			bam_print(_("%d %s\n"), lp->entryNum,
 			    lp->arg);
 			found = 1;
 			continue;
 		}
 		if (entry != ENTRY_INIT && lp->entryNum == entry) {
-			bam_print(PRINT, lp->line);
+			bam_print(_("%s\n"), lp->line);
 			found = 1;
 			continue;
 		}
@@ -5099,7 +5261,7 @@ list_entry(menu_t *mp, char *menu_path, char *opt)
 		 */
 		if (title && lp->flags == BAM_TITLE && lp->arg &&
 		    strncmp(title, lp->arg, strlen(title)) == 0) {
-			bam_print(PRINT, lp->line);
+			bam_print(_("%s\n"), lp->line);
 			entry = lp->entryNum;
 			found = 1;
 			continue;
@@ -5107,7 +5269,7 @@ list_entry(menu_t *mp, char *menu_path, char *opt)
 	}
 
 	if (!found) {
-		bam_error(NO_MATCH_ENTRY);
+		bam_error(_("no matching entry found\n"));
 		return (BAM_ERROR);
 	}
 
@@ -5134,7 +5296,7 @@ add_boot_entry(menu_t *mp,
 
 	INJECT_ERROR1("ADD_BOOT_ENTRY_FINDROOT_NULL", findroot = NULL);
 	if (findroot == NULL) {
-		bam_error(NULL_FINDROOT);
+		bam_error(_("can't find argument for findroot command\n"));
 		return (BAM_ERROR);
 	}
 
@@ -5142,12 +5304,13 @@ add_boot_entry(menu_t *mp,
 		title = "Solaris";	/* default to Solaris */
 	}
 	if (kernel == NULL) {
-		bam_error(SUBOPT_MISS, menu_cmds[KERNEL_CMD]);
+		bam_error(_("missing suboption: %s\n"), menu_cmds[KERNEL_CMD]);
 		return (BAM_ERROR);
 	}
 	if (module == NULL) {
 		if (bam_direct != BAM_DIRECT_DBOOT) {
-			bam_error(SUBOPT_MISS, menu_cmds[MODULE_CMD]);
+			bam_error(_("missing suboption: %s\n"),
+			    menu_cmds[MODULE_CMD]);
 			return (BAM_ERROR);
 		}
 
@@ -5187,7 +5350,8 @@ add_boot_entry(menu_t *mp,
 	(void) snprintf(linebuf, sizeof (linebuf), "%s%s%s",
 	    menu_cmds[FINDROOT_CMD], menu_cmds[SEP_CMD], findroot);
 	line_parser(mp, linebuf, &lineNum, &entryNum);
-	BAM_DPRINTF((D_ADD_FINDROOT_NUM, fcn, lineNum, entryNum));
+	BAM_DPRINTF(("%s: findroot added: line#: %d: entry#: %d\n",
+	    fcn, lineNum, entryNum));
 
 	if (bootfs != NULL) {
 		(void) snprintf(linebuf, sizeof (linebuf), "%s%s%s",
@@ -5253,7 +5417,8 @@ delete_boot_entry(menu_t *mp, int entryNum, int quiet)
 		do {
 			freed = lp;
 			lp = lp->next;	/* prev stays the same */
-			BAM_DPRINTF((D_FREEING_LINE, fcn, freed->lineNum));
+			BAM_DPRINTF(("%s: freeing line: %d\n",
+			    fcn, freed->lineNum));
 			unlink_line(mp, freed);
 			line_free(freed);
 		} while (freed != ent->end);
@@ -5268,7 +5433,7 @@ delete_boot_entry(menu_t *mp, int entryNum, int quiet)
 			mp->entries = ent;
 		if (ent)
 			ent->prev = tmp->prev;
-		BAM_DPRINTF((D_FREEING_ENTRY, fcn, tmp->entryNum));
+		BAM_DPRINTF(("%s: freeing entry: %d\n", fcn, tmp->entryNum));
 		free(tmp);
 		tmp = NULL;
 		deleted = 1;
@@ -5278,7 +5443,7 @@ delete_boot_entry(menu_t *mp, int entryNum, int quiet)
 
 	if (!deleted && entryNum != ALL_ENTRIES) {
 		if (quiet == DBE_PRINTERR)
-			bam_error(NO_BOOTADM_MATCH);
+			bam_error(_("no matching bootadm entry found\n"));
 		return (BAM_ERROR);
 	}
 
@@ -5298,10 +5463,10 @@ delete_all_entries(menu_t *mp, char *dummy, char *opt)
 	assert(dummy == NULL);
 	assert(opt == NULL);
 
-	BAM_DPRINTF((D_FUNC_ENTRY0, "delete_all_entries"));
+	BAM_DPRINTF(("%s: entered. No args\n", "delete_all_entries"));
 
 	if (mp->start == NULL) {
-		bam_print(EMPTY_MENU);
+		bam_print(_("the GRUB menu is empty\n"));
 		return (BAM_SUCCESS);
 	}
 
@@ -5328,7 +5493,8 @@ create_diskmap(char *osroot)
 		ret = snprintf(path, sizeof (path), "%s/%s", osroot,
 		    CREATE_DISKMAP);
 		if (ret >= sizeof (path)) {
-			bam_error(PATH_TOO_LONG, osroot);
+			bam_error(_("unable to create path on mountpoint %s, "
+			    "path too long\n"), osroot);
 			return (NULL);
 		}
 		if (is_safe_exec(path) == BAM_ERROR)
@@ -5341,9 +5507,11 @@ create_diskmap(char *osroot)
 		fp = fopen(GRUBDISK_MAP, "r");
 		INJECT_ERROR1("DISKMAP_CREATE_FAIL", fp = NULL);
 		if (fp) {
-			BAM_DPRINTF((D_CREATED_DISKMAP, fcn, GRUBDISK_MAP));
+			BAM_DPRINTF(("%s: created diskmap file: %s\n",
+			    fcn, GRUBDISK_MAP));
 		} else {
-			BAM_DPRINTF((D_CREATE_DISKMAP_FAIL, fcn, GRUBDISK_MAP));
+			BAM_DPRINTF(("%s: FAILED to create diskmap file: %s\n",
+			    fcn, GRUBDISK_MAP));
 		}
 	}
 	return (fp);
@@ -5458,7 +5626,7 @@ get_grubroot(char *osroot, char *osdev, char *menu_root)
 {
 	char		*grubroot;	/* (hd#,#,#) */
 	char		*slice;
-	char		*grubhd;
+	char		*grubhd = NULL;
 	int		fdiskpart;
 	int		found = 0;
 	char		*devname;
@@ -5468,13 +5636,14 @@ get_grubroot(char *osroot, char *osdev, char *menu_root)
 
 	INJECT_ERROR1("GRUBROOT_INVALID_OSDEV", ctdname = NULL);
 	if (ctdname == NULL) {
-		bam_error(INVALID_DEV_DSK, osdev);
+		bam_error(_("not a /dev/[r]dsk name: %s\n"), osdev);
 		return (NULL);
 	}
 
 	if (menu_root && !menu_on_bootdisk(osroot, menu_root)) {
 		/* menu bears no resemblance to our reality */
-		bam_error(CANNOT_GRUBROOT_BOOTDISK, osdev);
+		bam_error(_("cannot get (hd?,?,?) for menu. menu not on "
+		    "bootdisk: %s\n"), osdev);
 		return (NULL);
 	}
 
@@ -5485,7 +5654,8 @@ get_grubroot(char *osroot, char *osdev, char *menu_root)
 
 	fp = create_diskmap(osroot);
 	if (fp == NULL) {
-		bam_error(DISKMAP_FAIL, osroot);
+		bam_error(_("create_diskmap command failed for OS root: %s.\n"),
+		    osroot);
 		return (NULL);
 	}
 
@@ -5510,14 +5680,16 @@ get_grubroot(char *osroot, char *osdev, char *menu_root)
 
 	INJECT_ERROR1("GRUBROOT_BIOSDEV_FAIL", found = 0);
 	if (found == 0) {
-		bam_error(BIOSDEV_SKIP, osdev);
+		bam_error(_("not using biosdev command for disk: %s.\n"),
+		    osdev);
 		return (NULL);
 	}
 
 	fdiskpart = get_partition(osdev);
 	INJECT_ERROR1("GRUBROOT_FDISK_FAIL", fdiskpart = PARTNO_NOTFOUND);
 	if (fdiskpart == PARTNO_NOTFOUND) {
-		bam_error(FDISKPART_FAIL, osdev);
+		bam_error(_("failed to determine fdisk partition: %s\n"),
+		    osdev);
 		return (NULL);
 	}
 
@@ -5556,20 +5728,21 @@ find_primary_common(char *mntpt, char *fstype)
 	    mntpt, GRUBSIGN_DIR);
 
 	if (stat(signdir, &sb) == -1) {
-		BAM_DPRINTF((D_NO_SIGNDIR, fcn, signdir));
+		BAM_DPRINTF(("%s: no sign dir: %s\n", fcn, signdir));
 		return (NULL);
 	}
 
 	dirp = opendir(signdir);
 	INJECT_ERROR1("SIGNDIR_OPENDIR_FAIL", dirp = NULL);
 	if (dirp == NULL) {
-		bam_error(OPENDIR_FAILED, signdir, strerror(errno));
+		bam_error(_("opendir of %s failed: %s\n"), signdir,
+		    strerror(errno));
 		return (NULL);
 	}
 
 	ufs = zfs = lu = NULL;
 
-	while (entp = readdir(dirp)) {
+	while ((entp = readdir(dirp)) != NULL) {
 		if (strcmp(entp->d_name, ".") == 0 ||
 		    strcmp(entp->d_name, "..") == 0)
 			continue;
@@ -5595,7 +5768,7 @@ find_primary_common(char *mntpt, char *fstype)
 		}
 	}
 
-	BAM_DPRINTF((D_EXIST_PRIMARY_SIGNS, fcn,
+	BAM_DPRINTF(("%s: existing primary signs: zfs=%s ufs=%s lu=%s\n", fcn,
 	    zfs ? zfs : "NULL",
 	    ufs ? ufs : "NULL",
 	    lu ? lu : "NULL"));
@@ -5606,11 +5779,13 @@ find_primary_common(char *mntpt, char *fstype)
 	}
 
 	if (strcmp(fstype, "ufs") == 0 && zfs) {
-		bam_error(SIGN_FSTYPE_MISMATCH, zfs, "ufs");
+		bam_error(_("found mismatched boot signature %s for "
+		    "filesystem type: %s.\n"), zfs, "ufs");
 		free(zfs);
 		zfs = NULL;
 	} else if (strcmp(fstype, "zfs") == 0 && ufs) {
-		bam_error(SIGN_FSTYPE_MISMATCH, ufs, "zfs");
+		bam_error(_("found mismatched boot signature %s for "
+		    "filesystem type: %s.\n"), ufs, "zfs");
 		free(ufs);
 		ufs = NULL;
 	}
@@ -5619,7 +5794,7 @@ find_primary_common(char *mntpt, char *fstype)
 
 	/* For now, we let Live Upgrade take care of its signature itself */
 	if (lu) {
-		BAM_DPRINTF((D_FREEING_LU_SIGNS, fcn, lu));
+		BAM_DPRINTF(("%s: feeing LU sign: %s\n", fcn, lu));
 		free(lu);
 		lu = NULL;
 	}
@@ -5650,9 +5825,11 @@ find_backup_common(char *mntpt, char *fstype)
 	if (bfp == NULL) {
 		error = errno;
 		if (bam_verbose) {
-			bam_error(OPEN_FAIL, backup, strerror(error));
+			bam_error(_("failed to open file: %s: %s\n"),
+			    backup, strerror(error));
 		}
-		BAM_DPRINTF((D_OPEN_FAIL, fcn, backup, strerror(error)));
+		BAM_DPRINTF(("%s: failed to open %s: %s\n",
+		    fcn, backup, strerror(error)));
 		return (NULL);
 	}
 
@@ -5679,7 +5856,7 @@ find_backup_common(char *mntpt, char *fstype)
 		}
 	}
 
-	BAM_DPRINTF((D_EXIST_BACKUP_SIGNS, fcn,
+	BAM_DPRINTF(("%s: existing backup signs: zfs=%s ufs=%s lu=%s\n", fcn,
 	    zfs ? zfs : "NULL",
 	    ufs ? ufs : "NULL",
 	    lu ? lu : "NULL"));
@@ -5690,11 +5867,13 @@ find_backup_common(char *mntpt, char *fstype)
 	}
 
 	if (strcmp(fstype, "ufs") == 0 && zfs) {
-		bam_error(SIGN_FSTYPE_MISMATCH, zfs, "ufs");
+		bam_error(_("found mismatched boot signature %s for "
+		    "filesystem type: %s.\n"), zfs, "ufs");
 		free(zfs);
 		zfs = NULL;
 	} else if (strcmp(fstype, "zfs") == 0 && ufs) {
-		bam_error(SIGN_FSTYPE_MISMATCH, ufs, "zfs");
+		bam_error(_("found mismatched boot signature %s for "
+		    "filesystem type: %s.\n"), ufs, "zfs");
 		free(ufs);
 		ufs = NULL;
 	}
@@ -5703,7 +5882,7 @@ find_backup_common(char *mntpt, char *fstype)
 
 	/* For now, we let Live Upgrade take care of its signature itself */
 	if (lu) {
-		BAM_DPRINTF((D_FREEING_LU_SIGNS, fcn, lu));
+		BAM_DPRINTF(("%s: feeing LU sign: %s\n", fcn, lu));
 		free(lu);
 		lu = NULL;
 	}
@@ -5720,9 +5899,10 @@ find_ufs_existing(char *osroot)
 	sign = find_primary_common(osroot, "ufs");
 	if (sign == NULL) {
 		sign = find_backup_common(osroot, "ufs");
-		BAM_DPRINTF((D_EXIST_BACKUP_SIGN, fcn, sign ? sign : "NULL"));
+		BAM_DPRINTF(("%s: existing backup sign: %s\n", fcn,
+		    sign ? sign : "NULL"));
 	} else {
-		BAM_DPRINTF((D_EXIST_PRIMARY_SIGN, fcn, sign));
+		BAM_DPRINTF(("%s: existing primary sign: %s\n", fcn, sign));
 	}
 
 	return (sign);
@@ -5738,13 +5918,14 @@ get_mountpoint(char *special, char *fstype)
 	int		ret;
 	const char	*fcn = "get_mountpoint()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY2, fcn, special, fstype));
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", fcn, special, fstype));
 
 	mntfp = fopen(MNTTAB, "r");
 	error = errno;
 	INJECT_ERROR1("MNTTAB_ERR_GET_MNTPT", mntfp = NULL);
 	if (mntfp == NULL) {
-		bam_error(OPEN_FAIL, MNTTAB, strerror(error));
+		bam_error(_("failed to open file: %s: %s\n"),
+		    MNTTAB, strerror(error));
 		return (NULL);
 	}
 
@@ -5755,14 +5936,16 @@ get_mountpoint(char *special, char *fstype)
 	INJECT_ERROR1("GET_MOUNTPOINT_MNTANY", ret = 1);
 	if (ret != 0) {
 		(void) fclose(mntfp);
-		BAM_DPRINTF((D_NO_MNTPT, fcn, special, fstype));
+		BAM_DPRINTF(("%s: no mount-point for special=%s and "
+		    "fstype=%s\n", fcn, special, fstype));
 		return (NULL);
 	}
 	(void) fclose(mntfp);
 
 	assert(mp.mnt_mountp);
 
-	BAM_DPRINTF((D_GET_MOUNTPOINT_RET, fcn, special, mp.mnt_mountp));
+	BAM_DPRINTF(("%s: returning mount-point for special %s: %s\n",
+	    fcn, special, mp.mnt_mountp));
 
 	return (s_strdup(mp.mnt_mountp));
 }
@@ -5783,7 +5966,7 @@ mount_legacy_dataset(char *pool, zfs_mnted_t *mnted)
 	int		ret;
 	const char	*fcn = "mount_legacy_dataset()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, pool));
+	BAM_DPRINTF(("%s: entered. arg: %s\n", fcn, pool));
 
 	*mnted = ZFS_MNT_ERROR;
 
@@ -5794,13 +5977,14 @@ mount_legacy_dataset(char *pool, zfs_mnted_t *mnted)
 	ret = exec_cmd(cmd, &flist);
 	INJECT_ERROR1("Z_MOUNT_LEG_GET_MOUNTED_CMD", ret = 1);
 	if (ret != 0) {
-		bam_error(ZFS_MNTED_FAILED, pool);
+		bam_error(_("failed to determine mount status of ZFS "
+		    "pool %s\n"), pool);
 		return (NULL);
 	}
 
 	INJECT_ERROR1("Z_MOUNT_LEG_GET_MOUNTED_OUT", flist.head = NULL);
 	if ((flist.head == NULL) || (flist.head != flist.tail)) {
-		bam_error(BAD_ZFS_MNTED, pool);
+		bam_error(_("ZFS pool %s has bad mount status\n"), pool);
 		filelist_free(&flist);
 		return (NULL);
 	}
@@ -5812,7 +5996,8 @@ mount_legacy_dataset(char *pool, zfs_mnted_t *mnted)
 		filelist_free(&flist);
 		*mnted = LEGACY_ALREADY;
 		/* get_mountpoint returns a strdup'ed string */
-		BAM_DPRINTF((D_Z_MOUNT_TOP_LEG_ALREADY, fcn, pool));
+		BAM_DPRINTF(("%s: legacy pool %s already mounted\n",
+		    fcn, pool));
 		return (get_mountpoint(pool, "zfs"));
 	}
 
@@ -5827,15 +6012,18 @@ mount_legacy_dataset(char *pool, zfs_mnted_t *mnted)
 
 	ret = stat(tmpmnt, &sb);
 	if (ret == -1) {
-		BAM_DPRINTF((D_Z_MOUNT_TOP_LEG_MNTPT_ABS, fcn, pool, tmpmnt));
+		BAM_DPRINTF(("%s: legacy pool %s mount-point %s absent\n",
+		    fcn, pool, tmpmnt));
 		ret = mkdirp(tmpmnt, DIR_PERMS);
 		INJECT_ERROR1("Z_MOUNT_TOP_LEG_MNTPT_MKDIRP", ret = -1);
 		if (ret == -1) {
-			bam_error(MKDIR_FAILED, tmpmnt, strerror(errno));
+			bam_error(_("mkdir of %s failed: %s\n"), tmpmnt,
+			    strerror(errno));
 			return (NULL);
 		}
 	} else {
-		BAM_DPRINTF((D_Z_MOUNT_TOP_LEG_MNTPT_PRES, fcn, pool, tmpmnt));
+		BAM_DPRINTF(("%s: legacy pool %s mount-point %s is already "
+		    "present\n", fcn, pool, tmpmnt));
 	}
 
 	(void) snprintf(cmd, sizeof (cmd),
@@ -5845,13 +6033,14 @@ mount_legacy_dataset(char *pool, zfs_mnted_t *mnted)
 	ret = exec_cmd(cmd, NULL);
 	INJECT_ERROR1("Z_MOUNT_TOP_LEG_MOUNT_CMD", ret = 1);
 	if (ret != 0) {
-		bam_error(ZFS_MOUNT_FAILED, pool);
+		bam_error(_("mount of ZFS pool %s failed\n"), pool);
 		(void) rmdir(tmpmnt);
 		return (NULL);
 	}
 
 	*mnted = LEGACY_MOUNTED;
-	BAM_DPRINTF((D_Z_MOUNT_TOP_LEG_MOUNTED, fcn, pool, tmpmnt));
+	BAM_DPRINTF(("%s: legacy pool %s successfully mounted at %s\n",
+	    fcn, pool, tmpmnt));
 	return (s_strdup(tmpmnt));
 }
 
@@ -5860,7 +6049,7 @@ mount_legacy_dataset(char *pool, zfs_mnted_t *mnted)
  * Returns:	The mountpoint of the top dataset or NULL on error
  * 		mnted returns one of the above values defined for zfs_mnted_t
  */
-static char *
+char *
 mount_top_dataset(char *pool, zfs_mnted_t *mnted)
 {
 	char		cmd[PATH_MAX];
@@ -5873,7 +6062,7 @@ mount_top_dataset(char *pool, zfs_mnted_t *mnted)
 
 	*mnted = ZFS_MNT_ERROR;
 
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, pool));
+	BAM_DPRINTF(("%s: entered. arg: %s\n", fcn, pool));
 
 	/*
 	 * First check if the top dataset is a "legacy" dataset
@@ -5884,7 +6073,8 @@ mount_top_dataset(char *pool, zfs_mnted_t *mnted)
 	ret = exec_cmd(cmd, &flist);
 	INJECT_ERROR1("Z_MOUNT_TOP_GET_MNTPT", ret = 1);
 	if (ret != 0) {
-		bam_error(ZFS_MNTPT_FAILED, pool);
+		bam_error(_("failed to determine mount point of ZFS pool %s\n"),
+		    pool);
 		return (NULL);
 	}
 
@@ -5892,14 +6082,14 @@ mount_top_dataset(char *pool, zfs_mnted_t *mnted)
 		char *legacy = strtok(flist.head->line, " \t\n");
 		if (legacy && strcmp(legacy, "legacy") == 0) {
 			filelist_free(&flist);
-			BAM_DPRINTF((D_Z_IS_LEGACY, fcn, pool));
+			BAM_DPRINTF(("%s: is legacy, pool=%s\n", fcn, pool));
 			return (mount_legacy_dataset(pool, mnted));
 		}
 	}
 
 	filelist_free(&flist);
 
-	BAM_DPRINTF((D_Z_IS_NOT_LEGACY, fcn, pool));
+	BAM_DPRINTF(("%s: is *NOT* legacy, pool=%s\n", fcn, pool));
 
 	(void) snprintf(cmd, sizeof (cmd),
 	    "/sbin/zfs get -Ho value mounted %s",
@@ -5908,13 +6098,14 @@ mount_top_dataset(char *pool, zfs_mnted_t *mnted)
 	ret = exec_cmd(cmd, &flist);
 	INJECT_ERROR1("Z_MOUNT_TOP_NONLEG_GET_MOUNTED", ret = 1);
 	if (ret != 0) {
-		bam_error(ZFS_MNTED_FAILED, pool);
+		bam_error(_("failed to determine mount status of ZFS "
+		    "pool %s\n"), pool);
 		return (NULL);
 	}
 
 	INJECT_ERROR1("Z_MOUNT_TOP_NONLEG_GET_MOUNTED_VAL", flist.head = NULL);
 	if ((flist.head == NULL) || (flist.head != flist.tail)) {
-		bam_error(BAD_ZFS_MNTED, pool);
+		bam_error(_("ZFS pool %s has bad mount status\n"), pool);
 		filelist_free(&flist);
 		return (NULL);
 	}
@@ -5925,12 +6116,14 @@ mount_top_dataset(char *pool, zfs_mnted_t *mnted)
 	if (strcmp(is_mounted, "no") != 0) {
 		filelist_free(&flist);
 		*mnted = ZFS_ALREADY;
-		BAM_DPRINTF((D_Z_MOUNT_TOP_NONLEG_MOUNTED_ALREADY, fcn, pool));
+		BAM_DPRINTF(("%s: non-legacy pool %s mounted already\n",
+		    fcn, pool));
 		goto mounted;
 	}
 
 	filelist_free(&flist);
-	BAM_DPRINTF((D_Z_MOUNT_TOP_NONLEG_MOUNTED_NOT_ALREADY, fcn, pool));
+	BAM_DPRINTF(("%s: non-legacy pool %s *NOT* already mounted\n",
+	    fcn, pool));
 
 	/* top dataset is not mounted. Mount it now */
 	(void) snprintf(cmd, sizeof (cmd),
@@ -5938,11 +6131,11 @@ mount_top_dataset(char *pool, zfs_mnted_t *mnted)
 	ret = exec_cmd(cmd, NULL);
 	INJECT_ERROR1("Z_MOUNT_TOP_NONLEG_MOUNT_CMD", ret = 1);
 	if (ret != 0) {
-		bam_error(ZFS_MOUNT_FAILED, pool);
+		bam_error(_("mount of ZFS pool %s failed\n"), pool);
 		return (NULL);
 	}
 	*mnted = ZFS_MOUNTED;
-	BAM_DPRINTF((D_Z_MOUNT_TOP_NONLEG_MOUNTED_NOW, fcn, pool));
+	BAM_DPRINTF(("%s: non-legacy pool %s mounted now\n", fcn, pool));
 	/*FALLTHRU*/
 mounted:
 	/*
@@ -5955,38 +6148,41 @@ mounted:
 	ret = exec_cmd(cmd, &flist);
 	INJECT_ERROR1("Z_MOUNT_TOP_NONLEG_GET_MNTPT_CMD", ret = 1);
 	if (ret != 0) {
-		bam_error(ZFS_MNTPT_FAILED, pool);
+		bam_error(_("failed to determine mount point of ZFS pool %s\n"),
+		    pool);
 		goto error;
 	}
 
 	INJECT_ERROR1("Z_MOUNT_TOP_NONLEG_GET_MNTPT_OUT", flist.head = NULL);
 	if ((flist.head == NULL) || (flist.head != flist.tail)) {
-		bam_error(NULL_ZFS_MNTPT, pool);
+		bam_error(_("ZFS pool %s has no mount-point\n"), pool);
 		goto error;
 	}
 
 	mntpt = strtok(flist.head->line, " \t\n");
 	INJECT_ERROR1("Z_MOUNT_TOP_NONLEG_GET_MNTPT_STRTOK", mntpt = "foo");
 	if (*mntpt != '/') {
-		bam_error(BAD_ZFS_MNTPT, pool, mntpt);
+		bam_error(_("ZFS pool %s has bad mount-point %s\n"),
+		    pool, mntpt);
 		goto error;
 	}
 	zmntpt = s_strdup(mntpt);
 
 	filelist_free(&flist);
 
-	BAM_DPRINTF((D_Z_MOUNT_TOP_NONLEG_MNTPT, fcn, pool, zmntpt));
+	BAM_DPRINTF(("%s: non-legacy pool %s is mounted at %s\n",
+	    fcn, pool, zmntpt));
 
 	return (zmntpt);
 
 error:
 	filelist_free(&flist);
 	(void) umount_top_dataset(pool, *mnted, NULL);
-	BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+	BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	return (NULL);
 }
 
-static int
+int
 umount_top_dataset(char *pool, zfs_mnted_t mnted, char *mntpt)
 {
 	char		cmd[PATH_MAX];
@@ -5998,8 +6194,8 @@ umount_top_dataset(char *pool, zfs_mnted_t mnted, char *mntpt)
 	case LEGACY_ALREADY:
 	case ZFS_ALREADY:
 		/* nothing to do */
-		BAM_DPRINTF((D_Z_UMOUNT_TOP_ALREADY_NOP, fcn, pool,
-		    mntpt ? mntpt : "NULL"));
+		BAM_DPRINTF(("%s: pool %s was already mounted at %s, Nothing "
+		    "to umount\n", fcn, pool, mntpt ? mntpt : "NULL"));
 		free(mntpt);
 		return (BAM_SUCCESS);
 	case LEGACY_MOUNTED:
@@ -6008,14 +6204,15 @@ umount_top_dataset(char *pool, zfs_mnted_t mnted, char *mntpt)
 		ret = exec_cmd(cmd, NULL);
 		INJECT_ERROR1("Z_UMOUNT_TOP_LEGACY_UMOUNT_FAIL", ret = 1);
 		if (ret != 0) {
-			bam_error(UMOUNT_FAILED, pool);
+			bam_error(_("umount of %s failed\n"), pool);
 			free(mntpt);
 			return (BAM_ERROR);
 		}
 		if (mntpt)
 			(void) rmdir(mntpt);
 		free(mntpt);
-		BAM_DPRINTF((D_Z_UMOUNT_TOP_LEGACY, fcn, pool));
+		BAM_DPRINTF(("%s: legacy pool %s was mounted by us, "
+		    "successfully unmounted\n", fcn, pool));
 		return (BAM_SUCCESS);
 	case ZFS_MOUNTED:
 		free(mntpt);
@@ -6024,13 +6221,15 @@ umount_top_dataset(char *pool, zfs_mnted_t mnted, char *mntpt)
 		ret = exec_cmd(cmd, NULL);
 		INJECT_ERROR1("Z_UMOUNT_TOP_NONLEG_UMOUNT_FAIL", ret = 1);
 		if (ret != 0) {
-			bam_error(UMOUNT_FAILED, pool);
+			bam_error(_("umount of %s failed\n"), pool);
 			return (BAM_ERROR);
 		}
-		BAM_DPRINTF((D_Z_UMOUNT_TOP_NONLEG, fcn, pool));
+		BAM_DPRINTF(("%s: nonleg pool %s was mounted by us, "
+		    "successfully unmounted\n", fcn, pool));
 		return (BAM_SUCCESS);
 	default:
-		bam_error(INT_BAD_MNTSTATE, pool);
+		bam_error(_("Internal error: bad saved mount state for "
+		    "pool %s\n"), pool);
 		return (BAM_ERROR);
 	}
 	/*NOTREACHED*/
@@ -6055,11 +6254,11 @@ get_pool(char *osdev)
 
 	INJECT_ERROR1("GET_POOL_OSDEV", osdev = NULL);
 	if (osdev == NULL) {
-		bam_error(GET_POOL_OSDEV_NULL);
+		bam_error(_("NULL device: cannot determine pool name\n"));
 		return (NULL);
 	}
 
-	BAM_DPRINTF((D_GET_POOL_OSDEV, fcn, osdev));
+	BAM_DPRINTF(("%s: osdev arg = %s\n", fcn, osdev));
 
 	if (osdev[0] != '/') {
 		(void) strlcpy(buf, osdev, sizeof (buf));
@@ -6067,11 +6266,12 @@ get_pool(char *osdev)
 		if (slash)
 			*slash = '\0';
 		pool = s_strdup(buf);
-		BAM_DPRINTF((D_GET_POOL_RET, fcn, pool));
+		BAM_DPRINTF(("%s: got pool. pool = %s\n", fcn, pool));
 		return (pool);
 	} else if (strncmp(osdev, "/dev/dsk/", strlen("/dev/dsk/")) != 0 &&
 	    strncmp(osdev, "/dev/rdsk/", strlen("/dev/rdsk/")) != 0) {
-		bam_error(GET_POOL_BAD_OSDEV, osdev);
+		bam_error(_("invalid device %s: cannot determine pool name\n"),
+		    osdev);
 		return (NULL);
 	}
 
@@ -6086,13 +6286,13 @@ get_pool(char *osdev)
 	ret = exec_cmd(cmd, &flist);
 	INJECT_ERROR1("GET_POOL_FSTYP", ret = 1);
 	if (ret != 0) {
-		bam_error(FSTYP_A_FAILED, osdev);
+		bam_error(_("fstyp -a on device %s failed\n"), osdev);
 		return (NULL);
 	}
 
 	INJECT_ERROR1("GET_POOL_FSTYP_OUT", flist.head = NULL);
 	if ((flist.head == NULL) || (flist.head != flist.tail)) {
-		bam_error(NULL_FSTYP_A, osdev);
+		bam_error(_("NULL fstyp -a output for device %s\n"), osdev);
 		filelist_free(&flist);
 		return (NULL);
 	}
@@ -6101,7 +6301,7 @@ get_pool(char *osdev)
 	cp = strtok(NULL, "'");
 	INJECT_ERROR1("GET_POOL_FSTYP_STRTOK", cp = NULL);
 	if (cp == NULL) {
-		bam_error(BAD_FSTYP_A, osdev);
+		bam_error(_("bad fstyp -a output for device %s\n"), osdev);
 		filelist_free(&flist);
 		return (NULL);
 	}
@@ -6110,7 +6310,7 @@ get_pool(char *osdev)
 
 	filelist_free(&flist);
 
-	BAM_DPRINTF((D_GET_POOL_RET, fcn, pool));
+	BAM_DPRINTF(("%s: got pool. pool = %s\n", fcn, pool));
 
 	return (pool);
 }
@@ -6127,14 +6327,15 @@ find_zfs_existing(char *osdev)
 	pool = get_pool(osdev);
 	INJECT_ERROR1("ZFS_FIND_EXIST_POOL", pool = NULL);
 	if (pool == NULL) {
-		bam_error(ZFS_GET_POOL_FAILED, osdev);
+		bam_error(_("failed to get pool for device: %s\n"), osdev);
 		return (NULL);
 	}
 
 	mntpt = mount_top_dataset(pool, &mnted);
 	INJECT_ERROR1("ZFS_FIND_EXIST_MOUNT_TOP", mntpt = NULL);
 	if (mntpt == NULL) {
-		bam_error(ZFS_MOUNT_TOP_DATASET_FAILED, pool);
+		bam_error(_("failed to mount top dataset for pool: %s\n"),
+		    pool);
 		free(pool);
 		return (NULL);
 	}
@@ -6142,9 +6343,10 @@ find_zfs_existing(char *osdev)
 	sign = find_primary_common(mntpt, "zfs");
 	if (sign == NULL) {
 		sign = find_backup_common(mntpt, "zfs");
-		BAM_DPRINTF((D_EXIST_BACKUP_SIGN, fcn, sign ? sign : "NULL"));
+		BAM_DPRINTF(("%s: existing backup sign: %s\n", fcn,
+		    sign ? sign : "NULL"));
 	} else {
-		BAM_DPRINTF((D_EXIST_PRIMARY_SIGN, fcn, sign));
+		BAM_DPRINTF(("%s: existing primary sign: %s\n", fcn, sign));
 	}
 
 	(void) umount_top_dataset(pool, mnted, mntpt);
@@ -6161,13 +6363,14 @@ find_existing_sign(char *osroot, char *osdev, char *fstype)
 
 	INJECT_ERROR1("FIND_EXIST_NOTSUP_FS", fstype = "foofs");
 	if (strcmp(fstype, "ufs") == 0) {
-		BAM_DPRINTF((D_CHECK_UFS_EXIST_SIGN, fcn));
+		BAM_DPRINTF(("%s: checking for existing UFS sign\n", fcn));
 		return (find_ufs_existing(osroot));
 	} else if (strcmp(fstype, "zfs") == 0) {
-		BAM_DPRINTF((D_CHECK_ZFS_EXIST_SIGN, fcn));
+		BAM_DPRINTF(("%s: checking for existing ZFS sign\n", fcn));
 		return (find_zfs_existing(osdev));
 	} else {
-		bam_error(GRUBSIGN_NOTSUP, fstype);
+		bam_error(_("boot signature not supported for fstype: %s\n"),
+		    fstype);
 		return (NULL);
 	}
 }
@@ -6225,7 +6428,8 @@ cache_mnttab(void)
 	error = errno;
 	INJECT_ERROR1("CACHE_MNTTAB_MNTTAB_ERR", mfp = NULL);
 	if (mfp == NULL) {
-		bam_error(OPEN_FAIL, MNTTAB, strerror(error));
+		bam_error(_("failed to open file: %s: %s\n"), MNTTAB,
+		    strerror(error));
 		return (NULL);
 	}
 
@@ -6246,8 +6450,8 @@ cache_mnttab(void)
 		mcp->mc_special = s_strdup(ctds);
 		mcp->mc_mntpt = s_strdup(mnt.mnt_mountp);
 		mcp->mc_fstype = s_strdup(mnt.mnt_fstype);
-		BAM_DPRINTF((D_CACHE_MNTS, fcn, ctds,
-		    mnt.mnt_mountp, mnt.mnt_fstype));
+		BAM_DPRINTF(("%s: caching mount: special=%s, mntpt=%s, "
+		    "fstype=%s\n", fcn, ctds, mnt.mnt_mountp, mnt.mnt_fstype));
 		idx = mhash_fcn(ctds);
 		mcp->mc_next = mhp->mh_hash[idx];
 		mhp->mh_hash[idx] = mcp;
@@ -6266,8 +6470,7 @@ free_mnttab(mhash_t *mhp)
 	int		i;
 
 	for (i = 0; i < MH_HASH_SZ; i++) {
-		/*LINTED*/
-		while (mcp = mhp->mh_hash[i]) {
+		while ((mcp = mhp->mh_hash[i]) != NULL) {
 			mhp->mh_hash[i] = mcp->mc_next;
 			free(mcp->mc_special);
 			free(mcp->mc_mntpt);
@@ -6295,7 +6498,7 @@ search_hash(mhash_t *mhp, char *special, char **mntpt)
 
 	INJECT_ERROR1("SEARCH_HASH_FULL_PATH", special = "/foo");
 	if (strchr(special, '/')) {
-		bam_error(INVALID_MHASH_KEY, special);
+		bam_error(_("invalid key for mnttab hash: %s\n"), special);
 		return (MH_ERROR);
 	}
 
@@ -6307,13 +6510,13 @@ search_hash(mhash_t *mhp, char *special, char **mntpt)
 	}
 
 	if (mcp == NULL) {
-		BAM_DPRINTF((D_MNTTAB_HASH_NOMATCH, fcn, special));
+		BAM_DPRINTF(("%s: no match in cache for: %s\n", fcn, special));
 		return (MH_NOMATCH);
 	}
 
 	assert(strcmp(mcp->mc_fstype, "ufs") == 0);
 	*mntpt = mcp->mc_mntpt;
-	BAM_DPRINTF((D_MNTTAB_HASH_MATCH, fcn, special));
+	BAM_DPRINTF(("%s: *MATCH* in cache for: %s\n", fcn, special));
 	return (MH_MATCH);
 }
 
@@ -6331,7 +6534,8 @@ check_add_ufs_sign_to_list(FILE *tfp, char *mntpt)
 	sign = find_existing_sign(mntpt, NULL, "ufs");
 	if (sign == NULL) {
 		/* No existing signature, nothing to add to list */
-		BAM_DPRINTF((D_NO_SIGN_TO_LIST, fcn, mntpt));
+		BAM_DPRINTF(("%s: no sign on %s to add to signlist\n",
+		    fcn, mntpt));
 		return (0);
 	}
 
@@ -6341,7 +6545,7 @@ check_add_ufs_sign_to_list(FILE *tfp, char *mntpt)
 	INJECT_ERROR1("UFS_MNTPT_SIGN_NOTUFS", signline = "pool_rpool10\n");
 	if (strncmp(signline, GRUBSIGN_UFS_PREFIX,
 	    strlen(GRUBSIGN_UFS_PREFIX))) {
-		bam_error(INVALID_UFS_SIGNATURE, sign);
+		bam_error(_("invalid UFS boot signature %s\n"), sign);
 		free(sign);
 		/* ignore invalid signatures */
 		return (0);
@@ -6351,14 +6555,16 @@ check_add_ufs_sign_to_list(FILE *tfp, char *mntpt)
 	error = errno;
 	INJECT_ERROR1("SIGN_LIST_PUTS_ERROR", len = 0);
 	if (len != strlen(signline)) {
-		bam_error(SIGN_LIST_FPUTS_ERR, sign, strerror(error));
+		bam_error(_("failed to write signature %s to signature "
+		    "list: %s\n"), sign, strerror(error));
 		free(sign);
 		return (-1);
 	}
 
 	free(sign);
 
-	BAM_DPRINTF((D_SIGN_LIST_PUTS_DONE, fcn, mntpt));
+	BAM_DPRINTF(("%s: successfully added sign on %s to signlist\n",
+	    fcn, mntpt));
 	return (0);
 }
 
@@ -6395,7 +6601,7 @@ process_slice_common(char *slice, FILE *tfp, mhash_t *mhp, char *tmpmnt)
 
 	(void) snprintf(path, sizeof (path), "/dev/rdsk/%s", slice);
 	if (stat(path, &sbuf) == -1) {
-		BAM_DPRINTF((D_SLICE_ENOENT, fcn, path));
+		BAM_DPRINTF(("%s: slice does not exist: %s\n", fcn, path));
 		return (0);
 	}
 
@@ -6406,13 +6612,14 @@ process_slice_common(char *slice, FILE *tfp, mhash_t *mhp, char *tmpmnt)
 
 	if (exec_cmd(cmd, &flist) != 0) {
 		if (bam_verbose)
-			bam_print(FSTYP_FAILED, slice);
+			bam_print(_("fstyp failed for slice: %s\n"), slice);
 		return (0);
 	}
 
 	if ((flist.head == NULL) || (flist.head != flist.tail)) {
 		if (bam_verbose)
-			bam_print(FSTYP_BAD, slice);
+			bam_print(_("bad output from fstyp for slice: %s\n"),
+			    slice);
 		filelist_free(&flist);
 		return (0);
 	}
@@ -6420,7 +6627,8 @@ process_slice_common(char *slice, FILE *tfp, mhash_t *mhp, char *tmpmnt)
 	fstype = strtok(flist.head->line, " \t\n");
 	if (fstype == NULL || strcmp(fstype, "ufs") != 0) {
 		if (bam_verbose)
-			bam_print(NOT_UFS_SLICE, slice, fstype);
+			bam_print(_("%s is not a ufs slice: %s\n"),
+			    slice, fstype);
 		filelist_free(&flist);
 		return (0);
 	}
@@ -6442,7 +6650,8 @@ process_slice_common(char *slice, FILE *tfp, mhash_t *mhp, char *tmpmnt)
 
 	if (exec_cmd(cmd, NULL) != 0) {
 		if (bam_verbose)
-			bam_print(MOUNT_FAILED, blkslice, "ufs");
+			bam_print(_("mount of %s (fstype %s) failed\n"),
+			    blkslice, "ufs");
 		return (0);
 	}
 
@@ -6453,7 +6662,7 @@ process_slice_common(char *slice, FILE *tfp, mhash_t *mhp, char *tmpmnt)
 	    tmpmnt);
 
 	if (exec_cmd(cmd, NULL) != 0) {
-		bam_print(UMOUNT_FAILED, slice);
+		bam_print(_("umount of %s failed\n"), slice);
 		return (0);
 	}
 
@@ -6491,7 +6700,8 @@ process_vtoc_slices(
 		(void) snprintf(cp, sizeof (slice) - (len - 1), "%u", idx);
 
 		if (vtoc->v_part[idx].p_size == 0) {
-			BAM_DPRINTF((D_VTOC_SIZE_ZERO, fcn, slice));
+			BAM_DPRINTF(("%s: VTOC: skipping 0-length slice: %s\n",
+			    fcn, slice));
 			continue;
 		}
 
@@ -6503,10 +6713,12 @@ process_vtoc_slices(
 		case V_VAR:
 		case V_HOME:
 		case V_ALTSCTR:
-			BAM_DPRINTF((D_VTOC_NOT_ROOT_TAG, fcn, slice));
+			BAM_DPRINTF(("%s: VTOC: unsupported tag, "
+			    "skipping: %s\n", fcn, slice));
 			continue;
 		default:
-			BAM_DPRINTF((D_VTOC_ROOT_TAG, fcn, slice));
+			BAM_DPRINTF(("%s: VTOC: supported tag, checking: %s\n",
+			    fcn, slice));
 			break;
 		}
 
@@ -6514,10 +6726,12 @@ process_vtoc_slices(
 		switch (vtoc->v_part[idx].p_flag) {
 		case V_UNMNT:
 		case V_RONLY:
-			BAM_DPRINTF((D_VTOC_NOT_RDWR_FLAG, fcn, slice));
+			BAM_DPRINTF(("%s: VTOC: non-RDWR flag, skipping: %s\n",
+			    fcn, slice));
 			continue;
 		default:
-			BAM_DPRINTF((D_VTOC_RDWR_FLAG, fcn, slice));
+			BAM_DPRINTF(("%s: VTOC: RDWR flag, checking: %s\n",
+			    fcn, slice));
 			break;
 		}
 
@@ -6560,7 +6774,8 @@ process_efi_slices(
 		(void) snprintf(cp, sizeof (slice) - (len - 1), "%u", idx);
 
 		if (efi->efi_parts[idx].p_size == 0) {
-			BAM_DPRINTF((D_EFI_SIZE_ZERO, fcn, slice));
+			BAM_DPRINTF(("%s: EFI: skipping 0-length slice: %s\n",
+			    fcn, slice));
 			continue;
 		}
 
@@ -6572,10 +6787,12 @@ process_efi_slices(
 		case V_VAR:
 		case V_HOME:
 		case V_ALTSCTR:
-			BAM_DPRINTF((D_EFI_NOT_ROOT_TAG, fcn, slice));
+			BAM_DPRINTF(("%s: EFI: unsupported tag, skipping: %s\n",
+			    fcn, slice));
 			continue;
 		default:
-			BAM_DPRINTF((D_EFI_ROOT_TAG, fcn, slice));
+			BAM_DPRINTF(("%s: EFI: supported tag, checking: %s\n",
+			    fcn, slice));
 			break;
 		}
 
@@ -6583,10 +6800,12 @@ process_efi_slices(
 		switch (efi->efi_parts[idx].p_flag) {
 		case V_UNMNT:
 		case V_RONLY:
-			BAM_DPRINTF((D_EFI_NOT_RDWR_FLAG, fcn, slice));
+			BAM_DPRINTF(("%s: EFI: non-RDWR flag, skipping: %s\n",
+			    fcn, slice));
 			continue;
 		default:
-			BAM_DPRINTF((D_EFI_RDWR_FLAG, fcn, slice));
+			BAM_DPRINTF(("%s: EFI: RDWR flag, checking: %s\n",
+			    fcn, slice));
 			break;
 		}
 
@@ -6618,13 +6837,14 @@ process_slice0(char *s0, FILE *tfp, mhash_t *mhp, char *tmpmnt)
 	(void) snprintf(s0path, sizeof (s0path), "/dev/rdsk/%s", s0);
 
 	if (stat(s0path, &sbuf) == -1) {
-		BAM_DPRINTF((D_SLICE0_ENOENT, fcn, s0path));
+		BAM_DPRINTF(("%s: slice 0 does not exist: %s\n", fcn, s0path));
 		return (0);
 	}
 
 	fd = open(s0path, O_NONBLOCK|O_RDONLY);
 	if (fd == -1) {
-		bam_error(OPEN_FAIL, s0path, strerror(errno));
+		bam_error(_("failed to open file: %s: %s\n"), s0path,
+		    strerror(errno));
 		return (0);
 	}
 
@@ -6632,24 +6852,30 @@ process_slice0(char *s0, FILE *tfp, mhash_t *mhp, char *tmpmnt)
 	retval = ((err = read_vtoc(fd, &vtoc)) >= 0) ? 0 : err;
 	switch (retval) {
 		case VT_EIO:
-			BAM_DPRINTF((D_VTOC_READ_FAIL, fcn, s0path));
+			BAM_DPRINTF(("%s: VTOC: failed to read: %s\n",
+			    fcn, s0path));
 			break;
 		case VT_EINVAL:
-			BAM_DPRINTF((D_VTOC_INVALID, fcn, s0path));
+			BAM_DPRINTF(("%s: VTOC: is INVALID: %s\n",
+			    fcn, s0path));
 			break;
 		case VT_ERROR:
-			BAM_DPRINTF((D_VTOC_UNKNOWN_ERR, fcn, s0path));
+			BAM_DPRINTF(("%s: VTOC: unknown error while "
+			    "reading: %s\n", fcn, s0path));
 			break;
 		case VT_ENOTSUP:
 			e_flag = 1;
-			BAM_DPRINTF((D_VTOC_NOTSUP, fcn, s0path));
+			BAM_DPRINTF(("%s: VTOC: not supported: %s\n",
+			    fcn, s0path));
 			break;
 		case 0:
 			v_flag = 1;
-			BAM_DPRINTF((D_VTOC_READ_SUCCESS, fcn, s0path));
+			BAM_DPRINTF(("%s: VTOC: SUCCESS reading: %s\n",
+			    fcn, s0path));
 			break;
 		default:
-			BAM_DPRINTF((D_VTOC_UNKNOWN_RETCODE, fcn, s0path));
+			BAM_DPRINTF(("%s: VTOC: READ: unknown return "
+			    "code: %s\n", fcn, s0path));
 			break;
 	}
 
@@ -6659,23 +6885,28 @@ process_slice0(char *s0, FILE *tfp, mhash_t *mhp, char *tmpmnt)
 		retval = ((err = efi_alloc_and_read(fd, &efi)) >= 0) ? 0 : err;
 		switch (retval) {
 		case VT_EIO:
-			BAM_DPRINTF((D_EFI_READ_FAIL, fcn, s0path));
+			BAM_DPRINTF(("%s: EFI: failed to read: %s\n",
+			    fcn, s0path));
 			break;
 		case VT_EINVAL:
-			BAM_DPRINTF((D_EFI_INVALID, fcn, s0path));
+			BAM_DPRINTF(("%s: EFI: is INVALID: %s\n", fcn, s0path));
 			break;
 		case VT_ERROR:
-			BAM_DPRINTF((D_EFI_UNKNOWN_ERR, fcn, s0path));
+			BAM_DPRINTF(("%s: EFI: unknown error while "
+			    "reading: %s\n", fcn, s0path));
 			break;
 		case VT_ENOTSUP:
-			BAM_DPRINTF((D_EFI_NOTSUP, fcn, s0path));
+			BAM_DPRINTF(("%s: EFI: not supported: %s\n",
+			    fcn, s0path));
 			break;
 		case 0:
 			e_flag = 1;
-			BAM_DPRINTF((D_EFI_READ_SUCCESS, fcn, s0path));
+			BAM_DPRINTF(("%s: EFI: SUCCESS reading: %s\n",
+			    fcn, s0path));
 			break;
 		default:
-			BAM_DPRINTF((D_EFI_UNKNOWN_RETCODE, fcn, s0path));
+			BAM_DPRINTF(("%s: EFI: READ: unknown return code: %s\n",
+			    fcn, s0path));
 			break;
 		}
 	}
@@ -6689,7 +6920,8 @@ process_slice0(char *s0, FILE *tfp, mhash_t *mhp, char *tmpmnt)
 		retval = process_efi_slices(s0,
 		    efi, tfp, mhp, tmpmnt);
 	} else {
-		BAM_DPRINTF((D_NOT_VTOC_OR_EFI, fcn, s0path));
+		BAM_DPRINTF(("%s: disk has neither VTOC nor EFI: %s\n",
+		    fcn, s0path));
 		return (0);
 	}
 
@@ -6716,7 +6948,8 @@ FindAllUfsSignatures(void)
 	const char	*fcn = "FindAllUfsSignatures()";
 
 	if (stat(UFS_SIGNATURE_LIST, &sb) != -1)  {
-		bam_print(SIGNATURE_LIST_EXISTS, UFS_SIGNATURE_LIST);
+		bam_print(_("       - signature list %s exists\n"),
+		    UFS_SIGNATURE_LIST);
 		return (0);
 	}
 
@@ -6725,7 +6958,8 @@ FindAllUfsSignatures(void)
 	error = errno;
 	INJECT_ERROR1("SIGN_LIST_TMP_TRUNC", fd = -1);
 	if (fd == -1) {
-		bam_error(OPEN_FAIL, UFS_SIGNATURE_LIST".tmp", strerror(error));
+		bam_error(_("failed to open file: %s: %s\n"),
+		    UFS_SIGNATURE_LIST".tmp", strerror(error));
 		return (-1);
 	}
 
@@ -6733,8 +6967,8 @@ FindAllUfsSignatures(void)
 	error = errno;
 	INJECT_ERROR1("SIGN_LIST_TMP_CLOSE", ret = -1);
 	if (ret == -1) {
-		bam_error(CLOSE_FAIL, UFS_SIGNATURE_LIST".tmp",
-		    strerror(error));
+		bam_error(_("failed to close file: %s: %s\n"),
+		    UFS_SIGNATURE_LIST".tmp", strerror(error));
 		(void) unlink(UFS_SIGNATURE_LIST".tmp");
 		return (-1);
 	}
@@ -6743,7 +6977,8 @@ FindAllUfsSignatures(void)
 	error = errno;
 	INJECT_ERROR1("SIGN_LIST_APPEND_FOPEN", tfp = NULL);
 	if (tfp == NULL) {
-		bam_error(OPEN_FAIL, UFS_SIGNATURE_LIST".tmp", strerror(error));
+		bam_error(_("failed to open file: %s: %s\n"),
+		    UFS_SIGNATURE_LIST".tmp", strerror(error));
 		(void) unlink(UFS_SIGNATURE_LIST".tmp");
 		return (-1);
 	}
@@ -6753,7 +6988,7 @@ FindAllUfsSignatures(void)
 	if (mnttab_hash == NULL) {
 		(void) fclose(tfp);
 		(void) unlink(UFS_SIGNATURE_LIST".tmp");
-		bam_error(CACHE_MNTTAB_FAIL, fcn);
+		bam_error(_("%s: failed to cache /etc/mnttab\n"), fcn);
 		return (-1);
 	}
 
@@ -6765,7 +7000,8 @@ FindAllUfsSignatures(void)
 	error = errno;
 	INJECT_ERROR1("MKDIRP_SIGN_MNT", ret = -1);
 	if (ret == -1) {
-		bam_error(MKDIR_FAILED, tmpmnt, strerror(error));
+		bam_error(_("mkdir of %s failed: %s\n"), tmpmnt,
+		    strerror(error));
 		free_mnttab(mnttab_hash);
 		(void) fclose(tfp);
 		(void) unlink(UFS_SIGNATURE_LIST".tmp");
@@ -6776,11 +7012,12 @@ FindAllUfsSignatures(void)
 	error = errno;
 	INJECT_ERROR1("OPENDIR_DEV_RDSK", dirp = NULL);
 	if (dirp == NULL) {
-		bam_error(OPENDIR_FAILED, "/dev/rdsk", strerror(error));
+		bam_error(_("opendir of %s failed: %s\n"), "/dev/rdsk",
+		    strerror(error));
 		goto fail;
 	}
 
-	while (dp = readdir(dirp)) {
+	while ((dp = readdir(dirp)) != NULL) {
 		if (strcmp(dp->d_name, ".") == 0 ||
 		    strcmp(dp->d_name, "..") == 0)
 			continue;
@@ -6791,7 +7028,8 @@ FindAllUfsSignatures(void)
 		 */
 		len = strlen(dp->d_name);
 		if (dp->d_name[len - 2 ] != 's' || dp->d_name[len - 1] != '0') {
-			BAM_DPRINTF((D_SKIP_SLICE_NOTZERO, fcn, dp->d_name));
+			BAM_DPRINTF(("%s: skipping non-s0 slice: %s\n",
+			    fcn, dp->d_name));
 			continue;
 		}
 
@@ -6809,8 +7047,8 @@ FindAllUfsSignatures(void)
 	error = errno;
 	INJECT_ERROR1("FCLOSE_SIGNLIST_TMP", ret = EOF);
 	if (ret == EOF) {
-		bam_error(CLOSE_FAIL, UFS_SIGNATURE_LIST".tmp",
-		    strerror(error));
+		bam_error(_("failed to close file: %s: %s\n"),
+		    UFS_SIGNATURE_LIST".tmp", strerror(error));
 		(void) unlink(UFS_SIGNATURE_LIST".tmp");
 		return (-1);
 	}
@@ -6823,7 +7061,7 @@ FindAllUfsSignatures(void)
 	ret = exec_cmd(cmd, NULL);
 	INJECT_ERROR1("SORT_SIGN_LIST", ret = 1);
 	if (ret != 0) {
-		bam_error(GRUBSIGN_SORT_FAILED);
+		bam_error(_("error sorting GRUB UFS boot signatures\n"));
 		(void) unlink(UFS_SIGNATURE_LIST".sorted");
 		(void) unlink(UFS_SIGNATURE_LIST".tmp");
 		return (-1);
@@ -6835,16 +7073,18 @@ FindAllUfsSignatures(void)
 	error = errno;
 	INJECT_ERROR1("RENAME_TMP_SIGNLIST", ret = -1);
 	if (ret == -1) {
-		bam_error(RENAME_FAIL, UFS_SIGNATURE_LIST, strerror(error));
+		bam_error(_("rename to file failed: %s: %s\n"),
+		    UFS_SIGNATURE_LIST, strerror(error));
 		(void) unlink(UFS_SIGNATURE_LIST".sorted");
 		return (-1);
 	}
 
 	if (stat(UFS_SIGNATURE_LIST, &sb) == 0 && sb.st_size == 0) {
-		BAM_DPRINTF((D_ZERO_LEN_SIGNLIST, fcn, UFS_SIGNATURE_LIST));
+		BAM_DPRINTF(("%s: generated zero length signlist: %s.\n",
+		    fcn, UFS_SIGNATURE_LIST));
 	}
 
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	return (0);
 
 fail:
@@ -6854,7 +7094,7 @@ fail:
 	(void) rmdir(tmpmnt);
 	(void) fclose(tfp);
 	(void) unlink(UFS_SIGNATURE_LIST".tmp");
-	BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+	BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	return (-1);
 }
 
@@ -6871,12 +7111,12 @@ create_ufs_sign(void)
 	int		error;
 	const char	*fcn = "create_ufs_sign()";
 
-	bam_print(SEARCHING_UFS_SIGN);
+	bam_print(_("  - searching for UFS boot signatures\n"));
 
 	ret = FindAllUfsSignatures();
 	INJECT_ERROR1("FIND_ALL_UFS", ret = -1);
 	if (ret == -1) {
-		bam_error(ERR_FIND_UFS_SIGN);
+		bam_error(_("search for UFS boot signatures failed\n"));
 		return (NULL);
 	}
 
@@ -6885,12 +7125,13 @@ create_ufs_sign(void)
 	    (void) unlink(UFS_SIGNATURE_LIST));
 	if (stat(UFS_SIGNATURE_LIST, &sb) == -1 || sb.st_uid != 0) {
 		(void) unlink(UFS_SIGNATURE_LIST);
-		bam_error(UFS_SIGNATURE_LIST_MISS, UFS_SIGNATURE_LIST);
+		bam_error(_("missing UFS signature list file: %s\n"),
+		    UFS_SIGNATURE_LIST);
 		return (NULL);
 	}
 
 	if (sb.st_size == 0) {
-		bam_print(GRUBSIGN_UFS_NONE);
+		bam_print(_("   - no existing UFS boot signatures\n"));
 		i = 0;
 		goto found;
 	}
@@ -6900,8 +7141,8 @@ create_ufs_sign(void)
 	error = errno;
 	INJECT_ERROR1("FOPEN_SIGN_LIST", tfp = NULL);
 	if (tfp == NULL) {
-		bam_error(UFS_SIGNATURE_LIST_OPENERR,
-		    UFS_SIGNATURE_LIST, strerror(error));
+		bam_error(_("error opening UFS boot signature list "
+		    "file %s: %s\n"), UFS_SIGNATURE_LIST, strerror(error));
 		(void) unlink(UFS_SIGNATURE_LIST);
 		return (NULL);
 	}
@@ -6912,7 +7153,7 @@ create_ufs_sign(void)
 		    strlen(GRUBSIGN_UFS_PREFIX)) != 0) {
 			(void) fclose(tfp);
 			(void) unlink(UFS_SIGNATURE_LIST);
-			bam_error(UFS_BADSIGN, tmpsign);
+			bam_error(_("bad UFS boot signature: %s\n"), tmpsign);
 			return (NULL);
 		}
 		numstr = tmpsign + strlen(GRUBSIGN_UFS_PREFIX);
@@ -6920,7 +7161,7 @@ create_ufs_sign(void)
 		if (numstr[0] == '\0' || !isdigit(numstr[0])) {
 			(void) fclose(tfp);
 			(void) unlink(UFS_SIGNATURE_LIST);
-			bam_error(UFS_BADSIGN, tmpsign);
+			bam_error(_("bad UFS boot signature: %s\n"), tmpsign);
 			return (NULL);
 		}
 
@@ -6929,12 +7170,13 @@ create_ufs_sign(void)
 		if (signnum < 0) {
 			(void) fclose(tfp);
 			(void) unlink(UFS_SIGNATURE_LIST);
-			bam_error(UFS_BADSIGN, tmpsign);
+			bam_error(_("bad UFS boot signature: %s\n"), tmpsign);
 			return (NULL);
 		}
 
 		if (i != signnum) {
-			BAM_DPRINTF((D_FOUND_HOLE_SIGNLIST, fcn, i));
+			BAM_DPRINTF(("%s: found hole %d in sign list.\n",
+			    fcn, i));
 			break;
 		}
 	}
@@ -6949,11 +7191,11 @@ found:
 	INJECT_ERROR1("UFS_ADD_TO_SIGN_LIST", ret = -1);
 	if (ret == -1) {
 		(void) unlink(UFS_SIGNATURE_LIST);
-		bam_error(FAILED_ADD_SIGNLIST, tmpsign);
+		bam_error(_("failed to add sign %s to signlist.\n"), tmpsign);
 		return (NULL);
 	}
 
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 
 	return (s_strdup(tmpsign));
 }
@@ -6970,7 +7212,7 @@ get_fstype(char *osroot)
 
 	INJECT_ERROR1("GET_FSTYPE_OSROOT", osroot = NULL);
 	if (osroot == NULL) {
-		bam_error(GET_FSTYPE_ARGS);
+		bam_error(_("no OS mountpoint. Cannot determine fstype\n"));
 		return (NULL);
 	}
 
@@ -6978,7 +7220,8 @@ get_fstype(char *osroot)
 	error = errno;
 	INJECT_ERROR1("GET_FSTYPE_FOPEN", mntfp = NULL);
 	if (mntfp == NULL) {
-		bam_error(OPEN_FAIL, MNTTAB, strerror(error));
+		bam_error(_("failed to open file: %s: %s\n"), MNTTAB,
+		    strerror(error));
 		return (NULL);
 	}
 
@@ -6990,7 +7233,8 @@ get_fstype(char *osroot)
 	ret = getmntany(mntfp, &mp, &mpref);
 	INJECT_ERROR1("GET_FSTYPE_GETMNTANY", ret = 1);
 	if (ret != 0) {
-		bam_error(MNTTAB_MNTPT_NOT_FOUND, osroot, MNTTAB);
+		bam_error(_("failed to find OS mountpoint %s in %s\n"),
+		    osroot, MNTTAB);
 		(void) fclose(mntfp);
 		return (NULL);
 	}
@@ -6998,11 +7242,11 @@ get_fstype(char *osroot)
 
 	INJECT_ERROR1("GET_FSTYPE_NULL", mp.mnt_fstype = NULL);
 	if (mp.mnt_fstype == NULL) {
-		bam_error(MNTTAB_FSTYPE_NULL, osroot);
+		bam_error(_("NULL fstype found for OS root %s\n"), osroot);
 		return (NULL);
 	}
 
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 
 	return (s_strdup(mp.mnt_fstype));
 }
@@ -7014,7 +7258,7 @@ create_zfs_sign(char *osdev)
 	char		*pool;
 	const char	*fcn = "create_zfs_sign()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, osdev));
+	BAM_DPRINTF(("%s: entered. arg: %s\n", fcn, osdev));
 
 	/*
 	 * First find the pool name
@@ -7022,17 +7266,17 @@ create_zfs_sign(char *osdev)
 	pool = get_pool(osdev);
 	INJECT_ERROR1("CREATE_ZFS_SIGN_GET_POOL", pool = NULL);
 	if (pool == NULL) {
-		bam_error(GET_POOL_FAILED, osdev);
+		bam_error(_("failed to get pool name from %s\n"), osdev);
 		return (NULL);
 	}
 
 	(void) snprintf(tmpsign, sizeof (tmpsign), "pool_%s", pool);
 
-	BAM_DPRINTF((D_CREATED_ZFS_SIGN, fcn, tmpsign));
+	BAM_DPRINTF(("%s: created ZFS sign: %s\n", fcn, tmpsign));
 
 	free(pool);
 
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 
 	return (s_strdup(tmpsign));
 }
@@ -7046,17 +7290,19 @@ create_new_sign(char *osdev, char *fstype)
 	INJECT_ERROR1("NEW_SIGN_FSTYPE", fstype = "foofs");
 
 	if (strcmp(fstype, "zfs") == 0) {
-		BAM_DPRINTF((D_CREATE_NEW_ZFS, fcn));
+		BAM_DPRINTF(("%s: created new ZFS sign\n", fcn));
 		sign = create_zfs_sign(osdev);
 	} else if (strcmp(fstype, "ufs") == 0) {
-		BAM_DPRINTF((D_CREATE_NEW_UFS, fcn));
+		BAM_DPRINTF(("%s: created new UFS sign\n", fcn));
 		sign = create_ufs_sign();
 	} else {
-		bam_error(GRUBSIGN_NOTSUP, fstype);
+		bam_error(_("boot signature not supported for fstype: %s\n"),
+		    fstype);
 		sign = NULL;
 	}
 
-	BAM_DPRINTF((D_CREATED_NEW_SIGN, fcn, sign ? sign : "<NULL>"));
+	BAM_DPRINTF(("%s: created new sign: %s\n", fcn,
+	    sign ? sign : "<NULL>"));
 	return (sign);
 }
 
@@ -7081,15 +7327,17 @@ set_backup_common(char *mntpt, char *sign)
 	if (bfp != NULL) {
 		while (s_fgets(tmpsign, sizeof (tmpsign), bfp)) {
 			if (strcmp(tmpsign, sign) == 0) {
-				BAM_DPRINTF((D_FOUND_IN_BACKUP, fcn, sign));
+				BAM_DPRINTF(("%s: found sign (%s) in backup.\n",
+				    fcn, sign));
 				(void) fclose(bfp);
 				return (0);
 			}
 		}
 		(void) fclose(bfp);
-		BAM_DPRINTF((D_NOT_FOUND_IN_EXIST_BACKUP, fcn, sign));
+		BAM_DPRINTF(("%s: backup exists but sign %s not found\n",
+		    fcn, sign));
 	} else {
-		BAM_DPRINTF((D_BACKUP_NOT_EXIST, fcn, backup));
+		BAM_DPRINTF(("%s: no backup file (%s) found.\n", fcn, backup));
 	}
 
 	/*
@@ -7105,12 +7353,13 @@ set_backup_common(char *mntpt, char *sign)
 	ret = stat(bdir, &sb);
 	INJECT_ERROR1("SET_BACKUP_STAT", ret = -1);
 	if (ret == -1) {
-		BAM_DPRINTF((D_BACKUP_DIR_NOEXIST, fcn, bdir));
+		BAM_DPRINTF(("%s: backup dir (%s) does not exist.\n",
+		    fcn, bdir));
 		ret = mkdirp(bdir, DIR_PERMS);
 		error = errno;
 		INJECT_ERROR1("SET_BACKUP_MKDIRP", ret = -1);
 		if (ret == -1) {
-			bam_error(GRUBSIGN_BACKUP_MKDIRERR,
+			bam_error(_("mkdirp() of backup dir failed: %s: %s\n"),
 			    GRUBSIGN_BACKUP, strerror(error));
 			free(backup_dup);
 			return (-1);
@@ -7126,8 +7375,8 @@ set_backup_common(char *mntpt, char *sign)
 	error = errno;
 	INJECT_ERROR1("SET_BACKUP_FOPEN_A", bfp = NULL);
 	if (bfp == NULL) {
-		bam_error(GRUBSIGN_BACKUP_OPENERR,
-		    GRUBSIGN_BACKUP, strerror(error));
+		bam_error(_("error opening boot signature backup "
+		    "file %s: %s\n"), GRUBSIGN_BACKUP, strerror(error));
 		return (-1);
 	}
 
@@ -7137,8 +7386,8 @@ set_backup_common(char *mntpt, char *sign)
 	error = errno;
 	INJECT_ERROR1("SET_BACKUP_FPUTS", ret = 0);
 	if (ret != strlen(tmpsign)) {
-		bam_error(GRUBSIGN_BACKUP_WRITEERR,
-		    GRUBSIGN_BACKUP, strerror(error));
+		bam_error(_("error writing boot signature backup "
+		    "file %s: %s\n"), GRUBSIGN_BACKUP, strerror(error));
 		(void) fclose(bfp);
 		return (-1);
 	}
@@ -7146,9 +7395,10 @@ set_backup_common(char *mntpt, char *sign)
 	(void) fclose(bfp);
 
 	if (bam_verbose)
-		bam_print(GRUBSIGN_BACKUP_UPDATED, GRUBSIGN_BACKUP);
+		bam_print(_("updated boot signature backup file %s\n"),
+		    GRUBSIGN_BACKUP);
 
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 
 	return (0);
 }
@@ -7158,7 +7408,7 @@ set_backup_ufs(char *osroot, char *sign)
 {
 	const char	*fcn = "set_backup_ufs()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY2, fcn, osroot, sign));
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", fcn, osroot, sign));
 	return (set_backup_common(osroot, sign));
 }
 
@@ -7171,19 +7421,19 @@ set_backup_zfs(char *osdev, char *sign)
 	int		ret;
 	const char	*fcn = "set_backup_zfs()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY2, fcn, osdev, sign));
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", fcn, osdev, sign));
 
 	pool = get_pool(osdev);
 	INJECT_ERROR1("SET_BACKUP_GET_POOL", pool = NULL);
 	if (pool == NULL) {
-		bam_error(GET_POOL_FAILED, osdev);
+		bam_error(_("failed to get pool name from %s\n"), osdev);
 		return (-1);
 	}
 
 	mntpt = mount_top_dataset(pool, &mnted);
 	INJECT_ERROR1("SET_BACKUP_MOUNT_DATASET", mntpt = NULL);
 	if (mntpt == NULL) {
-		bam_error(FAIL_MNT_TOP_DATASET, pool);
+		bam_error(_("failed to mount top dataset for %s\n"), pool);
 		free(pool);
 		return (-1);
 	}
@@ -7196,9 +7446,9 @@ set_backup_zfs(char *osdev, char *sign)
 
 	INJECT_ERROR1("SET_BACKUP_ZFS_FAIL", ret = 1);
 	if (ret == 0) {
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	} else {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	}
 
 	return (ret);
@@ -7213,20 +7463,21 @@ set_backup(char *osroot, char *osdev, char *sign, char *fstype)
 	INJECT_ERROR1("SET_BACKUP_FSTYPE", fstype = "foofs");
 
 	if (strcmp(fstype, "ufs") == 0) {
-		BAM_DPRINTF((D_SET_BACKUP_UFS, fcn));
+		BAM_DPRINTF(("%s: setting UFS backup sign\n", fcn));
 		ret = set_backup_ufs(osroot, sign);
 	} else if (strcmp(fstype, "zfs") == 0) {
-		BAM_DPRINTF((D_SET_BACKUP_ZFS, fcn));
+		BAM_DPRINTF(("%s: setting ZFS backup sign\n", fcn));
 		ret = set_backup_zfs(osdev, sign);
 	} else {
-		bam_error(GRUBSIGN_NOTSUP, fstype);
+		bam_error(_("boot signature not supported for fstype: %s\n"),
+		    fstype);
 		ret = -1;
 	}
 
 	if (ret == 0) {
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	} else {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	}
 
 	return (ret);
@@ -7248,22 +7499,25 @@ set_primary_common(char *mntpt, char *sign)
 
 	if (stat(signfile, &sb) != -1) {
 		if (bam_verbose)
-			bam_print(PRIMARY_SIGN_EXISTS, sign);
+			bam_print(_("primary sign %s exists\n"), sign);
 		return (0);
 	} else {
-		BAM_DPRINTF((D_PRIMARY_NOT_EXIST, fcn, signfile));
+		BAM_DPRINTF(("%s: primary sign (%s) does not exist\n",
+		    fcn, signfile));
 	}
 
 	(void) snprintf(signdir, sizeof (signdir), "%s/%s",
 	    mntpt, GRUBSIGN_DIR);
 
 	if (stat(signdir, &sb) == -1) {
-		BAM_DPRINTF((D_PRIMARY_DIR_NOEXIST, fcn, signdir));
+		BAM_DPRINTF(("%s: primary signdir (%s) does not exist\n",
+		    fcn, signdir));
 		ret = mkdirp(signdir, DIR_PERMS);
 		error = errno;
 		INJECT_ERROR1("SET_PRIMARY_MKDIRP", ret = -1);
 		if (ret == -1) {
-			bam_error(GRUBSIGN_MKDIR_ERR, signdir, strerror(errno));
+			bam_error(_("error creating boot signature "
+			    "directory %s: %s\n"), signdir, strerror(errno));
 			return (-1);
 		}
 	}
@@ -7272,7 +7526,8 @@ set_primary_common(char *mntpt, char *sign)
 	error = errno;
 	INJECT_ERROR1("PRIMARY_SIGN_CREAT", fd = -1);
 	if (fd == -1) {
-		bam_error(GRUBSIGN_PRIMARY_CREATERR, signfile, strerror(error));
+		bam_error(_("error creating primary boot signature %s: %s\n"),
+		    signfile, strerror(error));
 		return (-1);
 	}
 
@@ -7280,15 +7535,17 @@ set_primary_common(char *mntpt, char *sign)
 	error = errno;
 	INJECT_ERROR1("PRIMARY_FSYNC", ret = -1);
 	if (ret != 0) {
-		bam_error(GRUBSIGN_PRIMARY_SYNCERR, signfile, strerror(error));
+		bam_error(_("error syncing primary boot signature %s: %s\n"),
+		    signfile, strerror(error));
 	}
 
 	(void) close(fd);
 
 	if (bam_verbose)
-		bam_print(GRUBSIGN_CREATED_PRIMARY, signfile);
+		bam_print(_("created primary GRUB boot signature: %s\n"),
+		    signfile);
 
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 
 	return (0);
 }
@@ -7298,7 +7555,7 @@ set_primary_ufs(char *osroot, char *sign)
 {
 	const char	*fcn = "set_primary_ufs()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY2, fcn, osroot, sign));
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", fcn, osroot, sign));
 	return (set_primary_common(osroot, sign));
 }
 
@@ -7311,12 +7568,12 @@ set_primary_zfs(char *osdev, char *sign)
 	int		ret;
 	const char	*fcn = "set_primary_zfs()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY2, fcn, osdev, sign));
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", fcn, osdev, sign));
 
 	pool = get_pool(osdev);
 	INJECT_ERROR1("SET_PRIMARY_ZFS_GET_POOL", pool = NULL);
 	if (pool == NULL) {
-		bam_error(GET_POOL_FAILED, osdev);
+		bam_error(_("failed to get pool name from %s\n"), osdev);
 		return (-1);
 	}
 
@@ -7324,7 +7581,8 @@ set_primary_zfs(char *osdev, char *sign)
 	ret = (strstr(sign, pool) != NULL);
 	INJECT_ERROR1("SET_PRIMARY_ZFS_POOL_SIGN_INCOMPAT", ret = 0);
 	if (ret == 0) {
-		bam_error(POOL_SIGN_INCOMPAT, pool, sign);
+		bam_error(_("pool name %s not present in signature %s\n"),
+		    pool, sign);
 		free(pool);
 		return (-1);
 	}
@@ -7332,7 +7590,7 @@ set_primary_zfs(char *osdev, char *sign)
 	mntpt = mount_top_dataset(pool, &mnted);
 	INJECT_ERROR1("SET_PRIMARY_ZFS_MOUNT_DATASET", mntpt = NULL);
 	if (mntpt == NULL) {
-		bam_error(FAIL_MNT_TOP_DATASET, pool);
+		bam_error(_("failed to mount top dataset for %s\n"), pool);
 		free(pool);
 		return (-1);
 	}
@@ -7345,9 +7603,9 @@ set_primary_zfs(char *osdev, char *sign)
 
 	INJECT_ERROR1("SET_PRIMARY_ZFS_FAIL", ret = 1);
 	if (ret == 0) {
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	} else {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	}
 
 	return (ret);
@@ -7361,20 +7619,21 @@ set_primary(char *osroot, char *osdev, char *sign, char *fstype)
 
 	INJECT_ERROR1("SET_PRIMARY_FSTYPE", fstype = "foofs");
 	if (strcmp(fstype, "ufs") == 0) {
-		BAM_DPRINTF((D_SET_PRIMARY_UFS, fcn));
+		BAM_DPRINTF(("%s: setting UFS primary sign\n", fcn));
 		ret = set_primary_ufs(osroot, sign);
 	} else if (strcmp(fstype, "zfs") == 0) {
-		BAM_DPRINTF((D_SET_PRIMARY_ZFS, fcn));
+		BAM_DPRINTF(("%s: setting ZFS primary sign\n", fcn));
 		ret = set_primary_zfs(osdev, sign);
 	} else {
-		bam_error(GRUBSIGN_NOTSUP, fstype);
+		bam_error(_("boot signature not supported for fstype: %s\n"),
+		    fstype);
 		ret = -1;
 	}
 
 	if (ret == 0) {
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	} else {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	}
 
 	return (ret);
@@ -7393,7 +7652,7 @@ ufs_add_to_sign_list(char *sign)
 	INJECT_ERROR1("ADD_TO_SIGN_LIST_NOT_UFS", sign = "pool_rpool5");
 	if (strncmp(sign, GRUBSIGN_UFS_PREFIX,
 	    strlen(GRUBSIGN_UFS_PREFIX)) != 0) {
-		bam_error(INVALID_UFS_SIGN, sign);
+		bam_error(_("invalid UFS boot signature %s\n"), sign);
 		(void) unlink(UFS_SIGNATURE_LIST);
 		return (-1);
 	}
@@ -7407,8 +7666,8 @@ ufs_add_to_sign_list(char *sign)
 	error = errno;
 	INJECT_ERROR1("ADD_TO_SIGN_LIST_RENAME", ret = -1);
 	if (ret == -1) {
-		bam_error(RENAME_FAIL, UFS_SIGNATURE_LIST".tmp",
-		    strerror(error));
+		bam_error(_("rename to file failed: %s: %s\n"),
+		    UFS_SIGNATURE_LIST".tmp", strerror(error));
 		(void) unlink(UFS_SIGNATURE_LIST);
 		return (0);
 	}
@@ -7417,7 +7676,8 @@ ufs_add_to_sign_list(char *sign)
 	error = errno;
 	INJECT_ERROR1("ADD_TO_SIGN_LIST_FOPEN", tfp = NULL);
 	if (tfp == NULL) {
-		bam_error(OPEN_FAIL, UFS_SIGNATURE_LIST".tmp", strerror(error));
+		bam_error(_("failed to open file: %s: %s\n"),
+		    UFS_SIGNATURE_LIST".tmp", strerror(error));
 		(void) unlink(UFS_SIGNATURE_LIST".tmp");
 		return (0);
 	}
@@ -7428,7 +7688,8 @@ ufs_add_to_sign_list(char *sign)
 	error = errno;
 	INJECT_ERROR1("ADD_TO_SIGN_LIST_FPUTS", ret = 0);
 	if (ret != strlen(signline)) {
-		bam_error(SIGN_LIST_FPUTS_ERR, sign, strerror(error));
+		bam_error(_("failed to write signature %s to signature "
+		    "list: %s\n"), sign, strerror(error));
 		(void) fclose(tfp);
 		(void) unlink(UFS_SIGNATURE_LIST".tmp");
 		return (0);
@@ -7438,8 +7699,8 @@ ufs_add_to_sign_list(char *sign)
 	error = errno;
 	INJECT_ERROR1("ADD_TO_SIGN_LIST_FCLOSE", ret = EOF);
 	if (ret == EOF) {
-		bam_error(CLOSE_FAIL, UFS_SIGNATURE_LIST".tmp",
-		    strerror(error));
+		bam_error(_("failed to close file: %s: %s\n"),
+		    UFS_SIGNATURE_LIST".tmp", strerror(error));
 		(void) unlink(UFS_SIGNATURE_LIST".tmp");
 		return (0);
 	}
@@ -7452,7 +7713,7 @@ ufs_add_to_sign_list(char *sign)
 	ret = exec_cmd(cmd, NULL);
 	INJECT_ERROR1("ADD_TO_SIGN_LIST_SORT", ret = 1);
 	if (ret != 0) {
-		bam_error(GRUBSIGN_SORT_FAILED);
+		bam_error(_("error sorting GRUB UFS boot signatures\n"));
 		(void) unlink(UFS_SIGNATURE_LIST".sorted");
 		(void) unlink(UFS_SIGNATURE_LIST".tmp");
 		return (0);
@@ -7464,12 +7725,13 @@ ufs_add_to_sign_list(char *sign)
 	error = errno;
 	INJECT_ERROR1("ADD_TO_SIGN_LIST_RENAME2", ret = -1);
 	if (ret == -1) {
-		bam_error(RENAME_FAIL, UFS_SIGNATURE_LIST, strerror(error));
+		bam_error(_("rename to file failed: %s: %s\n"),
+		    UFS_SIGNATURE_LIST, strerror(error));
 		(void) unlink(UFS_SIGNATURE_LIST".sorted");
 		return (0);
 	}
 
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 
 	return (0);
 }
@@ -7480,13 +7742,15 @@ set_signature(char *osroot, char *osdev, char *sign, char *fstype)
 	int		ret;
 	const char	*fcn = "set_signature()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY4, fcn, osroot, osdev, sign, fstype));
+	BAM_DPRINTF(("%s: entered. args: %s %s %s %s\n", fcn,
+	    osroot, osdev, sign, fstype));
 
 	ret = set_backup(osroot, osdev, sign, fstype);
 	INJECT_ERROR1("SET_SIGNATURE_BACKUP", ret = -1);
 	if (ret == -1) {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
-		bam_error(SET_BACKUP_FAILED, sign, osroot, osdev);
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
+		bam_error(_("failed to set backup sign (%s) for %s: %s\n"),
+		    sign, osroot, osdev);
 		return (-1);
 	}
 
@@ -7494,10 +7758,11 @@ set_signature(char *osroot, char *osdev, char *sign, char *fstype)
 	INJECT_ERROR1("SET_SIGNATURE_PRIMARY", ret = -1);
 
 	if (ret == 0) {
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	} else {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
-		bam_error(SET_PRIMARY_FAILED, sign, osroot, osdev);
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
+		bam_error(_("failed to set primary sign (%s) for %s: %s\n"),
+		    sign, osroot, osdev);
 
 	}
 	return (ret);
@@ -7514,22 +7779,24 @@ get_grubsign(char *osroot, char *osdev)
 	int		ret;
 	const char	*fcn = "get_grubsign()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY2, fcn, osroot, osdev));
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", fcn, osroot, osdev));
 	fstype = get_fstype(osroot);
 	INJECT_ERROR1("GET_GRUBSIGN_FSTYPE", fstype = NULL);
 	if (fstype == NULL) {
-		bam_error(GET_FSTYPE_FAILED, osroot);
+		bam_error(_("failed to get fstype for %s\n"), osroot);
 		return (NULL);
 	}
 
 	sign = find_existing_sign(osroot, osdev, fstype);
 	INJECT_ERROR1("FIND_EXISTING_SIGN", sign = NULL);
 	if (sign == NULL) {
-		BAM_DPRINTF((D_GET_GRUBSIGN_NO_EXISTING, fcn, osroot, osdev));
+		BAM_DPRINTF(("%s: no existing grubsign for %s: %s\n",
+		    fcn, osroot, osdev));
 		sign = create_new_sign(osdev, fstype);
 		INJECT_ERROR1("CREATE_NEW_SIGN", sign = NULL);
 		if (sign == NULL) {
-			bam_error(GRUBSIGN_CREATE_FAIL, osdev);
+			bam_error(_("failed to create GRUB boot signature for "
+			    "device: %s\n"), osdev);
 			free(fstype);
 			return (NULL);
 		}
@@ -7538,7 +7805,8 @@ get_grubsign(char *osroot, char *osdev)
 	ret = set_signature(osroot, osdev, sign, fstype);
 	INJECT_ERROR1("SET_SIGNATURE_FAIL", ret = -1);
 	if (ret == -1) {
-		bam_error(GRUBSIGN_WRITE_FAIL, osdev);
+		bam_error(_("failed to write GRUB boot signature for "
+		    "device: %s\n"), osdev);
 		free(sign);
 		free(fstype);
 		(void) unlink(UFS_SIGNATURE_LIST);
@@ -7548,12 +7816,14 @@ get_grubsign(char *osroot, char *osdev)
 	free(fstype);
 
 	if (bam_verbose)
-		bam_print(GRUBSIGN_FOUND_OR_CREATED, sign, osdev);
+		bam_print(_("found or created GRUB signature %s for %s\n"),
+		    sign, osdev);
 
 	fdiskpart = get_partition(osdev);
 	INJECT_ERROR1("GET_GRUBSIGN_FDISK", fdiskpart = PARTNO_NOTFOUND);
 	if (fdiskpart == PARTNO_NOTFOUND) {
-		bam_error(FDISKPART_FAIL, osdev);
+		bam_error(_("failed to determine fdisk partition: %s\n"),
+		    osdev);
 		free(sign);
 		return (NULL);
 	}
@@ -7575,7 +7845,7 @@ get_grubsign(char *osroot, char *osdev)
 
 	free(sign);
 
-	BAM_DPRINTF((D_GET_GRUBSIGN_SUCCESS, fcn, grubsign));
+	BAM_DPRINTF(("%s: successfully created grubsign %s\n", fcn, grubsign));
 
 	return (grubsign);
 }
@@ -7594,7 +7864,8 @@ get_title(char *rootdir)
 
 	fp = fopen(release, "r");
 	if (fp == NULL) {
-		bam_error(OPEN_FAIL, release, strerror(errno));
+		bam_error(_("failed to open file: %s: %s\n"), release,
+		    strerror(errno));
 		cp = NULL;
 		goto out;
 	}
@@ -7611,7 +7882,7 @@ get_title(char *rootdir)
 out:
 	cp = cp ? cp : "Oracle Solaris";
 
-	BAM_DPRINTF((D_GET_TITLE, fcn, cp));
+	BAM_DPRINTF(("%s: got title: %s\n", fcn, cp));
 
 	return (cp);
 }
@@ -7628,7 +7899,7 @@ get_special(char *mountp)
 
 	INJECT_ERROR1("GET_SPECIAL_MNTPT", mountp = NULL);
 	if (mountp == NULL) {
-		bam_error(GET_SPECIAL_NULL_MNTPT);
+		bam_error(_("cannot get special file: NULL mount-point\n"));
 		return (NULL);
 	}
 
@@ -7636,7 +7907,8 @@ get_special(char *mountp)
 	error = errno;
 	INJECT_ERROR1("GET_SPECIAL_MNTTAB_OPEN", mntfp = NULL);
 	if (mntfp == NULL) {
-		bam_error(OPEN_FAIL, MNTTAB, strerror(error));
+		bam_error(_("failed to open file: %s: %s\n"), MNTTAB,
+		    strerror(error));
 		return (NULL);
 	}
 
@@ -7649,12 +7921,13 @@ get_special(char *mountp)
 	INJECT_ERROR1("GET_SPECIAL_MNTTAB_SEARCH", ret = 1);
 	if (ret != 0) {
 		(void) fclose(mntfp);
-		BAM_DPRINTF((D_GET_SPECIAL_NOT_IN_MNTTAB, fcn, mountp));
+		BAM_DPRINTF(("%s: Cannot get special file:  mount-point %s "
+		    "not in mnttab\n", fcn, mountp));
 		return (NULL);
 	}
 	(void) fclose(mntfp);
 
-	BAM_DPRINTF((D_GET_SPECIAL, fcn, mp.mnt_special));
+	BAM_DPRINTF(("%s: returning special: %s\n", fcn, mp.mnt_special));
 
 	return (s_strdup(mp.mnt_special));
 }
@@ -7668,14 +7941,14 @@ free_physarray(char **physarray, int n)
 	assert(physarray);
 	assert(n);
 
-	BAM_DPRINTF((D_FUNC_ENTRY_N1, fcn, n));
+	BAM_DPRINTF(("%s: entering args: %d\n", fcn, n));
 
 	for (i = 0; i < n; i++) {
 		free(physarray[i]);
 	}
 	free(physarray);
 
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 }
 
 static int
@@ -7695,11 +7968,12 @@ zfs_get_physical(char *special, char ***physarray, int *n)
 
 	assert(special);
 
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, special));
+	BAM_DPRINTF(("%s: entered. arg: %s\n", fcn, special));
 
 	INJECT_ERROR1("INVALID_ZFS_SPECIAL", special = "/foo");
 	if (special[0] == '/') {
-		bam_error(INVALID_ZFS_SPECIAL, special);
+		bam_error(_("invalid device for ZFS filesystem: %s\n"),
+		    special);
 		return (-1);
 	}
 
@@ -7708,7 +7982,8 @@ zfs_get_physical(char *special, char ***physarray, int *n)
 	pool = strtok(sdup, "/");
 	INJECT_ERROR1("ZFS_GET_PHYS_POOL", pool = NULL);
 	if (pool == NULL) {
-		bam_error(CANT_FIND_POOL_FROM_SPECIAL, special);
+		bam_error(_("cannot derive ZFS pool from special: %s\n"),
+		    special);
 		return (-1);
 	}
 
@@ -7717,19 +7992,20 @@ zfs_get_physical(char *special, char ***physarray, int *n)
 	ret = exec_cmd(cmd, &flist);
 	INJECT_ERROR1("ZFS_GET_PHYS_STATUS", ret = 1);
 	if (ret != 0) {
-		bam_error(ZFS_GET_POOL_STATUS, pool);
+		bam_error(_("cannot get zpool status for pool: %s\n"), pool);
 		return (-1);
 	}
 
 	INJECT_ERROR1("ZFS_GET_PHYS_STATUS_OUT", flist.head = NULL);
 	if (flist.head == NULL) {
-		bam_error(BAD_ZPOOL_STATUS, pool);
+		bam_error(_("bad zpool status for pool=%s\n"), pool);
 		filelist_free(&flist);
 		return (-1);
 	}
 
 	for (lp = flist.head; lp; lp = lp->next) {
-		BAM_DPRINTF((D_STRTOK_ZPOOL_STATUS, fcn, lp->line));
+		BAM_DPRINTF(("%s: strtok() zpool status line=%s\n",
+		    fcn, lp->line));
 		comp1 = strtok(lp->line, " \t");
 		if (comp1 == NULL) {
 			free(lp->line);
@@ -7745,13 +8021,14 @@ zfs_get_physical(char *special, char ***physarray, int *n)
 		if (lp->line == NULL)
 			continue;
 		if (strcmp(lp->line, pool) == 0) {
-			BAM_DPRINTF((D_FOUND_POOL_IN_ZPOOL_STATUS, fcn, pool));
+			BAM_DPRINTF(("%s: found pool name: %s in zpool "
+			    "status\n", fcn, pool));
 			break;
 		}
 	}
 
 	if (lp == NULL) {
-		bam_error(NO_POOL_IN_ZPOOL_STATUS, pool);
+		bam_error(_("no pool name %s in zpool status\n"), pool);
 		filelist_free(&flist);
 		return (-1);
 	}
@@ -7765,11 +8042,13 @@ zfs_get_physical(char *special, char ***physarray, int *n)
 		if (lp->line[0] == '\0' || strcmp(lp->line, "errors:") == 0)
 			break;
 		i++;
-		BAM_DPRINTF((D_COUNTING_ZFS_PHYS, fcn, i));
+		BAM_DPRINTF(("%s: counting phys slices in zpool status: %d\n",
+		    fcn, i));
 	}
 
 	if (i == 0) {
-		bam_error(NO_PHYS_IN_ZPOOL_STATUS, pool);
+		bam_error(_("no physical device in zpool status for pool=%s\n"),
+		    pool);
 		filelist_free(&flist);
 		return (-1);
 	}
@@ -7791,7 +8070,8 @@ zfs_get_physical(char *special, char ***physarray, int *n)
 		} else {
 			(void) strlcpy(dsk, lp->line, sizeof (dsk));
 		}
-		BAM_DPRINTF((D_ADDING_ZFS_PHYS, fcn, dsk, pool));
+		BAM_DPRINTF(("%s: adding phys slice=%s from pool %s status\n",
+		    fcn, dsk, pool));
 		(*physarray)[i++] = s_strdup(dsk);
 	}
 
@@ -7799,223 +8079,7 @@ zfs_get_physical(char *special, char ***physarray, int *n)
 
 	filelist_free(&flist);
 
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
-	return (0);
-}
-
-/*
- * Certain services needed to run metastat successfully may not
- * be enabled. Enable them now.
- */
-/*
- * Checks if the specified service is online
- * Returns: 	1 if the service is online
- *		0 if the service is not online
- *		-1 on error
- */
-static int
-is_svc_online(char *svc)
-{
-	char			*state;
-	const char		*fcn = "is_svc_online()";
-
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, svc));
-
-	state = smf_get_state(svc);
-	INJECT_ERROR2("GET_SVC_STATE", free(state), state = NULL);
-	if (state == NULL) {
-		bam_error(GET_SVC_STATE_ERR, svc);
-		return (-1);
-	}
-	BAM_DPRINTF((D_GOT_SVC_STATUS, fcn, svc));
-
-	if (strcmp(state, SCF_STATE_STRING_ONLINE) == 0) {
-		BAM_DPRINTF((D_SVC_ONLINE, fcn, svc));
-		free(state);
-		return (1);
-	}
-
-	BAM_DPRINTF((D_SVC_NOT_ONLINE, fcn, state, svc));
-
-	free(state);
-
-	return (0);
-}
-
-static int
-enable_svc(char *svc)
-{
-	int			ret;
-	int			sleeptime;
-	const char		*fcn = "enable_svc()";
-
-	ret = is_svc_online(svc);
-	if (ret == -1) {
-		bam_error(SVC_IS_ONLINE_FAILED, svc);
-		return (-1);
-	} else if (ret == 1) {
-		BAM_DPRINTF((D_SVC_ALREADY_ONLINE, fcn, svc));
-		return (0);
-	}
-
-	/* Service is not enabled. Enable it now. */
-	ret = smf_enable_instance(svc, 0);
-	INJECT_ERROR1("ENABLE_SVC_FAILED", ret = -1);
-	if (ret != 0) {
-		bam_error(ENABLE_SVC_FAILED, svc);
-		return (-1);
-	}
-
-	BAM_DPRINTF((D_SVC_ONLINE_INITIATED, fcn, svc));
-
-	sleeptime = 0;
-	do {
-		ret = is_svc_online(svc);
-		INJECT_ERROR1("SVC_ONLINE_SUCCESS", ret = 1);
-		INJECT_ERROR1("SVC_ONLINE_FAILURE", ret = -1);
-		INJECT_ERROR1("SVC_ONLINE_NOTYET", ret = 0);
-		if (ret == -1) {
-			bam_error(ERR_SVC_GET_ONLINE, svc);
-			return (-1);
-		} else if (ret == 1) {
-			BAM_DPRINTF((D_SVC_NOW_ONLINE, fcn, svc));
-			return (1);
-		}
-		(void) sleep(1);
-	} while (++sleeptime < 60);
-
-	bam_error(TIMEOUT_ENABLE_SVC, svc);
-
-	return (-1);
-}
-
-static int
-ufs_get_physical(char *special, char ***physarray, int *n)
-{
-	char			cmd[PATH_MAX];
-	char			*shortname;
-	filelist_t		flist = {0};
-	char			*meta;
-	char			*type;
-	char			*comp1;
-	char			*comp2;
-	char			*comp3;
-	char			*comp4;
-	int			i;
-	line_t			*lp;
-	int			ret;
-	char			*svc;
-	const char		*fcn = "ufs_get_physical()";
-
-	assert(special);
-
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, special));
-
-	if (strncmp(special, "/dev/md/", strlen("/dev/md/")) != 0) {
-		bam_error(UFS_GET_PHYS_NOT_SVM, special);
-		return (-1);
-	}
-
-	if (strncmp(special, "/dev/md/dsk/", strlen("/dev/md/dsk/")) == 0) {
-		shortname = special + strlen("/dev/md/dsk/");
-	} else if (strncmp(special, "/dev/md/rdsk/",
-	    strlen("/dev/md/rdsk/")) == 0) {
-		shortname = special + strlen("/dev/md/rdsk");
-	} else {
-		bam_error(UFS_GET_PHYS_INVALID_SVM, special);
-		return (-1);
-	}
-
-	BAM_DPRINTF((D_UFS_SVM_SHORT, fcn, special, shortname));
-
-	svc = "network/rpc/meta:default";
-	if (enable_svc(svc) == -1) {
-		bam_error(UFS_SVM_METASTAT_SVC_ERR, svc);
-	}
-
-	(void) snprintf(cmd, sizeof (cmd), "/sbin/metastat -p %s", shortname);
-
-	ret = exec_cmd(cmd, &flist);
-	INJECT_ERROR1("UFS_SVM_METASTAT", ret = 1);
-	if (ret != 0) {
-		bam_error(UFS_SVM_METASTAT_ERR, shortname);
-		return (-1);
-	}
-
-	INJECT_ERROR1("UFS_SVM_METASTAT_OUT", flist.head = NULL);
-	if (flist.head == NULL) {
-		bam_error(BAD_UFS_SVM_METASTAT, shortname);
-		filelist_free(&flist);
-		return (-1);
-	}
-
-	/*
-	 * Check if not a mirror. We only parse a single metadevice
-	 * if not a mirror
-	 */
-	meta = strtok(flist.head->line, " \t");
-	type = strtok(NULL, " \t");
-	if (meta == NULL || type == NULL) {
-		bam_error(ERROR_PARSE_UFS_SVM_METASTAT, shortname);
-		filelist_free(&flist);
-		return (-1);
-	}
-	if (strcmp(type, "-m") != 0) {
-		comp1 = strtok(NULL, " \t");
-		comp2 = strtok(NULL, " \t");
-		if (comp1 == NULL || comp2 != NULL) {
-			bam_error(INVALID_UFS_SVM_METASTAT, shortname);
-			filelist_free(&flist);
-			return (-1);
-		}
-		BAM_DPRINTF((D_UFS_SVM_ONE_COMP, fcn, comp1, shortname));
-		*physarray = s_calloc(1, sizeof (char *));
-		(*physarray)[0] = s_strdup(comp1);
-		*n = 1;
-		filelist_free(&flist);
-		return (0);
-	}
-
-	/*
-	 * Okay we have a mirror. Everything after the first line
-	 * is a submirror
-	 */
-	for (i = 0, lp = flist.head->next; lp; lp = lp->next) {
-		if (strstr(lp->line, "/dev/dsk/") == NULL &&
-		    strstr(lp->line, "/dev/rdsk/") == NULL) {
-			bam_error(CANNOT_PARSE_UFS_SVM_METASTAT, shortname);
-			filelist_free(&flist);
-			return (-1);
-		}
-		i++;
-	}
-
-	*physarray = s_calloc(i, sizeof (char *));
-	*n = i;
-
-	for (i = 0, lp = flist.head->next; lp; lp = lp->next) {
-		comp1 = strtok(lp->line, " \t");
-		comp2 = strtok(NULL, " \t");
-		comp3 = strtok(NULL, " \t");
-		comp4 = strtok(NULL, " \t");
-
-		if (comp3 == NULL || comp4 == NULL ||
-		    (strncmp(comp4, "/dev/dsk/", strlen("/dev/dsk/")) != 0 &&
-		    strncmp(comp4, "/dev/rdsk/", strlen("/dev/rdsk/")) != 0)) {
-			bam_error(CANNOT_PARSE_UFS_SVM_SUBMIRROR, shortname);
-			filelist_free(&flist);
-			free_physarray(*physarray, *n);
-			return (-1);
-		}
-
-		(*physarray)[i++] = s_strdup(comp4);
-	}
-
-	assert(i == *n);
-
-	filelist_free(&flist);
-
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	return (0);
 }
 
@@ -8033,21 +8097,23 @@ get_physical(char *menu_root, char ***physarray, int *n)
 	*physarray = NULL;
 	*n = 0;
 
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, menu_root));
+	BAM_DPRINTF(("%s: entered. arg: %s\n", fcn, menu_root));
 
 	/* First get the device special file from /etc/mnttab */
 	special = get_special(menu_root);
 	INJECT_ERROR1("GET_PHYSICAL_SPECIAL", special = NULL);
 	if (special == NULL) {
-		bam_error(GET_SPECIAL_NULL, menu_root);
+		bam_error(_("cannot get special file for mount-point: %s\n"),
+		    menu_root);
 		return (-1);
 	}
 
 	/* If already a physical device nothing to do */
 	if (strncmp(special, "/dev/dsk/", strlen("/dev/dsk/")) == 0 ||
 	    strncmp(special, "/dev/rdsk/", strlen("/dev/rdsk/")) == 0) {
-		BAM_DPRINTF((D_GET_PHYSICAL_ALREADY, fcn, menu_root, special));
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: got physical device already directly for "
+		    "menu_root=%s special=%s\n", fcn, menu_root, special));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 		*physarray = s_calloc(1, sizeof (char *));
 		(*physarray)[0] = special;
 		*n = 1;
@@ -8056,10 +8122,9 @@ get_physical(char *menu_root, char ***physarray, int *n)
 
 	if (is_zfs(menu_root)) {
 		ret = zfs_get_physical(special, physarray, n);
-	} else if (is_ufs(menu_root)) {
-		ret = ufs_get_physical(special, physarray, n);
 	} else {
-		bam_error(GET_PHYSICAL_NOTSUP_FSTYPE, menu_root, special);
+		bam_error(_("cannot derive physical device for %s (%s), "
+		    "unsupported filesystem\n"), menu_root, special);
 		ret = -1;
 	}
 
@@ -8067,12 +8132,13 @@ get_physical(char *menu_root, char ***physarray, int *n)
 
 	INJECT_ERROR1("GET_PHYSICAL_RET", ret = -1);
 	if (ret == -1) {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	} else {
 		int	i;
 		assert (*n > 0);
 		for (i = 0; i < *n; i++) {
-			BAM_DPRINTF((D_GET_PHYSICAL_RET, fcn, (*physarray)[i]));
+			BAM_DPRINTF(("%s: returning physical=%s\n",
+			    fcn, (*physarray)[i]));
 		}
 	}
 
@@ -8090,7 +8156,7 @@ is_bootdisk(char *osroot, char *physical)
 	assert(osroot);
 	assert(physical);
 
-	BAM_DPRINTF((D_FUNC_ENTRY2, fcn, osroot, physical));
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", fcn, osroot, physical));
 
 	bootp = strstr(physical, "p0:boot");
 	if (bootp)
@@ -8108,13 +8174,14 @@ is_bootdisk(char *osroot, char *physical)
 	INJECT_ERROR1("IS_BOOTDISK_GRUBROOT", grubroot = NULL);
 	if (grubroot == NULL) {
 		if (bam_verbose)
-			bam_error(NO_GRUBROOT_FOR_DISK, physical);
+			bam_error(_("cannot determine BIOS disk ID 'hd?' for "
+			    "disk: %s\n"), physical);
 		return (0);
 	}
 	ret = grubroot[3] == '0';
 	free(grubroot);
 
-	BAM_DPRINTF((D_RETURN_RET, fcn, ret));
+	BAM_DPRINTF(("%s: returning ret = %d\n", fcn, ret));
 
 	return (ret);
 }
@@ -8133,12 +8200,13 @@ menu_on_bootdisk(char *osroot, char *menu_root)
 	int		on_bootdisk;
 	const char	*fcn = "menu_on_bootdisk()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY2, fcn, osroot, menu_root));
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", fcn, osroot, menu_root));
 
 	ret = get_physical(menu_root, &physarray, &n);
 	INJECT_ERROR1("MENU_ON_BOOTDISK_PHYSICAL", ret = -1);
 	if (ret != 0) {
-		bam_error(GET_PHYSICAL_MENU_NULL, menu_root);
+		bam_error(_("cannot get physical device special file for menu "
+		    "root: %s\n"), menu_root);
 		return (0);
 	}
 
@@ -8152,10 +8220,12 @@ menu_on_bootdisk(char *osroot, char *menu_root)
 		    strncmp(physarray[i], "/dev/rdsk/",
 		    strlen("/dev/rdsk/")) == 0);
 
-		BAM_DPRINTF((D_CHECK_ON_BOOTDISK, fcn, physarray[i]));
+		BAM_DPRINTF(("%s: checking if phys-device=%s is on bootdisk\n",
+		    fcn, physarray[i]));
 		if (is_bootdisk(osroot, physarray[i])) {
 			on_bootdisk = 1;
-			BAM_DPRINTF((D_IS_ON_BOOTDISK, fcn, physarray[i]));
+			BAM_DPRINTF(("%s: phys-device=%s *IS* on bootdisk\n",
+			    fcn, physarray[i]));
 		}
 	}
 
@@ -8164,9 +8234,9 @@ menu_on_bootdisk(char *osroot, char *menu_root)
 	INJECT_ERROR1("ON_BOOTDISK_YES", on_bootdisk = 1);
 	INJECT_ERROR1("ON_BOOTDISK_NO", on_bootdisk = 0);
 	if (on_bootdisk) {
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	} else {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	}
 
 	return (on_bootdisk);
@@ -8184,22 +8254,22 @@ bam_add_line(menu_t *mp, entry_t *entry, line_t *prev, line_t *lp)
 
 	lp->next = prev->next;
 	if (prev->next) {
-		BAM_DPRINTF((D_ADD_LINE_PREV_NEXT, fcn));
+		BAM_DPRINTF(("%s: previous next exists\n", fcn));
 		prev->next->prev = lp;
 	} else {
-		BAM_DPRINTF((D_ADD_LINE_NOT_PREV_NEXT, fcn));
+		BAM_DPRINTF(("%s: previous next does not exist\n", fcn));
 	}
 	prev->next = lp;
 	lp->prev = prev;
 
 	if (entry->end == prev) {
-		BAM_DPRINTF((D_ADD_LINE_LAST_LINE_IN_ENTRY, fcn));
+		BAM_DPRINTF(("%s: last line in entry\n", fcn));
 		entry->end = lp;
 	}
 	if (mp->end == prev) {
 		assert(lp->next == NULL);
 		mp->end = lp;
-		BAM_DPRINTF((D_ADD_LINE_LAST_LINE_IN_MENU, fcn));
+		BAM_DPRINTF(("%s: last line in menu\n", fcn));
 	}
 }
 
@@ -8246,10 +8316,12 @@ find_boot_entry(
 		if (title) {
 			if (lp->flags == BAM_TITLE && lp->arg &&
 			    strcmp(lp->arg, title) == 0) {
-				BAM_DPRINTF((D_MATCHED_TITLE, fcn, title));
+				BAM_DPRINTF(("%s: matched title: %s\n",
+				    fcn, title));
 				break;
 			}
-			BAM_DPRINTF((D_NOMATCH_TITLE, fcn, title, lp->arg));
+			BAM_DPRINTF(("%s: no match title: %s, %s\n",
+			    fcn, title, lp->arg));
 			continue;	/* check title only */
 		}
 
@@ -8261,33 +8333,34 @@ find_boot_entry(
 			INJECT_ERROR1("FIND_BOOT_ENTRY_NULL_FINDROOT",
 			    findroot = NULL);
 			if (findroot == NULL) {
-				BAM_DPRINTF((D_NOMATCH_FINDROOT_NULL,
-				    fcn, lp->arg));
+				BAM_DPRINTF(("%s: no match line has findroot, "
+				    "we don't: %s\n", fcn, lp->arg));
 				continue;
 			}
 			/* findroot command found, try match  */
 			if (strcmp(lp->arg, findroot) != 0) {
-				BAM_DPRINTF((D_NOMATCH_FINDROOT,
+				BAM_DPRINTF(("%s: no match findroot: %s, %s\n",
 				    fcn, findroot, lp->arg));
 				continue;
 			}
-			BAM_DPRINTF((D_MATCHED_FINDROOT, fcn, findroot));
+			BAM_DPRINTF(("%s: matched findroot: %s\n",
+			    fcn, findroot));
 			lp = lp->next;	/* advance to kernel line */
 		} else if (lp->cmd != NULL &&
 		    strcmp(lp->cmd, menu_cmds[ROOT_CMD]) == 0) {
 			INJECT_ERROR1("FIND_BOOT_ENTRY_NULL_ROOT", root = NULL);
 			if (root == NULL) {
-				BAM_DPRINTF((D_NOMATCH_ROOT_NULL,
-				    fcn, lp->arg));
+				BAM_DPRINTF(("%s: no match, line has root, we "
+				    "don't: %s\n", fcn, lp->arg));
 				continue;
 			}
 			/* root cmd found, try match */
 			if (strcmp(lp->arg, root) != 0) {
-				BAM_DPRINTF((D_NOMATCH_ROOT,
+				BAM_DPRINTF(("%s: no match root: %s, %s\n",
 				    fcn, root, lp->arg));
 				continue;
 			}
-			BAM_DPRINTF((D_MATCHED_ROOT, fcn, root));
+			BAM_DPRINTF(("%s: matched root: %s\n", fcn, root));
 			lp = lp->next;	/* advance to kernel line */
 		} else {
 			INJECT_ERROR1("FIND_BOOT_ENTRY_ROOT_OPT_NO",
@@ -8296,10 +8369,10 @@ find_boot_entry(
 			    root_opt = 1);
 			/* no root command, see if root is optional */
 			if (root_opt == 0) {
-				BAM_DPRINTF((D_NO_ROOT_OPT, fcn));
+				BAM_DPRINTF(("%s: root NOT optional\n", fcn));
 				continue;
 			}
-			BAM_DPRINTF((D_ROOT_OPT, fcn));
+			BAM_DPRINTF(("%s: root IS optional\n", fcn));
 		}
 
 		if (lp == NULL || lp->next == NULL) {
@@ -8316,7 +8389,8 @@ find_boot_entry(
 			ent->flags |= BAM_ENTRY_UPGFSKERNEL;
 
 		}
-		BAM_DPRINTF((D_KERNEL_MATCH, fcn, kernel, lp->arg));
+		BAM_DPRINTF(("%s: kernel match: %s, %s\n", fcn,
+		    kernel, lp->arg));
 
 		/*
 		 * Check for matching module entry (failsafe or normal).
@@ -8329,7 +8403,8 @@ find_boot_entry(
 		    (((lp = lp->next) != NULL) &&
 		    check_cmd(lp->cmd, MODULE_CMD, lp->arg, module))) {
 			/* match found */
-			BAM_DPRINTF((D_MODULE_MATCH, fcn, module, lp->arg));
+			BAM_DPRINTF(("%s: module match: %s, %s\n", fcn,
+			    module, lp->arg));
 			break;
 		}
 
@@ -8347,9 +8422,9 @@ find_boot_entry(
 	}
 
 	if (ent) {
-		BAM_DPRINTF((D_RETURN_RET, fcn, i));
+		BAM_DPRINTF(("%s: returning ret = %d\n", fcn, i));
 	} else {
-		BAM_DPRINTF((D_RETURN_RET, fcn, BAM_ERROR));
+		BAM_DPRINTF(("%s: returning ret = %d\n", fcn, BAM_ERROR));
 	}
 	return (ent);
 }
@@ -8378,15 +8453,18 @@ update_boot_entry(menu_t *mp, char *title, char *findroot, char *root,
 		ent = find_boot_entry(mp, NULL, "multiboot", NULL, root,
 		    MULTIBOOT_ARCHIVE, root_opt, &i);
 		if (ent != NULL) {
-			BAM_DPRINTF((D_UPGRADE_FROM_MULTIBOOT, fcn, root));
+			BAM_DPRINTF(("%s: upgrading entry from dboot to "
+			    "multiboot: root = %s\n", fcn, root));
 			change_kernel = 1;
 		}
 	} else if (ent) {
-		BAM_DPRINTF((D_FOUND_FINDROOT, fcn, findroot));
+		BAM_DPRINTF(("%s: found entry with matching findroot: %s\n",
+		    fcn, findroot));
 	}
 
 	if (ent == NULL) {
-		BAM_DPRINTF((D_ENTRY_NOT_FOUND_CREATING, fcn, findroot));
+		BAM_DPRINTF(("%s: boot entry not found in menu. Creating "
+		    "new entry, findroot = %s\n", fcn, findroot));
 		return (add_boot_entry(mp, title, findroot,
 		    kernel, mod_kernel, module, NULL));
 	}
@@ -8400,7 +8478,7 @@ update_boot_entry(menu_t *mp, char *title, char *findroot, char *root,
 	free(lp->line);
 	lp->arg = s_strdup(title);
 	lp->line = s_strdup(linebuf);
-	BAM_DPRINTF((D_CHANGING_TITLE, fcn, title));
+	BAM_DPRINTF(("%s: changing title to: %s\n", fcn, title));
 
 	tlp = lp;	/* title line */
 	lp = lp->next;	/* root line */
@@ -8425,7 +8503,7 @@ update_boot_entry(menu_t *mp, char *title, char *findroot, char *root,
 	(void) snprintf(linebuf, sizeof (linebuf), "%s%s%s",
 	    menu_cmds[FINDROOT_CMD], menu_cmds[SEP_CMD], findroot);
 	lp->line = s_strdup(linebuf);
-	BAM_DPRINTF((D_ADDING_FINDROOT_LINE, fcn, findroot));
+	BAM_DPRINTF(("%s: adding findroot line: %s\n", fcn, findroot));
 
 	/* kernel line */
 	lp = lp->next;
@@ -8452,7 +8530,8 @@ update_boot_entry(menu_t *mp, char *title, char *findroot, char *root,
 		lp->arg = s_strdup(strstr(linebuf, "/"));
 		lp->line = s_strdup(linebuf);
 		ent->flags &= ~BAM_ENTRY_UPGFSKERNEL;
-		BAM_DPRINTF((D_ADDING_KERNEL_DOLLAR, fcn, lp->prev->cmd));
+		BAM_DPRINTF(("%s: adding new kernel$ line: %s\n",
+		    fcn, lp->prev->cmd));
 	}
 
 	if (change_kernel) {
@@ -8471,7 +8550,8 @@ update_boot_entry(menu_t *mp, char *title, char *findroot, char *root,
 			lp->arg = s_strdup(kernel);
 			lp->line = s_strdup(linebuf);
 			lp = lp->next;
-			BAM_DPRINTF((D_ADDING_KERNEL_DOLLAR, fcn, kernel));
+			BAM_DPRINTF(("%s: adding new kernel$ line: %s\n",
+			    fcn, kernel));
 		}
 		if (lp->cmd != NULL &&
 		    strcmp(lp->cmd, menu_cmds[MODULE_CMD]) == 0) {
@@ -8485,7 +8565,8 @@ update_boot_entry(menu_t *mp, char *title, char *findroot, char *root,
 			lp->arg = s_strdup(module);
 			lp->line = s_strdup(linebuf);
 			lp = lp->next;
-			BAM_DPRINTF((D_ADDING_MODULE_DOLLAR, fcn, module));
+			BAM_DPRINTF(("%s: adding new module$ line: %s\n",
+			    fcn, module));
 		}
 	}
 
@@ -8506,11 +8587,12 @@ update_boot_entry(menu_t *mp, char *title, char *findroot, char *root,
 			lp->line = s_strdup(linebuf);
 			lp = lp->next;
 			ent->flags &= ~BAM_ENTRY_UPGFSMODULE;
-			BAM_DPRINTF((D_ADDING_MODULE_DOLLAR, fcn, module));
+			BAM_DPRINTF(("%s: adding new module$ line: %s\n",
+			    fcn, module));
 		}
 	}
 
-	BAM_DPRINTF((D_RETURN_RET, fcn, i));
+	BAM_DPRINTF(("%s: returning ret = %d\n", fcn, i));
 	return (i);
 }
 
@@ -8525,7 +8607,7 @@ root_optional(char *osroot, char *menu_root)
 	int			ret2;
 	const char		*fcn = "root_optional()";
 
-	BAM_DPRINTF((D_FUNC_ENTRY2, fcn, osroot, menu_root));
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", fcn, osroot, menu_root));
 
 	/*
 	 * For all filesystems except ZFS, a straight compare of osroot
@@ -8537,7 +8619,8 @@ root_optional(char *osroot, char *menu_root)
 	ret2 = is_zfs(menu_root);
 	INJECT_ERROR1("ROOT_OPT_NOT_ZFS", ret1 = 0);
 	if (!ret1 || !ret2) {
-		BAM_DPRINTF((D_ROOT_OPT_NOT_ZFS, fcn, osroot, menu_root));
+		BAM_DPRINTF(("%s: one or more non-ZFS filesystems (%s, %s)\n",
+		    fcn, osroot, menu_root));
 		root_opt = (strcmp(osroot, menu_root) == 0);
 		goto out;
 	}
@@ -8545,24 +8628,28 @@ root_optional(char *osroot, char *menu_root)
 	ospecial = get_special(osroot);
 	INJECT_ERROR1("ROOT_OPTIONAL_OSPECIAL", ospecial = NULL);
 	if (ospecial == NULL) {
-		bam_error(GET_OSROOT_SPECIAL_ERR, osroot);
+		bam_error(_("failed to get special file for osroot: %s\n"),
+		    osroot);
 		return (0);
 	}
-	BAM_DPRINTF((D_ROOT_OPTIONAL_OSPECIAL, fcn, ospecial, osroot));
+	BAM_DPRINTF(("%s: ospecial=%s for osroot=%s\n", fcn, ospecial, osroot));
 
 	mspecial = get_special(menu_root);
 	INJECT_ERROR1("ROOT_OPTIONAL_MSPECIAL", mspecial = NULL);
 	if (mspecial == NULL) {
-		bam_error(GET_MENU_ROOT_SPECIAL_ERR, menu_root);
+		bam_error(_("failed to get special file for menu_root: %s\n"),
+		    menu_root);
 		free(ospecial);
 		return (0);
 	}
-	BAM_DPRINTF((D_ROOT_OPTIONAL_MSPECIAL, fcn, mspecial, menu_root));
+	BAM_DPRINTF(("%s: mspecial=%s for menu_root=%s\n",
+	    fcn, mspecial, menu_root));
 
 	slash = strchr(ospecial, '/');
 	if (slash)
 		*slash = '\0';
-	BAM_DPRINTF((D_ROOT_OPTIONAL_FIXED_OSPECIAL, fcn, ospecial, osroot));
+	BAM_DPRINTF(("%s: FIXED ospecial=%s for osroot=%s\n",
+	    fcn, ospecial, osroot));
 
 	root_opt = (strcmp(ospecial, mspecial) == 0);
 
@@ -8573,9 +8660,9 @@ out:
 	INJECT_ERROR1("ROOT_OPTIONAL_NO", root_opt = 0);
 	INJECT_ERROR1("ROOT_OPTIONAL_YES", root_opt = 1);
 	if (root_opt) {
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	} else {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	}
 
 	return (root_opt);
@@ -8602,7 +8689,8 @@ update_entry(menu_t *mp, char *menu_root, char *osdev)
 	assert(osdev);
 	assert(bam_root);
 
-	BAM_DPRINTF((D_FUNC_ENTRY3, fcn, menu_root, osdev, bam_root));
+	BAM_DPRINTF(("%s: entered. args: %s %s %s\n", fcn, menu_root, osdev,
+	    bam_root));
 
 	(void) strlcpy(osroot, bam_root, sizeof (osroot));
 
@@ -8612,7 +8700,8 @@ update_entry(menu_t *mp, char *menu_root, char *osdev)
 	grubsign = get_grubsign(osroot, osdev);
 	INJECT_ERROR1("GET_GRUBSIGN_FAIL", grubsign = NULL);
 	if (grubsign == NULL) {
-		bam_error(GET_GRUBSIGN_ERROR, osroot, osdev);
+		bam_error(_("failed to get grubsign for root: %s, device %s\n"),
+		    osroot, osdev);
 		return (BAM_ERROR);
 	}
 
@@ -8624,11 +8713,11 @@ update_entry(menu_t *mp, char *menu_root, char *osdev)
 	grubroot = get_grubroot(osroot, osdev, menu_root);
 	INJECT_ERROR1("GET_GRUBROOT_FAIL", grubroot = NULL);
 	if (grubroot) {
-		BAM_DPRINTF((D_GET_GRUBROOT_SUCCESS,
-		    fcn, osroot, osdev, menu_root));
+		BAM_DPRINTF(("%s: get_grubroot success. osroot=%s, osdev=%s, "
+		    "menu_root=%s\n", fcn, osroot, osdev, menu_root));
 	} else {
-		BAM_DPRINTF((D_GET_GRUBROOT_FAILURE,
-		    fcn, osroot, osdev, menu_root));
+		BAM_DPRINTF(("%s: get_grubroot failed. osroot=%s, osdev=%s, "
+		    "menu_root=%s\n", fcn, osroot, osdev, menu_root));
 	}
 
 	/* add the entry for normal Solaris */
@@ -8639,22 +8728,24 @@ update_entry(menu_t *mp, char *menu_root, char *osdev)
 		    (bam_zfs ? DIRECT_BOOT_KERNEL_ZFS : DIRECT_BOOT_KERNEL),
 		    NULL, DIRECT_BOOT_ARCHIVE,
 		    root_optional(osroot, menu_root));
-		BAM_DPRINTF((D_UPDATED_BOOT_ENTRY, fcn, bam_zfs, grubsign));
+		BAM_DPRINTF(("%s: updated boot entry bam_zfs=%d, "
+		    "grubsign = %s\n", fcn, bam_zfs, grubsign));
 		if ((entry != BAM_ERROR) && (bam_is_hv == BAM_HV_PRESENT)) {
 			(void) update_boot_entry(mp, NEW_HV_ENTRY, grubsign,
 			    grubroot, XEN_MENU, bam_zfs ?
 			    XEN_KERNEL_MODULE_LINE_ZFS : XEN_KERNEL_MODULE_LINE,
 			    DIRECT_BOOT_ARCHIVE,
 			    root_optional(osroot, menu_root));
-			BAM_DPRINTF((D_UPDATED_HV_ENTRY,
-			    fcn, bam_zfs, grubsign));
+			BAM_DPRINTF(("%s: updated HV entry bam_zfs=%d, "
+			    "grubsign = %s\n", fcn, bam_zfs, grubsign));
 		}
 	} else {
 		entry = update_boot_entry(mp, title, grubsign, grubroot,
 		    MULTI_BOOT, NULL, MULTIBOOT_ARCHIVE,
 		    root_optional(osroot, menu_root));
 
-		BAM_DPRINTF((D_UPDATED_MULTIBOOT_ENTRY, fcn, grubsign));
+		BAM_DPRINTF(("%s: updated MULTIBOOT entry grubsign = %s\n",
+		    fcn, grubsign));
 	}
 
 	/*
@@ -8693,15 +8784,16 @@ update_entry(menu_t *mp, char *menu_root, char *osdev)
 			(void) update_boot_entry(mp, FAILSAFE_TITLE, grubsign,
 			    grubroot, failsafe_kernel, NULL, FAILSAFE_ARCHIVE,
 			    root_optional(osroot, menu_root));
-			BAM_DPRINTF((D_UPDATED_FAILSAFE_ENTRY, fcn,
-			    failsafe_kernel));
+			BAM_DPRINTF(("%s: updated FAILSAFE entry "
+			    "failsafe_kernel = %s\n", fcn, failsafe_kernel));
 		}
 	}
 	free(grubroot);
 
 	INJECT_ERROR1("UPDATE_ENTRY_ERROR", entry = BAM_ERROR);
 	if (entry == BAM_ERROR) {
-		bam_error(FAILED_TO_ADD_BOOT_ENTRY, title, grubsign);
+		bam_error(_("failed to add boot entry with title=%s, grub "
+		    "signature=%s\n"), title, grubsign);
 		free(grubsign);
 		return (BAM_ERROR);
 	}
@@ -8711,9 +8803,9 @@ update_entry(menu_t *mp, char *menu_root, char *osdev)
 	ret = set_global(mp, menu_cmds[DEFAULT_CMD], entry);
 	INJECT_ERROR1("SET_DEFAULT_ERROR", ret = BAM_ERROR);
 	if (ret == BAM_ERROR) {
-		bam_error(SET_DEFAULT_FAILED, entry);
+		bam_error(_("failed to set GRUB menu default to %d\n"), entry);
 	}
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	return (BAM_WRITE);
 }
 
@@ -8739,9 +8831,10 @@ save_default_entry(menu_t *mp, const char *which)
 		entry = s_strtol(lp->arg);
 
 	(void) snprintf(linebuf, sizeof (linebuf), "#%s%d", which, entry);
-	BAM_DPRINTF((D_SAVING_DEFAULT_TO, fcn, linebuf));
+	BAM_DPRINTF(("%s: saving default to: %s\n", fcn, linebuf));
 	line_parser(mp, linebuf, &lineNum, &entryNum);
-	BAM_DPRINTF((D_SAVED_DEFAULT_TO, fcn, lineNum, entryNum));
+	BAM_DPRINTF(("%s: saved default to lineNum=%d, entryNum=%d\n", fcn,
+	    lineNum, entryNum));
 }
 
 static void
@@ -8752,17 +8845,17 @@ restore_default_entry(menu_t *mp, const char *which, line_t *lp)
 	const char	*fcn = "restore_default_entry()";
 
 	if (lp == NULL) {
-		BAM_DPRINTF((D_RESTORE_DEFAULT_NULL, fcn));
+		BAM_DPRINTF(("%s: NULL saved default\n", fcn));
 		return;		/* nothing to restore */
 	}
 
-	BAM_DPRINTF((D_RESTORE_DEFAULT_STR, fcn, which));
+	BAM_DPRINTF(("%s: saved default string: %s\n", fcn, which));
 
 	str = lp->arg + strlen(which);
 	entry = s_strtol(str);
 	(void) set_global(mp, menu_cmds[DEFAULT_CMD], entry);
 
-	BAM_DPRINTF((D_RESTORED_DEFAULT_TO, fcn, entry));
+	BAM_DPRINTF(("%s: restored default to entryNum: %d\n", fcn, entry));
 
 	/* delete saved old default line */
 	unlink_line(mp, lp);
@@ -8801,45 +8894,49 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 	assert(dummy == NULL);
 
 	/* opt can be NULL */
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, opt ? opt : "<NULL>"));
-	BAM_DPRINTF((D_BAM_ROOT, fcn, bam_alt_root, bam_root));
+	BAM_DPRINTF(("%s: entered. arg: %s\n", fcn, opt ? opt : "<NULL>"));
+	BAM_DPRINTF(("%s: bam_alt_root: %d, bam_root: %s\n", fcn,
+	    bam_alt_root, bam_root));
 
 	if (bam_alt_root || bam_rootlen != 1 ||
 	    strcmp(bam_root, "/") != 0 ||
 	    strcmp(rootbuf, "/") != 0) {
-		bam_error(ALT_ROOT_INVALID, bam_root);
+		bam_error(_("an alternate root (%s) cannot be used with this "
+		    "sub-command\n"), bam_root);
 		return (BAM_ERROR);
 	}
 
 	/* If no option, delete exiting reboot menu entry */
 	if (opt == NULL) {
 		entry_t		*ent;
-		BAM_DPRINTF((D_OPT_NULL, fcn));
+		BAM_DPRINTF(("%s: opt is NULL\n", fcn));
 		ent = find_boot_entry(mp, REBOOT_TITLE, NULL, NULL,
 		    NULL, NULL, 0, &entry);
 		if (ent == NULL) {	/* not found is ok */
-			BAM_DPRINTF((D_TRANSIENT_NOTFOUND, fcn));
+			BAM_DPRINTF(("%s: transient entry not found\n", fcn));
 			return (BAM_SUCCESS);
 		}
 		(void) delete_boot_entry(mp, entry, DBE_PRINTERR);
 		restore_default_entry(mp, BAM_OLDDEF, mp->olddefault);
 		mp->olddefault = NULL;
-		BAM_DPRINTF((D_RESTORED_DEFAULT, fcn));
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: restored old default\n", fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 		return (BAM_WRITE);
 	}
 
 	/* if entry= is specified, set the default entry */
 	if (strncmp(opt, "entry=", strlen("entry=")) == 0) {
 		int entryNum = s_strtol(opt + strlen("entry="));
-		BAM_DPRINTF((D_ENTRY_EQUALS, fcn, opt));
+		BAM_DPRINTF(("%s: opt has entry=: %s\n", fcn, opt));
 		if (selector(mp, opt, &entry, NULL) == BAM_SUCCESS) {
 			/* this is entry=# option */
 			ret = set_global(mp, menu_cmds[DEFAULT_CMD], entry);
-			BAM_DPRINTF((D_ENTRY_SET_IS, fcn, entry, ret));
+			BAM_DPRINTF(("%s: default set to %d, "
+			    "set_default ret=%d\n", fcn, entry, ret));
 			return (ret);
 		} else {
-			bam_error(SET_DEFAULT_FAILED, entryNum);
+			bam_error(_("failed to set GRUB menu default to %d\n"),
+			    entryNum);
 			return (BAM_ERROR);
 		}
 	}
@@ -8851,7 +8948,8 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 	fstype = get_fstype("/");
 	INJECT_ERROR1("REBOOT_FSTYPE_NULL", fstype = NULL);
 	if (fstype == NULL) {
-		bam_error(REBOOT_FSTYPE_FAILED);
+		bam_error(_("failed to determine filesystem type for \"/\". "
+		    "Reboot with \narguments failed.\n"));
 		return (BAM_ERROR);
 	}
 
@@ -8859,7 +8957,8 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 	INJECT_ERROR1("REBOOT_SPECIAL_NULL", osdev = NULL);
 	if (osdev == NULL) {
 		free(fstype);
-		bam_error(REBOOT_SPECIAL_FAILED);
+		bam_error(_("failed to find device special file for \"/\". "
+		    "Reboot with \narguments failed.\n"));
 		return (BAM_ERROR);
 	}
 
@@ -8868,7 +8967,8 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 	if (sign == NULL) {
 		free(fstype);
 		free(osdev);
-		bam_error(REBOOT_SIGN_FAILED);
+		bam_error(_("failed to find boot signature. Reboot with "
+		    "arguments failed.\n"));
 		return (BAM_ERROR);
 	}
 
@@ -8887,7 +8987,9 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 	INJECT_ERROR1("REBOOT_NOT_DBOOT", bam_direct = BAM_DIRECT_MULTIBOOT);
 	if (bam_direct != BAM_DIRECT_DBOOT) {
 		free(fstype);
-		bam_error(REBOOT_DIRECT_FAILED);
+		bam_error(_("the root filesystem is not a dboot Solaris "
+		    "instance. \nThis version of bootadm is not supported "
+		    "on this version of Solaris.\n"));
 		return (BAM_ERROR);
 	}
 
@@ -8898,7 +9000,8 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 		INJECT_ERROR1("REBOOT_GET_KERNEL", ret = BAM_ERROR);
 		if (ret != BAM_SUCCESS) {
 			free(fstype);
-			bam_error(REBOOT_GET_KERNEL_FAILED);
+			bam_error(_("reboot with arguments: error querying "
+			    "current boot-file settings\n"));
 			return (BAM_ERROR);
 		}
 		if (kernbuf[0] == '\0')
@@ -8914,7 +9017,8 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 		}
 		(void) strlcat(kernbuf, " ", sizeof (kernbuf));
 		(void) strlcat(kernbuf, opt, sizeof (kernbuf));
-		BAM_DPRINTF((D_REBOOT_OPTION, fcn, kernbuf));
+		BAM_DPRINTF(("%s: reboot with args, option specified: "
+		    "kern=%s\n", fcn, kernbuf));
 	} else if (opt[0] == '/') {
 		/* It's a full path, so write it out. */
 		(void) strlcpy(kernbuf, opt, sizeof (kernbuf));
@@ -8940,7 +9044,8 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 			INJECT_ERROR1("REBOOT_GET_ARGS", ret = BAM_ERROR);
 			if (ret != BAM_SUCCESS) {
 				free(fstype);
-				bam_error(REBOOT_GET_ARGS_FAILED);
+				bam_error(_("reboot with arguments: error "
+				    "querying current boot-args settings\n"));
 				return (BAM_ERROR);
 			}
 
@@ -8950,7 +9055,8 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 				    sizeof (kernbuf));
 			}
 		}
-		BAM_DPRINTF((D_REBOOT_ABSPATH, fcn, kernbuf));
+		BAM_DPRINTF(("%s: reboot with args, abspath specified: "
+		    "kern=%s\n", fcn, kernbuf));
 	} else {
 		/*
 		 * It may be a partial path, or it may be a partial
@@ -8984,7 +9090,9 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 				    ret = BAM_ERROR);
 				if (ret != BAM_SUCCESS) {
 					free(fstype);
-					bam_error(REBOOT_GET_ARGS_FAILED);
+					bam_error(_("reboot with arguments: "
+					    "error querying current boot-args "
+					    "settings\n"));
 					return (BAM_ERROR);
 				}
 
@@ -8995,11 +9103,14 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 					    args_buf, sizeof (kernbuf));
 				}
 			}
-			BAM_DPRINTF((D_REBOOT_RESOLVED_PARTIAL, fcn, kernbuf));
+			BAM_DPRINTF(("%s: resolved partial path: %s\n",
+			    fcn, kernbuf));
 		} else {
 			free(fstype);
-			bam_error(UNKNOWN_KERNEL, opt);
-			bam_print_stderr(UNKNOWN_KERNEL_REBOOT);
+			bam_error(_("unable to expand %s to a full file"
+			    " path.\n"), opt);
+			bam_print_stderr(_("Rebooting with default kernel "
+			    "and options.\n"));
 			return (BAM_ERROR);
 		}
 	}
@@ -9008,7 +9119,8 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 	    NULL, NULL, NULL);
 	INJECT_ERROR1("REBOOT_ADD_BOOT_ENTRY", entry = BAM_ERROR);
 	if (entry == BAM_ERROR) {
-		bam_error(REBOOT_WITH_ARGS_ADD_ENTRY_FAILED);
+		bam_error(_("Cannot update menu. Cannot reboot with "
+		    "requested arguments\n"));
 		return (BAM_ERROR);
 	}
 
@@ -9016,9 +9128,10 @@ update_temp(menu_t *mp, char *dummy, char *opt)
 	ret = set_global(mp, menu_cmds[DEFAULT_CMD], entry);
 	INJECT_ERROR1("REBOOT_SET_GLOBAL", ret = BAM_ERROR);
 	if (ret == BAM_ERROR) {
-		bam_error(REBOOT_SET_DEFAULT_FAILED, entry);
+		bam_error(_("reboot with arguments: setting GRUB menu default "
+		    "to %d failed\n"), entry);
 	}
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	return (BAM_WRITE);
 }
 
@@ -9043,7 +9156,7 @@ set_global(menu_t *mp, char *globalcmd, int val)
 		INJECT_ERROR1("SET_GLOBAL_VAL_TOO_BIG", val = 100);
 		if (val < 0 || mp->end == NULL || val > mp->end->entryNum) {
 			(void) snprintf(prefix, sizeof (prefix), "%d", val);
-			bam_error(INVALID_ENTRY, prefix);
+			bam_error(_("invalid boot entry number: %s\n"), prefix);
 			return (BAM_ERROR);
 		}
 	}
@@ -9057,16 +9170,19 @@ set_global(menu_t *mp, char *globalcmd, int val)
 
 		INJECT_ERROR1("SET_GLOBAL_NULL_CMD", lp->cmd = NULL);
 		if (lp->cmd == NULL) {
-			bam_error(NO_CMD, lp->lineNum);
+			bam_error(_("no command at line %d\n"), lp->lineNum);
 			continue;
 		}
 		if (strcmp(globalcmd, lp->cmd) != 0)
 			continue;
 
-		BAM_DPRINTF((D_FOUND_GLOBAL, fcn, globalcmd));
+		BAM_DPRINTF(("%s: found matching global command: %s\n",
+		    fcn, globalcmd));
 
 		if (found) {
-			bam_error(DUP_CMD, globalcmd, lp->lineNum, bam_root);
+			bam_error(_("duplicate command %s at line %d of "
+			    "%sboot/grub/menu.lst\n"), globalcmd,
+			    lp->lineNum, bam_root);
 		}
 		found = lp;
 	}
@@ -9089,8 +9205,8 @@ set_global(menu_t *mp, char *globalcmd, int val)
 		lp->line = s_calloc(1, len);
 		(void) snprintf(lp->line, len, "%s%s%d",
 		    globalcmd, menu_cmds[SEP_CMD], val);
-		BAM_DPRINTF((D_SET_GLOBAL_WROTE_NEW, fcn, lp->line));
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: wrote new global line: %s\n", fcn, lp->line));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 		return (BAM_WRITE);
 	}
 
@@ -9112,8 +9228,8 @@ set_global(menu_t *mp, char *globalcmd, int val)
 	(void) snprintf(found->line, len,
 	    "%s%s%s%d", prefix, globalcmd, menu_cmds[SEP_CMD], val);
 
-	BAM_DPRINTF((D_SET_GLOBAL_REPLACED, fcn, found->line));
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+	BAM_DPRINTF(("%s: replaced global line with: %s\n", fcn, found->line));
+	BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	return (BAM_WRITE); /* need a write to menu */
 }
 
@@ -9138,14 +9254,14 @@ expand_path(const char *partial_path)
 	(void) snprintf(new_path, new_path_len, "/platform/i86pc/%s",
 	    partial_path);
 	if (stat(new_path, &sb) == 0) {
-		BAM_DPRINTF((D_EXPAND_PATH, fcn, new_path));
+		BAM_DPRINTF(("%s: expanded path: %s\n", fcn, new_path));
 		return (new_path);
 	}
 
 	if (strcmp(partial_path, "kmdb") == 0) {
 		(void) snprintf(new_path, new_path_len, "%s -k",
 		    DIRECT_BOOT_KERNEL);
-		BAM_DPRINTF((D_EXPAND_PATH, fcn, new_path));
+		BAM_DPRINTF(("%s: expanded path: %s\n", fcn, new_path));
 		return (new_path);
 	}
 
@@ -9167,12 +9283,12 @@ expand_path(const char *partial_path)
 			    "/platform/i86pc/kernel/%s/$ISADIR/unix",
 			    partial_path);
 		}
-		BAM_DPRINTF((D_EXPAND_PATH, fcn, new_path));
+		BAM_DPRINTF(("%s: expanded path: %s\n", fcn, new_path));
 		return (new_path);
 	}
 
 	free(new_path);
-	BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+	BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	return (NULL);
 }
 
@@ -9196,14 +9312,15 @@ set_archive_line(entry_t *entryp, line_t *kernelp)
 
 		INJECT_ERROR1("SET_ARCHIVE_LINE_END_ENTRY", lp = entryp->end);
 		if (lp == entryp->end) {
-			BAM_DPRINTF((D_ARCHIVE_LINE_NONE, fcn,
-			    entryp->entryNum));
+			BAM_DPRINTF(("%s: no module/archive line for entry: "
+			    "%d\n", fcn, entryp->entryNum));
 			return;
 		}
 	}
 	INJECT_ERROR1("SET_ARCHIVE_LINE_END_MENU", lp = NULL);
 	if (lp == NULL) {
-		BAM_DPRINTF((D_ARCHIVE_LINE_NONE, fcn, entryp->entryNum));
+		BAM_DPRINTF(("%s: no module/archive line for entry: %d\n",
+		    fcn, entryp->entryNum));
 		return;
 	}
 
@@ -9219,7 +9336,7 @@ set_archive_line(entry_t *entryp, line_t *kernelp)
 	}
 
 	if (strcmp(lp->arg, new_archive) == 0) {
-		BAM_DPRINTF((D_ARCHIVE_LINE_NOCHANGE, fcn, lp->arg));
+		BAM_DPRINTF(("%s: no change for line: %s\n", fcn, lp->arg));
 		return;
 	}
 
@@ -9231,7 +9348,7 @@ set_archive_line(entry_t *entryp, line_t *kernelp)
 	free(lp->arg);
 	lp->arg = s_strdup(new_archive);
 	update_line(lp);
-	BAM_DPRINTF((D_ARCHIVE_LINE_REPLACED, fcn, lp->line));
+	BAM_DPRINTF(("%s: replaced for line: %s\n", fcn, lp->line));
 }
 
 /*
@@ -9264,7 +9381,7 @@ get_set_kernel(
 	char		*space;
 	char		*new_path;
 	char		old_space;
-	size_t		old_kernel_len;
+	size_t		old_kernel_len = 0;
 	size_t		new_str_len;
 	char		*fstype;
 	char		*osdev;
@@ -9283,7 +9400,9 @@ get_set_kernel(
 	INJECT_ERROR1("GET_SET_KERNEL_NOT_DBOOT",
 	    bam_direct = BAM_DIRECT_MULTIBOOT);
 	if (bam_direct != BAM_DIRECT_DBOOT) {
-		bam_error(NOT_DBOOT, optnum == KERNEL_CMD ? "kernel" : "args");
+		bam_error(_("bootadm set-menu %s may only be run on "
+		    "directboot kernels.\n"),
+		    optnum == KERNEL_CMD ? "kernel" : "args");
 		return (BAM_ERROR);
 	}
 
@@ -9300,7 +9419,8 @@ get_set_kernel(
 		}
 		if ((entryp != NULL) &&
 		    ((entryp->flags & (BAM_ENTRY_BOOTADM|BAM_ENTRY_LU)) == 0)) {
-			bam_error(DEFAULT_NOT_BAM);
+			bam_error(_("Default /boot/grub/menu.lst entry is not "
+			    "controlled by bootadm.  Exiting\n"));
 			return (BAM_ERROR);
 		}
 	}
@@ -9318,7 +9438,8 @@ get_set_kernel(
 			}
 		}
 		if (kernelp == NULL) {
-			bam_error(NO_KERNEL, entryNum);
+			bam_error(_("no kernel line found in entry %d\n"),
+			    entryNum);
 			return (BAM_ERROR);
 		}
 
@@ -9330,15 +9451,17 @@ get_set_kernel(
 
 	if (path == NULL) {
 		if (entryp == NULL) {
-			BAM_DPRINTF((D_GET_SET_KERNEL_NO_RC, fcn));
-			BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+			BAM_DPRINTF(("%s: no RC entry, nothing to report\n",
+			    fcn));
+			BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 			return (BAM_SUCCESS);
 		}
 		assert(kernelp);
 		if (optnum == ARGS_CMD) {
 			if (old_args[0] != '\0') {
 				(void) strlcpy(buf, old_args, bufsize);
-				BAM_DPRINTF((D_GET_SET_KERNEL_ARGS, fcn, buf));
+				BAM_DPRINTF(("%s: read menu boot-args: %s\n",
+				    fcn, buf));
 			}
 		} else {
 			/*
@@ -9350,11 +9473,12 @@ get_set_kernel(
 			*space = '\0';
 			if (strcmp(kernelp->arg, DIRECT_BOOT_KERNEL) != 0) {
 				(void) strlcpy(buf, kernelp->arg, bufsize);
-				BAM_DPRINTF((D_GET_SET_KERNEL_KERN, fcn, buf));
+				BAM_DPRINTF(("%s: read menu boot-file: %s\n",
+				    fcn, buf));
 			}
 			*space = old_space;
 		}
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 		return (BAM_SUCCESS);
 	}
 
@@ -9366,7 +9490,8 @@ get_set_kernel(
 	    (strcmp(path, DIRECT_BOOT_KERNEL) == 0))) {
 		if ((entryp == NULL) || (kernelp == NULL)) {
 			/* No previous entry, it's already the default */
-			BAM_DPRINTF((D_GET_SET_KERNEL_ALREADY, fcn));
+			BAM_DPRINTF(("%s: no reset, already has default\n",
+			    fcn));
 			return (BAM_SUCCESS);
 		}
 
@@ -9387,7 +9512,7 @@ get_set_kernel(
 			    mp->old_rc_default);
 			mp->old_rc_default = NULL;
 			rv = BAM_WRITE;
-			BAM_DPRINTF((D_GET_SET_KERNEL_RESTORE_DEFAULT, fcn));
+			BAM_DPRINTF(("%s: resetting to default\n", fcn));
 			goto done;
 		}
 
@@ -9410,8 +9535,8 @@ get_set_kernel(
 			 * to update the archive line as well.
 			 */
 			set_archive_line(entryp, kernelp);
-			BAM_DPRINTF((D_GET_SET_KERNEL_RESET_KERNEL_SET_ARG,
-			    fcn, kernelp->arg));
+			BAM_DPRINTF(("%s: reset kernel to default, but "
+			    "retained old args: %s\n", fcn, kernelp->arg));
 		} else {
 			/*
 			 * We're resetting the boot args to nothing, so
@@ -9423,8 +9548,8 @@ get_set_kernel(
 			    kernelp->arg);
 			free(kernelp->arg);
 			kernelp->arg = new_arg;
-			BAM_DPRINTF((D_GET_SET_KERNEL_RESET_ARG_SET_KERNEL,
-			    fcn, kernelp->arg));
+			BAM_DPRINTF(("%s: reset args to default, but retained "
+			    "old kernel: %s\n", fcn, kernelp->arg));
 		}
 		rv = BAM_WRITE;
 		goto done;
@@ -9436,8 +9561,9 @@ get_set_kernel(
 	if ((optnum == KERNEL_CMD) && (path[0] != '/')) {
 		new_path = expand_path(path);
 		if (new_path == NULL) {
-			bam_error(UNKNOWN_KERNEL, path);
-			BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+			bam_error(_("unable to expand %s to a full file "
+			    "path.\n"), path);
+			BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 			return (BAM_ERROR);
 		}
 		free_new_path = 1;
@@ -9456,7 +9582,9 @@ get_set_kernel(
 		fstype = get_fstype("/");
 		INJECT_ERROR1("GET_SET_KERNEL_FSTYPE", fstype = NULL);
 		if (fstype == NULL) {
-			bam_error(BOOTENV_FSTYPE_FAILED);
+			bam_error(_("cannot determine filesystem type for "
+			    "\"/\".\nCannot generate GRUB menu entry with "
+			    "EEPROM arguments.\n"));
 			rv = BAM_ERROR;
 			goto done;
 		}
@@ -9465,7 +9593,9 @@ get_set_kernel(
 		INJECT_ERROR1("GET_SET_KERNEL_SPECIAL", osdev = NULL);
 		if (osdev == NULL) {
 			free(fstype);
-			bam_error(BOOTENV_SPECIAL_FAILED);
+			bam_error(_("cannot determine device special file for "
+			    "\"/\".\nCannot generate GRUB menu entry with "
+			    "EEPROM arguments.\n"));
 			rv = BAM_ERROR;
 			goto done;
 		}
@@ -9475,7 +9605,9 @@ get_set_kernel(
 		if (sign == NULL) {
 			free(fstype);
 			free(osdev);
-			bam_error(BOOTENV_SIGN_FAILED);
+			bam_error(_("cannot determine boot signature for "
+			    "\"/\".\nCannot generate GRUB menu entry with "
+			    "EEPROM arguments.\n"));
 			rv = BAM_ERROR;
 			goto done;
 		}
@@ -9494,13 +9626,13 @@ get_set_kernel(
 				new_arg = s_calloc(1, new_str_len);
 				(void) snprintf(new_arg, new_str_len, "%s %s",
 				    new_path, ZFS_BOOT);
-				BAM_DPRINTF((D_GET_SET_KERNEL_NEW_KERN, fcn,
+				BAM_DPRINTF(("%s: new kernel=%s\n", fcn,
 				    new_arg));
 				entryNum = add_boot_entry(mp, BOOTENV_RC_TITLE,
 				    signbuf, new_arg, NULL, NULL, NULL);
 				free(new_arg);
 			} else {
-				BAM_DPRINTF((D_GET_SET_KERNEL_NEW_KERN, fcn,
+				BAM_DPRINTF(("%s: new kernel=%s\n", fcn,
 				    new_path));
 				entryNum = add_boot_entry(mp, BOOTENV_RC_TITLE,
 				    signbuf, new_path, NULL, NULL, NULL);
@@ -9519,7 +9651,7 @@ get_set_kernel(
 				    DIRECT_BOOT_KERNEL, path);
 			}
 
-			BAM_DPRINTF((D_GET_SET_KERNEL_NEW_ARG, fcn, new_arg));
+			BAM_DPRINTF(("%s: new args=%s\n", fcn, new_arg));
 			entryNum = add_boot_entry(mp, BOOTENV_RC_TITLE,
 			    signbuf, new_arg, NULL, DIRECT_BOOT_ARCHIVE, NULL);
 			free(new_arg);
@@ -9528,7 +9660,7 @@ get_set_kernel(
 		INJECT_ERROR1("GET_SET_KERNEL_ADD_BOOT_ENTRY",
 		    entryNum = BAM_ERROR);
 		if (entryNum == BAM_ERROR) {
-			bam_error(GET_SET_KERNEL_ADD_BOOT_ENTRY,
+			bam_error(_("failed to add boot entry: %s\n"),
 			    BOOTENV_RC_TITLE);
 			rv = BAM_ERROR;
 			goto done;
@@ -9537,7 +9669,8 @@ get_set_kernel(
 		ret = set_global(mp, menu_cmds[DEFAULT_CMD], entryNum);
 		INJECT_ERROR1("GET_SET_KERNEL_SET_GLOBAL", ret = BAM_ERROR);
 		if (ret == BAM_ERROR) {
-			bam_error(GET_SET_KERNEL_SET_GLOBAL, entryNum);
+			bam_error(_("failed to set default to: %d\n"),
+			    entryNum);
 		}
 		rv = BAM_WRITE;
 		goto done;
@@ -9559,8 +9692,8 @@ get_set_kernel(
 		 * the archive line as well.
 		 */
 		set_archive_line(entryp, kernelp);
-		BAM_DPRINTF((D_GET_SET_KERNEL_REPLACED_KERNEL_SAME_ARG, fcn,
-		    kernelp->arg));
+		BAM_DPRINTF(("%s: rc line exists, replaced kernel, same "
+		    "args: %s\n", fcn, kernelp->arg));
 	} else {
 		new_str_len = old_kernel_len + strlen(path) + 8;
 		new_arg = s_calloc(1, new_str_len);
@@ -9569,8 +9702,8 @@ get_set_kernel(
 		(void) strlcat(new_arg, path, new_str_len);
 		free(kernelp->arg);
 		kernelp->arg = new_arg;
-		BAM_DPRINTF((D_GET_SET_KERNEL_SAME_KERNEL_REPLACED_ARG, fcn,
-		    kernelp->arg));
+		BAM_DPRINTF(("%s: rc line exists, same kernel, but new "
+		    "args: %s\n", fcn, kernelp->arg));
 	}
 	rv = BAM_WRITE;
 
@@ -9580,9 +9713,9 @@ done:
 	if (free_new_path)
 		free(new_path);
 	if (rv == BAM_WRITE) {
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	} else {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	}
 	return (rv);
 }
@@ -9591,7 +9724,7 @@ static error_t
 get_kernel(menu_t *mp, menu_cmd_t optnum, char *buf, size_t bufsize)
 {
 	const char	*fcn = "get_kernel()";
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, menu_cmds[optnum]));
+	BAM_DPRINTF(("%s: entered. arg: %s\n", fcn, menu_cmds[optnum]));
 	return (get_set_kernel(mp, optnum, NULL, buf, bufsize));
 }
 
@@ -9600,7 +9733,8 @@ set_kernel(menu_t *mp, menu_cmd_t optnum, char *path, char *buf, size_t bufsize)
 {
 	const char	*fcn = "set_kernel()";
 	assert(path != NULL);
-	BAM_DPRINTF((D_FUNC_ENTRY2, fcn, menu_cmds[optnum], path));
+	BAM_DPRINTF(("%s: entered. args: %s %s\n", fcn,
+	    menu_cmds[optnum], path));
 	return (get_set_kernel(mp, optnum, path, buf, bufsize));
 }
 
@@ -9620,7 +9754,7 @@ set_option(menu_t *mp, char *dummy, char *opt)
 	assert(dummy == NULL);
 
 	/* opt is set from bam_argv[0] and is always non-NULL */
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, opt));
+	BAM_DPRINTF(("%s: entered. arg: %s\n", fcn, opt));
 
 	val = strchr(opt, '=');
 	if (val != NULL) {
@@ -9636,7 +9770,7 @@ set_option(menu_t *mp, char *dummy, char *opt)
 	} else if (strcmp(opt, menu_cmds[ARGS_CMD]) == 0) {
 		optnum = ARGS_CMD;
 	} else {
-		bam_error(INVALID_OPTION, opt);
+		bam_error(_("invalid option: %s\n"), opt);
 		return (BAM_ERROR);
 	}
 
@@ -9645,15 +9779,15 @@ set_option(menu_t *mp, char *dummy, char *opt)
 	 * others cause errors
 	 */
 	if ((val == NULL) && (optnum != KERNEL_CMD) && (optnum != ARGS_CMD)) {
-		bam_error(NO_OPTION_ARG, opt);
+		bam_error(_("option has no argument: %s\n"), opt);
 		return (BAM_ERROR);
 	} else if (val != NULL) {
 		*val = '=';
 	}
 
 	if ((optnum == KERNEL_CMD) || (optnum == ARGS_CMD)) {
-		BAM_DPRINTF((D_SET_OPTION, fcn, menu_cmds[optnum],
-		    val ? val + 1 : "NULL"));
+		BAM_DPRINTF(("%s: setting %s option to %s\n",
+		    fcn, menu_cmds[optnum], val ? val + 1 : "NULL"));
 
 		if (val)
 			rv = set_kernel(mp, optnum, val + 1, buf, sizeof (buf));
@@ -9663,14 +9797,15 @@ set_option(menu_t *mp, char *dummy, char *opt)
 			(void) printf("%s\n", buf);
 	} else {
 		optval = s_strtol(val + 1);
-		BAM_DPRINTF((D_SET_OPTION, fcn, menu_cmds[optnum], val + 1));
+		BAM_DPRINTF(("%s: setting %s option to %s\n", fcn,
+		    menu_cmds[optnum], val + 1));
 		rv = set_global(mp, menu_cmds[optnum], optval);
 	}
 
 	if (rv == BAM_WRITE || rv == BAM_SUCCESS) {
-		BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
+		BAM_DPRINTF(("%s: returning SUCCESS\n", fcn));
 	} else {
-		BAM_DPRINTF((D_RETURN_FAILURE, fcn));
+		BAM_DPRINTF(("%s: returning FAILURE\n", fcn));
 	}
 
 	return (rv);
@@ -9693,7 +9828,7 @@ read_globals(menu_t *mp, char *menu_path, char *globalcmd, int quiet)
 
 	if (mp->start == NULL) {
 		if (!quiet)
-			bam_error(NO_MENU, menu_path);
+			bam_error(_("menu file not found: %s\n"), menu_path);
 		return (BAM_ERROR);
 	}
 
@@ -9704,7 +9839,8 @@ read_globals(menu_t *mp, char *menu_path, char *globalcmd, int quiet)
 
 		if (lp->cmd == NULL) {
 			if (!quiet)
-				bam_error(NO_CMD, lp->lineNum);
+				bam_error(_("no command at line %d\n"),
+				    lp->lineNum);
 			continue;
 		}
 
@@ -9713,17 +9849,19 @@ read_globals(menu_t *mp, char *menu_path, char *globalcmd, int quiet)
 
 		/* Found global. Check for duplicates */
 		if (done && !quiet) {
-			bam_error(DUP_CMD, globalcmd, lp->lineNum, bam_root);
+			bam_error(_("duplicate command %s at line %d of "
+			    "%sboot/grub/menu.lst\n"), globalcmd,
+			    lp->lineNum, bam_root);
 			ret = BAM_ERROR;
 		}
 
 		arg = lp->arg ? lp->arg : "";
-		bam_print(GLOBAL_CMD, globalcmd, arg);
+		bam_print(_("%s %s\n"), globalcmd, arg);
 		done = 1;
 	}
 
 	if (!done && bam_verbose)
-		bam_print(NO_ENTRY, globalcmd);
+		bam_print(_("no %s entry found\n"), globalcmd);
 
 	return (ret);
 }
@@ -9733,7 +9871,7 @@ menu_write(char *root, menu_t *mp)
 {
 	const char *fcn = "menu_write()";
 
-	BAM_DPRINTF((D_MENU_WRITE_ENTER, fcn, root));
+	BAM_DPRINTF(("%s: entered menu_write() for root: <%s>\n", fcn, root));
 	return (list2file(root, MENU_TMP, GRUB_MENU, mp->start));
 }
 
@@ -9816,7 +9954,7 @@ exec_cmd(char *cmdline, filelist_t *flistp)
 	 * - set IFS to space and tab
 	 */
 	if (*cmdline != '/') {
-		bam_error(ABS_PATH_REQ, cmdline);
+		bam_error(_("path is not absolute: %s\n"), cmdline);
 		return (-1);
 	}
 	(void) putenv("IFS= \t");
@@ -9828,7 +9966,7 @@ exec_cmd(char *cmdline, filelist_t *flistp)
 	(void) sigemptyset(&set);
 	(void) sigaddset(&set, SIGCHLD);
 	if (sigprocmask(SIG_UNBLOCK, &set, NULL) != 0) {
-		bam_error(CANT_UNBLOCK_SIGCHLD, strerror(errno));
+		bam_error(_("cannot unblock SIGCHLD: %s\n"), strerror(errno));
 		return (-1);
 	}
 
@@ -9837,17 +9975,20 @@ exec_cmd(char *cmdline, filelist_t *flistp)
 	 */
 	disp = sigset(SIGCHLD, SIG_DFL);
 	if (disp == SIG_ERR) {
-		bam_error(FAILED_SIG, strerror(errno));
+		bam_error(_("cannot set SIGCHLD disposition: %s\n"),
+		    strerror(errno));
 		return (-1);
 	}
 	if (disp == SIG_HOLD) {
-		bam_error(BLOCKED_SIG, cmdline);
+		bam_error(_("SIGCHLD signal blocked. Cannot exec: %s\n"),
+		    cmdline);
 		return (-1);
 	}
 
 	ptr = popen(cmdline, "r");
 	if (ptr == NULL) {
-		bam_error(POPEN_FAIL, cmdline, strerror(errno));
+		bam_error(_("popen failed: %s: %s\n"), cmdline,
+		    strerror(errno));
 		return (-1);
 	}
 
@@ -9870,7 +10011,7 @@ exec_cmd(char *cmdline, filelist_t *flistp)
 	while (s_fgets(buf, sizeof (buf), ptr) != NULL) {
 		if (flistp == NULL) {
 			/* s_fgets strips newlines, so insert them at the end */
-			bam_print(PRINT, buf);
+			bam_print(_("%s\n"), buf);
 		} else {
 			append_to_flist(flistp, buf);
 		}
@@ -9878,14 +10019,16 @@ exec_cmd(char *cmdline, filelist_t *flistp)
 
 	ret = pclose(ptr);
 	if (ret == -1) {
-		bam_error(PCLOSE_FAIL, cmdline, strerror(errno));
+		bam_error(_("pclose failed: %s: %s\n"), cmdline,
+		    strerror(errno));
 		return (-1);
 	}
 
 	if (WIFEXITED(ret)) {
 		return (WEXITSTATUS(ret));
 	} else {
-		bam_error(EXEC_FAIL, cmdline, ret);
+		bam_error(_("command terminated abnormally: %s: %d\n"),
+		    cmdline, ret);
 		return (-1);
 	}
 }
@@ -9938,7 +10081,8 @@ s_fgets(char *buf, int buflen, FILE *fp)
 	if (buf) {
 		n = strlen(buf);
 		if (n == buflen - 1 && buf[n-1] != '\n')
-			bam_error(TOO_LONG, buflen - 1, buf);
+			bam_error(_("the following line is too long "
+			    "(> %d chars)\n\t%s\n"), buflen - 1, buf);
 		buf[n-1] = (buf[n-1] == '\n') ? '\0' : buf[n-1];
 	}
 
@@ -9952,7 +10096,8 @@ s_calloc(size_t nelem, size_t sz)
 
 	ptr = calloc(nelem, sz);
 	if (ptr == NULL) {
-		bam_error(NO_MEM, nelem*sz);
+		bam_error(_("could not allocate memory: size = %u\n"),
+		    nelem*sz);
 		bam_exit(1);
 	}
 	return (ptr);
@@ -9963,7 +10108,7 @@ s_realloc(void *ptr, size_t sz)
 {
 	ptr = realloc(ptr, sz);
 	if (ptr == NULL) {
-		bam_error(NO_MEM, sz);
+		bam_error(_("could not allocate memory: size = %u\n"), sz);
 		bam_exit(1);
 	}
 	return (ptr);
@@ -9979,7 +10124,8 @@ s_strdup(char *str)
 
 	ptr = strdup(str);
 	if (ptr == NULL) {
-		bam_error(NO_MEM, strlen(str) + 1);
+		bam_error(_("could not allocate memory: size = %u\n"),
+		    strlen(str) + 1);
 		bam_exit(1);
 	}
 	return (ptr);

@@ -1468,12 +1468,23 @@ trap(struct regs *rp, caddr_t addr, processorid_t cpuid)
 
 		ct->t_sig_check = 0;
 
-		mutex_enter(&p->p_lock);
+		/*
+		 * As in other code paths that check against TP_CHANGEBIND,
+		 * we perform the check first without p_lock held -- only
+		 * acquiring p_lock in the unlikely event that it is indeed
+		 * set.  This is safe because we are doing this after the
+		 * astoff(); if we are racing another thread setting
+		 * TP_CHANGEBIND on us, we will pick it up on a subsequent
+		 * lap through.
+		 */
 		if (curthread->t_proc_flag & TP_CHANGEBIND) {
-			timer_lwpbind();
-			curthread->t_proc_flag &= ~TP_CHANGEBIND;
+			mutex_enter(&p->p_lock);
+			if (curthread->t_proc_flag & TP_CHANGEBIND) {
+				timer_lwpbind();
+				curthread->t_proc_flag &= ~TP_CHANGEBIND;
+			}
+			mutex_exit(&p->p_lock);
 		}
-		mutex_exit(&p->p_lock);
 
 		/*
 		 * for kaio requests that are on the per-process poll queue,
@@ -2079,20 +2090,34 @@ dump_ttrace(void)
 	int n = NCPU;
 #if defined(__amd64)
 	const char banner[] =
-	    "\ncpu          address    timestamp "
-	    "type  vc  handler   pc\n";
-	const char fmt1[] = "%3d %016lx %12llx ";
+	    "CPU          ADDRESS    TIMESTAMP TYPE  VC HANDLER          PC\n";
+	/* Define format for the CPU, ADDRESS, and TIMESTAMP fields */
+	const char fmt1[] = "%3d %016lx %12llx";
+	char data1[34];	/* length of string formatted by fmt1 + 1 */
 #elif defined(__i386)
 	const char banner[] =
-	    "\ncpu  address     timestamp type  vc  handler   pc\n";
-	const char fmt1[] = "%3d %08lx %12llx ";
+	    "CPU  ADDRESS     TIMESTAMP TYPE  VC HANDLER          PC\n";
+	/* Define format for the CPU, ADDRESS, and TIMESTAMP fields */
+	const char fmt1[] = "%3d %08lx %12llx";
+	char data1[26];	/* length of string formatted by fmt1 + 1 */
 #endif
-	const char fmt2[] = "%4s %3x ";
-	const char fmt3[] = "%8s ";
+	/* Define format for the TYPE and VC fields */
+	const char fmt2[] = "%4s %3x";
+	char data2[9];	/* length of string formatted by fmt2 + 1 */
+	/*
+	 * Define format for the HANDLER field. Width is arbitrary, but should
+	 * be enough for common handler's names, and leave enough space for
+	 * the PC field, especially when we are in kmdb.
+	 */
+	const char fmt3h[] = "#%-15s";
+	const char fmt3p[] = "%-16p";
+	const char fmt3s[] = "%-16s";
+	char data3[17];	/* length of string formatted by fmt3* + 1 */
 
 	if (ttrace_nrec == 0)
 		return;
 
+	printf("\n");
 	printf(banner);
 
 	for (i = 0; i < n; i++) {
@@ -2121,7 +2146,8 @@ dump_ttrace(void)
 			if (rec->ttr_stamp == 0)
 				break;
 
-			printf(fmt1, i, (uintptr_t)rec, rec->ttr_stamp);
+			(void) snprintf(data1, sizeof (data1), fmt1, i,
+			    (uintptr_t)rec, rec->ttr_stamp);
 
 			switch (rec->ttr_marker) {
 			case TT_SYSCALL:
@@ -2151,22 +2177,29 @@ dump_ttrace(void)
 				default:
 					break;
 				}
-				printf(fmt2, "sysc", rec->ttr_sysnum);
+				(void) snprintf(data2, sizeof (data2), fmt2,
+				    stype, rec->ttr_sysnum);
 				if (sys != NULL) {
 					sym = kobj_getsymname(
 					    (uintptr_t)sys->sy_callc,
 					    &off);
-					if (sym != NULL)
-						printf(fmt3, sym);
-					else
-						printf("%p ", sys->sy_callc);
+					if (sym != NULL) {
+						(void) snprintf(data3,
+						    sizeof (data3), fmt3s, sym);
+					} else {
+						(void) snprintf(data3,
+						    sizeof (data3), fmt3p,
+						    sys->sy_callc);
+					}
 				} else {
-					printf(fmt3, "unknown");
+					(void) snprintf(data3, sizeof (data3),
+					    fmt3s, "unknown");
 				}
 				break;
 
 			case TT_INTERRUPT:
-				printf(fmt2, "intr", rec->ttr_vector);
+				(void) snprintf(data2, sizeof (data2), fmt2,
+				    "intr", rec->ttr_vector);
 				if (get_intr_handler != NULL)
 					vec = (struct autovec *)
 					    (*get_intr_handler)
@@ -2178,31 +2211,41 @@ dump_ttrace(void)
 				if (vec != NULL) {
 					sym = kobj_getsymname(
 					    (uintptr_t)vec->av_vector, &off);
-					if (sym != NULL)
-						printf(fmt3, sym);
-					else
-						printf("%p ", vec->av_vector);
+					if (sym != NULL) {
+						(void) snprintf(data3,
+						    sizeof (data3), fmt3s, sym);
+					} else {
+						(void) snprintf(data3,
+						    sizeof (data3), fmt3p,
+						    vec->av_vector);
+					}
 				} else {
-					printf(fmt3, "unknown ");
+					(void) snprintf(data3, sizeof (data3),
+					    fmt3s, "unknown");
 				}
 				break;
 
 			case TT_TRAP:
 			case TT_EVENT:
 				type = rec->ttr_regs.r_trapno;
-				printf(fmt2, "trap", type);
-				if (type < TRAP_TYPES)
-					printf("     #%s ",
-					    trap_type_mnemonic[type]);
-				else
+				(void) snprintf(data2, sizeof (data2), fmt2,
+				    "trap", type);
+				if (type < TRAP_TYPES) {
+					(void) snprintf(data3, sizeof (data3),
+					    fmt3h, trap_type_mnemonic[type]);
+				} else {
 					switch (type) {
 					case T_AST:
-						printf(fmt3, "ast");
+						(void) snprintf(data3,
+						    sizeof (data3), fmt3s,
+						    "ast");
 						break;
 					default:
-						printf(fmt3, "");
+						(void) snprintf(data3,
+						    sizeof (data3), fmt3s, "");
 						break;
 					}
+				}
 				break;
 
 			default:
@@ -2210,10 +2253,13 @@ dump_ttrace(void)
 			}
 
 			sym = kobj_getsymname(rec->ttr_regs.r_pc, &off);
-			if (sym != NULL)
-				printf("%s+%lx\n", sym, off);
-			else
-				printf("%lx\n", rec->ttr_regs.r_pc);
+			if (sym != NULL) {
+				printf("%s %s %s %s+%lx\n", data1, data2, data3,
+				    sym, off);
+			} else {
+				printf("%s %s %s %lx\n", data1, data2, data3,
+				    rec->ttr_regs.r_pc);
+			}
 
 			if (ttrace_dump_nregs-- > 0) {
 				int s;

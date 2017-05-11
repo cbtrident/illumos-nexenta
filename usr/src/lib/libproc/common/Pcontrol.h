@@ -45,6 +45,7 @@
 #include <libctf.h>
 #include <limits.h>
 #include <libproc.h>
+#include <sys/secflags.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -92,7 +93,7 @@ typedef struct sym_tbl {	/* symbol table */
 
 typedef struct file_info {	/* symbol information for a mapped file */
 	plist_t	file_list;	/* linked list */
-	char	file_pname[PRMAPSZ];	/* name from prmap_t */
+	char	file_pname[PATH_MAX];	/* name from prmap_t */
 	struct map_info *file_map;	/* primary (text) mapping */
 	int	file_ref;	/* references from map_info_t structures */
 	int	file_fd;	/* file descriptor for the mapped file */
@@ -164,6 +165,7 @@ typedef struct core_info {	/* information specific to core files */
 	void *core_privinfo;	/* system privileges info from core file */
 	priv_impl_info_t *core_ppii;	/* NOTE entry for core_privinfo */
 	char *core_zonename;	/* zone name from core file */
+	prsecflags_t *core_secflags; /* secflags from core file */
 #if defined(__i386) || defined(__amd64)
 	struct ssd *core_ldt;	/* LDT entries from core file */
 	uint_t core_nldt;	/* number of LDT entries in core file */

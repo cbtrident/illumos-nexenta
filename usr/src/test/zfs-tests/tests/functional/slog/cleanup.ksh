@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -45,10 +45,10 @@ if datasetexists $TESTPOOL2 ; then
 	log_must destroy_pool $TESTPOOL2
 fi
 if [[ -d $VDIR ]]; then
-	log_must $RM -rf $VDIR
+	log_must rm -rf $VDIR
 fi
 if [[ -d $VDIR2 ]]; then
-	log_must $RM -rf $VDIR2
+	log_must rm -rf $VDIR2
 fi
 
 log_pass

@@ -23,7 +23,8 @@
 #	Non-redundant special vdev can not be detached from existing pool
 #
 # STRATEGY:
-#	1. Create pool with separated wbc devices and enabled/disabled wrte back cache
+#	1. Create pool with separated wbc devices and enabled/disabled write
+#	   back cache
 #	2. Display pool status
 #	3. Try to detach non-redundant special vdev
 #	4. Verify failed to detach
@@ -35,10 +36,10 @@ log_onexit cleanup
 for wbc_mode in "none" "on" ; do
 	log_must create_pool_special $TESTPOOL $wbc_mode "stripe" "stripe"
 	log_must display_status $TESTPOOL
-	log_mustnot $ZPOOL detach $TESTPOOL $SSD_DISK1
-	log_must $ZPOOL scrub $TESTPOOL
+	log_mustnot zpool detach $TESTPOOL $SSD_DISK1
+	log_must zpool scrub $TESTPOOL
 	while is_pool_scrubbing $TESTPOOL ; do
-		$SLEEP 1
+		sleep 1
 	done
 	log_must check_pool_errors $TESTPOOL
 	log_must destroy_pool $TESTPOOL

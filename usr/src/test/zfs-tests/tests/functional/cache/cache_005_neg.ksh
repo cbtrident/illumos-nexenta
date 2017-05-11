@@ -26,10 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
-#
-
-#
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
@@ -55,11 +52,11 @@ log_onexit cleanup
 
 for type in "" "mirror" "raidz" "raidz2"
 do
-	log_must $ZPOOL create $TESTPOOL $type $VDEV \
+	log_must zpool create $TESTPOOL $type $VDEV \
 		cache $LDEV
 	sdev=$(random_get $LDEV)
 	tdev=$(random_get $LDEV2)
-	log_mustnot $ZPOOL replace $TESTPOOL $sdev $tdev
+	log_mustnot zpool replace $TESTPOOL $sdev $tdev
 	log_must verify_cache_device $TESTPOOL $sdev 'ONLINE'
 	log_must check_vdev_state $TESTPOOL $tdev ""
 

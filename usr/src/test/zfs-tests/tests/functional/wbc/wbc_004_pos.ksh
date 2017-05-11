@@ -23,7 +23,8 @@
 #	Enabling write back cache succeeds
 #
 # STRATEGY:
-#	1. Create pool with separated special devices and disabled write back cache
+#	1. Create pool with separated special devices and disabled write back
+#	   cache
 #	2. Display pool status
 #	3. Enable write back cache
 #	4. Display pool status
@@ -37,10 +38,10 @@ log_must create_pool_special $TESTPOOL "none"
 log_must display_status $TESTPOOL
 log_must enable_wbc $TESTPOOL
 log_must display_status $TESTPOOL
-log_must $SYNC
-log_must $ZPOOL scrub $TESTPOOL
+log_must sync
+log_must zpool scrub $TESTPOOL
 while is_pool_scrubbing $TESTPOOL ; do
-	$SLEEP 1
+	sleep 1
 done
 log_must check_pool_errors $TESTPOOL
 log_must destroy_pool $TESTPOOL
