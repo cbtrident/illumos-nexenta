@@ -23,7 +23,7 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
 SUBDIRS = 			\
@@ -35,7 +35,8 @@ SUBDIRS = 			\
 	SUN			\
 	SUN-Storage-J4400	\
 	SUN-Storage-J4500	\
-	HP
+	HP			\
+	Ericsson-SRU-0101
 
 .KEEP_STATE:
 
