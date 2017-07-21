@@ -102,17 +102,17 @@ CompareOplockKeys(smb_ofile_t *OperOpen, smb_ofile_t *OplockOpen, int flags)
 	 * OplockOpen.ParentOplockKey are empty:
 	 * Return FALSE.
 	 */
-	if (!bcmp(OperOpen->TargetOplockKey, key0, sizeof (key0)) &&
-	    !bcmp(OperOpen->ParentOplockKey, key0, sizeof (key0)))
+	if (bcmp(OperOpen->TargetOplockKey, key0, sizeof (key0)) == 0 &&
+	    bcmp(OperOpen->ParentOplockKey, key0, sizeof (key0)) == 0)
 		return (B_FALSE);
-	if (!bcmp(OplockOpen->TargetOplockKey, key0, sizeof (key0)) &&
-	    !bcmp(OplockOpen->ParentOplockKey, key0, sizeof (key0)))
+	if (bcmp(OplockOpen->TargetOplockKey, key0, sizeof (key0)) == 0 &&
+	    bcmp(OplockOpen->ParentOplockKey, key0, sizeof (key0)) == 0)
 		return (B_FALSE);
 
 	/*
 	 * If OplockOpen.TargetOplockKey is empty or...
 	 */
-	if (!bcmp(OplockOpen->TargetOplockKey, key0, sizeof (key0)))
+	if (bcmp(OplockOpen->TargetOplockKey, key0, sizeof (key0)) == 0)
 		return (B_FALSE);
 
 	/*
@@ -123,7 +123,7 @@ CompareOplockKeys(smb_ofile_t *OperOpen, smb_ofile_t *OplockOpen, int flags)
 		 * If OperationOpen.ParentOplockKey is empty:
 		 * Return FALSE.
 		 */
-		if (!bcmp(OperOpen->ParentOplockKey, key0, sizeof (key0)))
+		if (bcmp(OperOpen->ParentOplockKey, key0, sizeof (key0)) == 0)
 			return (B_FALSE);
 
 		/*
@@ -131,9 +131,9 @@ CompareOplockKeys(smb_ofile_t *OperOpen, smb_ofile_t *OplockOpen, int flags)
 		 * OplockOpen.TargetOplockKey:
 		 * return TRUE, else FALSE
 		 */
-		if (!bcmp(OperOpen->ParentOplockKey,
+		if (bcmp(OperOpen->ParentOplockKey,
 		    OplockOpen->TargetOplockKey,
-		    SMB_LEASE_KEY_SZ)) {
+		    SMB_LEASE_KEY_SZ) == 0) {
 			return (B_TRUE);
 		}
 	} else {
@@ -143,7 +143,7 @@ CompareOplockKeys(smb_ofile_t *OperOpen, smb_ofile_t *OplockOpen, int flags)
 		 * OperationOpen.TargetOplockKey is empty):
 		 * Return FALSE.
 		 */
-		if (!bcmp(OperOpen->TargetOplockKey, key0, sizeof (key0)))
+		if (bcmp(OperOpen->TargetOplockKey, key0, sizeof (key0)) == 0)
 			return (B_FALSE);
 
 		/*
@@ -151,9 +151,9 @@ CompareOplockKeys(smb_ofile_t *OperOpen, smb_ofile_t *OplockOpen, int flags)
 		 * OplockOpen.TargetOplockKey:
 		 *  Return TRUE, else FALSE
 		 */
-		if (!bcmp(OperOpen->TargetOplockKey,
+		if (bcmp(OperOpen->TargetOplockKey,
 		    OplockOpen->TargetOplockKey,
-		    SMB_LEASE_KEY_SZ)) {
+		    SMB_LEASE_KEY_SZ) == 0) {
 			return (B_TRUE);
 		}
 	}

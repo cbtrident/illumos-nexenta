@@ -317,36 +317,7 @@ smb2_create(smb_request_t *sr)
 		 * but need (reclaimed) oplock state in *op.
 		 */
 		of = sr->fid_ofile;
-
-		op->op_oplock_state = of->f_oplock.og_state;
-		if (of->f_lease != NULL) {
-			smb_lease_t *ls = of->f_lease;
-
-			op->op_oplock_level = SMB2_OPLOCK_LEVEL_LEASE;
-			op->lease_state = ls->ls_state &
-			    OPLOCK_LEVEL_CACHE_MASK;
-			op->lease_flags = (ls->ls_breaking != 0) ?
-			    SMB2_LEASE_FLAG_BREAK_IN_PROGRESS : 0;
-			op->lease_epoch = ls->ls_epoch;
-			op->lease_version = ls->ls_version;
-		} else {
-			switch (op->op_oplock_state & OPLOCK_LEVEL_TYPE_MASK) {
-			default:
-			case OPLOCK_LEVEL_NONE:
-				op->op_oplock_level = SMB2_OPLOCK_LEVEL_NONE;
-				break;
-			case OPLOCK_LEVEL_TWO:
-				op->op_oplock_level = SMB2_OPLOCK_LEVEL_II;
-				break;
-			case OPLOCK_LEVEL_ONE:
-				op->op_oplock_level =
-				    SMB2_OPLOCK_LEVEL_EXCLUSIVE;
-				break;
-			case OPLOCK_LEVEL_BATCH:
-				op->op_oplock_level = SMB2_OPLOCK_LEVEL_BATCH;
-				break;
-			}
-		}
+		smb2_oplock_reconnect(sr);
 
 		goto reconnect_done;
 	}

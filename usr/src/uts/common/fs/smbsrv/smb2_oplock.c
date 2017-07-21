@@ -342,3 +342,46 @@ smb2_oplock_acquire(smb_request_t *sr)
 		op->op_oplock_level = SMB2_OPLOCK_LEVEL_NONE;
 	}
 }
+
+/*
+ * smb2_oplock_reconnect()  Helper for smb2_dh_reconnect
+ * Get oplock state into op->op_oplock_level etc.
+ *
+ * Similar to the end of smb2_lease_acquire (for leases) or
+ * the end of smb2_oplock_acquire (for old-style oplocks).
+ */
+void
+smb2_oplock_reconnect(smb_request_t *sr)
+{
+	smb_arg_open_t *op = &sr->arg.open;
+	smb_ofile_t *ofile = sr->fid_ofile;
+
+	op->op_oplock_state = ofile->f_oplock.og_state;
+	if (ofile->f_lease != NULL) {
+		smb_lease_t *ls = ofile->f_lease;
+
+		op->op_oplock_level = SMB2_OPLOCK_LEVEL_LEASE;
+		op->lease_state = ls->ls_state &
+		    OPLOCK_LEVEL_CACHE_MASK;
+		op->lease_flags = (ls->ls_breaking != 0) ?
+		    SMB2_LEASE_FLAG_BREAK_IN_PROGRESS : 0;
+		op->lease_epoch = ls->ls_epoch;
+		op->lease_version = ls->ls_version;
+	} else {
+		switch (op->op_oplock_state & OPLOCK_LEVEL_TYPE_MASK) {
+		default:
+		case OPLOCK_LEVEL_NONE:
+			op->op_oplock_level = SMB2_OPLOCK_LEVEL_NONE;
+			break;
+		case OPLOCK_LEVEL_TWO:
+			op->op_oplock_level = SMB2_OPLOCK_LEVEL_II;
+			break;
+		case OPLOCK_LEVEL_ONE:
+			op->op_oplock_level = SMB2_OPLOCK_LEVEL_EXCLUSIVE;
+			break;
+		case OPLOCK_LEVEL_BATCH:
+			op->op_oplock_level = SMB2_OPLOCK_LEVEL_BATCH;
+			break;
+		}
+	}
+}

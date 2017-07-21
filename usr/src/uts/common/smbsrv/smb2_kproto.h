@@ -133,6 +133,7 @@ uint32_t smb2_setinfo_sec(smb_request_t *, smb_setinfo_t *, uint32_t);
 uint32_t smb2_setinfo_quota(smb_request_t *, smb_setinfo_t *);
 
 void smb2_oplock_acquire(smb_request_t *sr);
+void smb2_oplock_reconnect(smb_request_t *sr);
 void smb2_lease_acquire(smb_request_t *sr);
 uint32_t smb2_lease_create(smb_request_t *sr, uint8_t *);
 void smb2_lease_rele(smb_lease_t *);
