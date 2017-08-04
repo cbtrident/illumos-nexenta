@@ -3204,10 +3204,14 @@ zpool_vdev_remove(zpool_handle_t *zhp, const char *path)
 	if (zfs_ioctl(hdl, ZFS_IOC_VDEV_REMOVE, &zc) == 0)
 		return (0);
 
-	if (errno == ENOTSUP && isspecial) {
+	if (isspecial && errno == EEXIST) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "special device contains metadata"));
 		return (zfs_error(hdl, EZFS_POOL_NOTSUP, msg));
+	} else if (isspecial && errno == EBUSY) {
+		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+		    "wbc feature flag is active"));
+		return (zfs_error(hdl, EZFS_WBCCHILD, msg));
 	}
 
 	return (zpool_standard_error(hdl, errno, msg));

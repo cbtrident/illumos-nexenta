@@ -1349,7 +1349,7 @@ spa_special_vdev_remove(spa_t *spa, vdev_t *vd, uint64_t *txg)
 			 * this case
 			 */
 			if (err == 0)
-				err = SET_ERROR(ENOTSUP);
+				err = SET_ERROR(EEXIST);
 
 			*txg = spa_vdev_config_enter(spa);
 			metaslab_group_activate(mg);
