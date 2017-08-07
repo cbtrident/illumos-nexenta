@@ -51,6 +51,8 @@ typedef struct kreplication_zfs_args {
 	boolean_t leave_tail;
 	boolean_t force_cksum;
 	boolean_t embedok;
+	boolean_t compressok;
+	boolean_t large_block_ok;
 	void *stream_handler;
 	krrp_check_enough_mem *mem_check_cb;
 	void *mem_check_cb_arg;

@@ -88,6 +88,10 @@ krrp_stream_te_read_create(krrp_stream_te_t **result_te,
 	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_ENABLE_CHKSUM);
 	task_engine->embedded =
 	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_EMBEDDED);
+	task_engine->compressed =
+	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_COMPRESSED);
+	task_engine->large_blocks =
+	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_LARGE_BLOCKS);
 	task_engine->incremental_package =
 	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_SEND_ALL_SNAPS);
 
@@ -390,6 +394,8 @@ krrp_stream_task_constructor(void *opaque_task,
 		task->zargs.properties = task_engine->properties;
 		task->zargs.recursive = task_engine->recursive;
 		task->zargs.embedok = task_engine->embedded;
+		task->zargs.compressok = task_engine->compressed;
+		task->zargs.large_block_ok = task_engine->large_blocks;
 
 		break;
 	case KRRP_STEM_WRITE:

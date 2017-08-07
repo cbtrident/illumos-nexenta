@@ -33,18 +33,20 @@ typedef enum {
 } krrp_stream_te_mode_t;
 
 typedef enum {
-	KRRP_STRMRF_RECURSIVE = 1,
-	KRRP_STRMRF_SEND_PROPS = 2,
-	KRRP_STRMRF_SEND_ALL_SNAPS = 4,
-	KRRP_STRMRF_EMBEDDED = 8,
-	KRRP_STRMRF_ENABLE_CHKSUM = 10
+	KRRP_STRMRF_RECURSIVE		= (1 << 0),
+	KRRP_STRMRF_SEND_PROPS		= (1 << 1),
+	KRRP_STRMRF_SEND_ALL_SNAPS	= (1 << 2),
+	KRRP_STRMRF_EMBEDDED		= (1 << 3),
+	KRRP_STRMRF_ENABLE_CHKSUM	= (1 << 4),
+	KRRP_STRMRF_COMPRESSED		= (1 << 5),
+	KRRP_STRMRF_LARGE_BLOCKS	= (1 << 6)
 } krrp_stream_read_flag_t;
 
 typedef enum {
-	KRRP_STRMWF_FORCE_RECV = 1,
-	KRRP_STRMWF_DISCARD_HEAD = 2,
-	KRRP_STRMWF_LEAVE_TAIL = 4,
-	KRRP_STRMWF_ENABLE_CHKSUM = 8
+	KRRP_STRMWF_FORCE_RECV		= (1 << 0),
+	KRRP_STRMWF_DISCARD_HEAD	= (1 << 1),
+	KRRP_STRMWF_LEAVE_TAIL		= (1 << 2),
+	KRRP_STRMWF_ENABLE_CHKSUM	= (1 << 3)
 } krrp_stream_write_flag_t;
 
 
@@ -68,6 +70,8 @@ typedef struct krrp_stream_te_s {
 	boolean_t				properties;
 	boolean_t				enable_cksum;
 	boolean_t				embedded;
+	boolean_t				compressed;
+	boolean_t				large_blocks;
 	nvlist_t				*ignore_props_list;
 	nvlist_t				*replace_props_list;
 

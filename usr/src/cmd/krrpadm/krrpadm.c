@@ -210,35 +210,35 @@ krrp_usage_sess(int rc, krrp_cmd_t *cmd, boolean_t use_return)
 		fprintf_msg("Usage: %s sess-list\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_CREATE:
-		fprintf_msg("Usage: %s sess-create <-s sess_id> "
+		fprintf_msg("Usage: %s sess-create -s <sess_id> "
 		    "<-k kstat_id (16 symbols)> "
 		    "[-a <auth digest (max 255 symbols)>] "
 		    "[-z] [-f] [-c]\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_DESTROY:
 		fprintf_msg("Usage: %s sess-destroy "
-		    "<-s sess_id>\n", tool_name);
+		    "-s <sess_id>\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_STATUS:
 		fprintf_msg("Usage: %s sess-status "
-		    "<-s sess_id>\n", tool_name);
+		    "-s <sess_id>\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_RUN:
 		fprintf_msg("Usage: %s sess-run "
-		    "<-s sess_id>\n", tool_name);
+		    "-s <sess_id>\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_SEND_STOP:
 		fprintf_msg("Usage: %s sess-send-stop "
-		    "<-s sess_id>\n", tool_name);
+		    "-s <sess_id>\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_CREATE_CONN:
 		fprintf_msg("Usage: %s sess-create-conn "
-		    "<-s sess_id> -a <remote IP> -p <remote port> "
+		    "-s <sess_id> -a <remote IP> -p <remote port> "
 		    "-t <timeout>\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_CONN_THROTTLE:
 		fprintf_msg("Usage: %s sess-conn-throttle "
-		    "<-s sess_id> -l <limit>\n",
+		    "-s <sess_id> -l <limit>\n",
 		    tool_name);
 		break;
 	case KRRP_CMD_SESS_GET_CONN_INFO:
@@ -247,21 +247,21 @@ krrp_usage_sess(int rc, krrp_cmd_t *cmd, boolean_t use_return)
 		break;
 	case KRRP_CMD_SESS_CREATE_READ_STREAM:
 		fprintf_msg("Usage: %s sess-create-read-stream "
-		    "<-s sess_id> -d <src dataset> [-z <src snapshot>] "
+		    "-s <sess_id> -d <src dataset> [-z <src snapshot>] "
 		    "[-c <common snapshot>] [-I] [-r] [-p] [-e] [-k] "
-		    "[-f <fake_data_sz>] [-t <resume_token>] "
+		    "[-j] [-b] [-f <fake_data_sz>] [-t <resume_token>] "
 		    "[-n <keep snaps>]\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_CREATE_WRITE_STREAM:
 		fprintf_msg("Usage: %s sess-create-write-stream "
-		    "<-s sess_id> -d <dst dataset> [-c <common snapshot>] "
-		    "[-F] [-e] [-k] [-l | -x] [-i <prop_name>] "
+		    "-s <sess_id> -d <dst dataset> [-c <common snapshot>] "
+		    "[-F] [-k] [-l | -x] [-i <prop_name>] "
 		    "[-o <prop_name=value>] [-t <resume_token>] "
 		    "[-n <keep snaps>]\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_CREATE_PDU_ENGINE:
 		fprintf_msg("Usage: %s sess-create-pdu-engine "
-		    "<-s sess_id> -b <data block size> [-a] "
+		    "-s <sess_id> -b <data block size> [-a] "
 		    "-m <max memory in MB>\n", tool_name);
 		break;
 	default:
@@ -850,7 +850,7 @@ krrp_do_sess_create_read_stream(int argc, char **argv, krrp_cmd_t *cmd)
 
 	uuid_clear(sess_id);
 
-	while ((c = getopt(argc, argv, "hs:d:c:z:Irpekf:t:n:")) != -1) {
+	while ((c = getopt(argc, argv, "hs:d:c:z:Irpejbkf:t:n:")) != -1) {
 		switch (c) {
 		case 's':
 			if (krrp_parse_and_check_sess_id(optarg, sess_id) != 0)
@@ -912,6 +912,22 @@ krrp_do_sess_create_read_stream(int argc, char **argv, krrp_cmd_t *cmd)
 			}
 
 			flags |= KRRP_STREAM_ZFS_EMBEDDED;
+			break;
+		case 'j':
+			if ((flags & KRRP_STREAM_ZFS_COMPRESSED) != 0) {
+				krrp_print_err_already_defined("j");
+				exit(1);
+			}
+
+			flags |= KRRP_STREAM_ZFS_COMPRESSED;
+			break;
+		case 'b':
+			if ((flags & KRRP_STREAM_ZFS_LARGE_BLOCKS) != 0) {
+				krrp_print_err_already_defined("b");
+				exit(1);
+			}
+
+			flags |= KRRP_STREAM_ZFS_LARGE_BLOCKS;
 			break;
 		case 'k':
 			if ((flags & KRRP_STREAM_ZFS_CHKSUM) != 0) {
@@ -1010,7 +1026,7 @@ krrp_do_sess_create_write_stream(int argc, char **argv, krrp_cmd_t *cmd)
 
 	uuid_clear(sess_id);
 
-	while ((c = getopt(argc, argv, "hs:d:c:Feki:o:t:n:lx")) != -1) {
+	while ((c = getopt(argc, argv, "hs:d:c:Fki:o:t:n:lx")) != -1) {
 		switch (c) {
 		case 's':
 			if (krrp_parse_and_check_sess_id(optarg, sess_id) != 0)
@@ -1074,14 +1090,6 @@ krrp_do_sess_create_write_stream(int argc, char **argv, krrp_cmd_t *cmd)
 			}
 
 			flags |= KRRP_STREAM_FORCE_RECEIVE;
-			break;
-		case 'e':
-			if ((flags & KRRP_STREAM_ZFS_EMBEDDED) != 0) {
-				krrp_print_err_already_defined("e");
-				exit(1);
-			}
-
-			flags |= KRRP_STREAM_ZFS_EMBEDDED;
 			break;
 		case 'k':
 			if ((flags & KRRP_STREAM_ZFS_CHKSUM) != 0) {

@@ -38,6 +38,8 @@ typedef unsigned long krrp_sess_stream_flags_t;
 #define	KRRP_STREAM_FORCE_RECEIVE	0x0020
 #define	KRRP_STREAM_DISCARD_HEAD	0x0040
 #define	KRRP_STREAM_LEAVE_TAIL		0x0080
+#define	KRRP_STREAM_ZFS_COMPRESSED	0x0100
+#define	KRRP_STREAM_ZFS_LARGE_BLOCKS	0x0200
 
 typedef struct libkrrp_handle_s libkrrp_handle_t;
 typedef struct libkrrp_evc_handle_s libkrrp_evc_handle_t;

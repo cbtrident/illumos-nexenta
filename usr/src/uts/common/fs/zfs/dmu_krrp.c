@@ -684,6 +684,8 @@ zfs_send_one_ds(dmu_krrp_task_t *krrp_task, zfs_snap_avl_node_t *snap_el,
 	dsl_dataset_t *snap_ds = NULL;
 	dsl_dataset_t *snap_ds_prev = NULL;
 	boolean_t embedok = krrp_task->buffer_args.embedok;
+	boolean_t compressok = krrp_task->buffer_args.compressok;
+	boolean_t large_block_ok = krrp_task->buffer_args.large_block_ok;
 	nvlist_t *resume_info = krrp_task->buffer_args.resume_info;
 	uint64_t resumeobj = 0, resumeoff = 0;
 
@@ -746,11 +748,11 @@ zfs_send_one_ds(dmu_krrp_task_t *krrp_task, zfs_snap_avl_node_t *snap_el,
 		is_clone = (snap_ds_prev->ds_dir != snap_ds->ds_dir);
 
 		err = dmu_send_impl(FTAG, dp, snap_ds, &zb, is_clone,
-		    embedok, B_FALSE, B_FALSE, -1, resumeobj, resumeoff, NULL,
+		    embedok, large_block_ok, compressok, -1, resumeobj, resumeoff, NULL,
 		    &off, krrp_task);
 	} else {
 		err = dmu_send_impl(FTAG, dp, snap_ds, NULL, B_FALSE,
-		    embedok, B_FALSE, B_FALSE, -1, resumeobj, resumeoff, NULL,
+		    embedok, large_block_ok, compressok, -1, resumeobj, resumeoff, NULL,
 		    &off, krrp_task);
 	}
 

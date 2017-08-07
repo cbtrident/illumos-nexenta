@@ -765,6 +765,14 @@ krrp_fill_read_stream_flags(nvlist_t *params)
 	    params, (void *) &value) == 0 && value)
 		krrp_stream_set_read_flag(&flags, KRRP_STRMRF_EMBEDDED);
 
+	if (krrp_param_get(KRRP_PARAM_STREAM_COMPRESSED_BLOCKS,
+	    params, (void *) &value) == 0 && value)
+		krrp_stream_set_read_flag(&flags, KRRP_STRMRF_COMPRESSED);
+
+	if (krrp_param_get(KRRP_PARAM_STREAM_LARGE_BLOCKS,
+	    params, (void *) &value) == 0 && value)
+		krrp_stream_set_read_flag(&flags, KRRP_STRMRF_LARGE_BLOCKS);
+
 	return (flags);
 }
 

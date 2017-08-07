@@ -303,6 +303,16 @@ krrp_sess_create_stream_common(libkrrp_handle_t *hdl, nvlist_t *params,
 		    params, NULL);
 	}
 
+	if (krrp_sess_stream_flags & KRRP_STREAM_ZFS_COMPRESSED) {
+		(void) krrp_param_put(KRRP_PARAM_STREAM_COMPRESSED_BLOCKS,
+		    params, NULL);
+	}
+
+	if (krrp_sess_stream_flags & KRRP_STREAM_ZFS_LARGE_BLOCKS) {
+		(void) krrp_param_put(KRRP_PARAM_STREAM_LARGE_BLOCKS,
+		    params, NULL);
+	}
+
 	if (krrp_sess_stream_flags & KRRP_STREAM_ZFS_CHKSUM) {
 		(void) krrp_param_put(KRRP_PARAM_ENABLE_STREAM_CHKSUM,
 		    params, NULL);
