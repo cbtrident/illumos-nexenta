@@ -485,8 +485,8 @@ zfs_prop_init(void)
 	zprop_register_hidden(ZFS_PROP_LSTXG, "lstxg", PROP_TYPE_NUMBER,
 	    PROP_READONLY, ZFS_TYPE_DATASET, "LSTXG");
 	zprop_register_index_hidden(ZFS_PROP_MODIFIED, "modified", 0,
-	    PROP_READONLY, ZFS_TYPE_SNAPSHOT, "yes | no", "MODIFIED",
-	    boolean_table);
+	    PROP_READONLY, ZFS_TYPE_SNAPSHOT | ZFS_TYPE_AUTOSNAP, "yes | no",
+	    "MODIFIED", boolean_table);
 
 	/* oddball properties */
 	zprop_register_impl(ZFS_PROP_CREATION, "creation", PROP_TYPE_NUMBER, 0,
