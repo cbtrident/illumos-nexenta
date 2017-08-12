@@ -24,7 +24,7 @@
 # Use is subject to license terms.
 # Copyright 2015 Igor Kozhukhov <ikozhukhov@gmail.com>
 #
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -92,7 +92,10 @@ SRCS=		$(OBJ_LIB:%.o=$(SRCDIR)/%.c) \
 
 $(LINTLIB) :=	SRCS = $(SRCDIR)/$(LINTSRC)
 
-CSTD=	$(CSTD_GNU99)
+# Do this both ways, for now...
+CSTD=		$(CSTD_GNU99)
+C99MODE =       -xc99=%all
+C99LMODE =      -Xc99=%all
 
 LDLIBS += -lsocket -lnsl -lc -lmd -lpkcs11 -lkrb5 -lsec -lidmap
 
