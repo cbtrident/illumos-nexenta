@@ -778,7 +778,7 @@ smb_tree_connect_disk(smb_request_t *sr, smb_arg_tcon_t *tcon)
 			 */
 			mutex_enter(&tree->t_mutex);
 			tree->t_state = SMB_TREE_STATE_DISCONNECTING;
-			mutex_enter(&tree->t_mutex);
+			mutex_exit(&tree->t_mutex);
 
 			smb_tree_release(tree);
 			return (NT_STATUS_ACCESS_DENIED);

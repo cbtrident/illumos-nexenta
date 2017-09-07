@@ -1014,6 +1014,16 @@ cmd_done:
 	 */
 	if (!sr->smb2_async && sr->smb2_next_command != 0)
 		goto cmd_start;
+
+	/*
+	 * If we have a durable handle, and this operation updated
+	 * the nvlist, write it out (before smb2_send_reply)..
+	 */
+	if (sr->dh_nvl_dirty) {
+		sr->dh_nvl_dirty = B_FALSE;
+		smb2_dh_update_nvfile(sr);
+	}
+
 	smb2_send_reply(sr);
 	if (sr->smb2_async && sr->smb2_next_command != 0) {
 		MBC_FLUSH(&sr->reply);	/* New reply buffer. */
@@ -1024,15 +1034,6 @@ cmd_done:
 cleanup:
 	if (disconnect)
 		smb_session_disconnect(session);
-
-	/*
-	 * If we have a durable handle, and this operation
-	 * updated the nvlist, write it out.
-	 */
-	if (sr->dh_nvl_dirty) {
-		sr->dh_nvl_dirty = B_FALSE;
-		smb2_dh_update_nvfile(sr);
-	}
 
 	/*
 	 * Do "postwork" for oplock (and maybe other things)
