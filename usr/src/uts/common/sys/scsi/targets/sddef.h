@@ -18,12 +18,14 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
  */
+
 /*
  * Copyright 2011 cyril.galibern@opensvc.com
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 #ifndef	_SYS_SCSI_TARGETS_SDDEF_H
@@ -38,9 +40,7 @@
 extern "C" {
 #endif
 
-
 #if defined(_KERNEL) || defined(_KMEMUSER)
-
 
 #define	SD_SUCCESS		0
 #define	SD_FAILURE		(-1)
@@ -56,35 +56,18 @@ extern "C" {
 #define	TRUE			1
 #define	FALSE			0
 
-#if defined(VERBOSE)
-#undef VERBOSE
-#endif
-
-#if defined(SILENT)
-#undef SILENT
-#endif
-
-
 /*
- *  Fault Injection Flag for Inclusion of Code
- *
- *  This should only be defined when SDDEBUG is defined
- * #if DEBUG || lint
- * #define	SD_FAULT_INJECTION
- * #endif
+ * Fault Injection Flag for Inclusion of Code
  */
-
 #if DEBUG || lint
 #define	SD_FAULT_INJECTION
 #endif
-#define	VERBOSE			1
-#define	SILENT			0
 
 /*
  * Structures for recording whether a device is fully open or closed.
  * Assumptions:
  *
- *	+ There are only 8 (sparc) or 16 (x86) disk slices possible.
+ *	+ There are only 16 disk slices possible.
  *	+ BLK, MNT, CHR, SWP don't change in some future release!
  */
 
@@ -112,6 +95,11 @@ extern "C" {
 #error "No VTOC format defined."
 #endif
 
+#define	P0_RAW_DISK	(NDKMAP)
+#define	FDISK_P1	(NDKMAP+1)
+#define	FDISK_P2	(NDKMAP+2)
+#define	FDISK_P3	(NDKMAP+3)
+#define	FDISK_P4	(NDKMAP+4)
 
 #define	SDUNIT(dev)	(getminor((dev)) >> SDUNIT_SHIFT)
 #define	SDPART(dev)	(getminor((dev)) &  SDPART_MASK)
@@ -130,8 +118,6 @@ extern "C" {
  */
 #define	SD_GET_INSTANCE_FROM_BUF(bp)				\
 	(getminor((bp)->b_edev) >> SDUNIT_SHIFT)
-
-
 
 struct ocinfo {
 	/*
@@ -152,7 +138,6 @@ union ocmap {
 #define	lyropen rinfo.lyr_open
 #define	regopen rinfo.reg_open
 
-
 #define	SD_CDB_GROUP0		0
 #define	SD_CDB_GROUP1		1
 #define	SD_CDB_GROUP5		2
@@ -164,8 +149,6 @@ struct sd_cdbinfo {
 	uint64_t sc_maxlba;	/* Maximum logical block addr. supported */
 	uint32_t sc_maxlen;	/* Maximum transfer length supported */
 };
-
-
 
 /*
  * The following declaration are for Non-512 byte block support for the
@@ -196,9 +179,6 @@ struct sd_w_map {
 	kcondvar_t	wm_avail;	/* Sleep on this, while not available */
 };
 
-_NOTE(MUTEX_PROTECTS_DATA(scsi_device::sd_mutex, sd_w_map::wm_flags))
-
-
 /*
  * This is the struct for the layer-private data area for the
  * mapblocksize layer.
@@ -211,8 +191,6 @@ struct sd_mapblocksize_info {
 	ssize_t		mbs_copy_offset;
 	int		mbs_layer_index;	/* chain index for RMW */
 };
-
-_NOTE(SCHEME_PROTECTS_DATA("unshared data", sd_mapblocksize_info))
 
 /*
  * Latency is tracked in usec and is quantized by power of two starting at
@@ -332,7 +310,6 @@ struct sd_lun {
 	uint_t	un_retry_count;		/* Per disk retry count */
 	uint_t	un_victim_retry_count;	/* Per disk victim retry count */
 
-	/* (4356701, 4367306) */
 	uint_t	un_reset_retry_count; /* max io retries before issuing reset */
 	ushort_t un_reserve_release_time; /* reservation release timeout */
 
@@ -454,7 +431,6 @@ struct sd_lun {
 	    un_f_dvdram_writable_device	:1,	/* DVDRAM device is writable */
 	    un_f_cfg_cdda		:1,	/* READ CDDA supported */
 	    un_f_cfg_tur_check		:1,	/* verify un_ncmds before tur */
-
 	    un_f_use_adaptive_throttle	:1,	/* enable/disable adaptive */
 						/* throttling */
 	    un_f_pm_is_enabled		:1,	/* PM is enabled on this */
@@ -601,7 +577,6 @@ struct sd_lun {
 					/* un_f_write_cache_enabled */
 
 #ifdef SD_FAULT_INJECTION
-	/* SD Fault Injection */
 #define	SD_FI_MAX_BUF 65536
 #define	SD_FI_MAX_ERROR 1024
 	kmutex_t			un_fi_mutex;
@@ -615,7 +590,6 @@ struct sd_lun {
 	uint_t				sd_fi_fifo_start;
 	uint_t				sd_fi_fifo_end;
 	uint_t				sd_injection_mask;
-
 #endif
 
 	cmlb_handle_t	un_cmlbhandle;
@@ -691,98 +665,8 @@ struct sd_lun {
  * for physio, for devices without tagged queuing enabled.
  * The default for devices with tagged queuing enabled is SD_MAX_XFER_SIZE
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_DEFAULT_MAX_XFER_SIZE	(256 * 1024)
-#endif
 #define	SD_MAX_XFER_SIZE		(1024 * 1024)
-
-/*
- * Warlock annotations
- */
-_NOTE(MUTEX_PROTECTS_DATA(scsi_device::sd_mutex, sd_lun))
-_NOTE(READ_ONLY_DATA(sd_lun::un_sd))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_reservation_type))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_mincdb))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_maxcdb))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_max_hba_cdb))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_status_len))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_f_arq_enabled))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_ctype))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_cmlbhandle))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_fm_private))
-
-
-_NOTE(SCHEME_PROTECTS_DATA("safe sharing",
-	sd_lun::un_mhd_token
-	sd_lun::un_state
-	sd_lun::un_tagflags
-	sd_lun::un_f_format_in_progress
-	sd_lun::un_resvd_timeid
-	sd_lun::un_reset_throttle_timeid
-	sd_lun::un_startstop_timeid
-	sd_lun::un_dcvb_timeid
-	sd_lun::un_f_allow_bus_device_reset
-	sd_lun::un_sys_blocksize
-	sd_lun::un_tgt_blocksize
-	sd_lun::un_phy_blocksize
-	sd_lun::un_additional_codes))
-
-_NOTE(SCHEME_PROTECTS_DATA("stable data",
-	sd_lun::un_reserve_release_time
-	sd_lun::un_max_xfer_size
-	sd_lun::un_partial_dma_supported
-	sd_lun::un_buf_breakup_supported
-	sd_lun::un_f_is_fibre
-	sd_lun::un_node_type
-	sd_lun::un_buf_chain_type
-	sd_lun::un_uscsi_chain_type
-	sd_lun::un_direct_chain_type
-	sd_lun::un_priority_chain_type
-	sd_lun::un_xbuf_attr
-	sd_lun::un_cmd_timeout
-	sd_lun::un_pkt_flags))
-
-_NOTE(SCHEME_PROTECTS_DATA("Unshared data",
-	block_descriptor
-	buf
-	cdrom_subchnl
-	cdrom_tocentry
-	cdrom_tochdr
-	cdrom_read
-	dk_cinfo
-	dk_devid
-	dk_label
-	dk_map
-	dk_temperature
-	mhioc_inkeys
-	mhioc_inresvs
-	mode_caching
-	mode_header
-	mode_speed
-	scsi_cdb
-	scsi_arq_status
-	scsi_extended_sense
-	scsi_inquiry
-	scsi_pkt
-	uio
-	uscsi_cmd))
-
-
-_NOTE(SCHEME_PROTECTS_DATA("stable data", scsi_device dk_cinfo))
-_NOTE(SCHEME_PROTECTS_DATA("unique per pkt", scsi_status scsi_cdb))
-
-_NOTE(MUTEX_PROTECTS_DATA(sd_lun::un_pm_mutex, sd_lun::un_pm_count
-	sd_lun::un_pm_timeid sd_lun::un_pm_busy sd_lun::un_pm_busy_cv
-	sd_lun::un_pm_idle_timeid))
-
-#ifdef SD_FAULT_INJECTION
-_NOTE(MUTEX_PROTECTS_DATA(sd_lun::un_fi_mutex,
-	sd_lun::sd_fi_buf_len sd_lun::sd_fi_log))
-#endif
-
-/* _NOTE(LOCK_ORDER(sd_lun::un_sd.sd_mutex sd_lun::un_pm_mutex)) */
-
-
 
 /*
  * Referenced for frequently-accessed members of the unit structure
@@ -795,7 +679,6 @@ _NOTE(MUTEX_PROTECTS_DATA(sd_lun::un_fi_mutex,
 #define	SD_GET_DEV(un)		(sd_make_device(SD_DEVINFO(un)))
 #define	SD_FM_LOG(un)		(((struct sd_fm_internal *)\
 				((un)->un_fm_private))->fm_log_level)
-
 
 /*
  * Values for un_ctype
@@ -866,14 +749,14 @@ _NOTE(MUTEX_PROTECTS_DATA(sd_lun::un_fi_mutex,
  */
 #define	SD_WTYPE_SIMPLE	0x001	/* Write aligned at blksize boundary */
 #define	SD_WTYPE_RMW	0x002	/* Write requires read-modify-write */
-#define	SD_WM_BUSY		0x100	/* write-map is busy */
+#define	SD_WM_BUSY	0x100	/* write-map is busy */
 
 /*
  * RMW type
  */
 #define	SD_RMW_TYPE_DEFAULT	0	/* do rmw with warning message */
 #define	SD_RMW_TYPE_NO_WARNING	1	/* do rmw without warning message */
-#define	SD_RMW_TYPE_RETURN_ERROR	2	/* rmw disabled */
+#define	SD_RMW_TYPE_RETURN_ERROR 2	/* rmw disabled */
 
 /* Device error kstats */
 struct sd_errstats {
@@ -1016,13 +899,6 @@ struct sd_resv_reclaim_request {
 	kmutex_t		srq_resv_reclaim_mutex;
 	kcondvar_t		srq_resv_reclaim_cv;
 };
-
-_NOTE(MUTEX_PROTECTS_DATA(sd_resv_reclaim_request::srq_resv_reclaim_mutex,
-    sd_resv_reclaim_request))
-_NOTE(SCHEME_PROTECTS_DATA("unshared data", sd_thr_request))
-_NOTE(SCHEME_PROTECTS_DATA("Unshared data", sd_prout))
-
-
 
 /*
  * Driver Logging Components
@@ -1182,16 +1058,16 @@ struct sd_fi_tran {
 	}
 
 /* SD FaultInjection ioctls */
-#define	SDIOC			('T'<<8)
-#define	SDIOCSTART		(SDIOC|1)
-#define	SDIOCSTOP		(SDIOC|2)
+#define	SDIOC		('T'<<8)
+#define	SDIOCSTART	(SDIOC|1)
+#define	SDIOCSTOP	(SDIOC|2)
 #define	SDIOCINSERTPKT	(SDIOC|3)
 #define	SDIOCINSERTXB	(SDIOC|4)
 #define	SDIOCINSERTUN	(SDIOC|5)
 #define	SDIOCINSERTARQ	(SDIOC|6)
-#define	SDIOCPUSH		(SDIOC|7)
+#define	SDIOCPUSH	(SDIOC|7)
 #define	SDIOCRETRIEVE	(SDIOC|8)
-#define	SDIOCRUN		(SDIOC|9)
+#define	SDIOCRUN	(SDIOC|9)
 #define	SDIOCINSERTTRAN	(SDIOC|0xA)
 #endif
 
@@ -1300,8 +1176,6 @@ struct sd_fi_tran {
  * un_saved_throttle in routine sd_restore_throttle().
  */
 #define	SD_LOWEST_VALID_THROTTLE	2
-
-
 
 /* Return codes for sd_send_polled_cmd() and sd_scsi_poll() */
 #define	SD_CMD_SUCCESS			0
@@ -1493,8 +1367,6 @@ struct sd_xbuf {
 	 */
 };
 
-_NOTE(SCHEME_PROTECTS_DATA("unique per pkt", sd_xbuf))
-
 #define	SD_PKT_ALLOC_SUCCESS			0
 #define	SD_PKT_ALLOC_FAILURE			1
 #define	SD_PKT_ALLOC_FAILURE_NO_DMA		2
@@ -1527,8 +1399,6 @@ struct sd_uscsi_info {
 	uint64_t		ui_lba;
 	uint64_t		ui_ena;
 };
-
-_NOTE(SCHEME_PROTECTS_DATA("Unshared data", sd_uscsi_info))
 
 /*
  * This structure is used to issue 'internal' command sequences from the
@@ -1569,8 +1439,6 @@ typedef struct {
 	int			ssc_flags; /* Bits for flags */
 	char			ssc_info[1024]; /* Buffer holding for info */
 } sd_ssc_t;
-
-_NOTE(SCHEME_PROTECTS_DATA("Unshared data", sd_ssc_t))
 
 /*
  * This struct switch different 'type-of-assessment'
@@ -1812,11 +1680,7 @@ struct sd_fm_internal {
  * 100 msec. is what we'll wait for certain retries for fibre channel
  * targets, 0 msec for parallel SCSI.
  */
-#if defined(__fibre)
-#define	SD_RETRY_DELAY			(drv_usectohz(100000))
-#else
 #define	SD_RETRY_DELAY			((clock_t)0)
-#endif
 
 /*
  * 60 seconds is what we will wait for to reset the
@@ -1831,11 +1695,7 @@ struct sd_fm_internal {
  * (need to distinguish between Target and Transport failure)
  *
  */
-#if defined(__fibre)
-#define	SD_RETRY_COUNT			3
-#else
 #define	SD_RETRY_COUNT			5
-#endif
 
 /*
  * Number of times we will retry for unit attention.
@@ -1948,9 +1808,6 @@ struct sd_fm_internal {
 
 /*
  * Driver Property Bit Flag definitions
- *
- * Unfortunately, for historical reasons, the bit-flag definitions are
- * different on SPARC, INTEL, & FIBRE platforms.
  */
 
 /*
@@ -1969,126 +1826,76 @@ struct sd_fm_internal {
  * Bit flag telling driver to set the controller type from sd.conf
  * sd-config-list and driver table.
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_CONF_SET_CTYPE		1
-#elif defined(__fibre)
-#define	SD_CONF_SET_CTYPE		5
-#else
-#define	SD_CONF_SET_CTYPE		1
-#endif
 #define	SD_CONF_BSET_CTYPE		(1 << SD_CONF_SET_CTYPE)
 
 /*
  * Bit flag telling driver to set the not ready retry count for a device from
  * sd.conf sd-config-list and driver table.
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_CONF_SET_NOTREADY_RETRIES	10
-#elif defined(__fibre)
-#define	SD_CONF_SET_NOTREADY_RETRIES	1
-#else
-#define	SD_CONF_SET_NOTREADY_RETRIES	2
-#endif
 #define	SD_CONF_BSET_NRR_COUNT		(1 << SD_CONF_SET_NOTREADY_RETRIES)
 
 /*
  * Bit flag telling driver to set SCSI status BUSY Retries from sd.conf
  * sd-config-list and driver table.
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_CONF_SET_BUSY_RETRIES 	11
-#elif defined(__fibre)
-#define	SD_CONF_SET_BUSY_RETRIES 	2
-#else
-#define	SD_CONF_SET_BUSY_RETRIES 	5
-#endif
 #define	SD_CONF_BSET_BSY_RETRY_COUNT	(1 << SD_CONF_SET_BUSY_RETRIES)
 
 /*
  * Bit flag telling driver that device does not have a valid/unique serial
  * number.
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_CONF_SET_FAB_DEVID		2
-#else
-#define	SD_CONF_SET_FAB_DEVID		3
-#endif
 #define	SD_CONF_BSET_FAB_DEVID   	(1 << SD_CONF_SET_FAB_DEVID)
 
 /*
  * Bit flag telling driver to disable all caching for disk device.
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_CONF_SET_NOCACHE		3
-#else
-#define	SD_CONF_SET_NOCACHE		4
-#endif
 #define	SD_CONF_BSET_NOCACHE		(1 << SD_CONF_SET_NOCACHE)
 
 /*
  * Bit flag telling driver that the PLAY AUDIO command requires parms in BCD
  * format rather than binary.
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_CONF_SET_PLAYMSF_BCD		4
-#else
-#define	SD_CONF_SET_PLAYMSF_BCD		6
-#endif
 #define	SD_CONF_BSET_PLAYMSF_BCD    	(1 << SD_CONF_SET_PLAYMSF_BCD)
 
 /*
  * Bit flag telling driver that the response from the READ SUBCHANNEL command
  * has BCD fields rather than binary.
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_CONF_SET_READSUB_BCD		5
-#else
-#define	SD_CONF_SET_READSUB_BCD		7
-#endif
 #define	SD_CONF_BSET_READSUB_BCD	(1 << SD_CONF_SET_READSUB_BCD)
 
 /*
  * Bit in flags telling driver that the track number fields in the READ TOC
  * request and respone are in BCD rather than binary.
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_CONF_SET_READ_TOC_TRK_BCD	6
-#else
-#define	SD_CONF_SET_READ_TOC_TRK_BCD	8
-#endif
 #define	SD_CONF_BSET_READ_TOC_TRK_BCD	(1 << SD_CONF_SET_READ_TOC_TRK_BCD)
 
 /*
  * Bit flag telling driver that the address fields in the READ TOC request and
  * respone are in BCD rather than binary.
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_CONF_SET_READ_TOC_ADDR_BCD	7
-#else
-#define	SD_CONF_SET_READ_TOC_ADDR_BCD	9
-#endif
 #define	SD_CONF_BSET_READ_TOC_ADDR_BCD	(1 << SD_CONF_SET_READ_TOC_ADDR_BCD)
 
 /*
  * Bit flag telling the driver that the device doesn't support the READ HEADER
  * command.
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_CONF_SET_NO_READ_HEADER	8
-#else
-#define	SD_CONF_SET_NO_READ_HEADER	10
-#endif
 #define	SD_CONF_BSET_NO_READ_HEADER 	(1 << SD_CONF_SET_NO_READ_HEADER)
 
 /*
  * Bit flag telling the driver that for the READ CD command the device uses
  * opcode 0xd4 rather than 0xbe.
  */
-#if defined(__i386) || defined(__amd64)
 #define	SD_CONF_SET_READ_CD_XD4		9
-#else
-#define	SD_CONF_SET_READ_CD_XD4 	11
-#endif
 #define	SD_CONF_BSET_READ_CD_XD4	(1 << SD_CONF_SET_READ_CD_XD4)
 
 /*
@@ -2114,22 +1921,22 @@ struct sd_fm_internal {
 #define	SD_CONF_BSET_TUR_CHECK		(1 << SD_CONF_SET_TUR_CHECK)
 
 /*
- * Bit in flags telling driver to set min. throttle from ssd.conf
- * ssd-config-list and driver table.
+ * Bit in flags telling driver to set min. throttle from sd.conf
+ * sd-config-list and driver table.
  */
 #define	SD_CONF_SET_MIN_THROTTLE	15
 #define	SD_CONF_BSET_MIN_THROTTLE	(1 << SD_CONF_SET_MIN_THROTTLE)
 
 /*
- * Bit in flags telling driver to set disksort disable flag from ssd.conf
- * ssd-config-list and driver table.
+ * Bit in flags telling driver to set disksort disable flag from sd.conf
+ * sd-config-list and driver table.
  */
 #define	SD_CONF_SET_DISKSORT_DISABLED	16
 #define	SD_CONF_BSET_DISKSORT_DISABLED	(1 << SD_CONF_SET_DISKSORT_DISABLED)
 
 /*
- * Bit in flags telling driver to set LUN Reset enable flag from [s]sd.conf
- * [s]sd-config-list and driver table.
+ * Bit in flags telling driver to set LUN Reset enable flag from sd.conf
+ * sd-config-list and driver table.
  */
 #define	SD_CONF_SET_LUN_RESET_ENABLED	17
 #define	SD_CONF_BSET_LUN_RESET_ENABLED	(1 << SD_CONF_SET_LUN_RESET_ENABLED)
@@ -2138,14 +1945,14 @@ struct sd_fm_internal {
  * Bit in flags telling driver that the write cache on the device is
  * non-volatile.
  */
-#define	SD_CONF_SET_CACHE_IS_NV	18
+#define	SD_CONF_SET_CACHE_IS_NV		18
 #define	SD_CONF_BSET_CACHE_IS_NV	(1 << SD_CONF_SET_CACHE_IS_NV)
 
 /*
- * Bit in flags telling driver that the power condition flag from [s]sd.conf
- * [s]sd-config-list and driver table.
+ * Bit in flags telling driver that the power condition flag from sd.conf
+ * sd-config-list and driver table.
  */
-#define	SD_CONF_SET_PC_DISABLED	19
+#define	SD_CONF_SET_PC_DISABLED		19
 #define	SD_CONF_BSET_PC_DISABLED	(1 << SD_CONF_SET_PC_DISABLED)
 
 /*
@@ -2248,8 +2055,6 @@ struct mode_header_grp2 {
 					/* (if any) */
 	uchar_t bdesc_length_lo;
 };
-
-_NOTE(SCHEME_PROTECTS_DATA("Unshared data", mode_header_grp2))
 
 /*
  * Length of the Mode Parameter Header for the Group 2 Mode Select command
@@ -2473,19 +2278,6 @@ typedef struct disk_power_attr_pc {
  */
 #define	SD_VPD_NV_SUP	0x02
 #define	SD_SYNC_NV_BIT 0x04
-
-/*
- * Addition from sddef.intel.h
- */
-#if defined(__i386) || defined(__amd64)
-
-#define	P0_RAW_DISK	(NDKMAP)
-#define	FDISK_P1	(NDKMAP+1)
-#define	FDISK_P2	(NDKMAP+2)
-#define	FDISK_P3	(NDKMAP+3)
-#define	FDISK_P4	(NDKMAP+4)
-
-#endif	/* __i386 || __amd64 */
 
 #ifdef	__cplusplus
 }

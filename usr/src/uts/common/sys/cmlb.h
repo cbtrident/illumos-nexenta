@@ -18,11 +18,15 @@
  *
  * CDDL HEADER END
  */
+
 /*
- * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
+
+/*
+ * Copyright 2016 Toomas Soome <tsoome@me.com>
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 #ifndef _SYS_CMLB_H
@@ -33,6 +37,7 @@ extern "C" {
 #endif
 
 #include <sys/dktp/fdisk.h>
+#include <sys/sunddi.h>
 
 /*
  * structure used for getting phygeom and virtgeom from target driver

@@ -21,213 +21,56 @@
 
 /*
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
- *
- *
+ */
+
+/*
+ * Copyright 2011 cyril.galibern@opensvc.com
  * Copyright (c) 2011 Bayard G. Bell.  All rights reserved.
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
  * Copyright 2017 Nexenta Systems, Inc.
  */
-/*
- * Copyright 2011 cyril.galibern@opensvc.com
- */
 
 /*
  * SCSI disk target driver.
  */
-#include <sys/scsi/scsi.h>
-#include <sys/dkbad.h>
-#include <sys/dklabel.h>
-#include <sys/dkio.h>
-#include <sys/fdio.h>
-#include <sys/cdio.h>
-#include <sys/mhd.h>
-#include <sys/vtoc.h>
-#include <sys/dktp/fdisk.h>
-#include <sys/kstat.h>
-#include <sys/vtrace.h>
-#include <sys/note.h>
-#include <sys/thread.h>
-#include <sys/proc.h>
-#include <sys/efi_partition.h>
-#include <sys/var.h>
 #include <sys/aio_req.h>
-#include <sys/fs/dv_node.h>
-#include <sys/debug.h>
-#include <sys/dkioc_free_util.h>
-
-#ifdef __lock_lint
-#define	_LP64
-#define	__amd64
-#endif
-
-#if (defined(__fibre))
-/* Note: is there a leadville version of the following? */
-#include <sys/fc4/fcal_linkapp.h>
-#endif
-#include <sys/taskq.h>
-#include <sys/uuid.h>
 #include <sys/byteorder.h>
+#include <sys/cdio.h>
+#include <sys/cmlb.h>
+#include <sys/debug.h>
+#include <sys/dkbad.h>
+#include <sys/dkio.h>
+#include <sys/dkioc_free_util.h>
+#include <sys/dklabel.h>
+#include <sys/dktp/fdisk.h>
+#include <sys/efi_partition.h>
+#include <sys/fdio.h>
+#include <sys/fm/protocol.h>
+#include <sys/fs/dv_node.h>
+#include <sys/kstat.h>
+#include <sys/mhd.h>
+#include <sys/proc.h>
+#include <sys/scsi/scsi.h>
+#include <sys/scsi/targets/sddef.h>
 #include <sys/sdt.h>
+#include <sys/sysevent/dev.h>
+#include <sys/sysevent/eventdefs.h>
+#include <sys/taskq.h>
+#include <sys/thread.h>
+#include <sys/uuid.h>
+#include <sys/var.h>
+#include <sys/vtoc.h>
+#include <sys/vtrace.h>
 
 #include "sd_xbuf.h"
 
-#include <sys/scsi/targets/sddef.h>
-#include <sys/cmlb.h>
-#include <sys/sysevent/eventdefs.h>
-#include <sys/sysevent/dev.h>
-
-#include <sys/fm/protocol.h>
-
-/*
- * Loadable module info.
- */
-#if (defined(__fibre))
-#define	SD_MODULE_NAME	"SCSI SSA/FCAL Disk Driver"
-#else /* !__fibre */
 #define	SD_MODULE_NAME	"SCSI Disk Driver"
-#endif /* !__fibre */
-
-/*
- * Define the interconnect type, to allow the driver to distinguish
- * between parallel SCSI (sd) and fibre channel (ssd) behaviors.
- *
- * This is really for backward compatibility. In the future, the driver
- * should actually check the "interconnect-type" property as reported by
- * the HBA; however at present this property is not defined by all HBAs,
- * so we will use this #define (1) to permit the driver to run in
- * backward-compatibility mode; and (2) to print a notification message
- * if an FC HBA does not support the "interconnect-type" property.  The
- * behavior of the driver will be to assume parallel SCSI behaviors unless
- * the "interconnect-type" property is defined by the HBA **AND** has a
- * value of either INTERCONNECT_FIBRE, INTERCONNECT_SSA, or
- * INTERCONNECT_FABRIC, in which case the driver will assume Fibre
- * Channel behaviors (as per the old ssd).  (Note that the
- * INTERCONNECT_1394 and INTERCONNECT_USB types are not supported and
- * will result in the driver assuming parallel SCSI behaviors.)
- *
- * (see common/sys/scsi/impl/services.h)
- *
- * Note: For ssd semantics, don't use INTERCONNECT_FABRIC as the default
- * since some FC HBAs may already support that, and there is some code in
- * the driver that already looks for it.  Using INTERCONNECT_FABRIC as the
- * default would confuse that code, and besides things should work fine
- * anyways if the FC HBA already reports INTERCONNECT_FABRIC for the
- * "interconnect_type" property.
- *
- */
-#if (defined(__fibre))
-#define	SD_DEFAULT_INTERCONNECT_TYPE	SD_INTERCONNECT_FIBRE
-#else
-#define	SD_DEFAULT_INTERCONNECT_TYPE	SD_INTERCONNECT_PARALLEL
-#endif
-
-/*
- * The name of the driver, established from the module name in _init.
- */
-static	char *sd_label			= NULL;
-
-/*
- * Driver name is unfortunately prefixed on some driver.conf properties.
- */
-#if (defined(__fibre))
-#define	sd_max_xfer_size		ssd_max_xfer_size
-#define	sd_config_list			ssd_config_list
-static	char *sd_max_xfer_size		= "ssd_max_xfer_size";
-static	char *sd_config_list		= "ssd-config-list";
-#else
-static	char *sd_max_xfer_size		= "sd_max_xfer_size";
-static	char *sd_config_list		= "sd-config-list";
-#endif
+static	char *sd_label = "sd";
 
 /*
  * Driver global variables
  */
-
-#if (defined(__fibre))
-/*
- * These #defines are to avoid namespace collisions that occur because this
- * code is currently used to compile two separate driver modules: sd and ssd.
- * All global variables need to be treated this way (even if declared static)
- * in order to allow the debugger to resolve the names properly.
- * It is anticipated that in the near future the ssd module will be obsoleted,
- * at which time this namespace issue should go away.
- */
-#define	sd_state			ssd_state
-#define	sd_io_time			ssd_io_time
-#define	sd_failfast_enable		ssd_failfast_enable
-#define	sd_ua_retry_count		ssd_ua_retry_count
-#define	sd_report_pfa			ssd_report_pfa
-#define	sd_max_throttle			ssd_max_throttle
-#define	sd_min_throttle			ssd_min_throttle
-#define	sd_rot_delay			ssd_rot_delay
-
-#define	sd_retry_on_reservation_conflict	\
-					ssd_retry_on_reservation_conflict
-#define	sd_reinstate_resv_delay		ssd_reinstate_resv_delay
-#define	sd_resv_conflict_name		ssd_resv_conflict_name
-
-#define	sd_component_mask		ssd_component_mask
-#define	sd_level_mask			ssd_level_mask
-#define	sd_debug_un			ssd_debug_un
-#define	sd_error_level			ssd_error_level
-
-#define	sd_xbuf_active_limit		ssd_xbuf_active_limit
-#define	sd_xbuf_reserve_limit		ssd_xbuf_reserve_limit
-
-#define	sd_tr				ssd_tr
-#define	sd_reset_throttle_timeout	ssd_reset_throttle_timeout
-#define	sd_qfull_throttle_timeout	ssd_qfull_throttle_timeout
-#define	sd_qfull_throttle_enable	ssd_qfull_throttle_enable
-#define	sd_check_media_time		ssd_check_media_time
-#define	sd_wait_cmds_complete		ssd_wait_cmds_complete
-#define	sd_label_mutex			ssd_label_mutex
-#define	sd_detach_mutex			ssd_detach_mutex
-#define	sd_log_buf			ssd_log_buf
-#define	sd_log_mutex			ssd_log_mutex
-
-#define	sd_disk_table			ssd_disk_table
-#define	sd_disk_table_size		ssd_disk_table_size
-#define	sd_sense_mutex			ssd_sense_mutex
-#define	sd_cdbtab			ssd_cdbtab
-
-#define	sd_cb_ops			ssd_cb_ops
-#define	sd_ops				ssd_ops
-#define	sd_additional_codes		ssd_additional_codes
-#define	sd_tgops			ssd_tgops
-
-#define	sd_minor_data			ssd_minor_data
-#define	sd_minor_data_efi		ssd_minor_data_efi
-
-#define	sd_tq				ssd_tq
-#define	sd_wmr_tq			ssd_wmr_tq
-#define	sd_taskq_name			ssd_taskq_name
-#define	sd_wmr_taskq_name		ssd_wmr_taskq_name
-#define	sd_taskq_minalloc		ssd_taskq_minalloc
-#define	sd_taskq_maxalloc		ssd_taskq_maxalloc
-
-#define	sd_dump_format_string		ssd_dump_format_string
-
-#define	sd_iostart_chain		ssd_iostart_chain
-#define	sd_iodone_chain			ssd_iodone_chain
-
-#define	sd_pm_idletime			ssd_pm_idletime
-
-#define	sd_force_pm_supported		ssd_force_pm_supported
-
-#define	sd_dtype_optical_bind		ssd_dtype_optical_bind
-
-#define	sd_ssc_init			ssd_ssc_init
-#define	sd_ssc_send			ssd_ssc_send
-#define	sd_ssc_fini			ssd_ssc_fini
-#define	sd_ssc_assessment		ssd_ssc_assessment
-#define	sd_ssc_post			ssd_ssc_post
-#define	sd_ssc_print			ssd_ssc_print
-#define	sd_ssc_ereport_post		ssd_ssc_ereport_post
-#define	sd_ssc_set_info			ssd_ssc_set_info
-#define	sd_ssc_extract_info		ssd_ssc_extract_info
-
-#endif
 
 #ifdef	SDDEBUG
 int	sd_force_pm_supported		= 0;
@@ -251,13 +94,6 @@ int sd_enable_lun_reset			= FALSE;
  * Can be overriden for vendor/device id in sd.conf
  */
 hrtime_t sd_g_slow_io_threshold		= 3LL * NANOSEC;
-
-_NOTE(SCHEME_PROTECTS_DATA("safe sharing", sd_reinstate_resv_delay))
-
-static int sd_dtype_optical_bind	= -1;
-
-/* Note: the following is not a bug, it really is "sd_" and not "ssd_" */
-static	char *sd_resv_conflict_name	= "sd_retry_on_reservation_conflict";
 
 /*
  * Global data for debug logging. To enable debug printing, sd_component_mask
@@ -304,9 +140,6 @@ static kmutex_t sd_label_mutex;
  */
 static kmutex_t sd_detach_mutex;
 
-_NOTE(MUTEX_PROTECTS_DATA(sd_detach_mutex,
-	sd_lun::{un_layer_count un_detach_count un_opens_in_progress}))
-
 /*
  * Global buffer and mutex for debug logging
  */
@@ -335,12 +168,6 @@ struct sd_scsi_hba_tgt_lun {
 static kmutex_t	sd_scsi_target_lun_mutex;
 static struct sd_scsi_hba_tgt_lun	*sd_scsi_target_lun_head = NULL;
 
-_NOTE(MUTEX_PROTECTS_DATA(sd_scsi_target_lun_mutex,
-    sd_scsi_hba_tgt_lun::next sd_scsi_hba_tgt_lun::pdip))
-
-_NOTE(MUTEX_PROTECTS_DATA(sd_scsi_target_lun_mutex,
-    sd_scsi_target_lun_head))
-
 /*
  * "Smart" Probe Caching structs, globals, #defines, etc.
  * For parallel scsi and non-self-identify device only.
@@ -361,16 +188,6 @@ static kmutex_t	sd_scsi_probe_cache_mutex;
 static struct	sd_scsi_probe_cache *sd_scsi_probe_cache_head = NULL;
 
 /*
- * Really we only need protection on the head of the linked list, but
- * better safe than sorry.
- */
-_NOTE(MUTEX_PROTECTS_DATA(sd_scsi_probe_cache_mutex,
-    sd_scsi_probe_cache::next sd_scsi_probe_cache::pdip))
-
-_NOTE(MUTEX_PROTECTS_DATA(sd_scsi_probe_cache_mutex,
-    sd_scsi_probe_cache_head))
-
-/*
  * Create taskq for all targets in the system. This is created at
  * _init(9E) and destroyed at _fini(9E).
  *
@@ -387,7 +204,6 @@ _NOTE(MUTEX_PROTECTS_DATA(sd_scsi_probe_cache_mutex,
 #define	SD_TASKQ_MAXALLOC	256
 
 static taskq_t	*sd_tq = NULL;
-_NOTE(SCHEME_PROTECTS_DATA("stable data", sd_tq))
 
 static int	sd_taskq_minalloc = SD_TASKQ_MINALLOC;
 static int	sd_taskq_maxalloc = SD_TASKQ_MAXALLOC;
@@ -402,8 +218,6 @@ static int	sd_taskq_maxalloc = SD_TASKQ_MAXALLOC;
  */
 #define	SD_WMR_TASKQ_NUMTHREADS	1
 static taskq_t	*sd_wmr_tq = NULL;
-_NOTE(SCHEME_PROTECTS_DATA("stable data", sd_wmr_tq))
-
 
 /*
  * Power attribute table
@@ -437,8 +251,6 @@ static int sd_pl2pc[] = {
  * Vendor specific data name property declarations
  */
 
-#if defined(__fibre) || defined(__i386) ||defined(__amd64)
-
 static sd_tunables seagate_properties = {
 	SEAGATE_THROTTLE_VALUE,
 	0,
@@ -450,7 +262,6 @@ static sd_tunables seagate_properties = {
 	0,
 	0
 };
-
 
 static sd_tunables fujitsu_properties = {
 	FUJITSU_THROTTLE_VALUE,
@@ -524,12 +335,6 @@ static sd_tunables pirus_properties = {
 	PIRUS_LUN_RESET_ENABLED_FLAG
 };
 
-#endif
-
-#if (defined(__sparc) && !defined(__fibre)) || \
-	(defined(__i386) || defined(__amd64))
-
-
 static sd_tunables elite_properties = {
 	ELITE_THROTTLE_VALUE,
 	0,
@@ -553,8 +358,6 @@ static sd_tunables st31200n_properties = {
 	0,
 	0
 };
-
-#endif /* Fibre or not */
 
 static sd_tunables lsi_properties_scsi = {
 	LSI_THROTTLE_VALUE,
@@ -605,17 +408,13 @@ static sd_tunables lsi_oem_properties = {
 	1
 };
 
-
-
 #if (defined(SD_PROP_TST))
-
 #define	SD_TST_CTYPE_VAL	CTYPE_CDROM
 #define	SD_TST_THROTTLE_VAL	16
 #define	SD_TST_NOTREADY_VAL	12
 #define	SD_TST_BUSY_VAL		60
 #define	SD_TST_RST_RETRY_VAL	36
 #define	SD_TST_RSV_REL_TIME	60
-
 static sd_tunables tst_properties = {
 	SD_TST_THROTTLE_VAL,
 	SD_TST_CTYPE_VAL,
@@ -660,7 +459,6 @@ static sd_tunables tst_properties = {
  *	 made with an FC connection. The entries here are a legacy.
  */
 static sd_disk_config_t sd_disk_table[] = {
-#if defined(__fibre) || defined(__i386) || defined(__amd64)
 	{ "SEAGATE ST34371FC", SD_CONF_BSET_THROTTLE, &seagate_properties },
 	{ "SEAGATE ST19171FC", SD_CONF_BSET_THROTTLE, &seagate_properties },
 	{ "SEAGATE ST39102FC", SD_CONF_BSET_THROTTLE, &seagate_properties },
@@ -710,137 +508,136 @@ static sd_disk_config_t sd_disk_table[] = {
 	{ "ENGENIO INF",	SD_CONF_BSET_NRR_COUNT, &lsi_oem_properties },
 	{ "SGI     TP",		SD_CONF_BSET_NRR_COUNT, &lsi_oem_properties },
 	{ "SGI     IS",		SD_CONF_BSET_NRR_COUNT, &lsi_oem_properties },
-	{ "*CSM100_*",		SD_CONF_BSET_NRR_COUNT |
-			SD_CONF_BSET_CACHE_IS_NV, &lsi_oem_properties },
-	{ "*CSM200_*",		SD_CONF_BSET_NRR_COUNT |
-			SD_CONF_BSET_CACHE_IS_NV, &lsi_oem_properties },
-	{ "Fujitsu SX300",	SD_CONF_BSET_THROTTLE,  &lsi_oem_properties },
+	{ "*CSM100_*",		SD_CONF_BSET_NRR_COUNT|
+				SD_CONF_BSET_CACHE_IS_NV,
+				&lsi_oem_properties },
+	{ "*CSM200_*",		SD_CONF_BSET_NRR_COUNT|
+				SD_CONF_BSET_CACHE_IS_NV,
+				&lsi_oem_properties },
+	{ "Fujitsu SX300",	SD_CONF_BSET_THROTTLE, &lsi_oem_properties },
 	{ "LSI",		SD_CONF_BSET_NRR_COUNT, &lsi_properties },
-	{ "SUN     T3", SD_CONF_BSET_THROTTLE |
-			SD_CONF_BSET_BSY_RETRY_COUNT|
-			SD_CONF_BSET_RST_RETRIES|
-			SD_CONF_BSET_RSV_REL_TIME,
-		&purple_properties },
-	{ "SUN     SESS01", SD_CONF_BSET_THROTTLE |
-		SD_CONF_BSET_BSY_RETRY_COUNT|
-		SD_CONF_BSET_RST_RETRIES|
-		SD_CONF_BSET_RSV_REL_TIME|
-		SD_CONF_BSET_MIN_THROTTLE|
-		SD_CONF_BSET_DISKSORT_DISABLED,
-		&sve_properties },
-	{ "SUN     T4", SD_CONF_BSET_THROTTLE |
-			SD_CONF_BSET_BSY_RETRY_COUNT|
-			SD_CONF_BSET_RST_RETRIES|
-			SD_CONF_BSET_RSV_REL_TIME,
-		&purple_properties },
-	{ "SUN     SVE01", SD_CONF_BSET_DISKSORT_DISABLED |
-		SD_CONF_BSET_LUN_RESET_ENABLED,
-		&maserati_properties },
-	{ "SUN     SE6920", SD_CONF_BSET_THROTTLE |
-		SD_CONF_BSET_NRR_COUNT|
-		SD_CONF_BSET_BSY_RETRY_COUNT|
-		SD_CONF_BSET_RST_RETRIES|
-		SD_CONF_BSET_MIN_THROTTLE|
-		SD_CONF_BSET_DISKSORT_DISABLED|
-		SD_CONF_BSET_LUN_RESET_ENABLED,
-		&pirus_properties },
-	{ "SUN     SE6940", SD_CONF_BSET_THROTTLE |
-		SD_CONF_BSET_NRR_COUNT|
-		SD_CONF_BSET_BSY_RETRY_COUNT|
-		SD_CONF_BSET_RST_RETRIES|
-		SD_CONF_BSET_MIN_THROTTLE|
-		SD_CONF_BSET_DISKSORT_DISABLED|
-		SD_CONF_BSET_LUN_RESET_ENABLED,
-		&pirus_properties },
-	{ "SUN     StorageTek 6920", SD_CONF_BSET_THROTTLE |
-		SD_CONF_BSET_NRR_COUNT|
-		SD_CONF_BSET_BSY_RETRY_COUNT|
-		SD_CONF_BSET_RST_RETRIES|
-		SD_CONF_BSET_MIN_THROTTLE|
-		SD_CONF_BSET_DISKSORT_DISABLED|
-		SD_CONF_BSET_LUN_RESET_ENABLED,
-		&pirus_properties },
-	{ "SUN     StorageTek 6940", SD_CONF_BSET_THROTTLE |
-		SD_CONF_BSET_NRR_COUNT|
-		SD_CONF_BSET_BSY_RETRY_COUNT|
-		SD_CONF_BSET_RST_RETRIES|
-		SD_CONF_BSET_MIN_THROTTLE|
-		SD_CONF_BSET_DISKSORT_DISABLED|
-		SD_CONF_BSET_LUN_RESET_ENABLED,
-		&pirus_properties },
-	{ "SUN     PSX1000", SD_CONF_BSET_THROTTLE |
-		SD_CONF_BSET_NRR_COUNT|
-		SD_CONF_BSET_BSY_RETRY_COUNT|
-		SD_CONF_BSET_RST_RETRIES|
-		SD_CONF_BSET_MIN_THROTTLE|
-		SD_CONF_BSET_DISKSORT_DISABLED|
-		SD_CONF_BSET_LUN_RESET_ENABLED,
-		&pirus_properties },
-	{ "SUN     SE6330", SD_CONF_BSET_THROTTLE |
-		SD_CONF_BSET_NRR_COUNT|
-		SD_CONF_BSET_BSY_RETRY_COUNT|
-		SD_CONF_BSET_RST_RETRIES|
-		SD_CONF_BSET_MIN_THROTTLE|
-		SD_CONF_BSET_DISKSORT_DISABLED|
-		SD_CONF_BSET_LUN_RESET_ENABLED,
-		&pirus_properties },
+	{ "SUN     T3",		SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_BSY_RETRY_COUNT|
+				SD_CONF_BSET_RST_RETRIES|
+				SD_CONF_BSET_RSV_REL_TIME,
+				&purple_properties },
+	{ "SUN     SESS01",	SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_BSY_RETRY_COUNT|
+				SD_CONF_BSET_RST_RETRIES|
+				SD_CONF_BSET_RSV_REL_TIME|
+				SD_CONF_BSET_MIN_THROTTLE|
+				SD_CONF_BSET_DISKSORT_DISABLED,
+				&sve_properties },
+	{ "SUN     T4",		SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_BSY_RETRY_COUNT|
+				SD_CONF_BSET_RST_RETRIES|
+				SD_CONF_BSET_RSV_REL_TIME,
+				&purple_properties },
+	{ "SUN     SVE01",	SD_CONF_BSET_DISKSORT_DISABLED|
+				SD_CONF_BSET_LUN_RESET_ENABLED,
+				&maserati_properties },
+	{ "SUN     SE6920",	SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_NRR_COUNT|
+				SD_CONF_BSET_BSY_RETRY_COUNT|
+				SD_CONF_BSET_RST_RETRIES|
+				SD_CONF_BSET_MIN_THROTTLE|
+				SD_CONF_BSET_DISKSORT_DISABLED|
+				SD_CONF_BSET_LUN_RESET_ENABLED,
+				&pirus_properties },
+	{ "SUN     SE6940",	SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_NRR_COUNT|
+				SD_CONF_BSET_BSY_RETRY_COUNT|
+				SD_CONF_BSET_RST_RETRIES|
+				SD_CONF_BSET_MIN_THROTTLE|
+				SD_CONF_BSET_DISKSORT_DISABLED|
+				SD_CONF_BSET_LUN_RESET_ENABLED,
+				&pirus_properties },
+	{ "SUN     StorageTek 6920", SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_NRR_COUNT|
+				SD_CONF_BSET_BSY_RETRY_COUNT|
+				SD_CONF_BSET_RST_RETRIES|
+				SD_CONF_BSET_MIN_THROTTLE|
+				SD_CONF_BSET_DISKSORT_DISABLED|
+				SD_CONF_BSET_LUN_RESET_ENABLED,
+				&pirus_properties },
+	{ "SUN     StorageTek 6940", SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_NRR_COUNT|
+				SD_CONF_BSET_BSY_RETRY_COUNT|
+				SD_CONF_BSET_RST_RETRIES|
+				SD_CONF_BSET_MIN_THROTTLE|
+				SD_CONF_BSET_DISKSORT_DISABLED|
+				SD_CONF_BSET_LUN_RESET_ENABLED,
+				&pirus_properties },
+	{ "SUN     PSX1000",	SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_NRR_COUNT|
+				SD_CONF_BSET_BSY_RETRY_COUNT|
+				SD_CONF_BSET_RST_RETRIES|
+				SD_CONF_BSET_MIN_THROTTLE|
+				SD_CONF_BSET_DISKSORT_DISABLED|
+				SD_CONF_BSET_LUN_RESET_ENABLED,
+				&pirus_properties },
+	{ "SUN     SE6330",	SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_NRR_COUNT|
+				SD_CONF_BSET_BSY_RETRY_COUNT|
+				SD_CONF_BSET_RST_RETRIES|
+				SD_CONF_BSET_MIN_THROTTLE|
+				SD_CONF_BSET_DISKSORT_DISABLED|
+				SD_CONF_BSET_LUN_RESET_ENABLED,
+				&pirus_properties },
 	{ "SUN     STK6580_6780", SD_CONF_BSET_NRR_COUNT, &lsi_oem_properties },
-	{ "SUN     SUN_6180", SD_CONF_BSET_NRR_COUNT, &lsi_oem_properties },
+	{ "SUN     SUN_6180",	SD_CONF_BSET_NRR_COUNT, &lsi_oem_properties },
 	{ "STK     OPENstorage", SD_CONF_BSET_NRR_COUNT, &lsi_oem_properties },
 	{ "STK     OpenStorage", SD_CONF_BSET_NRR_COUNT, &lsi_oem_properties },
 	{ "STK     BladeCtlr",	SD_CONF_BSET_NRR_COUNT, &lsi_oem_properties },
 	{ "STK     FLEXLINE",	SD_CONF_BSET_NRR_COUNT, &lsi_oem_properties },
-	{ "SYMBIOS", SD_CONF_BSET_NRR_COUNT, &symbios_properties },
-#endif /* fibre or NON-sparc platforms */
-#if ((defined(__sparc) && !defined(__fibre)) ||\
-	(defined(__i386) || defined(__amd64)))
-	{ "SEAGATE ST42400N", SD_CONF_BSET_THROTTLE, &elite_properties },
-	{ "SEAGATE ST31200N", SD_CONF_BSET_THROTTLE, &st31200n_properties },
-	{ "SEAGATE ST41600N", SD_CONF_BSET_TUR_CHECK, NULL },
-	{ "CONNER  CP30540",  SD_CONF_BSET_NOCACHE,  NULL },
-	{ "*SUN0104*", SD_CONF_BSET_FAB_DEVID, NULL },
-	{ "*SUN0207*", SD_CONF_BSET_FAB_DEVID, NULL },
-	{ "*SUN0327*", SD_CONF_BSET_FAB_DEVID, NULL },
-	{ "*SUN0340*", SD_CONF_BSET_FAB_DEVID, NULL },
-	{ "*SUN0424*", SD_CONF_BSET_FAB_DEVID, NULL },
-	{ "*SUN0669*", SD_CONF_BSET_FAB_DEVID, NULL },
-	{ "*SUN1.0G*", SD_CONF_BSET_FAB_DEVID, NULL },
-	{ "SYMBIOS INF-01-00       ", SD_CONF_BSET_FAB_DEVID, NULL },
-	{ "SYMBIOS", SD_CONF_BSET_THROTTLE|SD_CONF_BSET_NRR_COUNT,
-	    &symbios_properties },
-	{ "LSI", SD_CONF_BSET_THROTTLE | SD_CONF_BSET_NRR_COUNT,
-	    &lsi_properties_scsi },
-#if defined(__i386) || defined(__amd64)
-	{ " NEC CD-ROM DRIVE:260 ", (SD_CONF_BSET_PLAYMSF_BCD
-				    | SD_CONF_BSET_READSUB_BCD
-				    | SD_CONF_BSET_READ_TOC_ADDR_BCD
-				    | SD_CONF_BSET_NO_READ_HEADER
-				    | SD_CONF_BSET_READ_CD_XD4), NULL },
-
-	{ " NEC CD-ROM DRIVE:270 ", (SD_CONF_BSET_PLAYMSF_BCD
-				    | SD_CONF_BSET_READSUB_BCD
-				    | SD_CONF_BSET_READ_TOC_ADDR_BCD
-				    | SD_CONF_BSET_NO_READ_HEADER
-				    | SD_CONF_BSET_READ_CD_XD4), NULL },
-#endif /* __i386 || __amd64 */
-#endif /* sparc NON-fibre or NON-sparc platforms */
-
+	{ "SYMBIOS",		SD_CONF_BSET_NRR_COUNT, &symbios_properties },
+	{ "SEAGATE ST42400N",	SD_CONF_BSET_THROTTLE, &elite_properties },
+	{ "SEAGATE ST31200N",	SD_CONF_BSET_THROTTLE, &st31200n_properties },
+	{ "SEAGATE ST41600N",	SD_CONF_BSET_TUR_CHECK, NULL },
+	{ "CONNER  CP30540",	SD_CONF_BSET_NOCACHE,  NULL },
+	{ "*SUN0104*",		SD_CONF_BSET_FAB_DEVID, NULL },
+	{ "*SUN0207*",		SD_CONF_BSET_FAB_DEVID, NULL },
+	{ "*SUN0327*",		SD_CONF_BSET_FAB_DEVID, NULL },
+	{ "*SUN0340*",		SD_CONF_BSET_FAB_DEVID, NULL },
+	{ "*SUN0424*",		SD_CONF_BSET_FAB_DEVID, NULL },
+	{ "*SUN0669*",		SD_CONF_BSET_FAB_DEVID, NULL },
+	{ "*SUN1.0G*",		SD_CONF_BSET_FAB_DEVID, NULL },
+	{ "SYMBIOS INF-01-00",	SD_CONF_BSET_FAB_DEVID, NULL },
+	{ "SYMBIOS",		SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_NRR_COUNT,
+				&symbios_properties },
+	{ "LSI",		SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_NRR_COUNT,
+				&lsi_properties_scsi },
+	{ " NEC CD-ROM DRIVE:260 ", SD_CONF_BSET_PLAYMSF_BCD|
+				SD_CONF_BSET_READSUB_BCD|
+				SD_CONF_BSET_READ_TOC_ADDR_BCD|
+				SD_CONF_BSET_NO_READ_HEADER|
+				SD_CONF_BSET_READ_CD_XD4,
+				NULL },
+	{ " NEC CD-ROM DRIVE:270 ", SD_CONF_BSET_PLAYMSF_BCD|
+				SD_CONF_BSET_READSUB_BCD|
+				SD_CONF_BSET_READ_TOC_ADDR_BCD|
+				SD_CONF_BSET_NO_READ_HEADER|
+				SD_CONF_BSET_READ_CD_XD4,
+				NULL },
 #if (defined(SD_PROP_TST))
-	{ "VENDOR  PRODUCT ", (SD_CONF_BSET_THROTTLE
-				| SD_CONF_BSET_CTYPE
-				| SD_CONF_BSET_NRR_COUNT
-				| SD_CONF_BSET_FAB_DEVID
-				| SD_CONF_BSET_NOCACHE
-				| SD_CONF_BSET_BSY_RETRY_COUNT
-				| SD_CONF_BSET_PLAYMSF_BCD
-				| SD_CONF_BSET_READSUB_BCD
-				| SD_CONF_BSET_READ_TOC_TRK_BCD
-				| SD_CONF_BSET_READ_TOC_ADDR_BCD
-				| SD_CONF_BSET_NO_READ_HEADER
-				| SD_CONF_BSET_READ_CD_XD4
-				| SD_CONF_BSET_RST_RETRIES
-				| SD_CONF_BSET_RSV_REL_TIME
-				| SD_CONF_BSET_TUR_CHECK), &tst_properties},
+	{ "VENDOR  PRODUCT ",	SD_CONF_BSET_THROTTLE|
+				SD_CONF_BSET_CTYPE|
+				SD_CONF_BSET_NRR_COUNT|
+				SD_CONF_BSET_FAB_DEVID|
+				SD_CONF_BSET_NOCACHE|
+				SD_CONF_BSET_BSY_RETRY_COUNT|
+				SD_CONF_BSET_PLAYMSF_BCD|
+				SD_CONF_BSET_READSUB_BCD|
+				SD_CONF_BSET_READ_TOC_TRK_BCD|
+				SD_CONF_BSET_READ_TOC_ADDR_BCD|
+				SD_CONF_BSET_NO_READ_HEADER|
+				SD_CONF_BSET_READ_CD_XD4|
+				SD_CONF_BSET_RST_RETRIES|
+				SD_CONF_BSET_RSV_REL_TIME|
+				SD_CONF_BSET_TUR_CHECK,
+				&tst_properties},
 #endif
 };
 
@@ -905,301 +702,6 @@ static int sd_pm_idletime = 1;
 /*
  * Internal function prototypes
  */
-
-#if (defined(__fibre))
-/*
- * These #defines are to avoid namespace collisions that occur because this
- * code is currently used to compile two separate driver modules: sd and ssd.
- * All function names need to be treated this way (even if declared static)
- * in order to allow the debugger to resolve the names properly.
- * It is anticipated that in the near future the ssd module will be obsoleted,
- * at which time this ugliness should go away.
- */
-#define	sd_log_trace			ssd_log_trace
-#define	sd_log_info			ssd_log_info
-#define	sd_log_err			ssd_log_err
-#define	sdprobe				ssdprobe
-#define	sdinfo				ssdinfo
-#define	sd_prop_op			ssd_prop_op
-#define	sd_scsi_probe_cache_init	ssd_scsi_probe_cache_init
-#define	sd_scsi_probe_cache_fini	ssd_scsi_probe_cache_fini
-#define	sd_scsi_clear_probe_cache	ssd_scsi_clear_probe_cache
-#define	sd_scsi_probe_with_cache	ssd_scsi_probe_with_cache
-#define	sd_scsi_target_lun_init		ssd_scsi_target_lun_init
-#define	sd_scsi_target_lun_fini		ssd_scsi_target_lun_fini
-#define	sd_scsi_get_target_lun_count	ssd_scsi_get_target_lun_count
-#define	sd_scsi_update_lun_on_target	ssd_scsi_update_lun_on_target
-#define	sd_spin_up_unit			ssd_spin_up_unit
-#define	sd_enable_descr_sense		ssd_enable_descr_sense
-#define	sd_reenable_dsense_task		ssd_reenable_dsense_task
-#define	sd_set_mmc_caps			ssd_set_mmc_caps
-#define	sd_read_unit_properties		ssd_read_unit_properties
-#define	sd_process_sdconf_file		ssd_process_sdconf_file
-#define	sd_process_sdconf_table		ssd_process_sdconf_table
-#define	sd_sdconf_id_match		ssd_sdconf_id_match
-#define	sd_blank_cmp			ssd_blank_cmp
-#define	sd_chk_vers1_data		ssd_chk_vers1_data
-#define	sd_set_vers1_properties		ssd_set_vers1_properties
-#define	sd_check_solid_state		ssd_check_solid_state
-#define	sd_check_emulation_mode		ssd_check_emulation_mode
-
-#define	sd_get_physical_geometry	ssd_get_physical_geometry
-#define	sd_get_virtual_geometry		ssd_get_virtual_geometry
-#define	sd_update_block_info		ssd_update_block_info
-#define	sd_register_devid		ssd_register_devid
-#define	sd_get_devid			ssd_get_devid
-#define	sd_create_devid			ssd_create_devid
-#define	sd_write_deviceid		ssd_write_deviceid
-#define	sd_check_vpd_page_support	ssd_check_vpd_page_support
-#ifdef notyet
-#define	sd_setup_pm			ssd_setup_pm
-#define	sd_create_pm_components		ssd_create_pm_components
-#endif
-#define	sd_ddi_suspend			ssd_ddi_suspend
-#define	sd_ddi_resume			ssd_ddi_resume
-#define	sd_pm_state_change		ssd_pm_state_change
-#define	sdpower				ssdpower
-#define	sdattach			ssdattach
-#define	sddetach			ssddetach
-#define	sd_unit_attach			ssd_unit_attach
-#define	sd_unit_detach			ssd_unit_detach
-#define	sd_set_unit_attributes		ssd_set_unit_attributes
-#define	sd_create_errstats		ssd_create_errstats
-#define	sd_set_errstats			ssd_set_errstats
-#define	sd_set_pstats			ssd_set_pstats
-#define	sddump				ssddump
-#define	sd_scsi_poll			ssd_scsi_poll
-#define	sd_send_polled_RQS		ssd_send_polled_RQS
-#define	sd_ddi_scsi_poll		ssd_ddi_scsi_poll
-#define	sd_init_event_callbacks		ssd_init_event_callbacks
-#define	sd_event_callback		ssd_event_callback
-#define	sd_cache_control		ssd_cache_control
-#define	sd_get_write_cache_enabled	ssd_get_write_cache_enabled
-#define	sd_get_write_cache_changeable	ssd_get_write_cache_changeable
-#define	sd_get_nv_sup			ssd_get_nv_sup
-#define	sd_make_device			ssd_make_device
-#define	sdopen				ssdopen
-#define	sdclose				ssdclose
-#define	sd_ready_and_valid		ssd_ready_and_valid
-#define	sdmin				ssdmin
-#define	sdread				ssdread
-#define	sdwrite				ssdwrite
-#define	sdaread				ssdaread
-#define	sdawrite			ssdawrite
-#define	sdstrategy			ssdstrategy
-#define	sdioctl				ssdioctl
-#define	sd_mapblockaddr_iostart		ssd_mapblockaddr_iostart
-#define	sd_mapblocksize_iostart		ssd_mapblocksize_iostart
-#define	sd_checksum_iostart		ssd_checksum_iostart
-#define	sd_checksum_uscsi_iostart	ssd_checksum_uscsi_iostart
-#define	sd_pm_iostart			ssd_pm_iostart
-#define	sd_core_iostart			ssd_core_iostart
-#define	sd_mapblockaddr_iodone		ssd_mapblockaddr_iodone
-#define	sd_mapblocksize_iodone		ssd_mapblocksize_iodone
-#define	sd_checksum_iodone		ssd_checksum_iodone
-#define	sd_checksum_uscsi_iodone	ssd_checksum_uscsi_iodone
-#define	sd_pm_iodone			ssd_pm_iodone
-#define	sd_initpkt_for_buf		ssd_initpkt_for_buf
-#define	sd_destroypkt_for_buf		ssd_destroypkt_for_buf
-#define	sd_setup_rw_pkt			ssd_setup_rw_pkt
-#define	sd_setup_next_rw_pkt		ssd_setup_next_rw_pkt
-#define	sd_buf_iodone			ssd_buf_iodone
-#define	sd_uscsi_strategy		ssd_uscsi_strategy
-#define	sd_initpkt_for_uscsi		ssd_initpkt_for_uscsi
-#define	sd_destroypkt_for_uscsi		ssd_destroypkt_for_uscsi
-#define	sd_uscsi_iodone			ssd_uscsi_iodone
-#define	sd_xbuf_strategy		ssd_xbuf_strategy
-#define	sd_xbuf_init			ssd_xbuf_init
-#define	sd_pm_entry			ssd_pm_entry
-#define	sd_pm_exit			ssd_pm_exit
-
-#define	sd_pm_idletimeout_handler	ssd_pm_idletimeout_handler
-#define	sd_pm_timeout_handler		ssd_pm_timeout_handler
-
-#define	sd_add_buf_to_waitq		ssd_add_buf_to_waitq
-#define	sdintr				ssdintr
-#define	sd_start_cmds			ssd_start_cmds
-#define	sd_send_scsi_cmd		ssd_send_scsi_cmd
-#define	sd_bioclone_alloc		ssd_bioclone_alloc
-#define	sd_bioclone_free		ssd_bioclone_free
-#define	sd_shadow_buf_alloc		ssd_shadow_buf_alloc
-#define	sd_shadow_buf_free		ssd_shadow_buf_free
-#define	sd_print_transport_rejected_message	\
-					ssd_print_transport_rejected_message
-#define	sd_retry_command		ssd_retry_command
-#define	sd_set_retry_bp			ssd_set_retry_bp
-#define	sd_send_request_sense_command	ssd_send_request_sense_command
-#define	sd_start_retry_command		ssd_start_retry_command
-#define	sd_start_direct_priority_command	\
-					ssd_start_direct_priority_command
-#define	sd_return_failed_command	ssd_return_failed_command
-#define	sd_return_failed_command_no_restart	\
-					ssd_return_failed_command_no_restart
-#define	sd_return_command		ssd_return_command
-#define	sd_sync_with_callback		ssd_sync_with_callback
-#define	sdrunout			ssdrunout
-#define	sd_mark_rqs_busy		ssd_mark_rqs_busy
-#define	sd_mark_rqs_idle		ssd_mark_rqs_idle
-#define	sd_reduce_throttle		ssd_reduce_throttle
-#define	sd_restore_throttle		ssd_restore_throttle
-#define	sd_print_incomplete_msg		ssd_print_incomplete_msg
-#define	sd_init_cdb_limits		ssd_init_cdb_limits
-#define	sd_pkt_status_good		ssd_pkt_status_good
-#define	sd_pkt_status_check_condition	ssd_pkt_status_check_condition
-#define	sd_pkt_status_busy		ssd_pkt_status_busy
-#define	sd_pkt_status_reservation_conflict	\
-					ssd_pkt_status_reservation_conflict
-#define	sd_pkt_status_qfull		ssd_pkt_status_qfull
-#define	sd_handle_request_sense		ssd_handle_request_sense
-#define	sd_handle_auto_request_sense	ssd_handle_auto_request_sense
-#define	sd_print_sense_failed_msg	ssd_print_sense_failed_msg
-#define	sd_validate_sense_data		ssd_validate_sense_data
-#define	sd_decode_sense			ssd_decode_sense
-#define	sd_print_sense_msg		ssd_print_sense_msg
-#define	sd_sense_key_no_sense		ssd_sense_key_no_sense
-#define	sd_sense_key_recoverable_error	ssd_sense_key_recoverable_error
-#define	sd_sense_key_not_ready		ssd_sense_key_not_ready
-#define	sd_sense_key_medium_or_hardware_error	\
-					ssd_sense_key_medium_or_hardware_error
-#define	sd_sense_key_illegal_request	ssd_sense_key_illegal_request
-#define	sd_sense_key_unit_attention	ssd_sense_key_unit_attention
-#define	sd_sense_key_fail_command	ssd_sense_key_fail_command
-#define	sd_sense_key_blank_check	ssd_sense_key_blank_check
-#define	sd_sense_key_aborted_command	ssd_sense_key_aborted_command
-#define	sd_sense_key_default		ssd_sense_key_default
-#define	sd_print_retry_msg		ssd_print_retry_msg
-#define	sd_print_cmd_incomplete_msg	ssd_print_cmd_incomplete_msg
-#define	sd_pkt_reason_cmd_incomplete	ssd_pkt_reason_cmd_incomplete
-#define	sd_pkt_reason_cmd_tran_err	ssd_pkt_reason_cmd_tran_err
-#define	sd_pkt_reason_cmd_reset		ssd_pkt_reason_cmd_reset
-#define	sd_pkt_reason_cmd_aborted	ssd_pkt_reason_cmd_aborted
-#define	sd_pkt_reason_cmd_timeout	ssd_pkt_reason_cmd_timeout
-#define	sd_pkt_reason_cmd_unx_bus_free	ssd_pkt_reason_cmd_unx_bus_free
-#define	sd_pkt_reason_cmd_tag_reject	ssd_pkt_reason_cmd_tag_reject
-#define	sd_pkt_reason_default		ssd_pkt_reason_default
-#define	sd_reset_target			ssd_reset_target
-#define	sd_start_stop_unit_callback	ssd_start_stop_unit_callback
-#define	sd_start_stop_unit_task		ssd_start_stop_unit_task
-#define	sd_taskq_create			ssd_taskq_create
-#define	sd_taskq_delete			ssd_taskq_delete
-#define	sd_target_change_task		ssd_target_change_task
-#define	sd_log_dev_status_event		ssd_log_dev_status_event
-#define	sd_log_lun_expansion_event	ssd_log_lun_expansion_event
-#define	sd_log_eject_request_event	ssd_log_eject_request_event
-#define	sd_media_change_task		ssd_media_change_task
-#define	sd_handle_mchange		ssd_handle_mchange
-#define	sd_send_scsi_DOORLOCK		ssd_send_scsi_DOORLOCK
-#define	sd_send_scsi_READ_CAPACITY	ssd_send_scsi_READ_CAPACITY
-#define	sd_send_scsi_READ_CAPACITY_16	ssd_send_scsi_READ_CAPACITY_16
-#define	sd_send_scsi_GET_CONFIGURATION	ssd_send_scsi_GET_CONFIGURATION
-#define	sd_send_scsi_feature_GET_CONFIGURATION	\
-					sd_send_scsi_feature_GET_CONFIGURATION
-#define	sd_send_scsi_START_STOP_UNIT	ssd_send_scsi_START_STOP_UNIT
-#define	sd_send_scsi_INQUIRY		ssd_send_scsi_INQUIRY
-#define	sd_send_scsi_TEST_UNIT_READY	ssd_send_scsi_TEST_UNIT_READY
-#define	sd_send_scsi_PERSISTENT_RESERVE_IN	\
-					ssd_send_scsi_PERSISTENT_RESERVE_IN
-#define	sd_send_scsi_PERSISTENT_RESERVE_OUT	\
-					ssd_send_scsi_PERSISTENT_RESERVE_OUT
-#define	sd_send_scsi_SYNCHRONIZE_CACHE	ssd_send_scsi_SYNCHRONIZE_CACHE
-#define	sd_send_scsi_SYNCHRONIZE_CACHE_biodone	\
-					ssd_send_scsi_SYNCHRONIZE_CACHE_biodone
-#define	sd_send_scsi_MODE_SENSE		ssd_send_scsi_MODE_SENSE
-#define	sd_send_scsi_MODE_SELECT	ssd_send_scsi_MODE_SELECT
-#define	sd_send_scsi_RDWR		ssd_send_scsi_RDWR
-#define	sd_send_scsi_LOG_SENSE		ssd_send_scsi_LOG_SENSE
-#define	sd_send_scsi_GET_EVENT_STATUS_NOTIFICATION	\
-				ssd_send_scsi_GET_EVENT_STATUS_NOTIFICATION
-#define	sd_gesn_media_data_valid	ssd_gesn_media_data_valid
-#define	sd_alloc_rqs			ssd_alloc_rqs
-#define	sd_free_rqs			ssd_free_rqs
-#define	sd_dump_memory			ssd_dump_memory
-#define	sd_get_media_info_com		ssd_get_media_info_com
-#define	sd_get_media_info		ssd_get_media_info
-#define	sd_get_media_info_ext		ssd_get_media_info_ext
-#define	sd_dkio_ctrl_info		ssd_dkio_ctrl_info
-#define	sd_nvpair_str_decode		ssd_nvpair_str_decode
-#define	sd_strtok_r			ssd_strtok_r
-#define	sd_set_properties		ssd_set_properties
-#define	sd_get_tunables_from_conf	ssd_get_tunables_from_conf
-#define	sd_setup_next_xfer		ssd_setup_next_xfer
-#define	sd_dkio_get_temp		ssd_dkio_get_temp
-#define	sd_check_mhd			ssd_check_mhd
-#define	sd_mhd_watch_cb			ssd_mhd_watch_cb
-#define	sd_mhd_watch_incomplete		ssd_mhd_watch_incomplete
-#define	sd_sname			ssd_sname
-#define	sd_mhd_resvd_recover		ssd_mhd_resvd_recover
-#define	sd_resv_reclaim_thread		ssd_resv_reclaim_thread
-#define	sd_take_ownership		ssd_take_ownership
-#define	sd_reserve_release		ssd_reserve_release
-#define	sd_rmv_resv_reclaim_req		ssd_rmv_resv_reclaim_req
-#define	sd_mhd_reset_notify_cb		ssd_mhd_reset_notify_cb
-#define	sd_persistent_reservation_in_read_keys	\
-					ssd_persistent_reservation_in_read_keys
-#define	sd_persistent_reservation_in_read_resv	\
-					ssd_persistent_reservation_in_read_resv
-#define	sd_mhdioc_takeown		ssd_mhdioc_takeown
-#define	sd_mhdioc_failfast		ssd_mhdioc_failfast
-#define	sd_mhdioc_release		ssd_mhdioc_release
-#define	sd_mhdioc_register_devid	ssd_mhdioc_register_devid
-#define	sd_mhdioc_inkeys		ssd_mhdioc_inkeys
-#define	sd_mhdioc_inresv		ssd_mhdioc_inresv
-#define	sr_change_blkmode		ssr_change_blkmode
-#define	sr_change_speed			ssr_change_speed
-#define	sr_atapi_change_speed		ssr_atapi_change_speed
-#define	sr_pause_resume			ssr_pause_resume
-#define	sr_play_msf			ssr_play_msf
-#define	sr_play_trkind			ssr_play_trkind
-#define	sr_read_all_subcodes		ssr_read_all_subcodes
-#define	sr_read_subchannel		ssr_read_subchannel
-#define	sr_read_tocentry		ssr_read_tocentry
-#define	sr_read_tochdr			ssr_read_tochdr
-#define	sr_read_cdda			ssr_read_cdda
-#define	sr_read_cdxa			ssr_read_cdxa
-#define	sr_read_mode1			ssr_read_mode1
-#define	sr_read_mode2			ssr_read_mode2
-#define	sr_read_cd_mode2		ssr_read_cd_mode2
-#define	sr_sector_mode			ssr_sector_mode
-#define	sr_eject			ssr_eject
-#define	sr_ejected			ssr_ejected
-#define	sr_check_wp			ssr_check_wp
-#define	sd_watch_request_submit		ssd_watch_request_submit
-#define	sd_check_media			ssd_check_media
-#define	sd_media_watch_cb		ssd_media_watch_cb
-#define	sd_delayed_cv_broadcast		ssd_delayed_cv_broadcast
-#define	sr_volume_ctrl			ssr_volume_ctrl
-#define	sr_read_sony_session_offset	ssr_read_sony_session_offset
-#ifdef notyet
-#define	sd_log_page_supported		ssd_log_page_supported
-#endif
-#define	sd_check_for_writable_cd	ssd_check_for_writable_cd
-#define	sd_wm_cache_constructor		ssd_wm_cache_constructor
-#define	sd_wm_cache_destructor		ssd_wm_cache_destructor
-#define	sd_range_lock			ssd_range_lock
-#define	sd_get_range			ssd_get_range
-#define	sd_free_inlist_wmap		ssd_free_inlist_wmap
-#define	sd_range_unlock			ssd_range_unlock
-#define	sd_read_modify_write_task	ssd_read_modify_write_task
-#define	sddump_do_read_of_rmw		ssddump_do_read_of_rmw
-
-#define	sd_iostart_chain		ssd_iostart_chain
-#define	sd_iodone_chain			ssd_iodone_chain
-#define	sd_initpkt_map			ssd_initpkt_map
-#define	sd_destroypkt_map		ssd_destroypkt_map
-#define	sd_chain_type_map		ssd_chain_type_map
-#define	sd_chain_index_map		ssd_chain_index_map
-
-#define	sd_failfast_flushctl		ssd_failfast_flushctl
-#define	sd_failfast_flushq		ssd_failfast_flushq
-#define	sd_failfast_flushq_callback	ssd_failfast_flushq_callback
-
-#define	sd_is_lsi			ssd_is_lsi
-#define	sd_tg_rdwr			ssd_tg_rdwr
-#define	sd_tg_getinfo			ssd_tg_getinfo
-#define	sd_rmw_msg_print_handler	ssd_rmw_msg_print_handler
-
-#endif	/* #if (defined(__fibre)) */
-
 typedef struct unmap_param_hdr_s {
 	uint16_t	uph_data_len;
 	uint16_t	uph_descr_data_len;
@@ -1268,7 +770,7 @@ static void sd_ssc_fini(sd_ssc_t *ssc);
  * Using sd_ssc_assessment to set correct type-of-assessment
  * Using sd_ssc_post to post ereport & system log
  *       sd_ssc_post will call sd_ssc_print to print system log
- *       sd_ssc_post will call sd_ssd_ereport_post to post ereport
+ *       sd_ssc_post will call sd_ssc_ereport_post to post ereport
  */
 static void sd_ssc_assessment(sd_ssc_t *ssc,
     enum sd_type_assessment tp_assess);
@@ -1345,18 +847,9 @@ static int  sd_scsi_poll(struct sd_lun *un, struct scsi_pkt *pkt);
 static int  sd_send_polled_RQS(struct sd_lun *un);
 static int  sd_ddi_scsi_poll(struct scsi_pkt *pkt);
 
-#if (defined(__fibre))
-/*
- * Event callbacks (photon)
- */
-static void sd_init_event_callbacks(struct sd_lun *un);
-static void  sd_event_callback(dev_info_t *, ddi_eventcookie_t, void *, void *);
-#endif
-
 /*
  * Defines for sd_cache_control
  */
-
 #define	SD_CACHE_ENABLE		1
 #define	SD_CACHE_DISABLE	0
 #define	SD_CACHE_NOCHANGE	-1
@@ -2481,10 +1974,6 @@ static struct sd_chain_index	sd_chain_index_map[] = {
 /*
  * Macros used by functions to pass a given buf(9S) struct along to the
  * next function in the layering chain for further processing.
- *
- * In the following macros, passing more than three arguments to the called
- * routines causes the optimizer for the SPARC compiler to stop doing tail
- * call elimination which results in significant performance degradation.
  */
 #define	SD_BEGIN_IOSTART(index, un, bp)	\
 	((*(sd_iostart_chain[index]))(index, un, bp))
@@ -2677,7 +2166,6 @@ sd_log_err(uint_t comp, struct sd_lun *un, const char *fmt, ...)
 		mutex_exit(&sd_log_mutex);
 	}
 #ifdef SD_FAULT_INJECTION
-	_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::sd_injection_mask));
 	if (un->sd_injection_mask & comp) {
 		mutex_enter(&sd_log_mutex);
 		va_start(ap, fmt);
@@ -2727,7 +2215,6 @@ sd_log_info(uint_t component, struct sd_lun *un, const char *fmt, ...)
 		mutex_exit(&sd_log_mutex);
 	}
 #ifdef SD_FAULT_INJECTION
-	_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::sd_injection_mask));
 	if (un->sd_injection_mask & component) {
 		mutex_enter(&sd_log_mutex);
 		va_start(ap, fmt);
@@ -2777,7 +2264,6 @@ sd_log_trace(uint_t component, struct sd_lun *un, const char *fmt, ...)
 		mutex_exit(&sd_log_mutex);
 	}
 #ifdef SD_FAULT_INJECTION
-	_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::sd_injection_mask));
 	if (un->sd_injection_mask & component) {
 		mutex_enter(&sd_log_mutex);
 		va_start(ap, fmt);
@@ -2810,10 +2296,6 @@ sdprobe(dev_info_t *devi)
 	int			rval;
 	int			instance = ddi_get_instance(devi);
 
-	/*
-	 * if it wasn't for pln, sdprobe could actually be nulldev
-	 * in the "__fibre" case.
-	 */
 	if (ddi_dev_is_sid(devi) == DDI_SUCCESS) {
 		return (DDI_PROBE_DONTCARE);
 	}
@@ -2840,36 +2322,16 @@ sdprobe(dev_info_t *devi)
 			rval = DDI_PROBE_SUCCESS;
 			break;
 		case DTYPE_RODIRECT:
-			/* CDs etc. Can be removable media */
+			/* CDs etc. Can be removable media. */
 			rval = DDI_PROBE_SUCCESS;
 			break;
 		case DTYPE_OPTICAL:
 			/*
-			 * Rewritable optical driver HP115AA
-			 * Can also be removable media
+			 * Rewritable optical driver HP115AA.
+			 * Can also be removable media.
 			 */
-
-			/*
-			 * Do not attempt to bind to  DTYPE_OPTICAL if
-			 * pre solaris 9 sparc sd behavior is required
-			 *
-			 * If first time through and sd_dtype_optical_bind
-			 * has not been set in /etc/system check properties
-			 */
-
-			if (sd_dtype_optical_bind  < 0) {
-				sd_dtype_optical_bind = ddi_prop_get_int
-				    (DDI_DEV_T_ANY, devi, 0,
-				    "optical-device-bind", 1);
-			}
-
-			if (sd_dtype_optical_bind == 0) {
-				rval = DDI_PROBE_FAILURE;
-			} else {
-				rval = DDI_PROBE_SUCCESS;
-			}
+			rval = DDI_PROBE_SUCCESS;
 			break;
-
 		case DTYPE_NOTPRESENT:
 		default:
 			rval = DDI_PROBE_FAILURE;
@@ -3960,7 +3422,7 @@ sd_process_sdconf_file(struct sd_lun *un)
 
 	/* Obtain the configuration list associated with the .conf file */
 	if (ddi_prop_lookup_string_array(DDI_DEV_T_ANY, SD_DEVINFO(un),
-	    DDI_PROP_DONTPASS | DDI_PROP_NOTPROM, sd_config_list,
+	    DDI_PROP_DONTPASS | DDI_PROP_NOTPROM, "sd-config-list",
 	    &config_list, &nelements) != DDI_PROP_SUCCESS) {
 		return (SD_FAILURE);
 	}
@@ -6514,25 +5976,6 @@ sd_ddi_suspend(dev_info_t *devi)
 		mutex_enter(SD_MUTEX(un));
 	}
 
-	if (un->un_f_is_fibre == TRUE) {
-		/*
-		 * Remove callbacks for insert and remove events
-		 */
-		if (un->un_insert_event != NULL) {
-			mutex_exit(SD_MUTEX(un));
-			(void) ddi_remove_event_handler(un->un_insert_cb_id);
-			mutex_enter(SD_MUTEX(un));
-			un->un_insert_event = NULL;
-		}
-
-		if (un->un_remove_event != NULL) {
-			mutex_exit(SD_MUTEX(un));
-			(void) ddi_remove_event_handler(un->un_remove_cb_id);
-			mutex_enter(SD_MUTEX(un));
-			un->un_remove_event = NULL;
-		}
-	}
-
 	mutex_exit(SD_MUTEX(un));
 
 	SD_TRACE(SD_LOG_IO_PM, un, "sd_ddi_suspend: exit\n");
@@ -6613,17 +6056,6 @@ sd_ddi_resume(dev_info_t *devi)
 	if (SD_OK_TO_RESUME_SCSI_WATCHER(un)) {
 		scsi_watch_resume(un->un_swr_token);
 	}
-
-#if (defined(__fibre))
-	if (un->un_f_is_fibre == TRUE) {
-		/*
-		 * Add callbacks for insert and remove events
-		 */
-		if (strcmp(un->un_node_type, DDI_NT_BLOCK_CHAN)) {
-			sd_init_event_callbacks(un);
-		}
-	}
-#endif
 
 	/*
 	 * Transport any pending commands to the target.
@@ -7470,92 +6902,51 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		break;
 	}
 
-	/*
-	 * Try to read the interconnect type from the HBA.
-	 *
-	 * Note: This driver is currently compiled as two binaries, a parallel
-	 * scsi version (sd) and a fibre channel version (ssd). All functional
-	 * differences are determined at compile time. In the future a single
-	 * binary will be provided and the interconnect type will be used to
-	 * differentiate between fibre and parallel scsi behaviors. At that time
-	 * it will be necessary for all fibre channel HBAs to support this
-	 * property.
-	 *
-	 * set un_f_is_fiber to TRUE ( default fiber )
-	 */
-	un->un_f_is_fibre = TRUE;
+	/* Try to read the interconnect type from the HBA */
+	un->un_f_is_fibre = FALSE;
 	switch (scsi_ifgetcap(SD_ADDRESS(un), "interconnect-type", -1)) {
 	case INTERCONNECT_SSA:
+		un->un_f_is_fibre = TRUE;
 		un->un_interconnect_type = SD_INTERCONNECT_SSA;
 		SD_INFO(SD_LOG_ATTACH_DETACH, un,
 		    "sdattach: un:0x%p SD_INTERCONNECT_SSA\n", un);
 		break;
 	case INTERCONNECT_PARALLEL:
-		un->un_f_is_fibre = FALSE;
 		un->un_interconnect_type = SD_INTERCONNECT_PARALLEL;
 		SD_INFO(SD_LOG_ATTACH_DETACH, un,
 		    "sdattach: un:0x%p SD_INTERCONNECT_PARALLEL\n", un);
 		break;
 	case INTERCONNECT_SAS:
-		un->un_f_is_fibre = FALSE;
 		un->un_interconnect_type = SD_INTERCONNECT_SAS;
 		un->un_node_type = DDI_NT_BLOCK_SAS;
 		SD_INFO(SD_LOG_ATTACH_DETACH, un,
 		    "sdattach: un:0x%p SD_INTERCONNECT_SAS\n", un);
 		break;
 	case INTERCONNECT_SATA:
-		un->un_f_is_fibre = FALSE;
 		un->un_interconnect_type = SD_INTERCONNECT_SATA;
 		SD_INFO(SD_LOG_ATTACH_DETACH, un,
 		    "sdattach: un:0x%p SD_INTERCONNECT_SATA\n", un);
 		break;
 	case INTERCONNECT_FIBRE:
+		un->un_f_is_fibre = TRUE;
 		un->un_interconnect_type = SD_INTERCONNECT_FIBRE;
 		SD_INFO(SD_LOG_ATTACH_DETACH, un,
 		    "sdattach: un:0x%p SD_INTERCONNECT_FIBRE\n", un);
 		break;
 	case INTERCONNECT_FABRIC:
+		un->un_f_is_fibre = TRUE;
 		un->un_interconnect_type = SD_INTERCONNECT_FABRIC;
 		un->un_node_type = DDI_NT_BLOCK_FABRIC;
 		SD_INFO(SD_LOG_ATTACH_DETACH, un,
 		    "sdattach: un:0x%p SD_INTERCONNECT_FABRIC\n", un);
 		break;
 	default:
-#ifdef SD_DEFAULT_INTERCONNECT_TYPE
 		/*
-		 * The HBA does not support the "interconnect-type" property
-		 * (or did not provide a recognized type).
-		 *
-		 * Note: This will be obsoleted when a single fibre channel
-		 * and parallel scsi driver is delivered. In the meantime the
-		 * interconnect type will be set to the platform default.If that
-		 * type is not parallel SCSI, it means that we should be
-		 * assuming "ssd" semantics. However, here this also means that
-		 * the FC HBA is not supporting the "interconnect-type" property
-		 * like we expect it to, so log this occurrence.
-		 */
-		un->un_interconnect_type = SD_DEFAULT_INTERCONNECT_TYPE;
-		if (!SD_IS_PARALLEL_SCSI(un)) {
-			SD_INFO(SD_LOG_ATTACH_DETACH, un,
-			    "sdattach: un:0x%p Assuming "
-			    "INTERCONNECT_FIBRE\n", un);
-		} else {
-			SD_INFO(SD_LOG_ATTACH_DETACH, un,
-			    "sdattach: un:0x%p Assuming "
-			    "INTERCONNECT_PARALLEL\n", un);
-			un->un_f_is_fibre = FALSE;
-		}
-#else
-		/*
-		 * Note: This source will be implemented when a single fibre
-		 * channel and parallel scsi driver is delivered. The default
-		 * will be to assume that if a device does not support the
-		 * "interconnect-type" property it is a parallel SCSI HBA and
-		 * we will set the interconnect type for parallel scsi.
+		 * The default is to assume that if a device does not support
+		 * the "interconnect-type" property it is a parallel SCSI HBA
+		 * and set the interconnect type for parallel SCSI.
 		 */
 		un->un_interconnect_type = SD_INTERCONNECT_PARALLEL;
-		un->un_f_is_fibre = FALSE;
-#endif
 		break;
 	}
 
@@ -7583,22 +6974,8 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		goto alloc_rqs_failed;
 	}
 
-	/*
-	 * Set un_retry_count with SD_RETRY_COUNT, this is ok for Sparc
-	 * with separate binary for sd and ssd.
-	 *
-	 * x86 has 1 binary, un_retry_count is set base on connection type.
-	 * The hardcoded values will go away when Sparc uses 1 binary
-	 * for sd and ssd.  This hardcoded values need to match
-	 * SD_RETRY_COUNT in sddef.h
-	 * The value used is base on interconnect type.
-	 * fibre = 3, parallel = 5
-	 */
-#if defined(__i386) || defined(__amd64)
+	/* The value used is base on interconnect type */
 	un->un_retry_count = un->un_f_is_fibre ? 3 : 5;
-#else
-	un->un_retry_count = SD_RETRY_COUNT;
-#endif
 
 	/*
 	 * Set the per disk retry count to the default number of retries
@@ -7634,7 +7011,7 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 
 	/*
 	 * Set the reservation release timeout to the default value of
-	 * 5 seconds. This can be overridden by entries in ssd.conf or the
+	 * 5 seconds. This can be overridden by entries in sd.conf or the
 	 * device config table.
 	 */
 	un->un_reserve_release_time = 5;
@@ -7647,12 +7024,8 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	 * get updated later in the attach, when setting up default wide
 	 * operations for disks.
 	 */
-#if defined(__i386) || defined(__amd64)
 	un->un_max_xfer_size = (uint_t)SD_DEFAULT_MAX_XFER_SIZE;
 	un->un_partial_dma_supported = 1;
-#else
-	un->un_max_xfer_size = (uint_t)maxphys;
-#endif
 
 	/*
 	 * Get "allow bus device reset" property (defaults to "enabled" if
@@ -7963,7 +7336,7 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		if (SD_IS_SERIAL(un)) {
 			un->un_max_xfer_size =
 			    ddi_getprop(DDI_DEV_T_ANY, devi, 0,
-			    sd_max_xfer_size, SD_MAX_XFER_SIZE);
+			    "sd_max_xfer_size", SD_MAX_XFER_SIZE);
 			SD_INFO(SD_LOG_ATTACH_DETACH, un,
 			    "sdattach: un:0x%p max transfer "
 			    "size=0x%x\n", un, un->un_max_xfer_size);
@@ -7971,14 +7344,6 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		}
 
 		/* Setup or tear down default wide operations for disks */
-
-		/*
-		 * Note: Legacy: it may be possible for both "sd_max_xfer_size"
-		 * and "ssd_max_xfer_size" to exist simultaneously on the same
-		 * system and be set to different values. In the future this
-		 * code may need to be updated when the ssd module is
-		 * obsoleted and removed from the system. (4299588)
-		 */
 		if (SD_IS_PARALLEL_SCSI(un) &&
 		    (devp->sd_inq->inq_rdf == RDF_SCSI2) &&
 		    (devp->sd_inq->inq_wbus16 || devp->sd_inq->inq_wbus32)) {
@@ -7996,7 +7361,7 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 			if (un->un_saved_throttle == sd_max_throttle) {
 				un->un_max_xfer_size =
 				    ddi_getprop(DDI_DEV_T_ANY, devi, 0,
-				    sd_max_xfer_size, SD_MAX_XFER_SIZE);
+				    "sd_max_xfer_size", SD_MAX_XFER_SIZE);
 				SD_INFO(SD_LOG_ATTACH_DETACH, un,
 				    "sdattach: un:0x%p max transfer "
 				    "size=0x%x\n", un, un->un_max_xfer_size);
@@ -8012,7 +7377,7 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	} else {
 		un->un_tagflags = FLAG_STAG;
 		un->un_max_xfer_size = ddi_getprop(DDI_DEV_T_ANY,
-		    devi, 0, sd_max_xfer_size, SD_MAX_XFER_SIZE);
+		    devi, 0, "sd_max_xfer_size", SD_MAX_XFER_SIZE);
 	}
 
 	/*
@@ -8029,16 +7394,13 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	}
 
 	/*
-	 * Adjust the maximum transfer size. This is to fix
+	 * XXX Adjust the maximum transfer size. This was to fix
 	 * the problem of partial DMA support on SPARC. Some
 	 * HBA driver, like aac, has very small dma_attr_maxxfer
 	 * size, which requires partial DMA support on SPARC.
-	 * In the future the SPARC pci nexus driver may solve
-	 * the problem instead of this fix.
 	 */
 	max_xfer_size = scsi_ifgetcap(SD_ADDRESS(un), "dma-max", 1);
 	if ((max_xfer_size > 0) && (max_xfer_size < un->un_max_xfer_size)) {
-		/* We need DMA partial even on sparc to ensure sddump() works */
 		un->un_max_xfer_size = max_xfer_size;
 		if (un->un_partial_dma_supported == 0)
 			un->un_partial_dma_supported = 1;
@@ -8440,7 +7802,6 @@ sd_unit_attach(void *arg)
 					    "is too large for a 32-bit "
 					    "kernel", capacity);
 
-#if defined(__i386) || defined(__amd64)
 					/*
 					 * 1TB disk was treated as (1T - 512)B
 					 * in the past, so that it might have
@@ -8448,9 +7809,8 @@ sd_unit_attach(void *arg)
 					 * we have to allow it to continue to
 					 * work.
 					 */
-					if (capacity -1 > DK_MAX_BLOCKS)
-#endif
-					goto spinup_failed;
+					if (capacity - 1 > DK_MAX_BLOCKS)
+						goto spinup_failed;
 #endif
 				}
 
@@ -8608,7 +7968,7 @@ sd_unit_attach(void *arg)
 	    sd_retry_on_reservation_conflict);
 	if (sd_retry_on_reservation_conflict != 0) {
 		sd_retry_on_reservation_conflict = ddi_getprop(DDI_DEV_T_ANY,
-		    devi, DDI_PROP_DONTPASS, sd_resv_conflict_name,
+		    devi, DDI_PROP_DONTPASS, "sd_retry_on_reservation_conflict",
 		    sd_retry_on_reservation_conflict);
 	}
 
@@ -8644,14 +8004,10 @@ sd_unit_attach(void *arg)
 	 */
 	sd_check_emulation_mode(ssc);
 
-#if defined(__i386) || defined(__amd64)
-	/*
-	 * On x86, compensate for off-by-1 legacy error
-	 */
+	/* Compensate for off-by-1 legacy error */
 	if (!un->un_f_has_removable_media && !un->un_f_is_hotpluggable &&
 	    (lbasize == un->un_sys_blocksize))
 		cmlb_workaround_off_by_one(un->un_cmlbhandle);
-#endif
 
 	/*
 	 * Read and validate the device's geometry (ie, disk label)
@@ -8671,23 +8027,6 @@ sd_unit_attach(void *arg)
 		sd_register_devid(ssc, devi, reservation_flag);
 	}
 	mutex_exit(SD_MUTEX(un));
-
-#if (defined(__fibre))
-	/*
-	 * Register callbacks for fibre only.  You can't do this solely
-	 * on the basis of the devid_type because this is hba specific.
-	 * We need to query our hba capabilities to find out whether to
-	 * register or not.
-	 */
-	if (un->un_f_is_fibre) {
-		if (strcmp(un->un_node_type, DDI_NT_BLOCK_CHAN)) {
-			sd_init_event_callbacks(un);
-			SD_TRACE(SD_LOG_ATTACH_DETACH, un,
-			    "sd_unit_attach: un:0x%p event callbacks inserted",
-			    un);
-		}
-	}
-#endif
 
 	if (un->un_f_opt_disable_cache == TRUE) {
 		/*
@@ -8926,10 +8265,6 @@ sd_unit_detach(dev_info_t *devi)
 
 	dev = sd_make_device(SD_DEVINFO(un));
 
-#ifndef lint
-	_NOTE(COMPETING_THREADS_NOW);
-#endif
-
 	mutex_enter(SD_MUTEX(un));
 
 	/*
@@ -8955,7 +8290,7 @@ sd_unit_detach(dev_info_t *devi)
 		mutex_exit(SD_MUTEX(un));
 		SD_ERROR(SD_LOG_ATTACH_DETACH, un,
 		    "sd_dr_detach: Detach failure due to outstanding cmds\n");
-		goto err_stillbusy;
+		goto err_remove_event;
 	}
 
 	/*
@@ -9049,7 +8384,6 @@ sd_unit_detach(dev_info_t *devi)
 	/* Cancel any active multi-host disk watch thread requests */
 	if (un->un_mhd_token != NULL) {
 		mutex_exit(SD_MUTEX(un));
-		 _NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_mhd_token));
 		if (scsi_watch_request_terminate(un->un_mhd_token,
 		    SCSI_WATCH_TERMINATE_NOWAIT)) {
 			SD_ERROR(SD_LOG_ATTACH_DETACH, un,
@@ -9060,7 +8394,7 @@ sd_unit_detach(dev_info_t *devi)
 			 * the legacy implementation but perhaps the watch
 			 * terminate call should be made with the wait flag set.
 			 */
-			goto err_stillbusy;
+			goto err_remove_event;
 		}
 		mutex_enter(SD_MUTEX(un));
 		un->un_mhd_token = NULL;
@@ -9068,7 +8402,6 @@ sd_unit_detach(dev_info_t *devi)
 
 	if (un->un_swr_token != NULL) {
 		mutex_exit(SD_MUTEX(un));
-		_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_swr_token));
 		if (scsi_watch_request_terminate(un->un_swr_token,
 		    SCSI_WATCH_TERMINATE_NOWAIT)) {
 			SD_ERROR(SD_LOG_ATTACH_DETACH, un,
@@ -9079,7 +8412,7 @@ sd_unit_detach(dev_info_t *devi)
 			 * the legacy implementation but perhaps the watch
 			 * terminate call should be made with the wait flag set.
 			 */
-			goto err_stillbusy;
+			goto err_remove_event;
 		}
 		mutex_enter(SD_MUTEX(un));
 		un->un_swr_token = NULL;
@@ -9094,13 +8427,6 @@ sd_unit_detach(dev_info_t *devi)
 	 */
 	(void) scsi_reset_notify(SD_ADDRESS(un), SCSI_RESET_CANCEL,
 	    sd_mhd_reset_notify_cb, (caddr_t)un);
-
-	/*
-	 * protect the timeout pointers from getting nulled by
-	 * their callback functions during the cancellation process.
-	 * In such a scenario untimeout can be invoked with a null value.
-	 */
-	_NOTE(NO_COMPETING_THREADS_NOW);
 
 	mutex_enter(&un->un_pm_mutex);
 	if (un->un_pm_idle_timeid != NULL) {
@@ -9372,9 +8698,6 @@ no_attach_cleanup:
 err_notclosed:
 	mutex_exit(SD_MUTEX(un));
 
-err_stillbusy:
-	_NOTE(NO_COMPETING_THREADS_NOW);
-
 err_remove_event:
 	mutex_enter(&sd_detach_mutex);
 	un->un_detach_count--;
@@ -9587,9 +8910,8 @@ sd_set_pstats(struct sd_lun *un)
 
 	instance = ddi_get_instance(SD_DEVINFO(un));
 
-	/* Note:x86: is this a VTOC8/VTOC16 difference? */
+	/* XXX is this a VTOC8/VTOC16 difference? */
 	for (i = 0; i < NSDMAP; i++) {
-
 		if (cmlb_partinfo(un->un_cmlbhandle, i,
 		    &nblks, NULL, &partname, NULL, (void *)SD_PATH_DIRECT) != 0)
 			continue;
@@ -9613,107 +8935,6 @@ sd_set_pstats(struct sd_lun *un)
 		mutex_exit(SD_MUTEX(un));
 	}
 }
-
-
-#if (defined(__fibre))
-/*
- *    Function: sd_init_event_callbacks
- *
- * Description: This routine initializes the insertion and removal event
- *		callbacks. (fibre only)
- *
- *   Arguments: un - driver soft state (unit) structure
- *
- *     Context: Kernel thread context
- */
-
-static void
-sd_init_event_callbacks(struct sd_lun *un)
-{
-	ASSERT(un != NULL);
-
-	if ((un->un_insert_event == NULL) &&
-	    (ddi_get_eventcookie(SD_DEVINFO(un), FCAL_INSERT_EVENT,
-	    &un->un_insert_event) == DDI_SUCCESS)) {
-		/*
-		 * Add the callback for an insertion event
-		 */
-		(void) ddi_add_event_handler(SD_DEVINFO(un),
-		    un->un_insert_event, sd_event_callback, (void *)un,
-		    &(un->un_insert_cb_id));
-	}
-
-	if ((un->un_remove_event == NULL) &&
-	    (ddi_get_eventcookie(SD_DEVINFO(un), FCAL_REMOVE_EVENT,
-	    &un->un_remove_event) == DDI_SUCCESS)) {
-		/*
-		 * Add the callback for a removal event
-		 */
-		(void) ddi_add_event_handler(SD_DEVINFO(un),
-		    un->un_remove_event, sd_event_callback, (void *)un,
-		    &(un->un_remove_cb_id));
-	}
-}
-
-
-/*
- *    Function: sd_event_callback
- *
- * Description: This routine handles insert/remove events (photon). The
- *		state is changed to OFFLINE which can be used to supress
- *		error msgs. (fibre only)
- *
- *   Arguments: un - driver soft state (unit) structure
- *
- *     Context: Callout thread context
- */
-/* ARGSUSED */
-static void
-sd_event_callback(dev_info_t *dip, ddi_eventcookie_t event, void *arg,
-    void *bus_impldata)
-{
-	struct sd_lun *un = (struct sd_lun *)arg;
-
-	_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_insert_event));
-	if (event == un->un_insert_event) {
-		SD_TRACE(SD_LOG_COMMON, un, "sd_event_callback: insert event");
-		mutex_enter(SD_MUTEX(un));
-		if (un->un_state == SD_STATE_OFFLINE) {
-			if (un->un_last_state != SD_STATE_SUSPENDED) {
-				un->un_state = un->un_last_state;
-			} else {
-				/*
-				 * We have gone through SUSPEND/RESUME while
-				 * we were offline. Restore the last state
-				 */
-				un->un_state = un->un_save_state;
-			}
-		}
-		mutex_exit(SD_MUTEX(un));
-
-	_NOTE(DATA_READABLE_WITHOUT_LOCK(sd_lun::un_remove_event));
-	} else if (event == un->un_remove_event) {
-		SD_TRACE(SD_LOG_COMMON, un, "sd_event_callback: remove event");
-		mutex_enter(SD_MUTEX(un));
-		/*
-		 * We need to handle an event callback that occurs during
-		 * the suspend operation, since we don't prevent it.
-		 */
-		if (un->un_state != SD_STATE_OFFLINE) {
-			if (un->un_state != SD_STATE_SUSPENDED) {
-				New_state(un, SD_STATE_OFFLINE);
-			} else {
-				un->un_last_state = SD_STATE_OFFLINE;
-			}
-		}
-		mutex_exit(SD_MUTEX(un));
-	} else {
-		scsi_log(SD_DEVINFO(un), sd_label, CE_NOTE,
-		    "!Unknown event\n");
-	}
-
-}
-#endif
 
 /*
  * Values related to caching mode page depending on whether the unit is ATAPI.
@@ -10118,9 +9339,8 @@ sd_get_nv_sup(sd_ssc_t *ssc)
 
 		if (rval == 0 && (inq86_len - inq86_resid > 6)) {
 			SD_TRACE(SD_LOG_COMMON, un,
-			    "sd_get_nv_sup: \
-			    successfully get VPD page: %x \
-			    PAGE LENGTH: %x BYTE 6: %x\n",
+			    "sd_get_nv_sup: successfully get VPD page: %x "
+			    "PAGE LENGTH: %x BYTE 6: %x\n",
 			    inq86[1], inq86[3], inq86[6]);
 
 			mutex_enter(SD_MUTEX(un));
@@ -10465,14 +9685,8 @@ sdopen(dev_t *dev_p, int flag, int otyp, cred_t *cred_p)
 	    (un->un_detach_count != 0)) {
 		mutex_exit(&sd_detach_mutex);
 		/*
-		 * The probe cache only needs to be cleared when open (9e) fails
-		 * with ENXIO (4238046).
-		 */
-		/*
-		 * un-conditionally clearing probe cache is ok with
-		 * separate sd/ssd binaries
-		 * x86 platform can be an issue with both parallel
-		 * and fibre in 1 binary
+		 * The probe cache only needs to be cleared when open (9E) fails
+		 * with ENXIO.
 		 */
 		sd_scsi_clear_probe_cache();
 		return (ENXIO);
@@ -10641,7 +9855,6 @@ sdopen(dev_t *dev_p, int flag, int otyp, cred_t *cred_p)
 			    "device not ready or invalid disk block value\n");
 			goto open_fail;
 		}
-#if defined(__i386) || defined(__amd64)
 	} else {
 		uchar_t *cp;
 		/*
@@ -10662,8 +9875,6 @@ sdopen(dev_t *dev_p, int flag, int otyp, cred_t *cred_p)
 			    (void *)SD_PATH_DIRECT);
 			mutex_enter(SD_MUTEX(un));
 		}
-
-#endif
 	}
 
 	if (otyp == OTYP_LYR) {
@@ -10854,18 +10065,10 @@ sdclose(dev_t dev, int flag, int otyp, cred_t *cred_p)
 			 * sending the Sync Cache command. If additional
 			 * commands are added which require a powered up
 			 * drive, the following sequence may have to change.
-			 *
-			 * And finally, note that parallel SCSI on SPARC
-			 * only issues a Sync Cache to DVD-RAM, a newly
-			 * supported device.
 			 */
-#if defined(__i386) || defined(__amd64)
 			if ((un->un_f_sync_cache_supported &&
 			    un->un_f_sync_cache_required) ||
 			    un->un_f_dvdram_writable_device == TRUE) {
-#else
-			if (un->un_f_dvdram_writable_device == TRUE) {
-#endif
 				mutex_exit(SD_MUTEX(un));
 				if (sd_pm_entry(un) == DDI_SUCCESS) {
 					rval =
@@ -13299,10 +12502,8 @@ sd_mapblocksize_iostart(int index, struct sd_lun *un, struct buf *bp)
 		goto done;
 	}
 
-#if defined(__i386) || defined(__amd64)
 	/* We do not support non-block-aligned transfers for ROD devices */
 	ASSERT(!ISROD(un));
-#endif
 
 	xp = SD_GET_XBUF(bp);
 	ASSERT(xp != NULL);
@@ -14001,12 +13202,10 @@ sd_init_cdb_limits(struct sd_lun *un)
 	 * performance using CDB_GROUP0 commands (where applicable).
 	 */
 	un->un_mincdb = SD_CDB_GROUP1;
-#if !defined(__fibre)
 	if (!un->un_f_is_fibre && !un->un_f_cfg_is_atapi && !ISROD(un) &&
 	    !un->un_f_has_removable_media) {
 		un->un_mincdb = SD_CDB_GROUP0;
 	}
-#endif
 
 	/*
 	 * Try to read the max-cdb-length supported by HBA.
@@ -14096,7 +13295,6 @@ sd_initpkt_for_buf(struct buf *bp, struct scsi_pkt **pktpp)
 
 	mutex_exit(SD_MUTEX(un));
 
-#if defined(__i386) || defined(__amd64)	/* DMAFREE for x86 only */
 	if (xp->xb_pkt_flags & SD_XB_DMA_FREED) {
 		/*
 		 * Already have a scsi_pkt -- just need DMA resources.
@@ -14112,7 +13310,6 @@ sd_initpkt_for_buf(struct buf *bp, struct scsi_pkt **pktpp)
 	} else {
 		pktp = NULL;
 	}
-#endif /* __i386 || __amd64 */
 
 	startblock = xp->xb_blkno;	/* Absolute block num. */
 	blockcount = SD_BYTES2TGTBLOCKS(un, bp->b_bcount);
@@ -14160,9 +13357,7 @@ sd_initpkt_for_buf(struct buf *bp, struct scsi_pkt **pktpp)
 		SD_TRACE(SD_LOG_IO_CORE, un,
 		    "sd_initpkt_for_buf: exit: buf:0x%p\n", bp);
 
-#if defined(__i386) || defined(__amd64)	/* DMAFREE for x86 only */
 		xp->xb_pkt_flags &= ~SD_XB_DMA_FREED;
-#endif
 
 		mutex_enter(SD_MUTEX(un));
 		return (SD_PKT_ALLOC_SUCCESS);
@@ -14826,16 +14021,11 @@ sd_shadow_buf_alloc(struct buf *bp, size_t datalen, uint_t bflags,
 	}
 
 	bflags &= (B_READ | B_WRITE);
-#if defined(__i386) || defined(__amd64)
 	new_bp = getrbuf(KM_SLEEP);
 	new_bp->b_un.b_addr = kmem_zalloc(datalen, KM_SLEEP);
 	new_bp->b_bcount = datalen;
 	new_bp->b_flags = bflags |
 	    (bp->b_flags & ~(B_PAGEIO | B_PHYS | B_REMAPPED | B_SHADOW));
-#else
-	new_bp = scsi_alloc_consistent_buf(SD_ADDRESS(un), NULL,
-	    datalen, bflags, SLEEP_FUNC, NULL);
-#endif
 	new_bp->av_forw	= NULL;
 	new_bp->av_back	= NULL;
 	new_bp->b_dev	= bp->b_dev;
@@ -14924,15 +14114,6 @@ sd_shadow_buf_free(struct buf *bp)
 	xp = SD_GET_XBUF(bp);
 	ASSERT(xp != NULL);
 
-#if defined(__sparc)
-	/*
-	 * Call bp_mapout() before freeing the buf,  in case a lower
-	 * layer or HBA  had done a bp_mapin().  we must do this here
-	 * as we are the "originator" of the shadow buf.
-	 */
-	bp_mapout(bp);
-#endif
-
 	/*
 	 * Null out b_iodone before freeing the bp, to ensure that the driver
 	 * never gets confused by a stale value in this field. (Just a little
@@ -14940,12 +14121,8 @@ sd_shadow_buf_free(struct buf *bp)
 	 */
 	bp->b_iodone = NULL;
 
-#if defined(__i386) || defined(__amd64)
 	kmem_free(bp->b_un.b_addr, bp->b_bcount);
 	freerbuf(bp);
-#else
-	scsi_free_consistent_buf(bp);
-#endif
 
 	kmem_free(xp, sizeof (struct sd_xbuf));
 }
@@ -15171,9 +14348,7 @@ sd_start_cmds(struct sd_lun *un, struct buf *immed_bp)
 	struct	sd_xbuf	*xp;
 	struct	buf	*bp;
 	void	(*statp)(kstat_io_t *);
-#if defined(__i386) || defined(__amd64)	/* DMAFREE for x86 only */
 	void	(*saved_statp)(kstat_io_t *);
-#endif
 	int	rval;
 	struct sd_fm_internal *sfip = NULL;
 
@@ -15203,9 +14378,7 @@ sd_start_cmds(struct sd_lun *un, struct buf *immed_bp)
 	}
 
 	do {
-#if defined(__i386) || defined(__amd64)	/* DMAFREE for x86 only */
 		saved_statp = NULL;
-#endif
 
 		/*
 		 * If we are syncing or dumping, fail the command to
@@ -15262,9 +14435,7 @@ sd_start_cmds(struct sd_lun *un, struct buf *immed_bp)
 				    kstat_runq_back_to_waitq)) {
 					statp = kstat_waitq_to_runq;
 				}
-#if defined(__i386) || defined(__amd64)	/* DMAFREE for x86 only */
 				saved_statp = un->un_retry_statp;
-#endif
 				un->un_retry_statp = NULL;
 
 				SD_TRACE(SD_LOG_IO | SD_LOG_ERROR, un,
@@ -15354,7 +14525,6 @@ sd_start_cmds(struct sd_lun *un, struct buf *immed_bp)
 		xp = SD_GET_XBUF(bp);
 		ASSERT(xp != NULL);
 
-#if defined(__i386) || defined(__amd64)	/* DMAFREE for x86 only */
 		/*
 		 * Allocate the scsi_pkt if we need one, or attach DMA
 		 * resources if we have a scsi_pkt that needs them. The
@@ -15363,9 +14533,6 @@ sd_start_cmds(struct sd_lun *un, struct buf *immed_bp)
 		 */
 		if ((xp->xb_pktp == NULL) ||
 		    ((xp->xb_pkt_flags & SD_XB_DMA_FREED) != 0)) {
-#else
-		if (xp->xb_pktp == NULL) {
-#endif
 			/*
 			 * There is no scsi_pkt allocated for this buf. Call
 			 * the initpkt function to allocate & init one.
@@ -15432,8 +14599,6 @@ sd_start_cmds(struct sd_lun *un, struct buf *immed_bp)
 				 */
 				SD_TRACE(SD_LOG_IO_CORE | SD_LOG_ERROR, un,
 				    "sd_start_cmds: SD_PKT_ALLOC_FAILURE\n");
-
-#if defined(__i386) || defined(__amd64)	/* DMAFREE for x86 only */
 
 				if (bp == immed_bp) {
 					/*
@@ -15506,12 +14671,6 @@ sd_start_cmds(struct sd_lun *un, struct buf *immed_bp)
 					goto exit;
 				}
 
-#else
-				if (bp == immed_bp) {
-					break;	/* Just fail the command */
-				}
-#endif
-
 				/* Add the buf back to the head of the waitq */
 				bp->av_forw = un->un_waitq_headp;
 				un->un_waitq_headp = bp;
@@ -15532,9 +14691,9 @@ sd_start_cmds(struct sd_lun *un, struct buf *immed_bp)
 
 			case SD_PKT_ALLOC_FAILURE_PKT_TOO_SMALL:
 				/*
-				 * Note:x86: Partial DMA mapping not supported
-				 * for USCSI commands, and all the needed DMA
-				 * resources were not allocated.
+				 * Partial DMA mapping not supported for USCSI
+				 * commands, and all the needed DMA resources
+				 * were not allocated.
 				 */
 				SD_TRACE(SD_LOG_IO_CORE | SD_LOG_ERROR, un,
 				    "sd_start_cmds: "
@@ -15543,8 +14702,8 @@ sd_start_cmds(struct sd_lun *un, struct buf *immed_bp)
 
 			case SD_PKT_ALLOC_FAILURE_CDB_TOO_SMALL:
 				/*
-				 * Note:x86: Request cannot fit into CDB based
-				 * on lba and len.
+				 * Request cannot fit into CDB based on lba
+				 * and len.
 				 */
 				SD_TRACE(SD_LOG_IO_CORE | SD_LOG_ERROR, un,
 				    "sd_start_cmds: "
@@ -15662,7 +14821,6 @@ got_pkt:
 				goto exit;
 			}
 
-#if defined(__i386) || defined(__amd64)	/* DMAFREE for x86 only */
 			/*
 			 * Free the DMA resources for the  scsi_pkt. This will
 			 * allow mpxio to select another path the next time
@@ -15675,7 +14833,6 @@ got_pkt:
 				scsi_dmafree(xp->xb_pktp);
 				xp->xb_pkt_flags |= SD_XB_DMA_FREED;
 			}
-#endif
 
 			if (SD_IS_DIRECT_PRIORITY(SD_GET_XBUF(bp))) {
 				/*
@@ -15722,7 +14879,7 @@ got_pkt:
 
 			/*
 			 * Set up the bp to be tried again 10 ms later.
-			 * Note:x86: Is there a timeout value in the sd_lun
+			 * XXX Is there a timeout value in the sd_lun
 			 * for this condition?
 			 */
 			sd_set_retry_bp(un, bp, un->un_busy_timeout / 500,
@@ -15851,7 +15008,7 @@ sd_return_command(struct sd_lun *un, struct buf *bp)
 			sd_retry_command(un, bp, SD_RETRIES_NOCHECK,
 			    NULL, NULL, 0, (clock_t)0, NULL);
 			sd_start_cmds(un, NULL);
-			return;	/* Note:x86: need a return here? */
+			return;	/* XXX need a return here? */
 		}
 	}
 
@@ -16975,19 +16132,16 @@ sd_alloc_rqs(struct scsi_device *devp, struct sd_lun *un)
 	 * The 3rd case is the HBA (adp) always return enabled on
 	 * scsi_ifgetgetcap even when it's not enable, the best approach
 	 * is issue a scsi_ifsetcap then a scsi_ifgetcap
-	 * Note: this case is to circumvent the Adaptec bug. (x86 only)
 	 */
 
 	if (un->un_f_is_fibre == TRUE) {
 		un->un_f_arq_enabled = TRUE;
 	} else {
-#if defined(__i386) || defined(__amd64)
 		/*
-		 * Circumvent the Adaptec bug, remove this code when
-		 * the bug is fixed
+		 * XXX Circumvent the Adaptec bug, remove this code when
+		 * the bug is fixed.
 		 */
 		(void) scsi_ifsetcap(SD_ADDRESS(un), "auto-rqsense", 1, 1);
-#endif
 		switch (scsi_ifgetcap(SD_ADDRESS(un), "auto-rqsense", 1)) {
 		case 0:
 			SD_INFO(SD_LOG_ATTACH_DETACH, un,
@@ -17501,7 +16655,6 @@ sdintr(struct scsi_pkt *pktp)
 			goto exit;
 		}
 
-#if (defined(__i386) || defined(__amd64))	/* DMAFREE for x86 only */
 		/*
 		 * We want to either retry or fail this command, so free
 		 * the DMA resources here.  If we retry the command then
@@ -17517,7 +16670,6 @@ sdintr(struct scsi_pkt *pktp)
 			scsi_dmafree(pktp);
 			xp->xb_pkt_flags |= SD_XB_DMA_FREED;
 		}
-#endif
 
 		SD_TRACE(SD_LOG_IO_CORE | SD_LOG_ERROR, un,
 		    "sdintr: arq done, sd_handle_auto_request_sense\n");
@@ -17593,8 +16745,6 @@ sdintr(struct scsi_pkt *pktp)
 	}
 
 not_successful:
-
-#if (defined(__i386) || defined(__amd64))	/* DMAFREE for x86 only */
 	/*
 	 * The following is based upon knowledge of the underlying transport
 	 * and its use of DMA resources.  This code should be removed when
@@ -17622,7 +16772,6 @@ not_successful:
 		scsi_dmafree(pktp);
 		xp->xb_pkt_flags |= SD_XB_DMA_FREED;
 	}
-#endif
 
 	/*
 	 * The command did not successfully complete as requested so check
@@ -18285,21 +17434,9 @@ sense_failed:
 	 * If the request sense failed (for whatever reason), attempt
 	 * to retry the original command.
 	 */
-#if defined(__i386) || defined(__amd64)
-	/*
-	 * SD_RETRY_DELAY is conditionally compile (#if fibre) in
-	 * sddef.h for Sparc platform, and x86 uses 1 binary
-	 * for both SCSI/FC.
-	 * The SD_RETRY_DELAY value need to be adjusted here
-	 * when SD_RETRY_DELAY change in sddef.h
-	 */
 	sd_retry_command(un, bp, SD_RETRIES_STANDARD,
 	    sd_print_sense_failed_msg, msgp, EIO,
 	    un->un_f_is_fibre?drv_usectohz(100000):(clock_t)0, NULL);
-#else
-	sd_retry_command(un, bp, SD_RETRIES_STANDARD,
-	    sd_print_sense_failed_msg, msgp, EIO, SD_RETRY_DELAY, NULL);
-#endif
 
 	return (SD_SENSE_DATA_IS_INVALID);
 }
@@ -19853,18 +18990,9 @@ sd_pkt_status_check_condition(struct sd_lun *un, struct buf *bp,
 	} else {
 		SD_INFO(SD_LOG_IO_CORE, un, "sd_pkt_status_check_condition: "
 		    "ARQ,retrying request sense command\n");
-#if defined(__i386) || defined(__amd64)
-		/*
-		 * The SD_RETRY_DELAY value need to be adjusted here
-		 * when SD_RETRY_DELAY change in sddef.h
-		 */
 		sd_retry_command(un, bp, SD_RETRIES_STANDARD, NULL, NULL, EIO,
-		    un->un_f_is_fibre?drv_usectohz(100000):(clock_t)0,
+		    un->un_f_is_fibre ? drv_usectohz(100000) : (clock_t)0,
 		    NULL);
-#else
-		sd_retry_command(un, bp, SD_RETRIES_STANDARD, NULL, NULL,
-		    EIO, SD_RETRY_DELAY, NULL);
-#endif
 	}
 
 	SD_TRACE(SD_LOG_IO_CORE, un, "sd_pkt_status_check_condition: exit\n");
@@ -23038,12 +22166,9 @@ sdioctl(dev_t dev, int cmd, intptr_t arg, int flag, cred_t *cred_p, int *rval_p)
 		case DKIOCSMBOOT:
 		case DKIOCG_PHYGEOM:
 		case DKIOCG_VIRTGEOM:
-#if defined(__i386) || defined(__amd64)
 		case DKIOCSETEXTPART:
-#endif
 			/* let cmlb handle it */
 			goto skip_ready_valid;
-
 		case CDROMPAUSE:
 		case CDROMRESUME:
 		case CDROMPLAYMSF:
@@ -23191,9 +22316,7 @@ skip_ready_valid:
 	case DKIOCSMBOOT:
 	case DKIOCG_PHYGEOM:
 	case DKIOCG_VIRTGEOM:
-#if defined(__i386) || defined(__amd64)
 	case DKIOCSETEXTPART:
-#endif
 		SD_TRACE(SD_LOG_IOCTL, un, "DKIOC %d\n", cmd);
 
 		/* TUR should spin up */
@@ -23572,14 +22695,10 @@ skip_ready_valid:
 
 	case CDROMPLAYTRKIND:
 		SD_TRACE(SD_LOG_IOCTL, un, "CDROMPLAYTRKIND\n");
-#if defined(__i386) || defined(__amd64)
 		/*
 		 * not supported on ATAPI CD drives, use CDROMPLAYMSF instead
 		 */
 		if (!ISCD(un) || (un->un_f_cfg_is_atapi == TRUE)) {
-#else
-		if (!ISCD(un)) {
-#endif
 			err = ENOTTY;
 		} else {
 			err = sr_play_trkind(dev, (caddr_t)arg, flag);
@@ -26572,8 +25691,6 @@ sddump(dev_t dev, caddr_t addr, daddr_t blkno, int nblk)
 	    !SD_IS_VALID_LABEL(un) || ISCD(un)) {
 		return (ENXIO);
 	}
-
-	_NOTE(NOW_INVISIBLE_TO_OTHER_THREADS(*un))
 
 	SD_TRACE(SD_LOG_DUMP, un, "sddump: entry\n");
 
@@ -30167,8 +29284,6 @@ sd_range_lock(struct sd_lun *un, daddr_t startb, daddr_t endb, ushort_t typ)
 				    KM_NOSLEEP);
 			if (wmp == NULL) {
 				mutex_exit(SD_MUTEX(un));
-				_NOTE(DATA_READABLE_WITHOUT_LOCK
-				    (sd_lun::un_wm_cache))
 				wmp = kmem_cache_alloc(un->un_wm_cache,
 				    KM_SLEEP);
 				mutex_enter(SD_MUTEX(un));
@@ -31540,15 +30655,12 @@ sd_faultinjection(struct scsi_pkt *pktp)
  *     As section 3 says, sd checks if some kinds of devices have VTOC label.
  *     If those devices have no valid VTOC label, sd(7d) will attempt to
  *     create default VTOC for them. Currently sd creates default VTOC label
- *     for all devices on x86 platform (VTOC_16), but only for removable
- *     media devices on SPARC (VTOC_8).
+ *     for all devices on x86 platform (VTOC_16).
  *
  *     -----------------------------------------------------------
  *       removable media hotpluggable platform   |   Default Label
  *     -----------------------------------------------------------
- *             false          false    sparc     |     No
  *             false          true      x86      |     Yes
- *             false          true     sparc     |     Yes
  *             true             x        x       |     Yes
  *     ----------------------------------------------------------
  *
@@ -31581,35 +30693,23 @@ sd_faultinjection(struct scsi_pkt *pktp)
  *
  * 7. fdisk partition management
  *
- *     Fdisk is traditional partition method on x86 platform. Sd(7d) driver
- *     just supports fdisk partitions on x86 platform. On sparc platform, sd
- *     doesn't support fdisk partitions at all. Note: pcfs(7fs) can recognize
- *     fdisk partitions on both x86 and SPARC platform.
+ *     Fdisk is traditional partition method on x86 platform. sd(7D) driver
+ *     just supports fdisk partitions on x86 platform.
  *
  *     -----------------------------------------------------------
  *       platform   removable media  USB/1394  |  fdisk supported
  *     -----------------------------------------------------------
  *        x86         X               X        |       true
- *     ------------------------------------------------------------
- *        sparc       X               X        |       false
- *     ------------------------------------------------------------
+ *     -----------------------------------------------------------
  *
  *
  * 8. MBOOT/MBR
- *
- *     Although sd(7d) doesn't support fdisk on SPARC platform, it does support
- *     read/write mboot for removable media devices on sparc platform.
  *
  *     -----------------------------------------------------------
  *       platform   removable media  USB/1394  |  mboot supported
  *     -----------------------------------------------------------
  *        x86         X               X        |       true
- *     ------------------------------------------------------------
- *        sparc      false           false     |       false
- *        sparc      false           true      |       true
- *        sparc      true            false     |       true
- *        sparc      true            true      |       true
- *     ------------------------------------------------------------
+ *     -----------------------------------------------------------
  *
  *
  * 9.  error handling during opening device
