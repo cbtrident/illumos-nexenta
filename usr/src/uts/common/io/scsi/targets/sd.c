@@ -93,7 +93,7 @@ int sd_enable_lun_reset			= FALSE;
  * Default safe I/O delay threshold of 3s for all devices.
  * Can be overriden for vendor/device id in sd.conf
  */
-hrtime_t sd_g_slow_io_threshold		= 3LL * NANOSEC;
+hrtime_t sd_slow_io_threshold		= 3LL * NANOSEC;
 
 /*
  * Global data for debug logging. To enable debug printing, sd_component_mask
@@ -3799,12 +3799,23 @@ sd_set_properties(struct sd_lun *un, char *name, char *value)
 			un->un_slow_io_threshold = (hrtime_t)val * NANOSEC;
 		} else {
 			un->un_slow_io_threshold =
-			    (hrtime_t)sd_g_slow_io_threshold;
+			    (hrtime_t)sd_slow_io_threshold;
 			goto value_invalid;
 		}
 		SD_INFO(SD_LOG_ATTACH_DETACH, un, "sd_set_properties: "
 		    "slow IO threshold set to %llu\n",
 		    un->un_slow_io_threshold);
+	}
+
+	if (strcasecmp(name, "io-time") == 0) {
+		if (ddi_strtol(value, &endptr, 0, &val) == 0) {
+			un->un_io_time = val;
+		} else {
+			un->un_io_time = sd_io_time;
+			goto value_invalid;
+		}
+		SD_INFO(SD_LOG_ATTACH_DETACH, un, "sd_set_properties: "
+		    "IO time set to %llu\n", un->un_io_time);
 	}
 
 	if (strcasecmp(name, "retries-victim") == 0) {
@@ -7016,7 +7027,10 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	 */
 	un->un_reserve_release_time = 5;
 
-	un->un_slow_io_threshold = sd_g_slow_io_threshold;
+	un->un_io_time = sd_io_time;
+
+	un->un_slow_io_threshold = sd_slow_io_threshold;
+
 	un->un_f_lun_reset_enabled = sd_enable_lun_reset;
 
 	/*
@@ -7077,9 +7091,9 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		ddi_prop_free(variantp);
 	}
 
-	un->un_cmd_timeout	= ((ISCD(un)) ? 2 : 1) * (ushort_t)sd_io_time;
-	un->un_uscsi_timeout	= un->un_cmd_timeout;
-	un->un_busy_timeout	= SD_BSY_TIMEOUT;
+	un->un_cmd_timeout = ((ISCD(un)) ? 2 : 1) * (ushort_t)un->un_io_time;
+	un->un_uscsi_timeout = un->un_cmd_timeout;
+	un->un_busy_timeout = SD_BSY_TIMEOUT;
 
 	/*
 	 * Info on current states, statuses, etc. (Updated frequently)
@@ -13243,7 +13257,7 @@ sd_init_cdb_limits(struct sd_lun *un)
 	un->un_status_len = (int)((un->un_f_arq_enabled == TRUE)
 	    ? sizeof (struct scsi_arq_status) : 1);
 	if (!ISCD(un))
-		un->un_cmd_timeout = (ushort_t)sd_io_time;
+		un->un_cmd_timeout = (ushort_t)un->un_io_time;
 	un->un_uscsi_timeout = ((ISCD(un)) ? 2 : 1) * un->un_cmd_timeout;
 }
 
@@ -16094,10 +16108,10 @@ sd_alloc_rqs(struct scsi_device *devp, struct sd_lun *un)
 	SD_FILL_SCSI1_LUN(un, un->un_rqs_pktp);
 
 	/* Set up the other needed members in the ARQ scsi_pkt. */
-	un->un_rqs_pktp->pkt_comp   = sdintr;
-	un->un_rqs_pktp->pkt_time   = ((ISCD(un)) ? 2 : 1) * sd_io_time;
-	un->un_rqs_pktp->pkt_flags |=
-	    (FLAG_SENSING | FLAG_HEAD);	/* (1222170) */
+	un->un_rqs_pktp->pkt_comp = sdintr;
+	un->un_rqs_pktp->pkt_time = ((ISCD(un)) ? 2 : 1) *
+	    (ushort_t)un->un_io_time;
+	un->un_rqs_pktp->pkt_flags |= (FLAG_SENSING | FLAG_HEAD);
 
 	/*
 	 * Allocate  & init the sd_xbuf struct for the RQS command. Do not

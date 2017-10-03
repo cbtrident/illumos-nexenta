@@ -561,6 +561,8 @@ struct sd_lun {
 	 * sense code.
 	 */
 	uint_t		un_sonoma_failure_count;
+
+	int		un_io_time;
 	hrtime_t 	un_slow_io_threshold;
 
 	/*
