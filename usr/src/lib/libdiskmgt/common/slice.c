@@ -361,7 +361,6 @@ get_attrs(descriptor_t *dp, int fd,  nvlist_t *attrs)
 	struct dk_cinfo	dkinfo;
 	int		cooked_fd;
 	struct stat	buf;
-	int		mntpnt = 0;
 
 	if (fd < 0) {
 	    return (ENODEV);
@@ -464,10 +463,8 @@ get_attrs(descriptor_t *dp, int fd,  nvlist_t *attrs)
 	}
 
 	if (inuse_mnt(dp->name, attrs, &error)) {
-	    if (error != 0) {
+	    if (error != 0)
 		return (error);
-	    }
-	    mntpnt = 1;
 	}
 
 	if (fstat(fd, &buf) != -1) {
