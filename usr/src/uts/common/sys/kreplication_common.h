@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_KREPLICATION_COMMON_H
@@ -20,6 +20,8 @@
 extern "C" {
 #endif
 
+#include <sys/fs/zfs.h>
+
 #include <sys/param.h>
 #include <sys/nvpair.h>
 
@@ -28,6 +30,8 @@ extern "C" {
  * zero-copy ARC-read or regular ARC-read
  */
 typedef boolean_t krrp_check_enough_mem(size_t, void *);
+typedef int (*arc_bypass_io_func)(void *, int, void *);
+
 
 typedef struct kreplication_buffer_s {
 	void	*data;
@@ -46,11 +50,11 @@ typedef struct kreplication_ops_s {
 } kreplication_ops_t;
 
 typedef struct kreplication_zfs_args {
-	char from_ds[MAXNAMELEN];
-	char from_snap[MAXNAMELEN];
-	char from_incr_base[MAXNAMELEN];
-	char to_ds[MAXNAMELEN];
-	char to_snap[MAXNAMELEN];
+	char from_ds[ZFS_MAX_DATASET_NAME_LEN];
+	char from_snap[ZFS_MAX_DATASET_NAME_LEN];
+	char from_incr_base[ZFS_MAX_DATASET_NAME_LEN];
+	char to_ds[ZFS_MAX_DATASET_NAME_LEN];
+	char to_snap[ZFS_MAX_DATASET_NAME_LEN];
 	boolean_t force;
 	boolean_t properties;
 	boolean_t recursive;
@@ -68,43 +72,6 @@ typedef struct kreplication_zfs_args {
 	krrp_check_enough_mem *mem_check_cb;
 	void *mem_check_cb_arg;
 } kreplication_zfs_args_t;
-
-typedef enum {
-	SBS_UNAVAIL,
-	SBS_AVAIL,
-	SBS_USED,
-	SBS_DONE,
-	SBS_DESTROYED,
-	SBS_NUMTYPES
-} dmu_krrp_state_t;
-
-typedef struct dmu_krrp_task dmu_krrp_task_t;
-
-typedef struct dmu_krrp_stream {
-	kmutex_t mtx;
-	kcondvar_t cv;
-	boolean_t running;
-	kthread_t *work_thread;
-	void (*task_executor)(void *);
-	dmu_krrp_task_t *task;
-} dmu_krrp_stream_t;
-
-struct dmu_krrp_task {
-	kmutex_t buffer_state_lock;
-	kcondvar_t buffer_state_cv;
-	kcondvar_t buffer_destroy_cv;
-	kreplication_buffer_t *buffer;
-	size_t buffer_bytes_read;
-	boolean_t is_read;
-	boolean_t is_full;
-	dmu_krrp_state_t buffer_state;
-	int buffer_error;
-	dmu_krrp_stream_t *stream_handler;
-	kreplication_zfs_args_t buffer_args;
-	char cookie[MAXNAMELEN];
-};
-
-typedef int (*arc_bypass_io_func)(void *, int, void *);
 
 #ifdef	__cplusplus
 }

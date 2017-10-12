@@ -365,7 +365,9 @@ int dsl_dataset_snapshot_check(void *arg, dmu_tx_t *tx);
 void dsl_dataset_snapshot_sync(void *arg, dmu_tx_t *tx);
 
 typedef struct {
-	char name[MAXNAMELEN];
+	char name[ZFS_MAX_DATASET_NAME_LEN];
+	char origin_name[ZFS_MAX_DATASET_NAME_LEN];
+	uint64_t origin_guid;
 	uint64_t cookie;
 	boolean_t cookie_is_snap;
 	boolean_t top_level_ds;
@@ -375,8 +377,6 @@ typedef struct {
 } zfs_ds_collector_entry_t;
 
 uint64_t dsl_dataset_creation_txg(const char *name);
-int zfs_collect_ds(spa_t *spa, const char *from_ds, boolean_t recursive,
-    boolean_t hold, list_t *ds_to_send);
 
 boolean_t dataset_name_hidden(const char *name);
 

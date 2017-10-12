@@ -484,7 +484,7 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 	boolean_t user_snap = B_FALSE;
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 	boolean_t autosnap_initialized = autosnap->initialized;
-	char snap[MAXNAMELEN];
+	char snap[ZFS_MAX_DATASET_NAME_LEN];
 
 	/* check if there are  ny sync ops in the txg */
 	if (txg_list_head(&dp->dp_sync_tasks, txg) != NULL)
@@ -529,7 +529,7 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 		for (ds = txg_list_head(&dp->dp_dirty_datasets, txg);
 		    ds != NULL;
 		    ds = txg_list_next(&dp->dp_dirty_datasets, ds, txg)) {
-			char ds_name[MAXPATHLEN];
+			char ds_name[ZFS_MAX_DATASET_NAME_LEN];
 			boolean_t wbc_azone;
 
 			dsl_dataset_name(ds, ds_name);

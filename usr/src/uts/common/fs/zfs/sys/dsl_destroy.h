@@ -40,6 +40,7 @@ struct dsl_pool;
 int dsl_destroy_snapshots_nvl(struct nvlist *, boolean_t,
     struct nvlist *);
 int dsl_destroy_atomically(const char *, boolean_t);
+void dsl_destroy_atomically_sync_dummy(void *arg, dmu_tx_t *tx);
 int dsl_destroy_snapshot(const char *, boolean_t);
 int dsl_destroy_head(const char *);
 int dsl_destroy_head_check_impl(struct dsl_dataset *, int);

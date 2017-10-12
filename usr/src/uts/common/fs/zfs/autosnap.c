@@ -117,7 +117,7 @@ autosnap_create_snap_node(const char *snap_name, uint64_t txg,
 
 	snap_node = kmem_zalloc(sizeof (autosnap_snapshot_t), KM_SLEEP);
 
-	(void) strcpy(snap_node->name, snap_name);
+	(void) strlcpy(snap_node->name, snap_name, sizeof (snap_node->name));
 	snap_node->recursive = recursive;
 	snap_node->txg = txg;
 	snap_node->etxg = etxg;
@@ -234,13 +234,13 @@ autosnap_get_owned_snapshots(void *opaque)
 	for (snap = avl_first(&zone->snapshots);
 	    snap != NULL;
 	    snap = AVL_NEXT(&zone->snapshots, snap)) {
-		char ds_name[MAXPATHLEN];
+		char ds_name[ZFS_MAX_DATASET_NAME_LEN];
 		uint64_t data[2];
 
 		if (!snap->orphaned)
 			continue;
 
-		(void) strcpy(ds_name, snap->name);
+		(void) strlcpy(ds_name, snap->name, sizeof (ds_name));
 		*(strchr(ds_name, '@')) = '\0';
 
 		if (strcmp(ds_name, zone->dataset) != 0)
@@ -282,7 +282,7 @@ autosnap_claim_orphaned_snaps(autosnap_handler_t *hdl)
 		    AVL_NEXT(&zone->snapshots, snap);
 
 		if (snap->orphaned) {
-			(void) strcpy(ds_name, snap->name);
+			(void) strlcpy(ds_name, snap->name, sizeof (ds_name));
 			*(strchr(ds_name, '@')) = '\0';
 
 			if (strcmp(ds_name, zone->dataset) == 0) {
@@ -319,7 +319,7 @@ autosnap_release_snapshots_by_txg_no_lock_impl(autosnap_handler_t *hdl,
 	autosnap_snapshot_t *walker, *prev;
 
 	search.txg = from_txg;
-	(void) strcpy(search.name, zone->dataset);
+	(void) strlcpy(search.name, zone->dataset, sizeof (search.name));
 	search_len = strlen(search.name);
 	walker = avl_find(&zone->snapshots, &search, &where);
 
@@ -510,7 +510,7 @@ autosnap_register_handler_impl(spa_t *spa,
 	/* Create a new zone if it is absent */
 	if (zone == NULL) {
 		zone = kmem_zalloc(sizeof (autosnap_zone_t), KM_SLEEP);
-		(void) strcpy(zone->dataset, name);
+		(void) strlcpy(zone->dataset, name, sizeof (zone->dataset));
 
 		mutex_init(&zone->avl_lock, NULL, MUTEX_ADAPTIVE, NULL);
 
@@ -724,13 +724,13 @@ autosnap_has_children_zone(zfs_autosnap_t *autosnap,
     const char *name, boolean_t krrp_only)
 {
 	autosnap_zone_t *zone;
-	char dataset[MAXPATHLEN];
+	char dataset[ZFS_MAX_DATASET_NAME_LEN];
 	char *snapshot;
 	size_t ds_name_len;
 
 	ASSERT(MUTEX_HELD(&autosnap->autosnap_lock));
 
-	(void) strcpy(dataset, name);
+	(void) strlcpy(dataset, name, sizeof (dataset));
 	if ((snapshot = strchr(dataset, '@')) != NULL)
 		*snapshot++ = '\0';
 
@@ -755,13 +755,13 @@ autosnap_zone_t *
 autosnap_find_zone(zfs_autosnap_t *autosnap,
     const char *name, boolean_t recursive)
 {
-	char dataset[MAXPATHLEN];
+	char dataset[ZFS_MAX_DATASET_NAME_LEN];
 	char *snapshot;
 	autosnap_zone_t *zone;
 
 	ASSERT(MUTEX_HELD(&autosnap->autosnap_lock));
 
-	(void) strcpy(dataset, name);
+	(void) strlcpy(dataset, name, sizeof (dataset));
 	if ((snapshot = strchr(dataset, '@')) != NULL)
 		*snapshot++ = '\0';
 
@@ -850,6 +850,10 @@ autosnap_unlock(spa_t *spa)
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 
 	rw_exit(&autosnap->autosnap_rwlock);
+
+	mutex_enter(&autosnap->autosnap_lock);
+	cv_broadcast(&autosnap->autosnap_cv);
+	mutex_exit(&autosnap->autosnap_lock);
 }
 
 /* AUTOSNAP-FSNAP routines */
@@ -874,7 +878,7 @@ autosnap_exempt_snapshot(spa_t *spa, const char *name)
 
 	mutex_enter(&autosnap->autosnap_lock);
 
-	(void) strcpy(search.name, name);
+	(void) strlcpy(search.name, name, sizeof (search.name));
 	atpos = strchr(search.name, '@');
 	*atpos = '\0';
 
@@ -1075,7 +1079,7 @@ autosnap_create_cb(zfs_autosnap_t *autosnap,
     dsl_dataset_t *ds, const char *snapname, uint64_t txg)
 {
 	autosnap_zone_t *zone, *rzone;
-	char fullname[MAXNAMELEN];
+	char fullname[ZFS_MAX_DATASET_NAME_LEN];
 
 	dsl_dataset_name(ds, fullname);
 
@@ -1120,7 +1124,7 @@ autosnap_notify_created(const char *name, uint64_t txg,
 #endif
 
 	search.txg = txg;
-	(void) strcpy(search.name, name);
+	(void) strlcpy(search.name, name, sizeof (search.name));
 	snapshot = avl_find(&zone->snapshots, &search, &where);
 	if (snapshot == NULL) {
 		found = B_FALSE;
@@ -1163,37 +1167,74 @@ autosnap_reject_snap(const char *name, uint64_t txg, zfs_autosnap_t *autosnap)
 
 /* AUTOSNAP-DESTROYER routines */
 
+typedef struct {
+	kmutex_t nvl_lock;
+	nvlist_t *autosnaps;
+	const char *snap_name;
+} autosnap_collector_destroy_cb_arg_t;
+
+/* ARGSUSED */
+static int
+autosnap_collect_destroy_snapshots_cb(dsl_pool_t *dp,
+    dsl_dataset_t *ds, void *arg)
+{
+	autosnap_collector_destroy_cb_arg_t *cb_arg = arg;
+	char full_snap_name[ZFS_MAX_DATASET_NAME_LEN];
+	int err;
+
+	dsl_dataset_name(ds, full_snap_name);
+	if ((strlcat(full_snap_name, "@",
+	    sizeof (full_snap_name)) >= sizeof (full_snap_name)) ||
+	    (strlcat(full_snap_name, cb_arg->snap_name,
+	    sizeof (full_snap_name)) >= sizeof (full_snap_name))) {
+		/*
+		 * If we cannot construct full snapshot name,
+		 * then the DS doesn't have such snapshot
+		 */
+		return (0);
+	}
+
+	mutex_enter(&cb_arg->nvl_lock);
+	err = nvlist_add_boolean(cb_arg->autosnaps, full_snap_name);
+	mutex_exit(&cb_arg->nvl_lock);
+
+	return (err != 0 ? SET_ERROR(err) : 0);
+}
+
 /* Collect snapshots for destroy */
 static int
 dsl_pool_collect_ds_for_autodestroy(spa_t *spa, const char *root_ds,
     const char *snap_name, boolean_t recursive, nvlist_t *nv_auto)
 {
-	list_t ds_to_send;
-	zfs_ds_collector_entry_t *el;
 	dsl_pool_t *dp = spa_get_dsl(spa);
+	dsl_dataset_t *ds;
+	int flags = 0;
+	uint64_t dd_object;
 	int err;
+	autosnap_collector_destroy_cb_arg_t cb_arg;
 
-	list_create(&ds_to_send, sizeof (zfs_ds_collector_entry_t),
-	    offsetof(zfs_ds_collector_entry_t, node));
 
 	dsl_pool_config_enter(dp, FTAG);
-	err = zfs_collect_ds(spa, root_ds, recursive, B_FALSE, &ds_to_send);
+
+	err = dsl_dataset_hold(dp, root_ds, FTAG, &ds);
+	if (err != 0)
+		goto out;
+
+	dd_object = ds->ds_dir->dd_object;
+	dsl_dataset_rele(ds, FTAG);
+
+	if (recursive)
+		flags |= DS_FIND_CHILDREN;
+
+	mutex_init(&cb_arg.nvl_lock, NULL, MUTEX_DEFAULT, NULL);
+	cb_arg.autosnaps = nv_auto;
+	cb_arg.snap_name = snap_name;
+
+	err = dmu_objset_find_dp(spa_get_dsl(spa), dd_object,
+	    autosnap_collect_destroy_snapshots_cb, &cb_arg, flags);
+
+out:
 	dsl_pool_config_exit(dp, FTAG);
-
-	for (el = list_head(&ds_to_send);
-	    err == 0 && el != NULL;
-	    el = list_head(&ds_to_send)) {
-		if (!err) {
-			(void) strcat(el->name, "@");
-			(void) strcat(el->name, snap_name);
-
-			err = nvlist_add_boolean(nv_auto, el->name);
-		}
-
-		(void) list_remove_head(&ds_to_send);
-		dsl_dataset_collector_cache_free(el);
-	}
-	list_destroy(&ds_to_send);
 
 	return (err);
 }
@@ -1222,10 +1263,10 @@ autosnap_destroyer_thread(spa_t *spa)
 		/* iterate through list of snapshots to be destroyed */
 		snapshot = list_head(&autosnap->autosnap_destroy_queue);
 		while (snapshot) {
-			char ds[MAXPATHLEN];
+			char ds[ZFS_MAX_DATASET_NAME_LEN];
 			char *snap;
 
-			(void) strcpy(ds, snapshot->name);
+			(void) strlcpy(ds, snapshot->name, sizeof (ds));
 			snap = strchr(ds, '@');
 			VERIFY(snap != NULL);
 			*snap++ = '\0';
@@ -1263,8 +1304,8 @@ autosnap_destroyer_thread(spa_t *spa)
 					continue;
 				snapshot = kmem_zalloc(
 				    sizeof (autosnap_snapshot_t), KM_SLEEP);
-				(void) strcpy(snapshot->name,
-				    nvpair_name(pair));
+				(void) strlcpy(snapshot->name,
+				    nvpair_name(pair), sizeof (snapshot->name));
 				snapshot->recursive = B_FALSE;
 				list_insert_tail(
 				    &autosnap->autosnap_destroy_queue,
@@ -1379,7 +1420,7 @@ autosnap_fini(spa_t *spa)
 boolean_t
 autosnap_is_autosnap(dsl_dataset_t *ds)
 {
-	char ds_name[MAXNAMELEN];
+	char ds_name[ZFS_MAX_DATASET_NAME_LEN];
 
 	ASSERT(ds != NULL && ds->ds_is_snapshot);
 
@@ -1458,6 +1499,43 @@ autosnap_commit_cb(void *dcb_data, int error)
 	kmem_free(cb_arg, sizeof (autosnap_commit_cb_arg_t));
 }
 
+typedef struct {
+	kmutex_t nvl_lock;
+	nvlist_t *autosnaps;
+	const char *snap_name;
+	dmu_tx_t *tx;
+} autosnap_collector_create_cb_arg_t;
+
+/* ARGSUSED */
+static int
+autosnap_collect_create_snaps_cb(dsl_pool_t *dp,
+    dsl_dataset_t *ds, void *arg)
+{
+	autosnap_collector_create_cb_arg_t *cb_arg = arg;
+	char full_snap_name[ZFS_MAX_DATASET_NAME_LEN];
+	int err;
+
+
+	dsl_dataset_name(ds, full_snap_name);
+	if ((strlcat(full_snap_name, "@",
+	    sizeof (full_snap_name)) >= sizeof (full_snap_name)) ||
+	    (strlcat(full_snap_name, cb_arg->snap_name,
+	    sizeof (full_snap_name)) >= sizeof (full_snap_name))) {
+		return (SET_ERROR(ENAMETOOLONG));
+	}
+
+	err = dsl_dataset_snapshot_check_impl(ds,
+	    cb_arg->snap_name, cb_arg->tx, B_FALSE, 0, NULL);
+	if (err != 0)
+		return (err);
+
+	mutex_enter(&cb_arg->nvl_lock);
+	err = nvlist_add_boolean(cb_arg->autosnaps, full_snap_name);
+	mutex_exit(&cb_arg->nvl_lock);
+
+	return (err != 0 ? SET_ERROR(err) : 0);
+}
+
 /* Collect datasets with a given param and create a snapshoting synctask */
 #define	AUTOSNAP_COLLECTOR_BUSY_LIMIT (1000)
 static int
@@ -1467,55 +1545,38 @@ dsl_pool_collect_ds_for_autosnap(dsl_pool_t *dp, uint64_t txg,
 {
 	spa_t *spa = dp->dp_spa;
 	dsl_dataset_t *ds;
-	list_t ds_to_send;
-	zfs_ds_collector_entry_t *el;
-	nvlist_t *nv_auto;
+	int flags = 0;
+	uint64_t dd_object;
 	int err;
+	autosnap_collector_create_cb_arg_t cb_arg;
 	int busy_counter = 0;
 
-	nv_auto = fnvlist_alloc();
 
-	list_create(&ds_to_send, sizeof (zfs_ds_collector_entry_t),
-	    offsetof(zfs_ds_collector_entry_t, node));
-
-	while ((err = zfs_collect_ds(spa, root_ds, recursive,
-	    B_FALSE, &ds_to_send)) == EBUSY &&
-	    busy_counter++ < AUTOSNAP_COLLECTOR_BUSY_LIMIT)
-		delay(NSEC_TO_TICK(100));
-
-	if (err != 0) {
-		list_destroy(&ds_to_send);
-		nvlist_free(nv_auto);
+	err = dsl_dataset_hold(dp, root_ds, FTAG, &ds);
+	if (err != 0)
 		return (err);
+
+	dd_object = ds->ds_dir->dd_object;
+	dsl_dataset_rele(ds, FTAG);
+
+	if (recursive)
+		flags |= DS_FIND_CHILDREN;
+
+	mutex_init(&cb_arg.nvl_lock, NULL, MUTEX_DEFAULT, NULL);
+	cb_arg.snap_name = snap_name;
+	cb_arg.tx = tx;
+
+	for (;;) {
+		cb_arg.autosnaps = fnvlist_alloc();
+		err = dmu_objset_find_dp(spa_get_dsl(spa), dd_object,
+		    autosnap_collect_create_snaps_cb, &cb_arg, flags);
+		if (err == 0 || err != EBUSY ||
+		    busy_counter++ >= AUTOSNAP_COLLECTOR_BUSY_LIMIT)
+			break;
+
+		delay(NSEC_TO_TICK(100));
+		fnvlist_free(cb_arg.autosnaps);
 	}
-
-	while ((el = list_head(&ds_to_send)) != NULL) {
-		boolean_t len_ok =
-		    (strlen(el->name) + strlen(snap_name) + 1) < MAXNAMELEN;
-		if (err == 0 && !len_ok)
-			err = ENAMETOOLONG;
-
-		if (err == 0)
-			err = dsl_dataset_hold(dp, el->name, FTAG, &ds);
-
-		if (err == 0) {
-			err = dsl_dataset_snapshot_check_impl(ds,
-			    snap_name, tx, B_FALSE, 0, NULL);
-			dsl_dataset_rele(ds, FTAG);
-		}
-
-		if (err == 0) {
-			(void) strcat(el->name, "@");
-			(void) strcat(el->name, snap_name);
-
-			fnvlist_add_boolean(nv_auto, el->name);
-		}
-
-		(void) list_remove_head(&ds_to_send);
-		dsl_dataset_collector_cache_free(el);
-	}
-
-	list_destroy(&ds_to_send);
 
 	if (err == 0) {
 		dsl_sync_task_t *dst =
@@ -1523,7 +1584,7 @@ dsl_pool_collect_ds_for_autosnap(dsl_pool_t *dp, uint64_t txg,
 		dsl_dataset_snapshot_arg_t *ddsa =
 		    kmem_zalloc(sizeof (dsl_dataset_snapshot_arg_t), KM_SLEEP);
 		ddsa->ddsa_autosnap = B_TRUE;
-		ddsa->ddsa_snaps = nv_auto;
+		ddsa->ddsa_snaps = cb_arg.autosnaps;
 		ddsa->ddsa_cr = CRED();
 		dst->dst_pool = dp;
 		dst->dst_txg = txg;
@@ -1537,7 +1598,7 @@ dsl_pool_collect_ds_for_autosnap(dsl_pool_t *dp, uint64_t txg,
 		    dst, dst->dst_txg));
 		*dst_res = dst;
 	} else {
-		nvlist_free(nv_auto);
+		fnvlist_free(cb_arg.autosnaps);
 	}
 
 	return (err);

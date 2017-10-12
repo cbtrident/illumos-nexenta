@@ -34,7 +34,7 @@
 #include <sys/dnode.h>
 #include <sys/zfs_context.h>
 #include <sys/zfs_ioctl.h>
-#include <sys/kreplication_common.h>
+#include <sys/dmu_krrp.h>
 
 #ifdef	__cplusplus
 extern "C" {
