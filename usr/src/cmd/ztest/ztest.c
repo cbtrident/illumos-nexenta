@@ -24,6 +24,7 @@
  * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
+ * Copyright 2017 Joyent, Inc.
  */
 
 /*
@@ -112,6 +113,7 @@
 #include <sys/zfeature.h>
 #include <sys/dsl_userhold.h>
 #include <libzfs.h>
+#include <sys/abd.h>
 #include <stdio.h>
 #include <stdio_ext.h>
 #include <stdlib.h>
@@ -123,6 +125,7 @@
 #include <math.h>
 #include <sys/fs/zfs.h>
 #include <libnvpair.h>
+#include <libcmdutils.h>
 
 #include <sys/special.h>
 
@@ -191,6 +194,7 @@ extern uint64_t metaslab_df_alloc_threshold;
 extern uint64_t zfs_deadman_synctime_ms;
 extern int metaslab_preload_limit;
 extern boolean_t zfs_compressed_arc_enabled;
+extern boolean_t zfs_abd_scatter_enabled;
 
 static ztest_shared_opts_t *ztest_shared_opts;
 static ztest_shared_opts_t ztest_opts;
@@ -565,12 +569,13 @@ usage(boolean_t requested)
 {
 	const ztest_shared_opts_t *zo = &ztest_opts_defaults;
 
-	char nice_vdev_size[10];
-	char nice_gang_bang[10];
+	char nice_vdev_size[NN_NUMBUF_SZ];
+	char nice_gang_bang[NN_NUMBUF_SZ];
 	FILE *fp = requested ? stdout : stderr;
 
-	nicenum(zo->zo_vdev_size, nice_vdev_size);
-	nicenum(zo->zo_metaslab_gang_bang, nice_gang_bang);
+	nicenum(zo->zo_vdev_size, nice_vdev_size, sizeof (nice_vdev_size));
+	nicenum(zo->zo_metaslab_gang_bang, nice_gang_bang,
+	    sizeof (nice_gang_bang));
 
 	(void) fprintf(fp, "Usage: %s\n"
 	    "\t[-v vdevs (default: %llu)]\n"
@@ -1452,7 +1457,6 @@ ztest_log_write(ztest_ds_t *zd, dmu_tx_t *tx, lr_write_t *lr)
 	itx->itx_private = zd;
 	itx->itx_wr_state = write_state;
 	itx->itx_sync = (ztest_random(8) == 0);
-	itx->itx_sod += (write_state == WR_NEED_COPY ? lr->lr_length : 0);
 
 	bcopy(&lr->lr_common + 1, &itx->itx_lr + 1,
 	    sizeof (*lr) - sizeof (lr_t));
@@ -1496,8 +1500,10 @@ ztest_log_setattr(ztest_ds_t *zd, dmu_tx_t *tx, lr_setattr_t *lr)
  * ZIL replay ops
  */
 static int
-ztest_replay_create(ztest_ds_t *zd, lr_create_t *lr, boolean_t byteswap)
+ztest_replay_create(void *arg1, void *arg2, boolean_t byteswap)
 {
+	ztest_ds_t *zd = arg1;
+	lr_create_t *lr = arg2;
 	char *name = (void *)(lr + 1);		/* name follows lr */
 	objset_t *os = zd->zd_os;
 	ztest_block_tag_t *bbt;
@@ -1580,8 +1586,10 @@ ztest_replay_create(ztest_ds_t *zd, lr_create_t *lr, boolean_t byteswap)
 }
 
 static int
-ztest_replay_remove(ztest_ds_t *zd, lr_remove_t *lr, boolean_t byteswap)
+ztest_replay_remove(void *arg1, void *arg2, boolean_t byteswap)
 {
+	ztest_ds_t *zd = arg1;
+	lr_remove_t *lr = arg2;
 	char *name = (void *)(lr + 1);		/* name follows lr */
 	objset_t *os = zd->zd_os;
 	dmu_object_info_t doi;
@@ -1631,8 +1639,10 @@ ztest_replay_remove(ztest_ds_t *zd, lr_remove_t *lr, boolean_t byteswap)
 }
 
 static int
-ztest_replay_write(ztest_ds_t *zd, lr_write_t *lr, boolean_t byteswap)
+ztest_replay_write(void *arg1, void *arg2, boolean_t byteswap)
 {
+	ztest_ds_t *zd = arg1;
+	lr_write_t *lr = arg2;
 	objset_t *os = zd->zd_os;
 	void *data = lr + 1;			/* data follows lr */
 	uint64_t offset, length;
@@ -1756,8 +1766,10 @@ ztest_replay_write(ztest_ds_t *zd, lr_write_t *lr, boolean_t byteswap)
 }
 
 static int
-ztest_replay_truncate(ztest_ds_t *zd, lr_truncate_t *lr, boolean_t byteswap)
+ztest_replay_truncate(void *arg1, void *arg2, boolean_t byteswap)
 {
+	ztest_ds_t *zd = arg1;
+	lr_truncate_t *lr = arg2;
 	objset_t *os = zd->zd_os;
 	dmu_tx_t *tx;
 	uint64_t txg;
@@ -1795,8 +1807,10 @@ ztest_replay_truncate(ztest_ds_t *zd, lr_truncate_t *lr, boolean_t byteswap)
 }
 
 static int
-ztest_replay_setattr(ztest_ds_t *zd, lr_setattr_t *lr, boolean_t byteswap)
+ztest_replay_setattr(void *arg1, void *arg2, boolean_t byteswap)
 {
+	ztest_ds_t *zd = arg1;
+	lr_setattr_t *lr = arg2;
 	objset_t *os = zd->zd_os;
 	dmu_tx_t *tx;
 	dmu_buf_t *db;
@@ -1905,26 +1919,30 @@ ztest_get_done(zgd_t *zgd, int error)
 	ztest_object_unlock(zd, object);
 
 	if (error == 0 && zgd->zgd_bp)
-		zil_add_block(zgd->zgd_zilog, zgd->zgd_bp);
+		zil_lwb_add_block(zgd->zgd_lwb, zgd->zgd_bp);
 
 	umem_free(zgd, sizeof (*zgd));
 }
 
 static int
-ztest_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
+ztest_get_data(void *arg, lr_write_t *lr, char *buf, struct lwb *lwb,
+    zio_t *zio)
 {
 	ztest_ds_t *zd = arg;
 	objset_t *os = zd->zd_os;
 	uint64_t object = lr->lr_foid;
 	uint64_t offset = lr->lr_offset;
 	uint64_t size = lr->lr_length;
-	blkptr_t *bp = &lr->lr_blkptr;
 	uint64_t txg = lr->lr_common.lrc_txg;
 	uint64_t crtxg;
 	dmu_object_info_t doi;
 	dmu_buf_t *db;
 	zgd_t *zgd;
 	int error;
+
+	ASSERT3P(lwb, !=, NULL);
+	ASSERT3P(zio, !=, NULL);
+	ASSERT3U(size, !=, 0);
 
 	ztest_object_lock(zd, object, RL_READER);
 	error = dmu_bonus_hold(os, object, FTAG, &db);
@@ -1946,7 +1964,7 @@ ztest_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
 	db = NULL;
 
 	zgd = umem_zalloc(sizeof (*zgd), UMEM_NOFAIL);
-	zgd->zgd_zilog = zd->zd_zilog;
+	zgd->zgd_lwb = lwb;
 	zgd->zgd_private = zd;
 
 	if (buf != NULL) {	/* immediate write */
@@ -1972,11 +1990,7 @@ ztest_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
 		    DMU_READ_NO_PREFETCH);
 
 		if (error == 0) {
-			blkptr_t *obp = dmu_buf_get_blkptr(db);
-			if (obp) {
-				ASSERT(BP_IS_HOLE(bp));
-				*bp = *obp;
-			}
+			blkptr_t *bp = &lr->lr_blkptr;
 
 			zgd->zgd_db = db;
 			zgd->zgd_bp = bp;
@@ -3257,10 +3271,10 @@ ztest_vdev_LUN_growth(ztest_ds_t *zd, uint64_t id)
 		    old_class_space, new_class_space);
 
 	if (ztest_opts.zo_verbose >= 5) {
-		char oldnumbuf[6], newnumbuf[6];
+		char oldnumbuf[NN_NUMBUF_SZ], newnumbuf[NN_NUMBUF_SZ];
 
-		nicenum(old_class_space, oldnumbuf);
-		nicenum(new_class_space, newnumbuf);
+		nicenum(old_class_space, oldnumbuf, sizeof (oldnumbuf));
+		nicenum(new_class_space, newnumbuf, sizeof (newnumbuf));
 		(void) printf("%s grew from %s to %s\n",
 		    spa->spa_name, oldnumbuf, newnumbuf);
 	}
@@ -5500,7 +5514,7 @@ ztest_ddt_repair(ztest_ds_t *zd, uint64_t id)
 	enum zio_checksum checksum = spa_dedup_checksum(spa);
 	dmu_buf_t *db;
 	dmu_tx_t *tx;
-	void *buf;
+	abd_t *abd;
 	blkptr_t blk;
 	int copies = 2 * ZIO_DEDUPDITTO_MIN;
 
@@ -5580,14 +5594,14 @@ ztest_ddt_repair(ztest_ds_t *zd, uint64_t id)
 	 * Damage the block.  Dedup-ditto will save us when we read it later.
 	 */
 	psize = BP_GET_PSIZE(&blk);
-	buf = zio_buf_alloc(psize);
-	ztest_pattern_set(buf, psize, ~pattern);
+	abd = abd_alloc_linear(psize, B_TRUE);
+	ztest_pattern_set(abd_to_buf(abd), psize, ~pattern);
 
 	(void) zio_wait(zio_rewrite(NULL, spa, 0, &blk,
-	    buf, psize, NULL, NULL, ZIO_PRIORITY_SYNC_WRITE,
+	    abd, psize, NULL, NULL, ZIO_PRIORITY_SYNC_WRITE,
 	    ZIO_FLAG_CANFAIL | ZIO_FLAG_INDUCE_DAMAGE, NULL));
 
-	zio_buf_free(buf, psize);
+	abd_free(abd);
 
 	(void) rw_unlock(&ztest_name_lock);
 }
@@ -5871,6 +5885,12 @@ ztest_resume_thread(void *arg)
 		 */
 		if (ztest_random(10) == 0)
 			zfs_compressed_arc_enabled = ztest_random(2);
+
+		/*
+		 * Periodically change the zfs_abd_scatter_enabled setting.
+		 */
+		if (ztest_random(10) == 0)
+			zfs_abd_scatter_enabled = ztest_random(2);
 	}
 	return (NULL);
 }
@@ -6693,7 +6713,7 @@ main(int argc, char **argv)
 	ztest_info_t *zi;
 	ztest_shared_callstate_t *zc;
 	char timebuf[100];
-	char numbuf[6];
+	char numbuf[NN_NUMBUF_SZ];
 	spa_t *spa;
 	char *cmd;
 	boolean_t hasalt;
@@ -6830,7 +6850,7 @@ main(int argc, char **argv)
 
 			now = MIN(now, zs->zs_proc_stop);
 			print_time(zs->zs_proc_stop - now, timebuf);
-			nicenum(zs->zs_space, numbuf);
+			nicenum(zs->zs_space, numbuf, sizeof (numbuf));
 
 			(void) printf("Pass %3d, %8s, %3llu ENOSPC, "
 			    "%4.1f%% of %5s used, %3.0f%% done, %8s to go\n",

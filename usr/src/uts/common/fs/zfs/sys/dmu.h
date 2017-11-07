@@ -21,14 +21,14 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright 2013 DEY Storage Systems, Inc.
  * Copyright 2014 HybridCluster. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -451,7 +451,7 @@ dmu_write_embedded(objset_t *os, uint64_t object, uint64_t offset,
 	((flags & WP_SPECIALCLASS_MASK)	>> WP_SPECIALCLASS_SHIFT)
 
 void dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp,
-    enum zio_compress compress_override, struct zio_prop *zp);
+    struct zio_prop *zp);
 /*
  * The bonus data is accessed more or less like a regular buffer.
  * You must dmu_bonus_hold() to get the buffer, which will give you a
@@ -699,10 +699,17 @@ void dmu_buf_will_dirty_sc(dmu_buf_t *db, dmu_tx_t *tx, boolean_t sc);
 
 dmu_tx_t *dmu_tx_create(objset_t *os);
 void dmu_tx_hold_write(dmu_tx_t *tx, uint64_t object, uint64_t off, int len);
+void dmu_tx_hold_write_by_dnode(dmu_tx_t *tx, dnode_t *dn, uint64_t off,
+    int len);
 void dmu_tx_hold_free(dmu_tx_t *tx, uint64_t object, uint64_t off,
     uint64_t len);
+void dmu_tx_hold_free_by_dnode(dmu_tx_t *tx, dnode_t *dn, uint64_t off,
+    uint64_t len);
 void dmu_tx_hold_zap(dmu_tx_t *tx, uint64_t object, int add, const char *name);
+void dmu_tx_hold_zap_by_dnode(dmu_tx_t *tx, dnode_t *dn, int add,
+    const char *name);
 void dmu_tx_hold_bonus(dmu_tx_t *tx, uint64_t object);
+void dmu_tx_hold_bonus_by_dnode(dmu_tx_t *tx, dnode_t *dn);
 void dmu_tx_hold_spill(dmu_tx_t *tx, uint64_t object);
 void dmu_tx_hold_sa(dmu_tx_t *tx, struct sa_handle *hdl, boolean_t may_grow);
 void dmu_tx_hold_sa_create(dmu_tx_t *tx, int total_size);
@@ -752,8 +759,12 @@ int dmu_free_long_object(objset_t *os, uint64_t object);
 #define	DMU_READ_NO_PREFETCH	1 /* don't prefetch */
 int dmu_read(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	void *buf, uint32_t flags);
+int dmu_read_by_dnode(dnode_t *dn, uint64_t offset, uint64_t size, void *buf,
+    uint32_t flags);
 void dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	const void *buf, dmu_tx_t *tx);
+void dmu_write_by_dnode(dnode_t *dn, uint64_t offset, uint64_t size,
+    const void *buf, dmu_tx_t *tx);
 void dmu_prealloc(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	dmu_tx_t *tx);
 int dmu_read_uio(objset_t *os, uint64_t object, struct uio *uio, uint64_t size);
@@ -935,7 +946,7 @@ uint64_t dmu_tx_get_txg(dmu_tx_t *tx);
  * {zfs,zvol,ztest}_get_done() args
  */
 typedef struct zgd {
-	struct zilog	*zgd_zilog;
+	struct lwb	*zgd_lwb;
 	struct blkptr	*zgd_bp;
 	dmu_buf_t	*zgd_db;
 	struct rl	*zgd_rl;

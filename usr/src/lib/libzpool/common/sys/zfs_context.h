@@ -62,6 +62,7 @@ extern "C" {
 #include <time.h>
 #include <procfs.h>
 #include <pthread.h>
+#include <setjmp.h>
 #include <sys/debug.h>
 #include <libsysevent.h>
 #include <sys/note.h>
@@ -107,8 +108,8 @@ extern void dprintf_setup(int *argc, char **argv);
 
 extern void cmn_err(int, const char *, ...);
 extern void vcmn_err(int, const char *, __va_list);
-extern void panic(const char *, ...);
-extern void vpanic(const char *, __va_list);
+extern void panic(const char *, ...)  __NORETURN;
+extern void vpanic(const char *, __va_list)  __NORETURN;
 
 #define	fm_panic	panic
 
@@ -197,7 +198,8 @@ extern struct proc p0;
 
 #define	PS_NONE		-1
 
-extern kthread_t *zk_thread_create(void (*func)(), void *arg, uint64_t len);
+extern kthread_t *zk_thread_create(void (*func)(void*), void *arg,
+    uint64_t len);
 
 #define	issig(why)	(FALSE)
 #define	ISSIG(thr, why)	(FALSE)
@@ -327,6 +329,7 @@ extern hrtime_t gethrtime_unscaled(void);
 #define	KM_SLEEP		UMEM_NOFAIL
 #define	KM_PUSHPAGE		KM_SLEEP
 #define	KM_NOSLEEP		UMEM_DEFAULT
+#define	KM_NORMALPRI		0	/* not needed with UMEM_DEFAULT */
 #define	KMC_NODEBUG		UMC_NODEBUG
 #define	KMC_NOTOUCH		0	/* not needed for userland caches */
 #define	kmem_alloc(_s, _f)	umem_alloc(_s, _f)
@@ -561,7 +564,7 @@ extern void kernel_init(int);
 extern void kernel_fini(void);
 
 struct spa;
-extern void nicenum(uint64_t num, char *buf);
+extern void nicenum(uint64_t num, char *buf, size_t);
 extern void show_pool_stats(struct spa *);
 extern int set_global_var(char *arg);
 

@@ -93,10 +93,8 @@ struct authsys_parms {
 
 #ifdef __STDC__
 extern bool_t xdr_authsys_parms(XDR *, struct authsys_parms *);
-extern bool_t xdr_authloopback_parms(XDR *, struct authsys_parms *);
 #else
 extern bool_t xdr_authsys_parms();
-extern bool_t xdr_authloopback_parms();
 #endif
 
 
@@ -118,8 +116,8 @@ extern bool_t xdr_gid_t(XDR *, gid_t *);
 extern bool_t xdr_uid_t(XDR *, uid_t *);
 
 #ifdef _KERNEL
-extern bool_t xdr_authkern(XDR *);
-extern bool_t xdr_authloopback(XDR *);
+extern bool_t xdr_authkern(XDR *, cred_t *);
+extern bool_t xdr_authloopback(XDR *, cred_t *);
 extern enum auth_stat _svcauth_unix(struct svc_req *, struct rpc_msg *);
 extern enum auth_stat _svcauth_short(struct svc_req *, struct rpc_msg *);
 #endif

@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2017 by The MathWorks, Inc. All rights reserved.
  */
 /*
  * Copyright 2016 Joyent, Inc.
@@ -777,9 +778,14 @@ _thrp_exit()
 	}
 	lmutex_unlock(&udp->link_lock);
 
-	tmem_exit();		/* deallocate tmem allocations */
+	/*
+	 * tsd_exit() may call its destructor free(), thus depending on
+	 * tmem, therefore tmem_exit() needs to be called after tsd_exit()
+	 * and tls_exit().
+	 */
 	tsd_exit();		/* deallocate thread-specific data */
 	tls_exit();		/* deallocate thread-local storage */
+	tmem_exit();		/* deallocate tmem allocations */
 	heldlock_exit();	/* deal with left-over held locks */
 
 	/* block all signals to finish exiting */
@@ -1812,7 +1818,7 @@ force_continue(ulwp_t *ulwp)
 		if (error != 0 && error != EINTR)
 			break;
 		error = 0;
-		if (ulwp->ul_stopping) {	/* it is stopping itsself */
+		if (ulwp->ul_stopping) {	/* it is stopping itself */
 			ts.tv_sec = 0;		/* give it a chance to run */
 			ts.tv_nsec = 100000;	/* 100 usecs or clock tick */
 			(void) __nanosleep(&ts, NULL);

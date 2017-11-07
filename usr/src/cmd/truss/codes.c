@@ -21,10 +21,10 @@
 
 /*
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2015, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014, OmniTI Computer Consulting, Inc. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
@@ -1295,6 +1295,8 @@ const struct ioc {
 	{ (uint_t)ZFS_IOC_COS_SET_PROPS,	"ZFS_IOC_COS_SET_PROPS",
 		"zfs_cmd_t" },
 	{ (uint_t)ZFS_IOC_COS_GET_PROPS,	"ZFS_IOC_COS_GET_PROPS",
+		"zfs_cmd_t" },
+	{ (uint_t)ZFS_IOC_CHANNEL_PROGRAM,	"ZFS_IOC_CHANNEL_PROGRAM",
 		"zfs_cmd_t" },
 
 	/* kssl ioctls */

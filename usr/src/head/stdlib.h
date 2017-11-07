@@ -29,7 +29,7 @@
 /* Copyright (c) 2013, OmniTI Computer Consulting, Inc. All rights reserved. */
 
 /*	Copyright (c) 1988 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 #ifndef _STDLIB_H
 #define	_STDLIB_H
@@ -290,6 +290,10 @@ extern char *ulltostr(unsigned long long, char *);
 extern uint32_t arc4random(void);
 extern void arc4random_buf(void *, size_t);
 extern uint32_t arc4random_uniform(uint32_t);
+extern void freezero(void *, size_t);
+extern void *reallocarray(void *, size_t, size_t);
+extern void *recallocarray(void *, size_t, size_t, size_t);
+extern long long strtonum(const char *, long long, long long, const char **);
 
 #endif	/* !_STRICT_SYBMOLS */
 

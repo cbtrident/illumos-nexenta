@@ -24,7 +24,7 @@
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 #ifndef	_NFS_RNODE_H
 #define	_NFS_RNODE_H
@@ -172,6 +172,7 @@ typedef struct nfs_rwlock {
 	kthread_t *owner;
 	kmutex_t lock;
 	kcondvar_t cv;
+	kcondvar_t cv_rd;
 } nfs_rwlock_t;
 
 /*

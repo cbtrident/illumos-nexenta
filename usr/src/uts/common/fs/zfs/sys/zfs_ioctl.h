@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011-2012 Pawel Jakub Dawidek. All rights reserved.
- * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2016 RackTop Systems.
  * Copyright (c) 2014 Integros [integros.com]
@@ -94,6 +94,7 @@ typedef enum drr_headertype {
 #define	DMU_BACKUP_FEATURE_RESUMING		(1 << 20)
 /* flag #21 is reserved for a Delphix feature */
 #define	DMU_BACKUP_FEATURE_COMPRESSED		(1 << 22)
+/* flag #23 is reserved for the large dnode feature */
 
 /*
  * Mask of all supported backup features
@@ -426,6 +427,8 @@ int zfs_ioc_set_prop_impl(char *name, nvlist_t *props,
 
 
 #ifdef _KERNEL
+struct objset;
+struct zfsvfs;
 
 typedef struct zfs_creat {
 	nvlist_t	*zct_zplprops;
@@ -434,13 +437,14 @@ typedef struct zfs_creat {
 
 extern dev_info_t *zfs_dip;
 
-extern int zfs_secpolicy_snapshot_perms(const char *name, cred_t *cr);
-extern int zfs_secpolicy_rename_perms(const char *from,
-    const char *to, cred_t *cr);
-extern int zfs_secpolicy_destroy_perms(const char *name, cred_t *cr);
+extern int zfs_secpolicy_snapshot_perms(const char *, cred_t *);
+extern int zfs_secpolicy_rename_perms(const char *, const char *, cred_t *);
+extern int zfs_secpolicy_destroy_perms(const char *, cred_t *);
 extern int zfs_busy(void);
-extern int zfs_unmount_snap(const char *);
+extern void zfs_unmount_snap(const char *);
 extern void zfs_destroy_unmount_origin(const char *);
+extern int getzfsvfs_impl(struct objset *, struct zfsvfs **);
+extern int getzfsvfs(const char *, struct zfsvfs **);
 
 /*
  * ZFS minor numbers can refer to either a control device instance or

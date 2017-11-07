@@ -20,11 +20,12 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
+ * Copyright (c) 2017 Datto Inc.
  */
 
 #include <sys/zfs_context.h>
@@ -1576,7 +1577,7 @@ zfs_panic_recover(const char *fmt, ...)
  * lowercase hexadecimal numbers that don't overflow.
  */
 uint64_t
-strtonum(const char *str, char **nptr)
+zfs_strtonum(const char *str, char **nptr)
 {
 	uint64_t val = 0;
 	char c;
@@ -1714,6 +1715,16 @@ uint64_t
 spa_syncing_txg(spa_t *spa)
 {
 	return (spa->spa_syncing_txg);
+}
+
+/*
+ * Return the last txg where data can be dirtied. The final txgs
+ * will be used to just clear out any deferred frees that remain.
+ */
+uint64_t
+spa_final_dirty_txg(spa_t *spa)
+{
+	return (spa->spa_final_txg - TXG_DEFER_SIZE);
 }
 
 pool_state_t
@@ -2248,6 +2259,11 @@ spa_scan_stat_init(spa_t *spa)
 {
 	/* data not stored on disk */
 	spa->spa_scan_pass_start = gethrestime_sec();
+	if (dsl_scan_is_paused_scrub(spa->spa_dsl_pool->dp_scan))
+		spa->spa_scan_pass_scrub_pause = spa->spa_scan_pass_start;
+	else
+		spa->spa_scan_pass_scrub_pause = 0;
+	spa->spa_scan_pass_scrub_spent_paused = 0;
 	spa->spa_scan_pass_exam = 0;
 	spa->spa_scan_pass_work = 0;
 	vdev_scan_stat_init(spa->spa_root_vdev);
@@ -2283,6 +2299,8 @@ spa_scan_get_stats(spa_t *spa, pool_scan_stat_t *ps)
 	ps->pss_pass_start = spa->spa_scan_pass_start;
 	ps->pss_pass_exam = spa->spa_scan_pass_exam;
 	ps->pss_pass_work = spa->spa_scan_pass_work;
+	ps->pss_pass_scrub_pause = spa->spa_scan_pass_scrub_pause;
+	ps->pss_pass_scrub_spent_paused = spa->spa_scan_pass_scrub_spent_paused;
 
 	return (0);
 }

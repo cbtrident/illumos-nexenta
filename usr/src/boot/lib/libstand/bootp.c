@@ -36,8 +36,8 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
 
+#include <stddef.h>
 #include <sys/types.h>
 #include <sys/limits.h>
 #include <sys/endian.h>
@@ -63,8 +63,6 @@ __FBSDID("$FreeBSD$");
 
 struct in_addr servip;
 
-static n_long	nmask, smask;
-
 static time_t	bot;
 
 static	char vm_rfc1048[4] = VM_RFC1048;
@@ -74,7 +72,7 @@ static	char vm_cmu[4] = VM_CMU;
 
 /* Local forwards */
 static	ssize_t bootpsend(struct iodesc *, void *, size_t);
-static	ssize_t bootprecv(struct iodesc *, void *, size_t, time_t);
+static	ssize_t bootprecv(struct iodesc *, void **, void **, time_t);
 static	int vend_rfc1048(u_char *, u_int);
 #ifdef BOOTP_VEND_CMU
 static	void vend_cmu(u_char *);
@@ -91,21 +89,21 @@ static void setenv_(u_char *cp,  u_char *ep, struct dhcp_opt *opts);
 static char expected_dhcpmsgtype = -1, dhcp_ok;
 struct in_addr dhcp_serverip;
 #endif
+struct bootp *bootp_response;
+size_t bootp_response_size;
 
 /* Fetch required bootp infomation */
 void
 bootp(int sock, int flag)
 {
+	void *pkt;
 	struct iodesc *d;
 	struct bootp *bp;
 	struct {
 		u_char header[HEADER_SIZE];
 		struct bootp wbootp;
 	} wbuf;
-	struct {
-		u_char header[HEADER_SIZE];
-		struct bootp rbootp;
-	} rbuf;
+	struct bootp *rbootp;
 
 #ifdef BOOTP_DEBUG
  	if (debug)
@@ -148,16 +146,15 @@ bootp(int sock, int flag)
 		bp->bp_vend[8] = 9;
 		bcopy("PXEClient", &bp->bp_vend[9], 9);
 		bp->bp_vend[18] = TAG_PARAM_REQ;
-		bp->bp_vend[19] = 8;
+		bp->bp_vend[19] = 7;
 		bp->bp_vend[20] = TAG_ROOTPATH;
-		bp->bp_vend[21] = TAG_TFTP_SERVER;
-		bp->bp_vend[22] = TAG_HOSTNAME;
-		bp->bp_vend[23] = TAG_SWAPSERVER;
-		bp->bp_vend[24] = TAG_GATEWAY;
-		bp->bp_vend[25] = TAG_SUBNET_MASK;
-		bp->bp_vend[26] = TAG_INTF_MTU;
-		bp->bp_vend[27] = TAG_SERVERID;
-		bp->bp_vend[28] = TAG_END;
+		bp->bp_vend[21] = TAG_HOSTNAME;
+		bp->bp_vend[22] = TAG_SWAPSERVER;
+		bp->bp_vend[23] = TAG_GATEWAY;
+		bp->bp_vend[24] = TAG_SUBNET_MASK;
+		bp->bp_vend[25] = TAG_INTF_MTU;
+		bp->bp_vend[26] = TAG_SERVERID;
+		bp->bp_vend[27] = TAG_END;
 	} else
 		bp->bp_vend[7] = TAG_END;
 #else
@@ -176,8 +173,7 @@ bootp(int sock, int flag)
 
 	if(sendrecv(d,
 		    bootpsend, bp, sizeof(*bp),
-		    bootprecv, &rbuf.rbootp, sizeof(rbuf.rbootp))
-	   == -1) {
+		    bootprecv, &pkt, (void **)&rbootp) == -1) {
 	    printf("bootp: no reply\n");
 	    return;
 	}
@@ -188,7 +184,7 @@ bootp(int sock, int flag)
 		bp->bp_vend[6] = DHCPREQUEST;
 		bp->bp_vend[7] = TAG_REQ_ADDR;
 		bp->bp_vend[8] = 4;
-		bcopy(&rbuf.rbootp.bp_yiaddr, &bp->bp_vend[9], 4);
+		bcopy(&rbootp->bp_yiaddr, &bp->bp_vend[9], 4);
 		bp->bp_vend[13] = TAG_SERVERID;
 		bp->bp_vend[14] = 4;
 		bcopy(&dhcp_serverip.s_addr, &bp->bp_vend[15], 4);
@@ -206,46 +202,36 @@ bootp(int sock, int flag)
 
 		expected_dhcpmsgtype = DHCPACK;
 
+		free(pkt);
 		if(sendrecv(d,
 			    bootpsend, bp, sizeof(*bp),
-			    bootprecv, &rbuf.rbootp, sizeof(rbuf.rbootp))
-		   == -1) {
+			    bootprecv, &pkt, (void **)&rbootp) == -1) {
 			printf("DHCPREQUEST failed\n");
 			return;
 		}
 	}
 #endif
 
-	myip = d->myip = rbuf.rbootp.bp_yiaddr;
-	servip = rbuf.rbootp.bp_siaddr;
-	if(rootip.s_addr == INADDR_ANY) rootip = servip;
-	bcopy(rbuf.rbootp.bp_file, bootfile, sizeof(bootfile));
+	myip = d->myip = rbootp->bp_yiaddr;
+	servip = rbootp->bp_siaddr;
+	if (rootip.s_addr == INADDR_ANY)
+		rootip = servip;
+	bcopy(rbootp->bp_file, bootfile, sizeof(bootfile));
 	bootfile[sizeof(bootfile) - 1] = '\0';
 
-	if (IN_CLASSA(ntohl(myip.s_addr)))
-		nmask = htonl(IN_CLASSA_NET);
-	else if (IN_CLASSB(ntohl(myip.s_addr)))
-		nmask = htonl(IN_CLASSB_NET);
-	else
-		nmask = htonl(IN_CLASSC_NET);
-#ifdef BOOTP_DEBUG
-	if (debug)
-		printf("'native netmask' is %s\n", intoa(nmask));
-#endif
-
-	/* Check subnet mask against net mask; toss if bogus */
-	if ((nmask & smask) != nmask) {
+	if (!netmask) {
+		if (IN_CLASSA(ntohl(myip.s_addr)))
+			netmask = htonl(IN_CLASSA_NET);
+		else if (IN_CLASSB(ntohl(myip.s_addr)))
+			netmask = htonl(IN_CLASSB_NET);
+		else
+			netmask = htonl(IN_CLASSC_NET);
 #ifdef BOOTP_DEBUG
 		if (debug)
-			printf("subnet mask (%s) bad\n", intoa(smask));
+			printf("'native netmask' is %s\n", intoa(netmask));
 #endif
-		smask = 0;
 	}
 
-	/* Get subnet (or natural net) mask */
-	netmask = nmask;
-	if (smask)
-		netmask = smask;
 #ifdef BOOTP_DEBUG
 	if (debug)
 		printf("mask: %s\n", intoa(netmask));
@@ -270,6 +256,7 @@ bootp(int sock, int flag)
 
 	/* Bump xid so next request will be unique. */
 	++d->xid;
+	free(pkt);
 }
 
 /* Transmit a bootp request */
@@ -295,26 +282,25 @@ bootpsend(struct iodesc *d, void *pkt, size_t len)
 }
 
 static ssize_t
-bootprecv(struct iodesc *d, void *pkt, size_t len, time_t tleft)
+bootprecv(struct iodesc *d, void **pkt, void **payload, time_t tleft)
 {
 	ssize_t n;
 	struct bootp *bp;
+	void *ptr;
 
-#ifdef BOOTP_DEBUGx
+#ifdef BOOTP_DEBUG
 	if (debug)
 		printf("bootp_recvoffer: called\n");
 #endif
 
-	n = readudp(d, pkt, len, tleft);
+	ptr = NULL;
+	n = readudp(d, &ptr, (void **)&bp, tleft);
 	if (n == -1 || n < sizeof(struct bootp) - BOOTP_VENDSIZE)
 		goto bad;
 
-	bp = (struct bootp *)pkt;
-	
 #ifdef BOOTP_DEBUG
 	if (debug)
-		printf("bootprecv: checked.  bp = 0x%lx, n = %d\n",
-		    (long)bp, (int)n);
+		printf("bootprecv: checked.  bp = %p, n = %zd\n", bp, n);
 #endif
 	if (bp->bp_xid != htonl(d->xid)) {
 #ifdef BOOTP_DEBUG
@@ -333,8 +319,21 @@ bootprecv(struct iodesc *d, void *pkt, size_t len, time_t tleft)
 
 	/* Suck out vendor info */
 	if (bcmp(vm_rfc1048, bp->bp_vend, sizeof(vm_rfc1048)) == 0) {
-		if(vend_rfc1048(bp->bp_vend, sizeof(bp->bp_vend)) != 0)
+		int vsize = n - offsetof(struct bootp, bp_vend);
+		if(vend_rfc1048(bp->bp_vend, vsize) != 0)
 		    goto bad;
+
+		/* Save copy of bootp reply or DHCP ACK message */
+		if (bp->bp_op == BOOTREPLY &&
+		    ((dhcp_ok == 1 && expected_dhcpmsgtype == DHCPACK) ||
+		    dhcp_ok == 0)) {
+			free(bootp_response);
+			bootp_response = malloc(n);
+			if (bootp_response != NULL) {
+				bootp_response_size = n;
+				bcopy(bp, bootp_response, bootp_response_size);
+			}
+		}
 	}
 #ifdef BOOTP_VEND_CMU
 	else if (bcmp(vm_cmu, bp->bp_vend, sizeof(vm_cmu)) == 0)
@@ -343,9 +342,23 @@ bootprecv(struct iodesc *d, void *pkt, size_t len, time_t tleft)
 	else
 		printf("bootprecv: unknown vendor 0x%lx\n", (long)bp->bp_vend);
 
+	*pkt = ptr;
+	*payload = bp;
 	return(n);
 bad:
+	free(ptr);
 	errno = 0;
+	return (-1);
+}
+
+int
+dhcp_try_rfc1048(uint8_t *cp, size_t len)
+{
+
+	expected_dhcpmsgtype = DHCPACK;
+	if (bcmp(vm_rfc1048, cp, sizeof (vm_rfc1048)) == 0) {
+		return (vend_rfc1048(cp, len));
+	}
 	return (-1);
 }
 
@@ -375,7 +388,7 @@ vend_rfc1048(u_char *cp, u_int len)
 			break;
 
 		if (tag == TAG_SUBNET_MASK) {
-			bcopy(cp, &smask, sizeof(smask));
+			bcopy(cp, &netmask, sizeof(netmask));
 		}
 		if (tag == TAG_GATEWAY) {
 			bcopy(cp, &gateip.s_addr, sizeof(gateip.s_addr));
@@ -429,10 +442,6 @@ vend_rfc1048(u_char *cp, u_int len)
 			bcopy(cp, &dhcp_serverip.s_addr,
 			      sizeof(dhcp_serverip.s_addr));
 		}
-		if (tag == TAG_TFTP_SERVER) {
-			bcopy(cp, &tftpip.s_addr,
-			      sizeof(tftpip.s_addr));
-		}
 #endif
 		cp += size;
 	}
@@ -452,7 +461,7 @@ vend_cmu(u_char *cp)
 	vp = (struct cmu_vend *)cp;
 
 	if (vp->v_smask.s_addr != 0) {
-		smask = vp->v_smask.s_addr;
+		netmask = vp->v_smask.s_addr;
 	}
 	if (vp->v_dgate.s_addr != 0) {
 		gateip = vp->v_dgate;

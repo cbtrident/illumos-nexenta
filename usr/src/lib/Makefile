@@ -28,6 +28,7 @@
 # Copyright (c) 2015 Gary Mills
 # Copyright 2016 Toomas Soome <tsoome@me.com>
 # Copyright 2017 Nexenta Systems, Inc.
+# Copyright (c) 2016, Chris Fraire <cfraire@me.com>.
 #
 
 include ../Makefile.master
@@ -43,7 +44,7 @@ include ../Makefile.master
 
 # Build libc and its dependencies
 SUBDIRS=			\
-	common			\
+	crt			\
 	../cmd/sgs/libconv	\
 	../cmd/sgs/libdl	\
 	libc			\
@@ -170,6 +171,7 @@ SUBDIRS +=				\
 	libnls		\
 	libnsctl	\
 	libnwam		\
+	libofmt		\
 	libpam		\
 	libpcidb	\
 	libpctx		\
@@ -318,7 +320,6 @@ MSGSUBDIRS=		\
 	libgss		\
 	libidmap	\
 	libilb		\
-	libinetutil	\
 	libinstzones	\
 	libipadm	\
 	libipmp		\
@@ -326,6 +327,7 @@ MSGSUBDIRS=		\
 	libldap5	\
 	libnsl		\
 	libnwam		\
+	libofmt		\
 	libpam		\
 	libpicl		\
 	libpkg		\
@@ -431,6 +433,7 @@ HDRSUBDIRS=				\
 	libnsl		\
 	libnvpair	\
 	libnwam		\
+	libofmt		\
 	libpam		\
 	libpcidb	\
 	libpctx		\
@@ -550,8 +553,8 @@ _msg:			$(MSGSUBDIRS:%=%-nodepend) .WAIT _dc
 _dc:			$(DCSUBDIRS:%=%-nodepend)
 
 # Library interdependencies are called out explicitly here.
-../cmd/sgs/libconv: common
-../cmd/sgs/libdl: common
+../cmd/sgs/libconv: crt
+../cmd/sgs/libdl: crt
 libc:		../cmd/sgs/libconv ../cmd/sgs/libdl
 
 libm:		libc
@@ -622,7 +625,7 @@ $(INTEL_BLD)libgrubmgmt: libfdisk
 libidmap:	libavl libuutil
 libinetsvc:	libscf
 libinstzones:	libzonecfg libcontract
-libipadm:	libinetutil libdlpi libdhcpagent libdladm libsecdb
+libipadm:	libinetutil libdlpi libdhcpagent libdladm libsecdb libdhcputil
 libipmp:	libinetutil
 libipsecutil:	libtecla libtsol
 libiscsit:	libstmf libuuid
@@ -633,7 +636,7 @@ libldap5:	libsasl
 libmapid:	libresolv2 libscf
 libndmp:	libscf
 libnisdb:	libldap5
-libnwam:	libscf libbsm libdladm
+libnwam:	libscf libbsm libdladm libipadm
 libpcp:		libumem libdevinfo
 libpctx:	libproc
 libpkg:		libwanboot libscf libadm

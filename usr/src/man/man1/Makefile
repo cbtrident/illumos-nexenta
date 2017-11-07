@@ -48,7 +48,6 @@ MANFILES=	acctcom.1			\
 	 	break.1				\
 	 	builtin.1			\
 	 	cal.1				\
-	 	calendar.1			\
 	 	cancel.1			\
 	 	cat.1				\
 	 	cd.1				\
@@ -400,6 +399,7 @@ MANFILES=	acctcom.1			\
 	 	vgrind.1			\
 	 	volcheck.1			\
 	 	volrmmount.1			\
+		vtfontcvt.1			\
 	 	w.1				\
 	 	wait.1				\
 	 	wc.1				\

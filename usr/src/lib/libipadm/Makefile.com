@@ -20,6 +20,7 @@
 #
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2016, Chris Fraire <cfraire@me.com>.
 #
 #
 
@@ -34,8 +35,8 @@ include ../../Makefile.lib
 include ../../Makefile.rootfs
 
 LIBS =		$(DYNLIB) $(LINTLIB)
-LDLIBS +=	-lnsl -linetutil -lsocket -ldlpi -lnvpair -ldhcpagent \
-	        -ldladm -lsecdb -lipmp -lcmdutils -lc
+LDLIBS +=	-lc -lnsl -linetutil -lsocket -ldlpi -lnvpair -ldhcpagent \
+	        -ldladm -lsecdb -ldhcputil -lipmp -lcmdutils
 
 SRCDIR =	../common
 $(LINTLIB) :=	SRCS = $(SRCDIR)/$(LINTSRC)

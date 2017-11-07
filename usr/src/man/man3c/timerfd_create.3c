@@ -11,7 +11,7 @@
 .\"
 .\" Copyright (c) 2015, Joyent, Inc. All Rights Reserved.
 .\"
-.Dd April 9, 2016
+.Dd March 26, 2017
 .Dt TIMERFD 3C
 .Os
 .Sh NAME
@@ -80,7 +80,8 @@ description of
 .Ed
 .It Sy TFD_NONBLOCK
 .Bd -filled -compact
-Instance will be set to be non-blocking.  A
+Instance will be set to be non-blocking.
+A
 .Xr read 2
 on a
 .Sy timerfd
@@ -109,8 +110,8 @@ or
 .Fn timerfd_settime .
 Upon success,
 the number of expirations will be copied into the eight byte buffer
-passed to the system call. If there have been no expirations of the
-timer since the last successful
+passed to the system call.
+If there have been no expirations of the timer since the last successful
 .Xr read 2
 or
 .Fn timerfd_sttime ,
@@ -129,7 +130,7 @@ If the buffer specified to
 .Xr read 2
 is less than
 eight bytes in length,
-.Sy EINAVL
+.Sy EINVAL
 will be returned.
 .Ed
 .It Sy poll(2), port_get(3C), epoll_wait(3C)
@@ -165,7 +166,8 @@ same functional signature and semantics as
 .El
 .Sh RETURN VALUES
 Upon successful completion, a file descriptor associated with the instance
-is returned. Otherwise,
+is returned.
+Otherwise,
 .Sy -1
 is returned and errno is set to indicate the error.
 .Sh ERRORS
@@ -197,5 +199,5 @@ is not asserted in the effective set of the calling process.
 .Xr timer_create 3C ,
 .Xr timer_gettime 3C ,
 .Xr timer_settime 3C ,
-.Xr privileages 5 ,
+.Xr privileges 5 ,
 .Xr timerfd 5

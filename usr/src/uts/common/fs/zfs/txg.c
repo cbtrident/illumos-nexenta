@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Portions Copyright 2011 Martin Matuska
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
@@ -31,6 +31,7 @@
 #include <sys/dmu_tx.h>
 #include <sys/dsl_pool.h>
 #include <sys/dsl_scan.h>
+#include <sys/zil.h>
 #include <sys/callb.h>
 
 /*
@@ -115,8 +116,8 @@
  *  2) the corresponding TX is aborted (the first arg is ECANCELED)
  */
 
-static void txg_sync_thread(dsl_pool_t *dp);
-static void txg_quiesce_thread(dsl_pool_t *dp);
+static void txg_sync_thread(void *arg);
+static void txg_quiesce_thread(void *arg);
 
 int zfs_txg_timeout = 5;	/* max seconds worth of delta per txg */
 
@@ -167,7 +168,7 @@ txg_fini(dsl_pool_t *dp)
 	tx_state_t *tx = &dp->dp_tx;
 	int c;
 
-	ASSERT(tx->tx_threads == 0);
+	ASSERT0(tx->tx_threads);
 
 	mutex_destroy(&tx->tx_sync_lock);
 
@@ -208,7 +209,7 @@ txg_sync_start(dsl_pool_t *dp)
 
 	dprintf("pool %p\n", dp);
 
-	ASSERT(tx->tx_threads == 0);
+	ASSERT0(tx->tx_threads);
 
 	tx->tx_threads = 2;
 
@@ -270,7 +271,7 @@ txg_sync_stop(dsl_pool_t *dp)
 	/*
 	 * Finish off any work in progress.
 	 */
-	ASSERT(tx->tx_threads == 2);
+	ASSERT3U(tx->tx_threads, ==, 2);
 
 	/*
 	 * We need to ensure that we've vacated the deferred space_maps.
@@ -282,7 +283,7 @@ txg_sync_stop(dsl_pool_t *dp)
 	 */
 	mutex_enter(&tx->tx_sync_lock);
 
-	ASSERT(tx->tx_threads == 2);
+	ASSERT3U(tx->tx_threads, ==, 2);
 
 	tx->tx_exiting = 1;
 
@@ -470,8 +471,9 @@ txg_dispatch_callbacks(dsl_pool_t *dp, uint64_t txg)
 }
 
 static void
-txg_sync_thread(dsl_pool_t *dp)
+txg_sync_thread(void *arg)
 {
+	dsl_pool_t *dp = arg;
 	spa_t *spa = dp->dp_spa;
 	tx_state_t *tx = &dp->dp_tx;
 	callb_cpr_t cpr;
@@ -550,8 +552,9 @@ txg_sync_thread(dsl_pool_t *dp)
 }
 
 static void
-txg_quiesce_thread(dsl_pool_t *dp)
+txg_quiesce_thread(void *arg)
 {
+	dsl_pool_t *dp = arg;
 	tx_state_t *tx = &dp->dp_tx;
 	callb_cpr_t cpr;
 
@@ -633,7 +636,7 @@ txg_wait_synced(dsl_pool_t *dp, uint64_t txg)
 	ASSERT(!dsl_pool_config_held(dp));
 
 	mutex_enter(&tx->tx_sync_lock);
-	ASSERT(tx->tx_threads == 2);
+	ASSERT3U(tx->tx_threads, ==, 2);
 	if (txg == 0)
 		txg = tx->tx_open_txg + TXG_DEFER_SIZE;
 	if (tx->tx_sync_txg_waiting < txg)
@@ -658,7 +661,7 @@ txg_wait_open(dsl_pool_t *dp, uint64_t txg)
 	ASSERT(!dsl_pool_config_held(dp));
 
 	mutex_enter(&tx->tx_sync_lock);
-	ASSERT(tx->tx_threads == 2);
+	ASSERT3U(tx->tx_threads, ==, 2);
 	if (txg == 0)
 		txg = tx->tx_open_txg + 1;
 	if (tx->tx_quiesce_txg_waiting < txg)
@@ -711,16 +714,32 @@ txg_sync_waiting(dsl_pool_t *dp)
 }
 
 /*
+ * Verify that this txg is active (open, quiescing, syncing).  Non-active
+ * txg's should not be manipulated.
+ */
+void
+txg_verify(spa_t *spa, uint64_t txg)
+{
+	dsl_pool_t *dp = spa_get_dsl(spa);
+	if (txg <= TXG_INITIAL || txg == ZILTEST_TXG)
+		return;
+	ASSERT3U(txg, <=, dp->dp_tx.tx_open_txg);
+	ASSERT3U(txg, >=, dp->dp_tx.tx_synced_txg);
+	ASSERT3U(txg, >=, dp->dp_tx.tx_open_txg - TXG_CONCURRENT_STATES);
+}
+
+/*
  * Per-txg object lists.
  */
 void
-txg_list_create(txg_list_t *tl, size_t offset)
+txg_list_create(txg_list_t *tl, spa_t *spa, size_t offset)
 {
 	int t;
 
 	mutex_init(&tl->tl_lock, NULL, MUTEX_DEFAULT, NULL);
 
 	tl->tl_offset = offset;
+	tl->tl_spa = spa;
 
 	for (t = 0; t < TXG_SIZE; t++)
 		tl->tl_head[t] = NULL;
@@ -740,15 +759,16 @@ txg_list_destroy(txg_list_t *tl)
 boolean_t
 txg_list_empty(txg_list_t *tl, uint64_t txg)
 {
+	txg_verify(tl->tl_spa, txg);
 	return (tl->tl_head[txg & TXG_MASK] == NULL);
 }
 
 /*
  * Returns true if all txg lists are empty.
  *
- * Warning: this is inherently racy (an item could be added immediately after this
- * function returns). We don't bother with the lock because it wouldn't change the
- * semantics.
+ * Warning: this is inherently racy (an item could be added immediately
+ * after this function returns). We don't bother with the lock because
+ * it wouldn't change the semantics.
  */
 boolean_t
 txg_all_lists_empty(txg_list_t *tl)
@@ -772,6 +792,7 @@ txg_list_add(txg_list_t *tl, void *p, uint64_t txg)
 	txg_node_t *tn = (txg_node_t *)((char *)p + tl->tl_offset);
 	boolean_t add;
 
+	txg_verify(tl->tl_spa, txg);
 	mutex_enter(&tl->tl_lock);
 	add = (tn->tn_member[t] == 0);
 	if (add) {
@@ -796,6 +817,7 @@ txg_list_add_tail(txg_list_t *tl, void *p, uint64_t txg)
 	txg_node_t *tn = (txg_node_t *)((char *)p + tl->tl_offset);
 	boolean_t add;
 
+	txg_verify(tl->tl_spa, txg);
 	mutex_enter(&tl->tl_lock);
 	add = (tn->tn_member[t] == 0);
 	if (add) {
@@ -823,6 +845,7 @@ txg_list_remove(txg_list_t *tl, uint64_t txg)
 	txg_node_t *tn;
 	void *p = NULL;
 
+	txg_verify(tl->tl_spa, txg);
 	mutex_enter(&tl->tl_lock);
 	if ((tn = tl->tl_head[t]) != NULL) {
 		p = (char *)tn - tl->tl_offset;
@@ -844,6 +867,7 @@ txg_list_remove_this(txg_list_t *tl, void *p, uint64_t txg)
 	int t = txg & TXG_MASK;
 	txg_node_t *tn, **tp;
 
+	txg_verify(tl->tl_spa, txg);
 	mutex_enter(&tl->tl_lock);
 
 	for (tp = &tl->tl_head[t]; (tn = *tp) != NULL; tp = &tn->tn_next[t]) {
@@ -867,6 +891,7 @@ txg_list_member(txg_list_t *tl, void *p, uint64_t txg)
 	int t = txg & TXG_MASK;
 	txg_node_t *tn = (txg_node_t *)((char *)p + tl->tl_offset);
 
+	txg_verify(tl->tl_spa, txg);
 	return (tn->tn_member[t] != 0);
 }
 
@@ -879,6 +904,7 @@ txg_list_head(txg_list_t *tl, uint64_t txg)
 	int t = txg & TXG_MASK;
 	txg_node_t *tn = tl->tl_head[t];
 
+	txg_verify(tl->tl_spa, txg);
 	return (tn == NULL ? NULL : (char *)tn - tl->tl_offset);
 }
 
@@ -888,6 +914,7 @@ txg_list_next(txg_list_t *tl, void *p, uint64_t txg)
 	int t = txg & TXG_MASK;
 	txg_node_t *tn = (txg_node_t *)((char *)p + tl->tl_offset);
 
+	txg_verify(tl->tl_spa, txg);
 	tn = tn->tn_next[t];
 
 	return (tn == NULL ? NULL : (char *)tn - tl->tl_offset);

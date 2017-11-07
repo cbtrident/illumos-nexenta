@@ -24,7 +24,7 @@
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 /*
  * University Copyright- Copyright (c) 1982, 1986, 1988
@@ -188,7 +188,6 @@ void	dnlc_purge_vp(vnode_t *);
 int	dnlc_purge_vfsp(vfs_t *, int);
 void	dnlc_remove(vnode_t *, const char *);
 int	dnlc_fs_purge1(struct vnodeops *);
-vnode_t	*dnlc_reverse_lookup(vnode_t *, char *, size_t);
 void	dnlc_reduce_cache(void *);
 
 #endif	/* defined(_KERNEL) */

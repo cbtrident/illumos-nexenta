@@ -3,7 +3,7 @@
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License.
 .\" You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.  See the License for the specific language governing permissions and limitations under the License.
 .\" When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE.  If applicable, add the following below this CDDL HEADER, with the fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.TH USER_ATTR 4 "Feb 25, 2017"
+.TH USER_ATTR 4 "Aug 3, 2017"
 .SH NAME
 user_attr \- extended user attributes database
 .SH SYNOPSIS
@@ -197,36 +197,6 @@ Trusted Extensions feature:
 .sp
 .ne 2
 .na
-\fB\fBidletime\fR\fR
-.ad
-.sp .6
-.RS 4n
-Contains a number representing the maximum number of minutes a workstation can
-remain idle before the Trusted Extensions \fBCDE\fR window manager attempts the
-task specified in \fBidlecmd\fR. A zero in this field specifies that the
-\fBidlecmd\fR command is never executed. If unspecified, the default
-\fBidletime\fR of 30 minutes is in effect.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBidlecmd\fR\fR
-.ad
-.sp .6
-.RS 4n
-Contains one of two keywords that the Trusted Extensions \fBCDE\fR window
-manager interprets when a workstation is idle for too long. The keyword
-\fBlock\fR specifies that the workstation is to be locked (thus requiring the
-user to re-authenticate to resume the session). The keyword \fBlogout\fR
-specifies that session is to be terminated (thus, killing the user's processes
-launched in the current session). If unspecified, the default value,
-\fBlock\fR, is in effect.
-.RE
-
-.sp
-.ne 2
-.na
 \fB\fBclearance\fR\fR
 .ad
 .sp .6
@@ -275,9 +245,7 @@ privileges. Note that you specify privileges as they are displayed by
 \fBprivileges\fR(5) as \fBPRIV_FILE_CHOWN\fR.
 .sp
 .LP
-Privileges are specified through the Solaris Management Console
-(\fBsmc\fR(1M)), the recommended method, or, on the command line, for users,
-through\fBusermod\fR(1M). See \fBusermod\fR(1M) for examples of commands that
+See \fBusermod\fR(1M) for examples of commands that
 modify privileges and their subsequent effect on \fBuser_attr\fR.
 .SH EXAMPLES
 .LP
@@ -351,10 +319,6 @@ The command-line syntax is Committed. The output is Uncommitted.
 \fBgetuserattr\fR(3SECDB), \fBauth_attr\fR(4), \fBexec_attr\fR(4),
 \fBnsswitch.conf\fR(4), \fBpasswd\fR(4), \fBpolicy.conf\fR(4),
 \fBprof_attr\fR(4), \fBproject\fR(4), \fBattributes\fR(5), \fBprivileges\fR(5)
-.sp
-.LP
-See the \fBdtstyle\fR(1X), \fBlabel_encodings\fR(4), and \fBlabels\fR(5) man
-pages in the \fISolaris Trusted Extensions Reference Manual\fR.
 .sp
 .LP
 \fISystem Administration Guide: Security Services\fR

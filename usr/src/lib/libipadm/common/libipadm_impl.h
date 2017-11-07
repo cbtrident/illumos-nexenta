@@ -23,6 +23,7 @@
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright (c) 2016, Chris Fraire <cfraire@me.com>.
  */
 
 #ifndef _LIBIPADM_IMPL_H
@@ -95,6 +96,7 @@ struct ipadm_addrobj_s {
 		struct {
 			boolean_t		ipadm_primary;
 			int32_t			ipadm_wait;
+			char			ipadm_reqhost[MAXNAMELEN];
 		} ipadm_dhcp_s;
 	} ipadm_addr_u;
 };
@@ -110,6 +112,7 @@ struct ipadm_addrobj_s {
 #define	ipadm_stateful		ipadm_addr_u.ipadm_ipv6_intfid_s.ipadm_stateful
 #define	ipadm_primary		ipadm_addr_u.ipadm_dhcp_s.ipadm_primary
 #define	ipadm_wait		ipadm_addr_u.ipadm_dhcp_s.ipadm_wait
+#define	ipadm_reqhost	ipadm_addr_u.ipadm_dhcp_s.ipadm_reqhost
 
 /*
  * Data structures and callback functions related to property management
@@ -153,7 +156,8 @@ extern ipadm_status_t	i_ipadm_init_ifobj(ipadm_handle_t, const char *,
 			    nvlist_t *);
 extern ipadm_status_t	i_ipadm_init_addrobj(ipadm_handle_t, nvlist_t *);
 extern ipadm_status_t	i_ipadm_addr_persist(ipadm_handle_t,
-			    const ipadm_addrobj_t, boolean_t, uint32_t);
+			    const ipadm_addrobj_t, boolean_t, uint32_t,
+			    const char *);
 extern ipadm_status_t	i_ipadm_delete_addr(ipadm_handle_t, ipadm_addrobj_t);
 extern int		i_ipadm_strioctl(int, int, char *, int);
 extern boolean_t	i_ipadm_is_loopback(const char *);
@@ -195,7 +199,7 @@ extern ipadm_status_t	i_ipadm_active_addr_info(ipadm_handle_t, const char *,
 			    ipadm_addr_info_t **, uint32_t, int64_t);
 extern void		i_ipadm_init_addr(ipadm_addrobj_t, const char *,
 			    const char *, ipadm_addr_type_t);
-extern ipadm_status_t	i_ipadm_merge_prefixlen_from_nvl(nvlist_t *, nvlist_t *,
+extern ipadm_status_t	i_ipadm_merge_addrprops_from_nvl(nvlist_t *, nvlist_t *,
 			    const char *);
 extern ipadm_status_t	i_ipadm_get_addrobj(ipadm_handle_t, ipadm_addrobj_t);
 extern ipadm_status_t	i_ipadm_enable_static(ipadm_handle_t, const char *,

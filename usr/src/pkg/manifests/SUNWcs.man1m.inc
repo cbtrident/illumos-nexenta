@@ -13,6 +13,7 @@
 # Copyright 2011, Richard Lowe
 # Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 # Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright (c) 2017, Chris Fraire <cfraire@me.com>.
 #
 
 file path=usr/share/man/man1m/6to4relay.1m
@@ -55,6 +56,7 @@ file path=usr/share/man/man1m/dd.1m
 file path=usr/share/man/man1m/devattr.1m
 file path=usr/share/man/man1m/devfree.1m
 file path=usr/share/man/man1m/devfsadm.1m
+link path=usr/share/man/man1m/audlinks.1m target=devfsadm.1m
 file path=usr/share/man/man1m/devinfo.1m
 file path=usr/share/man/man1m/devlinks.1m
 file path=usr/share/man/man1m/devnm.1m
@@ -211,6 +213,7 @@ file path=usr/share/man/man1m/route.1m
 file path=usr/share/man/man1m/routeadm.1m
 file path=usr/share/man/man1m/rpcbind.1m
 file path=usr/share/man/man1m/rpcinfo.1m
+file path=usr/share/man/man1m/rsh.1m
 file path=usr/share/man/man1m/rtc.1m
 file path=usr/share/man/man1m/sac.1m
 file path=usr/share/man/man1m/sacadm.1m
@@ -281,6 +284,7 @@ link path=usr/share/man/man1m/grpck.1m target=pwck.1m
 link path=usr/share/man/man1m/intro.1m target=Intro.1m
 link path=usr/share/man/man1m/poweroff.1m target=halt.1m
 link path=usr/share/man/man1m/quotaoff.1m target=quotaon.1m
+link path=usr/share/man/man1m/restricted_shell.1m target=rsh.1m
 link path=usr/share/man/man1m/telinit.1m target=init.1m
 link path=usr/share/man/man1m/umount.1m target=mount.1m
 link path=usr/share/man/man1m/umountall.1m target=mountall.1m

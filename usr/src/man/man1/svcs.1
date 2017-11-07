@@ -56,9 +56,10 @@ command displays information about service instances as recorded in the service
 configuration repository.
 .Pp
 The first form of this command prints one-line status listings for service
-instances specified by the arguments. Each instance is listed only once. With
-no arguments, all enabled service instances, even if temporarily disabled, are
-listed with the columns indicated below.
+instances specified by the arguments.
+Each instance is listed only once.
+With no arguments, all enabled service instances, even if temporarily disabled,
+are listed with the columns indicated below.
 .Pp
 The second form prints one-line status listings for the dependencies or
 dependents of the service instances specified by the arguments.
@@ -66,10 +67,10 @@ dependents of the service instances specified by the arguments.
 The third form prints detailed information about specific services and
 instances.
 .Pp
-The fourth form explains the states of service instances. For each argument, a
-block of human-readable text is displayed which explains what state the service
-is in, and why it is in that state. With no arguments, problematic services are
-described.
+The fourth form explains the states of service instances.
+For each argument, a block of human-readable text is displayed which explains
+what state the service is in, and why it is in that state.
+With no arguments, problematic services are described.
 .Pp
 The output of this command can be used appropriately as input to the
 .Xr svcadm 1M
@@ -80,8 +81,8 @@ The following options are supported:
 .It Fl \?
 Displays an extended usage message, including column specifiers.
 .It Fl a
-Show all services, even disabled ones. This option has no effect if services
-are selected.
+Show all services, even disabled ones.
+This option has no effect if services are selected.
 .It Fl d
 Lists the services or service instances upon which the given service instances
 depend.
@@ -89,24 +90,28 @@ depend.
 Lists the service instances that depend on the given services or service
 instances.
 .It Fl H
-Used for scripting mode. Do not print headers and separate fields by a single
-tab instead of arbitrary white space.
+Used for scripting mode.
+Do not print headers and separate fields by a single tab instead of arbitrary
+white space.
 .It Fl l
 Displays all available information about the selected services and service
-instances, with one service attribute displayed for each line. Information for
-different instances are separated by blank lines.
+instances, with one service attribute displayed for each line.
+Information for different instances are separated by blank lines.
 .Pp
 The following specific attributes require further explanation:
 .Bl -tag -width "dependency"
 .It Sy dependency
-Information about a dependency. The grouping and
+Information about a dependency.
+The grouping and
 .Ar restart_on
 properties are displayed first and are separated by a forward slash
 .Pq Sy / .
-Next, each entity and its state is listed. See
+Next, each entity and its state is listed.
+See
 .Xr smf 5
-for information about states. In addition to the standard states, each service
-dependency can have the following state descriptions:
+for information about states.
+In addition to the standard states, each service dependency can have the
+following state descriptions:
 .Bl -tag -width "multiple"
 .It Sy absent
 No such service is defined on the system.
@@ -158,7 +163,8 @@ A service might be temporarily disabled because an administrator has run
 .Nm svcadm Cm disable Fl t ,
 used
 .Nm svcadm Cm milestone ,
-or booted the system to a specific milestone. See
+or booted the system to a specific milestone.
+See
 .Xr svcadm 1M
 for details.
 .El
@@ -166,14 +172,17 @@ for details.
 Display the log file of the selected services and service instances, one
 per-line.
 .It Fl o Ar col Ns Oo , Ns Ar col Oc Ns ...
-Prints the specified columns. Each
+Prints the specified columns.
+Each
 .Ar col
-should be a column name. See
+should be a column name.
+See
 .Sx COLUMNS
 below for available columns.
 .It Fl p
-Lists processes associated with each service instance. A service instance can
-have no associated processes. The process ID, start time, and command name
+Lists processes associated with each service instance.
+A service instance can have no associated processes.
+The process ID, start time, and command name
 .Po
 .Sy PID , STIME ,
 and
@@ -188,9 +197,11 @@ restarter.
 .It Fl s Ar col
 Sorts output by column.
 .Ar col
-should be a column name. See
+should be a column name.
+See
 .Sx COLUMNS
-below for available columns. Multiple
+below for available columns.
+Multiple
 .Fl s
 options behave additively.
 .It Fl S Ar col
@@ -236,8 +247,8 @@ This option is only applicable in the global zone, see
 .Xr zones 5 .
 .It Fl Z
 Display services from all zones, with an additional column indicating in which
-zone the service is running. This option is only applicable in the global zone,
-see
+zone the service is running.
+This option is only applicable in the global zone, see
 .Xr zones 5 .
 .El
 .Sh OPERANDS
@@ -249,7 +260,8 @@ A fault management resource identifier
 that specifies one or more instances
 .Pq see Xr smf 5 .
 FMRIs can be abbreviated by specifying the instance name, or the trailing
-portion of the service name. For example, given the FMRI
+portion of the service name.
+For example, given the FMRI
 .Sy svc:/network/smtp:sendmail ,
 the following are valid abbreviations:
 .Sy sendmail :sendmail smtp smtp:sendmail network/smtp ,
@@ -271,7 +283,8 @@ If the pattern does not begin with
 .Sy svc: ,
 then
 .Sy svc:/
-is prepended. The following is a typical example of a glob pattern:
+is prepended.
+The following is a typical example of a glob pattern:
 .Bd -literal
 qexample% svcs \e*keyserv\e*
 STATE          STIME     FMRI
@@ -281,17 +294,18 @@ disabled       Aug_02    svc:/network/rpc/keyserv:default
 An FMRI that specifies an instance.
 .El
 .Sh COLUMNS
-Column names are case insensitive. The default output format is equivalent to
+Column names are case insensitive.
+The default output format is equivalent to
 .Fl o Sy state,stime,fmri .
 The default sorting columns are
 .Sy STATE , STIME , FMRI .
 .Bl -tag -width "NSTATE"
 .It Sy CTID
-The primary contract ID for the service instance. Not all instances have valid
-primary contract IDs.
+The primary contract ID for the service instance.
+Not all instances have valid primary contract IDs.
 .It Sy DESC
-A brief description of the service, from its template element. A service might
-not have a description available, in which case a hyphen
+A brief description of the service, from its template element.
+A service might not have a description available, in which case a hyphen
 .Pq Sy \(hy
 is used to denote an empty value.
 .It Sy FMRI
@@ -301,13 +315,15 @@ The instance name of the service instance.
 .It Sy NSTA
 The abbreviated next state of the service instance, as given in the
 .Sy STA
-column description. A hyphen denotes that the instance is not transitioning.
+column description.
+A hyphen denotes that the instance is not transitioning.
 Same as
 .Sy STA
 otherwise.
 .It Sy NSTATE
-The next state of the service. A hyphen is used to denote that the instance is
-not transitioning. Same as
+The next state of the service.
+A hyphen is used to denote that the instance is not transitioning.
+Same as
 .Sy STATE
 otherwise.
 .It Sy SCOPE
@@ -335,7 +351,8 @@ uninitialized
 .Pp
 Absent or unrecognized states are denoted by a question mark
 .Pq Sy \?
-character. An asterisk
+character.
+An asterisk
 .Pq Sy *
 is appended for instances in transition, unless the
 .Sy NSTA
@@ -343,16 +360,17 @@ or
 .Sy NSTATE
 column is also being displayed.
 .It Sy STATE
-The state of the service instance. An asterisk is appended for instances in
-transition, unless the
+The state of the service instance.
+An asterisk is appended for instances in transition, unless the
 .Sy NSTA
 or
 .Sy NSTATE
 column is also being displayed.
 .It Sy STIME
 If the service instance entered the current state within the last 24 hours,
-this column indicates the time that it did so. Otherwise, this column indicates
-the date on which it did so, printed with underscores
+this column indicates the time that it did so.
+Otherwise, this column indicates the date on which it did so, printed with
+underscores
 .Pq Sy _
 in place of blanks.
 .El

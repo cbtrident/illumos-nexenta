@@ -401,7 +401,7 @@ function test_readonly
 		else
 			exp=1
 		fi
-		
+
 		unit_writefile $object $user $exp
 		unit_writedir $object $user
 		unit_appenddata $object $user $exp

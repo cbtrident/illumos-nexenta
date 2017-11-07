@@ -20,12 +20,12 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -47,6 +47,7 @@
 #include <sys/blkptr.h>
 #include <sys/range_tree.h>
 #include <sys/callb.h>
+#include <sys/abd.h>
 
 
 uint_t zfs_dbuf_evict_key;
@@ -82,7 +83,7 @@ static boolean_t dbuf_evict_thread_exit;
  * Dbufs that are aged out of the cache will be immediately destroyed and
  * become eligible for arc eviction.
  */
-static multilist_t dbuf_cache;
+static multilist_t *dbuf_cache;
 static refcount_t dbuf_cache_size;
 uint64_t dbuf_cache_max_bytes = 100 * 1024 * 1024;
 
@@ -470,8 +471,8 @@ dbuf_cache_above_lowater(void)
 static void
 dbuf_evict_one(void)
 {
-	int idx = multilist_get_random_index(&dbuf_cache);
-	multilist_sublist_t *mls = multilist_sublist_lock(&dbuf_cache, idx);
+	int idx = multilist_get_random_index(dbuf_cache);
+	multilist_sublist_t *mls = multilist_sublist_lock(dbuf_cache, idx);
 
 	ASSERT(!MUTEX_HELD(&dbuf_evict_lock));
 
@@ -510,8 +511,9 @@ dbuf_evict_one(void)
  * of the dbuf cache is at or below the maximum size. Once the dbuf is aged
  * out of the cache it is destroyed and becomes eligible for arc eviction.
  */
+/* ARGSUSED */
 static void
-dbuf_evict_thread(void)
+dbuf_evict_thread(void *unused)
 {
 	callb_cpr_t cpr;
 
@@ -576,19 +578,15 @@ dbuf_evict_notify(void)
 	if (tsd_get(zfs_dbuf_evict_key) != NULL)
 		return;
 
+	/*
+	 * We check if we should evict without holding the dbuf_evict_lock,
+	 * because it's OK to occasionally make the wrong decision here,
+	 * and grabbing the lock results in massive lock contention.
+	 */
 	if (refcount_count(&dbuf_cache_size) > dbuf_cache_max_bytes) {
-		boolean_t evict_now = B_FALSE;
-
-		mutex_enter(&dbuf_evict_lock);
-		if (refcount_count(&dbuf_cache_size) > dbuf_cache_max_bytes) {
-			evict_now = dbuf_cache_above_hiwater();
-			cv_signal(&dbuf_evict_cv);
-		}
-		mutex_exit(&dbuf_evict_lock);
-
-		if (evict_now) {
+		if (dbuf_cache_above_hiwater())
 			dbuf_evict_one();
-		}
+		cv_signal(&dbuf_evict_cv);
 	}
 }
 
@@ -644,9 +642,8 @@ retry:
 	 */
 	dbu_evict_taskq = taskq_create("dbu_evict", 1, minclsyspri, 0, 0, 0);
 
-	multilist_create(&dbuf_cache, sizeof (dmu_buf_impl_t),
+	dbuf_cache = multilist_create(sizeof (dmu_buf_impl_t),
 	    offsetof(dmu_buf_impl_t, db_cache_link),
-	    zfs_arc_num_sublists_per_state,
 	    dbuf_cache_multilist_index_func);
 	refcount_create(&dbuf_cache_size);
 
@@ -683,7 +680,7 @@ dbuf_fini(void)
 	cv_destroy(&dbuf_evict_cv);
 
 	refcount_destroy(&dbuf_cache_size);
-	multilist_destroy(&dbuf_cache);
+	multilist_destroy(dbuf_cache);
 }
 
 /*
@@ -1112,7 +1109,6 @@ int
 dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 {
 	int err = 0;
-	boolean_t havepzio = (zio != NULL);
 	boolean_t prefetch;
 	dnode_t *dn;
 
@@ -1156,9 +1152,13 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 		DB_DNODE_EXIT(db);
 	} else if (db->db_state == DB_UNCACHED) {
 		spa_t *spa = dn->dn_objset->os_spa;
+		boolean_t need_wait = B_FALSE;
 
-		if (zio == NULL)
+		if (zio == NULL &&
+		    db->db_blkptr != NULL && !BP_IS_HOLE(db->db_blkptr)) {
 			zio = zio_root(spa, NULL, NULL, ZIO_FLAG_CANFAIL);
+			need_wait = B_TRUE;
+		}
 		dbuf_read_impl(db, zio, flags);
 
 		/* dbuf_read_impl has dropped db_mtx for us */
@@ -1170,7 +1170,7 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 			rw_exit(&dn->dn_struct_rwlock);
 		DB_DNODE_EXIT(db);
 
-		if (!havepzio)
+		if (need_wait)
 			err = zio_wait(zio);
 	} else {
 		/*
@@ -1205,7 +1205,6 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 		mutex_exit(&db->db_mtx);
 	}
 
-	ASSERT(err || havepzio || db->db_state == DB_CACHED);
 	return (err);
 }
 
@@ -1241,6 +1240,11 @@ dbuf_unoverride(dbuf_dirty_record_t *dr)
 	uint64_t txg = dr->dr_txg;
 
 	ASSERT(MUTEX_HELD(&db->db_mtx));
+	/*
+	 * This assert is valid because dmu_sync() expects to be called by
+	 * a zilog's get_data while holding a range lock.  This call only
+	 * comes from dbuf_dirty() callers who must also hold a range lock.
+	 */
 	ASSERT(dr->dt.dl.dr_override_state != DR_IN_DMU_SYNC);
 	ASSERT(db->db_level == 0);
 
@@ -1567,11 +1571,6 @@ dbuf_dirty_sc(dmu_buf_impl_t *db, dmu_tx_t *tx, boolean_t usesc)
 	    (dmu_tx_is_syncing(tx) ? DN_DIRTY_SYNC : DN_DIRTY_OPEN));
 
 	ASSERT3U(dn->dn_nlevels, >, db->db_level);
-	ASSERT((dn->dn_phys->dn_nlevels == 0 && db->db_level == 0) ||
-	    dn->dn_phys->dn_nlevels > db->db_level ||
-	    dn->dn_next_nlevels[txgoff] > db->db_level ||
-	    dn->dn_next_nlevels[(tx->tx_txg-1) & TXG_MASK] > db->db_level ||
-	    dn->dn_next_nlevels[(tx->tx_txg-2) & TXG_MASK] > db->db_level);
 
 	/*
 	 * We should only be dirtying in syncing context if it's the
@@ -1581,6 +1580,7 @@ dbuf_dirty_sc(dmu_buf_impl_t *db, dmu_tx_t *tx, boolean_t usesc)
 	 * this assertion only if we're not already dirty.
 	 */
 	os = dn->dn_objset;
+	VERIFY3U(tx->tx_txg, <=, spa_final_dirty_txg(os->os_spa));
 #ifdef DEBUG
 	if (dn->dn_objset->os_dsl_dataset != NULL)
 		rrw_enter(&os->os_dsl_dataset->ds_bp_rwlock, RW_READER, FTAG);
@@ -1687,6 +1687,16 @@ dbuf_dirty_sc(dmu_buf_impl_t *db, dmu_tx_t *tx, boolean_t usesc)
 		rw_enter(&dn->dn_struct_rwlock, RW_READER);
 		drop_struct_lock = TRUE;
 	}
+
+	/*
+	 * We need to hold the dn_struct_rwlock to make this assertion,
+	 * because it protects dn_phys / dn_next_nlevels from changing.
+	 */
+	ASSERT((dn->dn_phys->dn_nlevels == 0 && db->db_level == 0) ||
+	    dn->dn_phys->dn_nlevels > db->db_level ||
+	    dn->dn_next_nlevels[txgoff] > db->db_level ||
+	    dn->dn_next_nlevels[(tx->tx_txg-1) & TXG_MASK] > db->db_level ||
+	    dn->dn_next_nlevels[(tx->tx_txg-2) & TXG_MASK] > db->db_level);
 
 	/*
 	 * If we are overwriting a dedup BP, then unless it is snapshotted,
@@ -2085,7 +2095,7 @@ dbuf_destroy(dmu_buf_impl_t *db)
 	dbuf_clear_data(db);
 
 	if (multilist_link_active(&db->db_cache_link)) {
-		multilist_remove(&dbuf_cache, db);
+		multilist_remove(dbuf_cache, db);
 		(void) refcount_remove_many(&dbuf_cache_size,
 		    db->db.db_size, db);
 	}
@@ -2633,7 +2643,7 @@ top:
 
 	if (multilist_link_active(&db->db_cache_link)) {
 		ASSERT(refcount_is_zero(&db->db_holds));
-		multilist_remove(&dbuf_cache, db);
+		multilist_remove(dbuf_cache, db);
 		(void) refcount_remove_many(&dbuf_cache_size,
 		    db->db.db_size, db);
 	}
@@ -2852,7 +2862,7 @@ dbuf_rele_and_unlock(dmu_buf_impl_t *db, void *tag)
 			    db->db_pending_evict) {
 				dbuf_destroy(db);
 			} else if (!multilist_link_active(&db->db_cache_link)) {
-				multilist_insert(&dbuf_cache, db);
+				multilist_insert(dbuf_cache, db);
 				(void) refcount_add_many(&dbuf_cache_size,
 				    db->db.db_size, db);
 				mutex_exit(&db->db_mtx);
@@ -3505,8 +3515,10 @@ dbuf_write_override_done(zio_t *zio)
 		arc_release(dr->dt.dl.dr_data, db);
 	}
 	mutex_exit(&db->db_mtx);
-
 	dbuf_write_done(zio, NULL, db);
+
+	if (zio->io_abd != NULL)
+		abd_put(zio->io_abd);
 }
 
 /* Issue I/O to commit a dirty buffer to disk. */
@@ -3584,9 +3596,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 	wp_flag |= (db->db_state == DB_NOFILL) ? WP_NOFILL : 0;
 	WP_SET_SPECIALCLASS(wp_flag, dr->dr_usesc);
 
-	dmu_write_policy(os, dn, db->db_level, wp_flag,
-	    (data != NULL && arc_get_compression(data) != ZIO_COMPRESS_OFF) ?
-	    arc_get_compression(data) : ZIO_COMPRESS_INHERIT, &zp);
+	dmu_write_policy(os, dn, db->db_level, wp_flag, &zp);
 	DB_DNODE_EXIT(db);
 
 	/*
@@ -3603,7 +3613,8 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 		 * The BP for this block has been provided by open context
 		 * (by dmu_sync() or dmu_buf_write_embedded()).
 		 */
-		void *contents = (data != NULL) ? data->b_data : NULL;
+		abd_t *contents = (data != NULL) ?
+		    abd_get_from_buf(data->b_data, arc_buf_size(data)) : NULL;
 
 		dr->dr_zio = zio_write(zio, os->os_spa, txg, &dr->dr_bp_copy,
 		    contents, db->db.db_size, db->db.db_size, &zp,

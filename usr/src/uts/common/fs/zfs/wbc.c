@@ -102,7 +102,7 @@ static int wbc_collect_special_blocks(dsl_pool_t *dp);
 static void wbc_close_window(wbc_data_t *wbc_data);
 static void wbc_write_update_window(void *void_avl_tree, dmu_tx_t *tx);
 
-static int wbc_io(wbc_io_type_t type, wbc_block_t *block, void *data);
+static int wbc_io(wbc_io_type_t type, wbc_block_t *block, abd_t *data);
 static int wbc_blocks_compare(const void *arg1, const void *arg2);
 static int wbc_instances_compare(const void *arg1, const void *arg2);
 
@@ -619,7 +619,7 @@ wbc_move_block(void *arg)
 static int
 wbc_move_block_impl(wbc_block_t *block)
 {
-	void *buf;
+	abd_t *buf;
 	int err = 0;
 	wbc_data_t *wbc_data = block->data;
 	spa_t *spa = wbc_data->wbc_spa;
@@ -629,8 +629,10 @@ wbc_move_block_impl(wbc_block_t *block)
 
 	spa_config_enter(spa, SCL_VDEV | SCL_STATE_ALL, FTAG, RW_READER);
 
-	buf = zio_data_buf_alloc(WBCBP_GET_PSIZE(block));
+	buf = abd_alloc_for_io(WBCBP_GET_PSIZE(block), B_FALSE);
 
+	/* FIXME: This needs to be fixed as part of NEX-14168 */
+#if 0
 	if (wbc_arc_enabled) {
 		blkptr_t pseudo_bp = { 0 };
 		wbc_arc_bypass_t bypass = { 0 };
@@ -686,18 +688,29 @@ wbc_move_block_impl(wbc_block_t *block)
 		if (WBCBP_IS_DELETED(block))
 			goto out;
 	}
+#endif
+	/*
+	 * This code should be removed after
+	 * uncomment the above "if 0 - endif"
+	 */
+	err = ENOTSUP;
+	mutex_enter(&block->lock);
+	if (WBCBP_IS_DELETED(block))
+		goto out;
+
 
 	/*
 	 * Any error means that arc read failed and block is being moved via
 	 * slow path
 	 */
-	if (err) {
+	if (err != 0) {
 		err = wbc_io(WBC_READ_FROM_SPECIAL, block, buf);
-		if (err) {
+		if (err != 0) {
 			cmn_err(CE_WARN, "WBC: move task has failed to read:"
 			    " error [%d]", err);
 			goto out;
 		}
+
 		DTRACE_PROBE(wbc_move_from_disk);
 	} else {
 		DTRACE_PROBE(wbc_move_from_arc);
@@ -721,7 +734,7 @@ wbc_move_block_impl(wbc_block_t *block)
 
 out:
 	mutex_exit(&block->lock);
-	zio_data_buf_free(buf, WBCBP_GET_PSIZE(block));
+	abd_free(buf);
 
 	spa_config_exit(spa, SCL_VDEV | SCL_STATE_ALL, FTAG);
 
@@ -2039,7 +2052,7 @@ wbc_instances_compare(const void *arg1, const void *arg2)
 }
 
 static int
-wbc_io(wbc_io_type_t type, wbc_block_t *block, void *data)
+wbc_io(wbc_io_type_t type, wbc_block_t *block, abd_t *data)
 {
 	zio_t *zio;
 	zio_type_t zio_type;

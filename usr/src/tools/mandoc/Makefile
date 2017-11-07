@@ -10,19 +10,30 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2017 Joyent, Inc.
 #
 
 CMDDIR=		$(SRC)/cmd/mandoc
+LCDIR=		$(SRC)/lib/libc/port
 
-include		../Makefile.tools
+include		$(SRC)/tools/Makefile.tools
 include		$(CMDDIR)/Makefile.common
+
+OBJS +=		fts.o \
+		reallocarray.o \
+		recallocarray.o \
+		strtonum.o
+
+CPPFLAGS +=	-I. -include fts.h
+CPPFLAGS +=	-I$(NATIVE_ADJUNCT)/include
+LDFLAGS +=	-L$(NATIVE_ADJUNCT)/lib -R$(NATIVE_ADJUNCT)/lib
 
 .KEEP_STATE:
 
 all:		$(PROG)
 
-install:	all .WAIT $(ROOTONBLDMACHPROG)
+install:	all $(ROOTONBLDMACHPROG)
 
 clean:
 		$(RM) $(PROG) $(OBJS)
@@ -34,4 +45,7 @@ $(PROG):	$(OBJS)
 %.o:		$(CMDDIR)/%.c
 		$(COMPILE.c) -o $@ $<
 
-include		../Makefile.targ
+%.o:		$(LCDIR)/gen/%.c
+		$(COMPILE.c) -o $@ $<
+
+include		$(SRC)/tools/Makefile.targ

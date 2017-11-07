@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
- * Copyright (c) 2014, Joyent, Inc. All rights reserved.
+ * Copyright (c) 2017, Joyent, Inc.
  * Copyright 2014 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
  */
@@ -146,6 +146,8 @@ static void mptsas_config_space_fini(mptsas_t *mpt);
 static void mptsas_iport_register(mptsas_t *mpt);
 static int mptsas_smp_setup(mptsas_t *mpt);
 static void mptsas_smp_teardown(mptsas_t *mpt);
+static int mptsas_enc_setup(mptsas_t *mpt);
+static void mptsas_enc_teardown(mptsas_t *mpt);
 static int mptsas_cache_create(mptsas_t *mpt);
 static void mptsas_cache_destroy(mptsas_t *mpt);
 static int mptsas_alloc_request_frames(mptsas_t *mpt);
@@ -157,6 +159,7 @@ static void mptsas_alloc_reply_args(mptsas_t *mpt);
 static int mptsas_alloc_extra_sgl_frame(mptsas_t *mpt, mptsas_cmd_t *cmd);
 static void mptsas_free_extra_sgl_frame(mptsas_t *mpt, mptsas_cmd_t *cmd);
 static int mptsas_init_chip(mptsas_t *mpt, int first_time);
+static void mptsas_update_hashtab(mptsas_t *mpt);
 
 /*
  * SCSA function prototypes
@@ -1089,6 +1092,7 @@ mptsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	char			config_setup = 0;
 	char			hba_attach_setup = 0;
 	char			smp_attach_setup = 0;
+	char			enc_attach_setup = 0;
 	char			mutex_init_done = 0;
 	char			event_taskq_create = 0;
 	char			dr_taskq_create = 0;
@@ -1446,6 +1450,10 @@ mptsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto fail;
 	smp_attach_setup++;
 
+	if (mptsas_enc_setup(mpt) == FALSE)
+		goto fail;
+	enc_attach_setup++;
+
 	if (mptsas_cache_create(mpt) == FALSE)
 		goto fail;
 
@@ -1588,6 +1596,9 @@ fail:
 
 		if (smp_attach_setup) {
 			mptsas_smp_teardown(mpt);
+		}
+		if (enc_attach_setup) {
+			mptsas_enc_teardown(mpt);
 		}
 		if (hba_attach_setup) {
 			mptsas_hba_teardown(mpt);
@@ -2076,6 +2087,7 @@ mptsas_do_detach(dev_info_t *dip)
 #endif
 
 	mptsas_smp_teardown(mpt);
+	mptsas_enc_teardown(mpt);
 	mptsas_hba_teardown(mpt);
 
 	mptsas_config_space_fini(mpt);
@@ -2323,6 +2335,42 @@ mptsas_smp_teardown(mptsas_t *mpt)
 		mpt->m_smptran = NULL;
 	}
 	mpt->m_smp_devhdl = 0;
+}
+
+static int
+mptsas_enc_setup(mptsas_t *mpt)
+{
+	list_create(&mpt->m_enclosures, sizeof (mptsas_enclosure_t),
+	    offsetof(mptsas_enclosure_t, me_link));
+	return (TRUE);
+}
+
+static void
+mptsas_enc_teardown(mptsas_t *mpt)
+{
+	mptsas_enclosure_t *mep;
+
+	while ((mep = list_remove_head(&mpt->m_enclosures)) != NULL) {
+		kmem_free(mep, sizeof (mptsas_enclosure_t));
+	}
+	list_destroy(&mpt->m_enclosures);
+}
+
+static mptsas_enclosure_t *
+mptsas_enc_lookup(mptsas_t *mpt, uint16_t hdl)
+{
+	mptsas_enclosure_t *mep;
+
+	ASSERT(MUTEX_HELD(&mpt->m_mutex));
+
+	for (mep = list_head(&mpt->m_enclosures); mep != NULL;
+	    mep = list_next(&mpt->m_enclosures, mep)) {
+		if (hdl == mep->me_enchdl) {
+			return (mep);
+		}
+	}
+
+	return (NULL);
 }
 
 static int
@@ -6262,6 +6310,80 @@ mptsas_free_devhdl(mptsas_t *mpt, uint16_t devhdl)
 	return (DDI_SUCCESS);
 }
 
+/*
+ * We have a SATA target that has changed, which means the "bridge-port"
+ * property must be updated to reflect the SAS WWN of the new attachment point.
+ * This may change if a SATA device changes which bay, and therefore phy, it is
+ * plugged into. This SATA device may be a multipath virtual device or may be a
+ * physical device. We have to handle both cases.
+ */
+static boolean_t
+mptsas_update_sata_bridge(mptsas_t *mpt, dev_info_t *parent,
+    mptsas_target_t *ptgt)
+{
+	int			rval;
+	uint16_t		dev_hdl;
+	uint16_t		pdev_hdl;
+	uint64_t		dev_sas_wwn;
+	uint8_t			physport;
+	uint8_t			phy_id;
+	uint32_t		page_address;
+	uint16_t		bay_num, enclosure, io_flags;
+	uint32_t		dev_info;
+	char 			uabuf[SCSI_WWN_BUFLEN];
+	dev_info_t		*dip;
+	mdi_pathinfo_t		*pip;
+
+	mutex_enter(&mpt->m_mutex);
+	page_address = (MPI2_SAS_DEVICE_PGAD_FORM_HANDLE &
+	    MPI2_SAS_DEVICE_PGAD_FORM_MASK) | (uint32_t)ptgt->m_devhdl;
+	rval = mptsas_get_sas_device_page0(mpt, page_address, &dev_hdl,
+	    &dev_sas_wwn, &dev_info, &physport, &phy_id, &pdev_hdl, &bay_num,
+	    &enclosure, &io_flags);
+	mutex_exit(&mpt->m_mutex);
+	if (rval != DDI_SUCCESS) {
+		mptsas_log(mpt, CE_WARN, "unable to get SAS page 0 for "
+		    "handle %d", page_address);
+		return (B_FALSE);
+	}
+
+	if (scsi_wwn_to_wwnstr(dev_sas_wwn, 1, uabuf) == NULL) {
+		mptsas_log(mpt, CE_WARN,
+		    "mptsas unable to format SATA bridge WWN");
+		return (B_FALSE);
+	}
+
+	if (mpt->m_mpxio_enable == TRUE && (pip = mptsas_find_path_addr(parent,
+	    ptgt->m_addr.mta_wwn, 0)) != NULL) {
+		if (mdi_prop_update_string(pip, SCSI_ADDR_PROP_BRIDGE_PORT,
+		    uabuf) != DDI_SUCCESS) {
+			mptsas_log(mpt, CE_WARN,
+			    "mptsas unable to create SCSI bridge port "
+			    "property for SATA device");
+			return (B_FALSE);
+		}
+		return (B_TRUE);
+	}
+
+	if ((dip = mptsas_find_child_addr(parent, ptgt->m_addr.mta_wwn,
+	    0)) != NULL) {
+		if (ndi_prop_update_string(DDI_DEV_T_NONE, dip,
+		    SCSI_ADDR_PROP_BRIDGE_PORT, uabuf) != DDI_PROP_SUCCESS) {
+			mptsas_log(mpt, CE_WARN,
+			    "mptsas unable to create SCSI bridge port "
+			    "property for SATA device");
+			return (B_FALSE);
+		}
+		return (B_TRUE);
+	}
+
+	mptsas_log(mpt, CE_WARN, "mptsas failed to find dev_info_t or "
+	    "mdi_pathinfo_t for target with WWN %016" PRIx64,
+	    ptgt->m_addr.mta_wwn);
+
+	return (B_FALSE);
+}
+
 static void
 mptsas_update_phymask(mptsas_t *mpt)
 {
@@ -6639,6 +6761,21 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 			ndi_devi_exit(scsi_vhci_dip, circ);
 
 			/*
+			 * If this is a SATA device, make sure that the
+			 * bridge-port (the SAS WWN that the SATA device is
+			 * plugged into) is updated. This may change if a SATA
+			 * device changes which bay, and therefore phy, it is
+			 * plugged into.
+			 */
+			if (IS_SATA_DEVICE(ptgt->m_deviceinfo)) {
+				if (!mptsas_update_sata_bridge(mpt, parent,
+				    ptgt)) {
+					mutex_enter(&mpt->m_mutex);
+					return;
+				}
+			}
+
+			/*
 			 * Add parent's props for SMHBA support
 			 */
 			if (flags == MPTSAS_TOPO_FLAG_DIRECT_ATTACHED_DEVICE) {
@@ -6656,6 +6793,7 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 					    SCSI_ADDR_PROP_ATTACHED_PORT);
 					mptsas_log(mpt, CE_WARN, "Failed to"
 					    "attached-port props");
+					mutex_enter(&mpt->m_mutex);
 					return;
 				}
 				if (ddi_prop_update_int(DDI_DEV_T_NONE, parent,
@@ -6665,6 +6803,7 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 					    parent, MPTSAS_NUM_PHYS);
 					mptsas_log(mpt, CE_WARN, "Failed to"
 					    " create num-phys props");
+					mutex_enter(&mpt->m_mutex);
 					return;
 				}
 
@@ -6673,7 +6812,6 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 				 */
 				mutex_enter(&mpt->m_mutex);
 				if (mptsas_smhba_phy_init(mpt)) {
-					mutex_exit(&mpt->m_mutex);
 					mptsas_log(mpt, CE_WARN, "mptsas phy"
 					    " update failed");
 					return;
@@ -6695,6 +6833,7 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 					mptsas_log(mpt, CE_WARN,
 					    "mptsas virtual-port"
 					    "port prop update failed");
+					mutex_enter(&mpt->m_mutex);
 					return;
 				}
 			}
@@ -6772,6 +6911,7 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 				    SCSI_ADDR_PROP_ATTACHED_PORT);
 				mptsas_log(mpt, CE_WARN, "mptsas attached port "
 				    "prop update failed");
+				mutex_enter(&mpt->m_mutex);
 				break;
 			}
 			if (ddi_prop_update_int(DDI_DEV_T_NONE, parent,
@@ -6781,6 +6921,7 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 				    MPTSAS_NUM_PHYS);
 				mptsas_log(mpt, CE_WARN, "mptsas num phys "
 				    "prop update failed");
+				mutex_enter(&mpt->m_mutex);
 				break;
 			}
 			if (ddi_prop_update_int(DDI_DEV_T_NONE, parent,
@@ -6790,6 +6931,7 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 				    MPTSAS_VIRTUAL_PORT);
 				mptsas_log(mpt, CE_WARN, "mptsas virtual port "
 				    "prop update failed");
+				mutex_enter(&mpt->m_mutex);
 				break;
 			}
 		}
@@ -7868,18 +8010,28 @@ mptsas_handle_event(void *args)
 	{
 		pMpi2EventDataSasEnclDevStatusChange_t	encstatus;
 		uint8_t					rc;
+		uint16_t				enchdl;
 		char					string[80];
+		mptsas_enclosure_t			*mep;
 
 		encstatus = (pMpi2EventDataSasEnclDevStatusChange_t)
 		    eventreply->EventData;
 
 		rc = ddi_get8(mpt->m_acc_reply_frame_hdl,
 		    &encstatus->ReasonCode);
+		enchdl = ddi_get16(mpt->m_acc_reply_frame_hdl,
+		    &encstatus->EnclosureHandle);
+
 		switch (rc) {
 		case MPI2_EVENT_SAS_ENCL_RC_ADDED:
 			(void) sprintf(string, "added");
 			break;
 		case MPI2_EVENT_SAS_ENCL_RC_NOT_RESPONDING:
+			mep = mptsas_enc_lookup(mpt, enchdl);
+			if (mep != NULL) {
+				list_remove(&mpt->m_enclosures, mep);
+				kmem_free(mep, sizeof (*mep));
+			}
 			(void) sprintf(string, ", not responding");
 			break;
 		default:
@@ -7889,6 +8041,13 @@ mptsas_handle_event(void *args)
 		    "%x%s\n", mpt->m_instance,
 		    ddi_get16(mpt->m_acc_reply_frame_hdl,
 		    &encstatus->EnclosureHandle), string));
+
+		/*
+		 * No matter what has happened, update all of our device state
+		 * for enclosures, by retriggering an evaluation.
+		 */
+		mpt->m_done_traverse_enc = 0;
+		mptsas_update_hashtab(mpt);
 		break;
 	}
 
@@ -14687,7 +14846,29 @@ mptsas_offline_missed_luns(dev_info_t *pdip, uint16_t *repluns,
 	}
 }
 
-void
+/*
+ * If this enclosure doesn't exist in the enclosure list, add it. If it does,
+ * update it.
+ */
+static void
+mptsas_enclosure_update(mptsas_t *mpt, mptsas_enclosure_t *mep)
+{
+	mptsas_enclosure_t *m;
+
+	ASSERT(MUTEX_HELD(&mpt->m_mutex));
+	m = mptsas_enc_lookup(mpt, mep->me_enchdl);
+	if (m != NULL) {
+		m->me_flags = mep->me_flags;
+		return;
+	}
+
+	m = kmem_zalloc(sizeof (*m), KM_SLEEP);
+	m->me_enchdl = mep->me_enchdl;
+	m->me_flags = mep->me_flags;
+	list_insert_tail(&mpt->m_enclosures, m);
+}
+
+static void
 mptsas_update_hashtab(struct mptsas *mpt)
 {
 	uint32_t	page_address;
@@ -14702,7 +14883,7 @@ mptsas_update_hashtab(struct mptsas *mpt)
 	(void) mptsas_get_raid_info(mpt);
 
 	dev_handle = mpt->m_smp_devhdl;
-	for (; mpt->m_done_traverse_smp == 0; ) {
+	while (mpt->m_done_traverse_smp == 0) {
 		page_address = (MPI2_SAS_EXPAND_PGAD_FORM_GET_NEXT_HNDL &
 		    MPI2_SAS_EXPAND_PGAD_FORM_MASK) | (uint32_t)dev_handle;
 		if (mptsas_get_sas_expander_page0(mpt, page_address, &smp_node)
@@ -14714,16 +14895,34 @@ mptsas_update_hashtab(struct mptsas *mpt)
 	}
 
 	/*
+	 * Loop over enclosures so we can understand what's there.
+	 */
+	dev_handle = MPTSAS_INVALID_DEVHDL;
+	while (mpt->m_done_traverse_enc == 0) {
+		mptsas_enclosure_t me;
+
+		page_address = (MPI2_SAS_ENCLOS_PGAD_FORM_GET_NEXT_HANDLE &
+		    MPI2_SAS_ENCLOS_PGAD_FORM_MASK) | (uint32_t)dev_handle;
+
+		if (mptsas_get_enclosure_page0(mpt, page_address, &me) !=
+		    DDI_SUCCESS) {
+			break;
+		}
+		dev_handle = me.me_enchdl;
+		mptsas_enclosure_update(mpt, &me);
+	}
+
+	/*
 	 * Config target devices
 	 */
 	dev_handle = mpt->m_dev_handle;
 
 	/*
-	 * Do loop to get sas device page 0 by GetNextHandle till the
+	 * Loop to get sas device page 0 by GetNextHandle till the
 	 * the last handle. If the sas device is a SATA/SSP target,
 	 * we try to config it.
 	 */
-	for (; mpt->m_done_traverse_dev == 0; ) {
+	while (mpt->m_done_traverse_dev == 0) {
 		ptgt = NULL;
 		page_address =
 		    (MPI2_SAS_DEVICE_PGAD_FORM_GET_NEXT_HANDLE &
@@ -14780,6 +14979,7 @@ mptsas_update_driver_data(struct mptsas *mpt)
 	}
 	mpt->m_done_traverse_dev = 0;
 	mpt->m_done_traverse_smp = 0;
+	mpt->m_done_traverse_enc = 0;
 	mpt->m_dev_handle = mpt->m_smp_devhdl = MPTSAS_INVALID_DEVHDL;
 	mptsas_update_hashtab(mpt);
 }
@@ -14810,7 +15010,8 @@ mptsas_config_all(dev_info_t *pdip)
 
 	mutex_enter(&mpt->m_mutex);
 
-	if (!mpt->m_done_traverse_dev || !mpt->m_done_traverse_smp) {
+	if (!mpt->m_done_traverse_dev || !mpt->m_done_traverse_smp ||
+	    !mpt->m_done_traverse_enc) {
 		mptsas_update_hashtab(mpt);
 	}
 
@@ -15524,6 +15725,27 @@ mptsas_create_virt_lun(dev_info_t *pdip, struct scsi_inquiry *inq, char *guid,
 			    mpt->un.m_base_wwid);
 		}
 
+		if (IS_SATA_DEVICE(ptgt->m_deviceinfo)) {
+			char	uabuf[SCSI_WWN_BUFLEN];
+
+			if (scsi_wwn_to_wwnstr(dev_sas_wwn, 1, uabuf) == NULL) {
+				mptsas_log(mpt, CE_WARN,
+				    "mptsas unable to format SATA bridge WWN");
+				mdi_rtn = MDI_FAILURE;
+				goto virt_create_done;
+			}
+
+			if (mdi_prop_update_string(*pip,
+			    SCSI_ADDR_PROP_BRIDGE_PORT, uabuf) !=
+			    DDI_SUCCESS) {
+				mptsas_log(mpt, CE_WARN,
+				    "mptsas unable to create SCSI bridge port "
+				    "property for SATA device");
+				mdi_rtn = MDI_FAILURE;
+				goto virt_create_done;
+			}
+		}
+
 		if (mdi_prop_update_string(*pip,
 		    SCSI_ADDR_PROP_ATTACHED_PORT, pdev_wwn_str) !=
 		    DDI_PROP_SUCCESS) {
@@ -15843,12 +16065,31 @@ mptsas_create_phys_lun(dev_info_t *pdip, struct scsi_inquiry *inq,
 		}
 
 		if (IS_SATA_DEVICE(dev_info)) {
+			char	uabuf[SCSI_WWN_BUFLEN];
+
 			if (ndi_prop_update_string(DDI_DEV_T_NONE,
 			    *lun_dip, MPTSAS_VARIANT, "sata") !=
 			    DDI_PROP_SUCCESS) {
 				mptsas_log(mpt, CE_WARN,
 				    "mptsas unable to create "
 				    "property for device variant ");
+				ndi_rtn = NDI_FAILURE;
+				goto phys_create_done;
+			}
+
+			if (scsi_wwn_to_wwnstr(dev_sas_wwn, 1, uabuf) == NULL) {
+				mptsas_log(mpt, CE_WARN,
+				    "mptsas unable to format SATA bridge WWN");
+				ndi_rtn = NDI_FAILURE;
+				goto phys_create_done;
+			}
+
+			if (ndi_prop_update_string(DDI_DEV_T_NONE, *lun_dip,
+			    SCSI_ADDR_PROP_BRIDGE_PORT, uabuf) !=
+			    DDI_PROP_SUCCESS) {
+				mptsas_log(mpt, CE_WARN,
+				    "mptsas unable to create SCSI bridge port "
+				    "property for SATA device");
 				ndi_rtn = NDI_FAILURE;
 				goto phys_create_done;
 			}
@@ -16688,6 +16929,8 @@ mptsas_send_sep(mptsas_t *mpt, mptsas_target_t *ptgt,
 	Mpi2SepRequest_t	req;
 	Mpi2SepReply_t		rep;
 	int			ret;
+	mptsas_enclosure_t	*mep;
+	uint16_t 		enctype;
 
 	ASSERT(mutex_owned(&mpt->m_mutex));
 
@@ -16706,6 +16949,21 @@ mptsas_send_sep(mptsas_t *mpt, mptsas_target_t *ptgt,
 	 */
 	if (!(ptgt->m_deviceinfo & DEVINFO_DIRECT_ATTACHED) ||
 	    ptgt->m_addr.mta_phymask == 0) {
+		return (ENOTTY);
+	}
+
+	/*
+	 * Look through the enclosures and make sure that this enclosure is
+	 * something that is directly attached device. If we didn't find an
+	 * enclosure for this device, don't send the ioctl.
+	 */
+	mep = mptsas_enc_lookup(mpt, ptgt->m_enclosure);
+	if (mep == NULL)
+		return (ENOTTY);
+	enctype = mep->me_flags & MPI2_SAS_ENCLS0_FLAGS_MNG_MASK;
+	if (enctype != MPI2_SAS_ENCLS0_FLAGS_MNG_IOC_SES &&
+	    enctype != MPI2_SAS_ENCLS0_FLAGS_MNG_IOC_SGPIO &&
+	    enctype != MPI2_SAS_ENCLS0_FLAGS_MNG_IOC_GPIO) {
 		return (ENOTTY);
 	}
 

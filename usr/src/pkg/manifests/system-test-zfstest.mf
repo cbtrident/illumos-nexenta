@@ -10,9 +10,9 @@
 #
 
 #
-# Copyright (c) 2012, 2015 by Delphix. All rights reserved.
-# Copyright 2016, OmniTI Computer Consulting, Inc. All rights reserved.
+# Copyright (c) 2012, 2017 by Delphix. All rights reserved.
 # Copyright 2017 Nexenta Systems Inc.
+# Copyright 2016, OmniTI Computer Consulting, Inc. All rights reserved.
 #
 
 set name=pkg.fmri value=pkg:/system/test/zfstest@$(PKGVERS)
@@ -37,6 +37,9 @@ dir path=opt/zfs-tests/tests/functional/bootfs
 dir path=opt/zfs-tests/tests/functional/cache
 dir path=opt/zfs-tests/tests/functional/cachefile
 dir path=opt/zfs-tests/tests/functional/casenorm
+dir path=opt/zfs-tests/tests/functional/channel_program
+dir path=opt/zfs-tests/tests/functional/channel_program/lua_core
+dir path=opt/zfs-tests/tests/functional/channel_program/synctask_core
 dir path=opt/zfs-tests/tests/functional/checksum
 dir path=opt/zfs-tests/tests/functional/clean_mirror
 dir path=opt/zfs-tests/tests/functional/cli_root
@@ -144,6 +147,7 @@ dir path=opt/zfs-tests/tests/functional/xattr
 dir path=opt/zfs-tests/tests/functional/zvol
 dir path=opt/zfs-tests/tests/functional/zvol/zvol_ENOSPC
 dir path=opt/zfs-tests/tests/functional/zvol/zvol_cli
+dir path=opt/zfs-tests/tests/functional/zvol/zvol_dump
 dir path=opt/zfs-tests/tests/functional/zvol/zvol_misc
 dir path=opt/zfs-tests/tests/functional/zvol/zvol_swap
 dir path=opt/zfs-tests/tests/perf
@@ -175,6 +179,7 @@ file path=opt/zfs-tests/bin/file_trunc mode=0555
 file path=opt/zfs-tests/bin/file_write mode=0555
 file path=opt/zfs-tests/bin/getholes mode=0555
 file path=opt/zfs-tests/bin/largest_file mode=0555
+file path=opt/zfs-tests/bin/memory_balloon mode=0555
 file path=opt/zfs-tests/bin/mkbusy mode=0555
 file path=opt/zfs-tests/bin/mkfiles mode=0555
 file path=opt/zfs-tests/bin/mkholes mode=0555
@@ -396,6 +401,221 @@ file path=opt/zfs-tests/tests/functional/casenorm/sensitive_none_delete \
 file path=opt/zfs-tests/tests/functional/casenorm/sensitive_none_lookup \
     mode=0555
 file path=opt/zfs-tests/tests/functional/casenorm/setup mode=0555
+file path=opt/zfs-tests/tests/functional/channel_program/channel_common.kshlib \
+    mode=0555
+file path=opt/zfs-tests/tests/functional/channel_program/lua_core/cleanup \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/nvlist_to_lua.exe \
+    mode=0555
+file path=opt/zfs-tests/tests/functional/channel_program/lua_core/setup \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.args_to_lua \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.args_to_lua.out \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.args_to_lua.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.divide_by_zero \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.divide_by_zero.err \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.divide_by_zero.zcp \
+    mode=0444
+file path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.exists \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.exists.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.integer_illegal \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.integer_overflow \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.language_functions_neg \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.language_functions_pos \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.large_prog \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.large_prog.out \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.large_prog.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.memory_limit \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.nested_neg \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.nested_neg.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.nested_pos \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.nested_pos.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.nvlist_to_lua \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.recursive.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.recursive_neg \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.recursive_pos \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.return_large \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.return_large.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.return_nvlist_neg \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.return_nvlist_pos \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.return_recursive_table \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.return_recursive_table.zcp \
+    mode=0444
+file path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.timeout \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/lua_core/tst.timeout.zcp \
+    mode=0444
+file path=opt/zfs-tests/tests/functional/channel_program/synctask_core/cleanup \
+    mode=0555
+file path=opt/zfs-tests/tests/functional/channel_program/synctask_core/setup \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.destroy_fs \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.destroy_snap \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_count_and_limit \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_index_props \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_index_props.out \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_index_props.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_mountpoint \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_neg \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_number_props \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_number_props.out \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_number_props.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_string_props \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_string_props.out \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_string_props.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_type \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_userquota \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.get_written \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.list_children \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.list_clones \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.list_snapshots \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.list_system_props \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.parse_args_neg \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.promote_conflict \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.promote_conflict.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.promote_multiple \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.promote_simple \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.rollback_mult \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.rollback_one \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.snapshot_destroy \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.snapshot_destroy.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.snapshot_neg \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.snapshot_neg.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.snapshot_recursive \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.snapshot_recursive.zcp \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.snapshot_simple \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/channel_program/synctask_core/tst.snapshot_simple.zcp \
+    mode=0444
 $(i386_ONLY)file path=opt/zfs-tests/tests/functional/checksum/edonr_test.amd64 \
     mode=0555
 $(i386_ONLY)file path=opt/zfs-tests/tests/functional/checksum/edonr_test.i386 \
@@ -1632,6 +1852,8 @@ file path=opt/zfs-tests/tests/functional/cli_user/misc/zdb_001_neg mode=0555
 file path=opt/zfs-tests/tests/functional/cli_user/misc/zfs_001_neg mode=0555
 file path=opt/zfs-tests/tests/functional/cli_user/misc/zfs_allow_001_neg \
     mode=0555
+file path=opt/zfs-tests/tests/functional/cli_user/misc/zfs_channel_001_neg \
+    mode=0555
 file path=opt/zfs-tests/tests/functional/cli_user/misc/zfs_clone_001_neg \
     mode=0555
 file path=opt/zfs-tests/tests/functional/cli_user/misc/zfs_create_001_neg \
@@ -2332,6 +2554,8 @@ file path=opt/zfs-tests/tests/functional/zvol/zvol_cli/zvol_cli_002_pos \
 file path=opt/zfs-tests/tests/functional/zvol/zvol_cli/zvol_cli_003_neg \
     mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_common.shlib mode=0444
+file path=opt/zfs-tests/tests/functional/zvol/zvol_dump/zvol_dump_raidz \
+    mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/cleanup mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/setup mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_misc_001_neg \
@@ -2375,14 +2599,18 @@ file path=opt/zfs-tests/tests/perf/regression/random_reads mode=0555
 file path=opt/zfs-tests/tests/perf/regression/random_readwrite mode=0555
 file path=opt/zfs-tests/tests/perf/regression/random_writes mode=0555
 file path=opt/zfs-tests/tests/perf/regression/sequential_reads mode=0555
-file path=opt/zfs-tests/tests/perf/regression/sequential_reads_cached \
+file path=opt/zfs-tests/tests/perf/regression/sequential_reads_arc_cached \
     mode=0555
-file path=opt/zfs-tests/tests/perf/regression/sequential_reads_cached_clone \
+file \
+    path=opt/zfs-tests/tests/perf/regression/sequential_reads_arc_cached_clone \
+    mode=0555
+file path=opt/zfs-tests/tests/perf/regression/sequential_reads_dbuf_cached \
     mode=0555
 file path=opt/zfs-tests/tests/perf/regression/sequential_writes mode=0555
 file path=opt/zfs-tests/tests/perf/regression/setup mode=0555
 file path=opt/zfs-tests/tests/perf/scripts/io.d mode=0444
 file path=opt/zfs-tests/tests/perf/scripts/prefetch_io.d mode=0444
+file path=opt/zfs-tests/tests/perf/scripts/profile.d mode=0444
 file path=opt/zfs-tests/tests/stress/include/stress.cfg mode=0444
 file path=opt/zfs-tests/tests/stress/include/stress.kshlib mode=0444
 file path=opt/zfs-tests/tests/stress/mirror_002/cleanup mode=0555

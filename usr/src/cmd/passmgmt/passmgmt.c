@@ -93,8 +93,6 @@ kvopts_t ua_opts[] =  {
 { '\0', USERATTR_LABELVIEW },
 { '\0', USERATTR_CLEARANCE },
 { '\0', USERATTR_MINLABEL },
-{ '\0', USERATTR_IDLECMD_KW },
-{ '\0', USERATTR_IDLETIME_KW },
 { '\0', USERATTR_AUDIT_FLAGS_KW },
 };
 
@@ -219,7 +217,8 @@ putuserattrent(userattr_t *user, FILE *f)
 }
 
 static void
-assign_attr(userattr_t *user, const char *newkey, char *val) {
+assign_attr(userattr_t *user, const char *newkey, char *val)
+{
 
 	int		i;
 	char		*key;
@@ -247,7 +246,8 @@ assign_attr(userattr_t *user, const char *newkey, char *val) {
 }
 
 static void
-unassign_role(userattr_t *user, char *rolelist, char *role) {
+unassign_role(userattr_t *user, char *rolelist, char *role)
+{
 
 	char *roleptr;
 	char *templist;
@@ -446,10 +446,10 @@ main(int argc, char **argv)
 			    strpbrk(optarg, ":\n"))
 				bad_arg("Invalid argument to option -c");
 
-				optn_mask |= C_MASK;
-				passwd_st.pw_comment = optarg;
-				passwd_st.pw_gecos = optarg;
-				break;
+			optn_mask |= C_MASK;
+			passwd_st.pw_comment = optarg;
+			passwd_st.pw_gecos = optarg;
+			break;
 
 		case 'h' :
 			/* The home directory */

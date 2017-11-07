@@ -80,6 +80,7 @@ struct libzfs_handle {
 	libzfs_fru_t *libzfs_fru_list;
 	char libzfs_chassis_id[256];
 	char *libzfs_log_str;
+	boolean_t libzfs_prop_debug;
 };
 
 struct zfs_handle {
@@ -208,7 +209,6 @@ void namespace_clear(libzfs_handle_t *);
  */
 
 extern int zfs_init_libshare(libzfs_handle_t *, int);
-extern void zfs_uninit_libshare(libzfs_handle_t *);
 extern int zfs_parse_options(char *, zfs_share_proto_t);
 
 extern int zfs_unshare_proto(zfs_handle_t *,

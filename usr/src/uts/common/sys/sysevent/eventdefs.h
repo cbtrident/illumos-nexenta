@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #ifndef	_SYS_SYSEVENT_EVENTDEFS_H
@@ -218,6 +219,7 @@ extern "C" {
 #define	ESC_ZFS_DEDUP_ON		"ESC_ZFS_dedup_on"
 #define	ESC_ZFS_TRIM_START		"ESC_ZFS_trim_start"
 #define	ESC_ZFS_TRIM_FINISH		"ESC_ZFS_trim_finish"
+#define	ESC_ZFS_HISTORY_EVENT		"ESC_ZFS_history_event"
 
 /*
  * datalink subclass definitions.

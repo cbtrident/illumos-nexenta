@@ -8,9 +8,9 @@
 .\" http://www.illumos.org/license/CDDL.
 .\"
 .\"
-.\" Copyright 2016 Joyent, Inc.
+.\" Copyright (c) 2017, Joyent, Inc.
 .\"
-.Dd Aug 2, 2016
+.Dd May 12, 2017
 .Dt ACPIDUMP 1M
 .Os
 .Sh NAME
@@ -29,8 +29,8 @@
 The
 .Nm
 utility is used to dump the system's Advanced Configuration and Power Interface
-(ACPI) tables that are provided by system firmware. The dumped tables can be
-used by other utilities, such as
+(ACPI) tables that are provided by system firmware.
+The dumped tables can be used by other utilities, such as
 .Xr acpixtract 1M
 or
 .Sy iasl .
@@ -42,7 +42,8 @@ Get the table at the given physical address.
 .It Fl b
 Dump all tables to binary files.
 .It Fl c Ar on|off
-Enable dumping customized tables. The default is off.
+Enable dumping customized tables.
+The default is off.
 .It Fl f Ar file
 Read the table from the given binary file.
 .It Fl h
@@ -65,5 +66,18 @@ Do not use the
 .It Fl z
 Verbose.
 .El
+.Sh EXAMPLES
+.Sy Example 1
+Dump all ACPI Tables
+.Pp
+The following example dumps all of the ACPI tables from the system.
+This can then be used with
+.Xr acpixtract 1M
+and the iasl utility to decode the ACPI tables from the system.
+In this example, all of the tables are written to the file
+.Pa acpi.out .
+.Bd -literal -offset width
+# acpidump -o acpi.dat
+.Ed
 .Sh SEE ALSO
 .Xr acpixtract 1M

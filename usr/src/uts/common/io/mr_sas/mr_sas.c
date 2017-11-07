@@ -45,7 +45,7 @@
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 Bayard G. Bell. All rights reserved.
  * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
- * Copyright 2015 Citrus IT Limited. All rights reserved.
+ * Copyright 2015, 2017 Citrus IT Limited. All rights reserved.
  * Copyright 2015 Garrett D'Amore <garrett@damore.org>
  */
 
@@ -565,9 +565,16 @@ mrsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 		/* initialize function pointers */
 		switch (device_id) {
-		case PCI_DEVICE_ID_LSI_TBOLT:
 		case PCI_DEVICE_ID_LSI_INVADER:
 		case PCI_DEVICE_ID_LSI_FURY:
+		case PCI_DEVICE_ID_LSI_INTRUDER:
+		case PCI_DEVICE_ID_LSI_INTRUDER_24:
+		case PCI_DEVICE_ID_LSI_CUTLASS_52:
+		case PCI_DEVICE_ID_LSI_CUTLASS_53:
+			dev_err(dip, CE_CONT, "?Gen3 device detected\n");
+			instance->gen3 = 1;
+			/* FALLTHROUGH */
+		case PCI_DEVICE_ID_LSI_TBOLT:
 			dev_err(dip, CE_CONT, "?TBOLT device detected\n");
 
 			instance->func_ptr =
@@ -584,6 +591,7 @@ mrsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 			 * certain other features are available to a Skinny
 			 * HBA.
 			 */
+			dev_err(dip, CE_CONT, "?Skinny device detected\n");
 			instance->skinny = 1;
 			/* FALLTHRU */
 
@@ -883,7 +891,8 @@ mrsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 		instance->unroll.scsictl = 1;
 
-		(void) sprintf(instance->iocnode, "%d:lsirdctl", instance_no);
+		(void) snprintf(instance->iocnode, sizeof (instance->iocnode),
+		    "%d:lsirdctl", instance_no);
 
 		/*
 		 * Create a node for applications
@@ -939,7 +948,6 @@ mrsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		    KM_SLEEP);
 		instance->unroll.ldlist_buff = 1;
 
-#ifdef PDSUPPORT
 		if (instance->tbolt || instance->skinny) {
 			instance->mr_tbolt_pd_max = MRSAS_TBOLT_PD_TGT_MAX;
 			instance->mr_tbolt_pd_list =
@@ -955,7 +963,6 @@ mrsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 			instance->unroll.pdlist_buff = 1;
 		}
-#endif
 		break;
 	case DDI_PM_RESUME:
 		con_log(CL_ANN, (CE_NOTE, "mr_sas: DDI_PM_RESUME"));
@@ -1596,7 +1603,7 @@ mrsas_quiesce(dev_info_t *dip)
 /*ARGSUSED*/
 static int
 mrsas_tran_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
-		scsi_hba_tran_t *tran, struct scsi_device *sd)
+    scsi_hba_tran_t *tran, struct scsi_device *sd)
 {
 	struct mrsas_instance *instance;
 	uint16_t tgt = sd->sd_address.a_target;
@@ -1640,10 +1647,7 @@ mrsas_tran_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 			instance->mr_ld_list[tgt].flag = MRDRV_TGT_VALID;
 			mutex_exit(&instance->config_dev_mtx);
 		}
-	}
-
-#ifdef PDSUPPORT
-	else if (instance->tbolt || instance->skinny) {
+	} else if (instance->tbolt || instance->skinny) {
 		if (instance->mr_tbolt_pd_list[tgt].dip == NULL) {
 			mutex_enter(&instance->config_dev_mtx);
 			instance->mr_tbolt_pd_list[tgt].dip = tgt_dip;
@@ -1654,7 +1658,6 @@ mrsas_tran_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 			    "t%xl%x", tgt, lun));
 		}
 	}
-#endif
 
 	return (DDI_SUCCESS);
 }
@@ -1678,18 +1681,13 @@ mrsas_tran_tgt_free(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 			instance->mr_ld_list[tgt].dip = NULL;
 			mutex_exit(&instance->config_dev_mtx);
 		}
-	}
-
-#ifdef PDSUPPORT
-	else if (instance->tbolt || instance->skinny) {
+	} else if (instance->tbolt || instance->skinny) {
 		mutex_enter(&instance->config_dev_mtx);
 		instance->mr_tbolt_pd_list[tgt].dip = NULL;
 		mutex_exit(&instance->config_dev_mtx);
 		con_log(CL_ANN1, (CE_NOTE, "tgt_free: Setting dip = NULL"
 		    "for tgt:%x", tgt));
 	}
-#endif
-
 }
 
 dev_info_t *
@@ -1699,7 +1697,7 @@ mrsas_find_child(struct mrsas_instance *instance, uint16_t tgt, uint8_t lun)
 	char addr[SCSI_MAXNAMELEN];
 	char tmp[MAXNAMELEN];
 
-	(void) sprintf(addr, "%x,%x", tgt, lun);
+	(void) snprintf(addr, sizeof (addr), "%x,%x", tgt, lun);
 	for (child = ddi_get_child(instance->dip); child;
 	    child = ddi_get_next_sibling(child)) {
 
@@ -1772,8 +1770,8 @@ mrsas_name_node(dev_info_t *dip, char *name, int len)
  */
 static struct scsi_pkt *
 mrsas_tran_init_pkt(struct scsi_address *ap, register struct scsi_pkt *pkt,
-	struct buf *bp, int cmdlen, int statuslen, int tgtlen,
-	int flags, int (*callback)(), caddr_t arg)
+    struct buf *bp, int cmdlen, int statuslen, int tgtlen,
+    int flags, int (*callback)(), caddr_t arg)
 {
 	struct scsa_cmd	*acmd;
 	struct mrsas_instance	*instance;
@@ -4174,9 +4172,7 @@ service_mfi_aen(struct mrsas_instance *instance, struct mrsas_cmd *cmd)
 	int		rval = 0;
 	int		tgt = 0;
 	uint8_t		dtype;
-#ifdef PDSUPPORT
 	mrsas_pd_address_t	*pd_addr;
-#endif
 	ddi_acc_handle_t		acc_handle;
 
 	con_log(CL_ANN, (CE_NOTE, "chkpnt:%s:%d", __func__, __LINE__));
@@ -4252,7 +4248,6 @@ service_mfi_aen(struct mrsas_instance *instance, struct mrsas_cmd *cmd)
 		break;
 	} /* End of MR_EVT_LD_CREATED */
 
-#ifdef PDSUPPORT
 	case MR_EVT_PD_REMOVED_EXT: {
 		if (instance->tbolt || instance->skinny) {
 			pd_addr = &evt_detail->args.pd_addr;
@@ -4329,7 +4324,6 @@ service_mfi_aen(struct mrsas_instance *instance, struct mrsas_cmd *cmd)
 		}
 		break;
 	}
-#endif
 
 	} /* End of Main Switch */
 
@@ -4528,29 +4522,10 @@ mrsas_softintr(struct mrsas_instance *instance)
 					inq = (struct scsi_inquiry *)
 					    acmd->cmd_buf->b_un.b_addr;
 
-#ifdef PDSUPPORT
 					if (hdr->cmd_status == MFI_STAT_OK) {
 						display_scsi_inquiry(
 						    (caddr_t)inq);
 					}
-#else
-					/* don't expose physical drives to OS */
-					if (acmd->islogical &&
-					    (hdr->cmd_status == MFI_STAT_OK)) {
-						display_scsi_inquiry(
-						    (caddr_t)inq);
-					} else if ((hdr->cmd_status ==
-					    MFI_STAT_OK) && inq->inq_dtype ==
-					    DTYPE_DIRECT) {
-
-						display_scsi_inquiry(
-						    (caddr_t)inq);
-
-						/* for physical disk */
-						hdr->cmd_status =
-						    MFI_STAT_DEVICE_NOT_FOUND;
-					}
-#endif /* PDSUPPORT */
 				}
 			}
 
@@ -7510,11 +7485,9 @@ mrsas_tran_bus_config(dev_info_t *parent, uint_t flags,
 
 		if (lun == 0) {
 			rval = mrsas_config_ld(instance, tgt, lun, childp);
-#ifdef PDSUPPORT
 		} else if ((instance->tbolt || instance->skinny) && lun != 0) {
 			rval = mrsas_tbolt_config_pd(instance,
 			    tgt, lun, childp);
-#endif
 		} else {
 			rval = NDI_FAILURE;
 		}
@@ -7552,14 +7525,12 @@ mrsas_config_all_devices(struct mrsas_instance *instance)
 
 	}
 
-#ifdef PDSUPPORT
 	/* Config PD devices connected to the card */
 	if (instance->tbolt || instance->skinny) {
 		for (tgt = 0; tgt < instance->mr_tbolt_pd_max; tgt++) {
 			(void) mrsas_tbolt_config_pd(instance, tgt, 1, NULL);
 		}
 	}
-#endif
 
 	rval = NDI_SUCCESS;
 	return (rval);
@@ -7790,12 +7761,10 @@ mrsas_issue_evt_taskq(struct mrsas_eventinfo *mrevt)
 		mutex_enter(&instance->config_dev_mtx);
 		dip = instance->mr_ld_list[mrevt->tgt].dip;
 		mutex_exit(&instance->config_dev_mtx);
-#ifdef PDSUPPORT
 	} else {
 		mutex_enter(&instance->config_dev_mtx);
 		dip = instance->mr_tbolt_pd_list[mrevt->tgt].dip;
 		mutex_exit(&instance->config_dev_mtx);
-#endif
 	}
 
 
@@ -7807,12 +7776,10 @@ mrsas_issue_evt_taskq(struct mrsas_eventinfo *mrevt)
 			if (mrevt->lun == 0) {
 				(void) mrsas_config_ld(instance, mrevt->tgt,
 				    0, NULL);
-#ifdef PDSUPPORT
 			} else if (instance->tbolt || instance->skinny) {
 				(void) mrsas_tbolt_config_pd(instance,
 				    mrevt->tgt,
 				    1, NULL);
-#endif
 			}
 			con_log(CL_ANN1, (CE_NOTE,
 			    "mr_sas: EVT_CONFIG_TGT called:"

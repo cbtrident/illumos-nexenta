@@ -166,7 +166,7 @@ add_ctype(int val)
 }
 
 void
-add_ctype_range(int end)
+add_ctype_range(wchar_t end)
 {
 	ctype_node_t	*ctn;
 	wchar_t		cur;
@@ -357,12 +357,11 @@ dump_ctype(void)
 		if ((wc == ' ') && (ctn->ctype & (_ISPUNCT|_ISGRAPH)))
 			conflict++;
 
-#ifndef NATIVE
 		if (conflict) {
 			warn("conflicting classes for character 0x%x (%x)",
 			    wc, ctn->ctype);
 		}
-#endif
+
 		/*
 		 * Handle the lower 256 characters using the simple
 		 * optimization.  Note that if we have not defined the
@@ -377,9 +376,9 @@ dump_ctype(void)
 			continue;
 		}
 
-		if ((last_ct != NULL) && (last_ct->ctype == ctn->ctype)) {
+		if ((last_ct != NULL) && (last_ct->ctype == ctn->ctype) &&
+		    (last_ct->wc + 1 == wc)) {
 			ct[rl.runetype_ext_nranges-1].max = wc;
-			last_ct = ctn;
 		} else {
 			rl.runetype_ext_nranges++;
 			ct = realloc(ct,
@@ -389,8 +388,8 @@ dump_ctype(void)
 			ct[rl.runetype_ext_nranges - 1].min = wc;
 			ct[rl.runetype_ext_nranges - 1].max = wc;
 			ct[rl.runetype_ext_nranges - 1].map = ctn->ctype;
-			last_ct = ctn;
 		}
+		last_ct = ctn;
 		if (ctn->tolower == 0) {
 			last_lo = NULL;
 		} else if ((last_lo != NULL) &&

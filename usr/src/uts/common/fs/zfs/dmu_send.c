@@ -141,7 +141,7 @@ dump_bytes_with_checksum(dmu_sendarg_t *dsp, void *buf, int len)
 {
 	if (!dsp->sendsize && (dsp->dsa_krrp_task == NULL ||
 	    dsp->dsa_krrp_task->buffer_args.force_cksum)) {
-		fletcher_4_incremental_native(buf, len, &dsp->dsa_zc);
+		(void) fletcher_4_incremental_native(buf, len, &dsp->dsa_zc);
 	}
 
 	return (dump_bytes(dsp, buf, len));
@@ -155,6 +155,9 @@ dump_bytes_with_checksum(dmu_sendarg_t *dsp, void *buf, int len)
 static int
 dump_record(dmu_sendarg_t *dsp, void *payload, int payload_len)
 {
+	boolean_t do_checksum = (dsp->dsa_krrp_task == NULL ||
+	    dsp->dsa_krrp_task->buffer_args.force_cksum);
+
 	ASSERT3U(offsetof(dmu_replay_record_t, drr_u.drr_checksum.drr_checksum),
 	    ==, sizeof (dmu_replay_record_t) - sizeof (zio_cksum_t));
 
@@ -166,9 +169,8 @@ dump_record(dmu_sendarg_t *dsp, void *payload, int payload_len)
 		dsp->dsa_sent_end = B_TRUE;
 	}
 
-	if (!dsp->sendsize && (dsp->dsa_krrp_task == NULL ||
-	    dsp->dsa_krrp_task->buffer_args.force_cksum)) {
-		fletcher_4_incremental_native(dsp->dsa_drr,
+	if (!dsp->sendsize && do_checksum) {
+		(void) fletcher_4_incremental_native(dsp->dsa_drr,
 		    offsetof(dmu_replay_record_t,
 		    drr_u.drr_checksum.drr_checksum),
 		    &dsp->dsa_zc);
@@ -179,7 +181,7 @@ dump_record(dmu_sendarg_t *dsp, void *payload, int payload_len)
 			    dsp->dsa_zc;
 		}
 
-		fletcher_4_incremental_native(&dsp->dsa_drr->
+		(void) fletcher_4_incremental_native(&dsp->dsa_drr->
 		    drr_u.drr_checksum.drr_checksum,
 		    sizeof (zio_cksum_t), &dsp->dsa_zc);
 	}
@@ -1180,10 +1182,17 @@ dmu_adjust_send_estimate_for_indirects(dsl_dataset_t *ds, uint64_t uncompressed,
 	 */
 	uint64_t recordsize;
 	uint64_t record_count;
+	objset_t *os;
+	VERIFY0(dmu_objset_from_ds(ds, &os));
 
 	/* Assume all (uncompressed) blocks are recordsize. */
-	err = dsl_prop_get_int_ds(ds, zfs_prop_to_name(ZFS_PROP_RECORDSIZE),
-	    &recordsize);
+	if (os->os_phys->os_type == DMU_OST_ZVOL) {
+		err = dsl_prop_get_int_ds(ds,
+		    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE), &recordsize);
+	} else {
+		err = dsl_prop_get_int_ds(ds,
+		    zfs_prop_to_name(ZFS_PROP_RECORDSIZE), &recordsize);
+	}
 	if (err != 0)
 		return (err);
 	record_count = uncompressed / recordsize;
@@ -1252,6 +1261,10 @@ dmu_send_estimate(dsl_dataset_t *ds, dsl_dataset_t *fromds,
 
 	err = dmu_adjust_send_estimate_for_indirects(ds, uncomp, comp,
 	    stream_compressed, sizep);
+	/*
+	 * Add the size of the BEGIN and END records to the estimate.
+	 */
+	*sizep += 2 * sizeof (dmu_replay_record_t);
 	return (err);
 }
 
@@ -1881,14 +1894,14 @@ dmu_recv_begin(char *tofs, char *tosnap, dmu_replay_record_t *drr_begin,
 
 		/* on-wire checksum can be disabled for krrp */
 		if (force_cksum) {
-			fletcher_4_incremental_byteswap(drr_begin,
+			(void) fletcher_4_incremental_byteswap(drr_begin,
 			    sizeof (dmu_replay_record_t), &drc->drc_cksum);
 			byteswap_record(drr_begin);
 		}
 	} else if (drc->drc_drrb->drr_magic == DMU_BACKUP_MAGIC) {
 		/* on-wire checksum can be disabled for krrp */
 		if (force_cksum) {
-			fletcher_4_incremental_native(drr_begin,
+			(void) fletcher_4_incremental_native(drr_begin,
 			    sizeof (dmu_replay_record_t), &drc->drc_cksum);
 		}
 	} else {
@@ -2576,9 +2589,9 @@ static void
 receive_cksum(struct receive_arg *ra, int len, void *buf)
 {
 	if (ra->byteswap) {
-		fletcher_4_incremental_byteswap(buf, len, &ra->cksum);
+		(void) fletcher_4_incremental_byteswap(buf, len, &ra->cksum);
 	} else {
-		fletcher_4_incremental_native(buf, len, &ra->cksum);
+		(void) fletcher_4_incremental_native(buf, len, &ra->cksum);
 	}
 }
 

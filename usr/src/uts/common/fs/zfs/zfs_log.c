@@ -461,8 +461,9 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 	spa_meta_placement_t *mp = &spa->spa_meta_policy;
 	itx_wr_state_t write_state;
 	boolean_t slogging, zil_to_special, write_to_special;
+	size_t immediate_write_sz;
+	uint32_t blocksize = zp->z_blksz;
 	uintptr_t fsync_cnt;
-	ssize_t immediate_write_sz;
 
 	if (zil_replaying(zilog, tx) || zp->z_unlinked)
 		return;
@@ -520,7 +521,12 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 	slogging = (spa_has_slogs(spa) || zil_to_special) &&
 	    zilog->zl_logbias == ZFS_LOGBIAS_LATENCY;
 
-	if (resid > immediate_write_sz && !slogging && resid <= zp->z_blksz)
+	if (resid > immediate_write_sz && !slogging && resid <= blocksize)
+		write_state = WR_INDIRECT;
+	else if (zilog->zl_logbias == ZFS_LOGBIAS_THROUGHPUT)
+		write_state = WR_INDIRECT;
+	else if (!spa_has_slogs(zilog->zl_spa) &&
+	    resid >= zfs_immediate_write_sz)
 		write_state = WR_INDIRECT;
 	else if (write_to_special)
 		write_state = WR_INDIRECT;
@@ -539,30 +545,26 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 	while (resid) {
 		itx_t *itx;
 		lr_write_t *lr;
-		ssize_t len;
+		itx_wr_state_t wr_state = write_state;
+		ssize_t len = resid;
 
-		/*
-		 * If the write would overflow the largest block then split it.
-		 */
-		if (write_state != WR_INDIRECT && resid > ZIL_MAX_LOG_DATA)
-			len = SPA_OLD_MAXBLOCKSIZE >> 1;
-		else
-			len = resid;
+		if (wr_state == WR_COPIED && resid > ZIL_MAX_COPIED_DATA)
+			wr_state = WR_NEED_COPY;
+		else if (wr_state == WR_INDIRECT)
+			len = MIN(blocksize - P2PHASE(off, blocksize), resid);
 
 		itx = zil_itx_create(txtype, sizeof (*lr) +
-		    (write_state == WR_COPIED ? len : 0));
+		    (wr_state == WR_COPIED ? len : 0));
 		lr = (lr_write_t *)&itx->itx_lr;
-		if (write_state == WR_COPIED && dmu_read(zp->z_zfsvfs->z_os,
+		if (wr_state == WR_COPIED && dmu_read(zp->z_zfsvfs->z_os,
 		    zp->z_id, off, len, lr + 1, DMU_READ_NO_PREFETCH) != 0) {
 			zil_itx_destroy(itx);
 			itx = zil_itx_create(txtype, sizeof (*lr));
 			lr = (lr_write_t *)&itx->itx_lr;
-			write_state = WR_NEED_COPY;
+			wr_state = WR_NEED_COPY;
 		}
 
-		itx->itx_wr_state = write_state;
-		if (write_state == WR_NEED_COPY)
-			itx->itx_sod += len;
+		itx->itx_wr_state = wr_state;
 		lr->lr_foid = zp->z_id;
 		lr->lr_offset = off;
 		lr->lr_length = len;

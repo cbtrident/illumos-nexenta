@@ -200,7 +200,7 @@ dmu_krrp_arc_bypass(void *buf, int len, void *arg)
 	}
 
 	if (buffer_args->force_cksum)
-		fletcher_4_incremental_native(buf, len, bypass->zc);
+		(void) fletcher_4_incremental_native(buf, len, bypass->zc);
 	DTRACE_PROBE(arc_bypass_send);
 	return (bypass->cb(buf, len, task));
 }
@@ -1298,7 +1298,7 @@ zfs_send_compound_stream_header(dmu_krrp_task_t *krrp_task, list_t *ds_to_send)
 	    krrp_task->buffer_args.from_snap);
 	drr.drr_payloadlen = buflen;
 	if (krrp_task->buffer_args.force_cksum)
-		fletcher_4_incremental_native(&drr, sizeof (drr), &zc);
+		(void) fletcher_4_incremental_native(&drr, sizeof (drr), &zc);
 
 	err = dmu_krrp_buffer_write(&drr, sizeof (drr), krrp_task);
 	if (err != 0)
@@ -1306,7 +1306,7 @@ zfs_send_compound_stream_header(dmu_krrp_task_t *krrp_task, list_t *ds_to_send)
 
 	if (buflen != 0) {
 		if (krrp_task->buffer_args.force_cksum)
-			fletcher_4_incremental_native(packbuf, buflen, &zc);
+			(void) fletcher_4_incremental_native(packbuf, buflen, &zc);
 
 		err = dmu_krrp_buffer_write(packbuf, buflen, krrp_task);
 		if (err != 0)
@@ -2057,7 +2057,7 @@ zfs_recv_thread(void *krrp_task_void)
 		avl_tree_t *fsavl = NULL;
 
 		if (krrp_task->buffer_args.force_cksum) {
-			fletcher_4_incremental_native(&drr,
+			(void) fletcher_4_incremental_native(&drr,
 			    sizeof (drr), &zcksum);
 		}
 
@@ -2072,7 +2072,7 @@ zfs_recv_thread(void *krrp_task_void)
 			}
 
 			if (krrp_task->buffer_args.force_cksum) {
-				fletcher_4_incremental_native(buf,
+				(void) fletcher_4_incremental_native(buf,
 				    drr.drr_payloadlen, &zcksum);
 			}
 

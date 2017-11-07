@@ -22,8 +22,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 
 #ifndef _BOOTSTRAP_H_
@@ -110,7 +108,7 @@ struct console
     void	(*c_out)(struct console *, int);	/* emit c */
     int		(*c_in)(struct console *);	/* wait for and return input */
     int		(*c_ready)(struct console *);	/* return nonzer if input waiting */
-    void	*private;		/* private data */
+    void	*c_private;		/* private data */
 };
 extern struct console	*consoles[];
 void		cons_probe(void);
@@ -144,8 +142,6 @@ struct pnpinfo
 };
 
 STAILQ_HEAD(pnpinfo_stql, pnpinfo);
-
-extern struct pnpinfo_stql pnp_devices;
 
 extern struct pnphandler	*pnphandlers[];		/* provided by MD code */
 
@@ -234,6 +230,8 @@ void file_discard(struct preloaded_file *fp);
 void file_addmetadata(struct preloaded_file *fp, int type, size_t size, void *p);
 int  file_addmodule(struct preloaded_file *fp, char *modname, int version,
 	struct kernel_module **newmp);
+void build_environment_module(void);
+vm_offset_t bi_copyenv(vm_offset_t);
 
 /* MI module loaders */
 #ifdef __elfN
@@ -247,15 +245,17 @@ extern u_int64_t __elfN(relocation_offset);
 struct elf_file;
 typedef Elf_Addr (symaddr_fn)(struct elf_file *ef, Elf_Size symidx);
 
-int	__elfN(loadfile)(char *filename, u_int64_t dest, struct preloaded_file **result);
-int	__elfN(obj_loadfile)(char *filename, u_int64_t dest,
-	    struct preloaded_file **result);
+int	elf64_loadfile(char *, uint64_t, struct preloaded_file **);
+int	elf32_loadfile(char *, uint64_t, struct preloaded_file **);
+int	elf64_obj_loadfile(char *, uint64_t, struct preloaded_file **);
+int	elf32_obj_loadfile(char *, uint64_t, struct preloaded_file **);
 int	__elfN(reloc)(struct elf_file *ef, symaddr_fn *symaddr,
 	    const void *reldata, int reltype, Elf_Addr relbase,
 	    Elf_Addr dataaddr, void *data, size_t len);
-int __elfN(loadfile_raw)(char *filename, u_int64_t dest,
-	    struct preloaded_file **result, int multiboot);
-int __elfN(load_modmetadata)(struct preloaded_file *fp, u_int64_t dest);
+int	elf64_loadfile_raw(char *, uint64_t, struct preloaded_file **, int);
+int	elf32_loadfile_raw(char *, uint64_t, struct preloaded_file **, int);
+int	elf64_load_modmetadata(struct preloaded_file *, uint64_t);
+int	elf32_load_modmetadata(struct preloaded_file *, uint64_t);
 #endif
 
 /*
@@ -306,7 +306,13 @@ struct arch_switch
      */
     uint64_t	(*arch_loadaddr)(u_int type, void *data, uint64_t addr);
 #define	LOAD_ELF	1	/* data points to the ELF header. */
-#define	LOAD_RAW	2	/* data points to the file name. */
+#define	LOAD_RAW	2	/* data points to the module file name. */
+#define	LOAD_KERN	3	/* data points to the kernel file name. */
+#define	LOAD_MEM	4	/* data points to int for buffer size. */
+    /*
+     * Interface to release the load address.
+     */
+    void	(*arch_free_loadaddr)(uint64_t addr, uint64_t pages);
 
     /*
      * Interface to inform MD code about a loaded (ELF) segment. This

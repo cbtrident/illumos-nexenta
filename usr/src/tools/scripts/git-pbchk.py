@@ -21,6 +21,7 @@
 # Copyright (c) 2014, Joyent, Inc.
 # Copyright 2016 Nexenta Systems, Inc.
 # Copyright (c) 2015, 2016 by Delphix. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.
 #
 
 import getopt
@@ -74,7 +75,7 @@ def git(command):
                              stdout=tmpfile,
                              stderr=subprocess.PIPE)
     except OSError, e:
-        raise GitError("could not execute %s: %s\n" (command, e))
+        raise GitError("could not execute %s: %s\n" % (command, e))
 
     err = p.wait()
     if err != 0:

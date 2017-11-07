@@ -21,13 +21,14 @@
 
 /*
  * Copyright (c) 2013 Gary Mills
+ * Copyright 2017 RackTop Systems.
  *
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
 /*	Copyright (c) 1988 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 
 #ifndef _LIMITS_H
@@ -72,6 +73,11 @@ extern "C" {
 #define	ARG_MAX		_ARG_MAX32	/* max length of arguments to exec */
 #endif	/* _LP64 */
 
+
+/*
+ * These two symbols have their historical values, the actual buffer is
+ * larger.
+ */
 #ifndef MAX_CANON
 #define	MAX_CANON	256	/* max bytes in line for canonical processing */
 #endif
@@ -256,11 +262,12 @@ extern "C" {
  * a specific pathname shall be provided by the pathconf() (5.7.1) function.
  *
  * This is clear that any machine supporting multiple file system types
- * and/or a network can not include this define, regardless of protection
- * by the _POSIX_SOURCE and _POSIX_C_SOURCE flags.
- *
- * #define	NAME_MAX	14
+ * and/or a network should not include this define, regardless of protection
+ * by the _POSIX_SOURCE and _POSIX_C_SOURCE flags. We chose to ignore that
+ * and provide it anyway for compatibility with other platforms that don't
+ * follow the spec as precisely as they should. Its usage is discouraged.
  */
+#define	NAME_MAX	255
 
 #define	CHILD_MAX	25	/* max # of processes per user id */
 #ifndef OPEN_MAX

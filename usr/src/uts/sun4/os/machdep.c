@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2017, Joyent, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -174,6 +175,11 @@ lwp_stk_fini(klwp_t *lwp)
 	mpcb->mpcb_wbuf_pa = -1;
 }
 
+/*ARGSUSED*/
+void
+lwp_fp_init(klwp_t *lwp)
+{
+}
 
 /*
  * Copy regs from parent to child.

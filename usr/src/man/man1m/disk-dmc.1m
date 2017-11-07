@@ -59,25 +59,30 @@ This option is mutually exclusive with the
 .Fl m
 option.
 .It Fl s 7|5
-Change default (5) write buffer command mode. Supported values are 5 and 7.
+Change default (5) write buffer command mode.
+Supported values are 5 and 7.
 If 5 is selected
 .Nm
 will attempt to download the full firmware file onto
-the specified drive(s) in one write buffer command. If 7 is selected disk-dmc
+the specified drive(s) in one write buffer command.
+If 7 is selected
+.Nm
 will break up the firmware file into 32K chunks and send as many write buffer
 commands as needed to complete the firmware transfer.
 .It Fl h
 Display the command line usage message.
 .It Fl l
 List the drives on a system available for firmware upgrade and display
-information specific to each device. This is implied if
+information specific to each device.
+This is implied if
 .Nm
 is run without any arguments.
 .It Fl m Ar str
-Specify the model of drive(s) to download firmware to. All discovered drives
-whose model exactly matches the
+Specify the model of drive(s) to download firmware to.
+All discovered drives whose model exactly matches the
 .Ar str
-will be upgraded. Requires
+will be upgraded.
+Requires
 .Fl p .
 This option is mutually exclusive with the
 .Fl d
@@ -89,7 +94,8 @@ device.
 Verbose mode, turns on extra debug messages.
 .It Fl w Ar delay
 Number of seconds to delay check for drive readiness after downloading the
-firmware. Also used for drive preparation timeouts.
+firmware.
+Also used for drive preparation timeouts.
 .El
 .Sh SEE ALSO
 .Xr fwflash 1M ,

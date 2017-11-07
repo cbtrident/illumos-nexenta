@@ -42,8 +42,8 @@ POFILE= bootadm_cmd.po
 .KEEP_STATE:
 
 LDLIBS_i386= -lfdisk
-LDLIBS += -lficl-sys -lpkcs11 -lcryptoutil -lnvpair -lgen -ladm -lefi
-LDLIBS += -lz -lbe -lzfs $(LDLIBS_$(MACH))
+LDLIBS += -lficl-sys -lmd -lcryptoutil -lnvpair -lgen -ladm -lefi
+LDLIBS += -lz -lbe -lzfs -lofmt $(LDLIBS_$(MACH))
 
 # Writing into string literals is incorrect.  We need to match gcc's
 # behavior, which causes us to take SIGSEGV on such a write.

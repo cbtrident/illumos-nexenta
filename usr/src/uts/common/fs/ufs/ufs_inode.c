@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 1983, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2016, 2017 by Delphix. All rights reserved.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -703,7 +703,7 @@ ufs_iinactive(struct inode *ip)
 	mutex_enter(&vp->v_lock);
 
 	if (vp->v_count > 1) {
-		vp->v_count--;  /* release our hold from vn_rele */
+		VN_RELE_LOCKED(vp);
 		mutex_exit(&vp->v_lock);
 		rw_exit(&ip->i_contents);
 		return;
@@ -746,7 +746,7 @@ ufs_iinactive(struct inode *ip)
 		 */
 		if (ULOCKFS_IS_NOIDEL(ITOUL(ip))) {
 			mutex_enter(&vp->v_lock);
-			vp->v_count--;
+			VN_RELE_LOCKED(vp);
 			mutex_exit(&vp->v_lock);
 			rw_exit(&ip->i_contents);
 			return;
@@ -787,7 +787,7 @@ ufs_iinactive(struct inode *ip)
 		 */
 		mutex_enter(&vp->v_lock);
 		if (vp->v_count > 1) {
-			vp->v_count--;  /* release our hold from vn_rele */
+			VN_RELE_LOCKED(vp);
 			mutex_exit(&vp->v_lock);
 			rw_exit(&ip->i_contents);
 			return;
@@ -1617,7 +1617,7 @@ ufs_rmidle(struct inode *ip)
  */
 int
 ufs_scan_inodes(int rwtry, int (*func)(struct inode *, void *), void *arg,
-		struct ufsvfs *ufsvfsp)
+    struct ufsvfs *ufsvfsp)
 {
 	struct inode		*ip;		/* current inode */
 	struct inode		*lip = NULL;	/* last/previous inode */

@@ -26,6 +26,8 @@
  * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
+ * Copyright 2017 Joyent, Inc.
+ * Copyright (c) 2017 Datto Inc.
  */
 
 #ifndef _SYS_SPA_H
@@ -425,15 +427,17 @@ _NOTE(CONSTCOND) } while (0)
 
 #define	BP_GET_FILL(bp) (BP_IS_EMBEDDED(bp) ? 1 : (bp)->blk_fill)
 
+#define	BP_IS_METADATA(bp)	\
+	(BP_GET_LEVEL(bp) > 0 || DMU_OT_IS_METADATA(BP_GET_TYPE(bp)))
+
 #define	BP_GET_ASIZE(bp)	\
 	(BP_IS_EMBEDDED(bp) ? 0 : \
 	DVA_GET_ASIZE(&(bp)->blk_dva[0]) + \
 	DVA_GET_ASIZE(&(bp)->blk_dva[1]) + \
 	DVA_GET_ASIZE(&(bp)->blk_dva[2]))
 
-#define	BP_GET_UCSIZE(bp) \
-	((BP_GET_LEVEL(bp) > 0 || DMU_OT_IS_METADATA(BP_GET_TYPE(bp))) ? \
-	BP_GET_PSIZE(bp) : BP_GET_LSIZE(bp))
+#define	BP_GET_UCSIZE(bp)	\
+	(BP_IS_METADATA(bp) ? BP_GET_PSIZE(bp) : BP_GET_LSIZE(bp))
 
 #define	BP_GET_NDVAS(bp)	\
 	(BP_IS_EMBEDDED(bp) ? 0 : \
@@ -500,10 +504,6 @@ _NOTE(CONSTCOND) } while (0)
 /* BP_IS_RAIDZ(bp) assumes no block compression */
 #define	BP_IS_RAIDZ(bp)		(DVA_GET_ASIZE(&(bp)->blk_dva[0]) > \
 				BP_GET_PSIZE(bp))
-
-/* Determines whether BP points to data or metadata blocks */
-#define	BP_IS_METADATA(bp)	(BP_GET_LEVEL(bp) > 0 || \
-				DMU_OT_IS_METADATA(BP_GET_TYPE(bp)))
 
 #define	BP_ZERO(bp)				\
 {						\
@@ -611,9 +611,7 @@ _NOTE(CONSTCOND) } while (0)
 #define	BP_GET_BUFC_TYPE(bp)						\
 	((BP_GET_TYPE(bp) == DMU_OT_DDT_ZAP || \
 	BP_GET_TYPE(bp) == DMU_OT_DDT_STATS) ? ARC_BUFC_DDT : \
-	((((BP_GET_LEVEL(bp) > 0) || (DMU_OT_IS_METADATA(BP_GET_TYPE(bp)))) ? \
-	ARC_BUFC_METADATA : ARC_BUFC_DATA)))
-
+	(BP_IS_METADATA(bp) ? ARC_BUFC_METADATA : ARC_BUFC_DATA))
 
 typedef enum spa_import_type {
 	SPA_IMPORT_EXISTING,
@@ -722,6 +720,7 @@ extern void spa_l2cache_drop(spa_t *spa);
 /* scanning */
 extern int spa_scan(spa_t *spa, pool_scan_func_t func);
 extern int spa_scan_stop(spa_t *spa);
+extern int spa_scrub_pause_resume(spa_t *spa, pool_scrub_cmd_t flag);
 
 /* trimming */
 extern void spa_man_trim(spa_t *spa, uint64_t rate);
@@ -831,6 +830,7 @@ extern uint64_t spa_load_guid(spa_t *spa);
 extern uint64_t spa_last_synced_txg(spa_t *spa);
 extern uint64_t spa_first_txg(spa_t *spa);
 extern uint64_t spa_syncing_txg(spa_t *spa);
+extern uint64_t spa_final_dirty_txg(spa_t *spa);
 extern uint64_t spa_version(spa_t *spa);
 extern pool_state_t spa_state(spa_t *spa);
 extern spa_load_state_t spa_load_state(spa_t *spa);
@@ -897,7 +897,7 @@ extern struct zfs_autosnap *spa_get_autosnap(spa_t *spa);
 extern void wbc_purge_window(spa_t *spa, dmu_tx_t *tx);
 
 extern int spa_mode(spa_t *spa);
-extern uint64_t strtonum(const char *str, char **nptr);
+extern uint64_t zfs_strtonum(const char *str, char **nptr);
 
 /* Selector for dynamic I/O balancing between special and regular vdevs */
 extern boolean_t spa_use_special_class(spa_t *spa);
@@ -943,7 +943,7 @@ extern void vdev_cache_stat_fini(void);
 /* Initialization and termination */
 extern void spa_init(int flags);
 extern void spa_fini(void);
-extern void spa_boot_init();
+extern void spa_boot_init(void);
 
 /* properties */
 extern int spa_prop_set(spa_t *spa, nvlist_t *nvp);
@@ -952,7 +952,8 @@ extern void spa_prop_clear_bootfs(spa_t *spa, uint64_t obj, dmu_tx_t *tx);
 extern void spa_configfile_set(spa_t *, nvlist_t *, boolean_t);
 
 /* asynchronous event notification */
-extern void spa_event_notify(spa_t *spa, vdev_t *vdev, const char *name);
+extern void spa_event_notify(spa_t *spa, vdev_t *vdev, nvlist_t *hist_nvl,
+    const char *name);
 
 extern int spa_wbc_mode(const char *name);
 

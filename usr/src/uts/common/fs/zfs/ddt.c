@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
@@ -37,6 +37,7 @@
 #include <sys/zio_checksum.h>
 #include <sys/zio_compress.h>
 #include <sys/dsl_scan.h>
+#include <sys/abd.h>
 
 /*
  * Almost all of the cases of iteration through zap containing entries are
@@ -747,9 +748,8 @@ ddt_free(ddt_entry_t *dde)
 	for (int p = 0; p < DDT_PHYS_TYPES; p++)
 		ASSERT(dde->dde_lead_zio[p] == NULL);
 
-	if (dde->dde_repair_data != NULL)
-		zio_buf_free(dde->dde_repair_data,
-		    DDK_GET_PSIZE(&dde->dde_key));
+	if (dde->dde_repair_abd != NULL)
+		abd_free(dde->dde_repair_abd);
 
 	kmem_cache_free(dde_cache, dde);
 }
@@ -1004,7 +1004,7 @@ ddt_load(spa_t *spa)
 	if (spa_enable_dedup_cap(spa) && spa->spa_ddt_capped == 0) {
 		/* notify that dedup cap is now active */
 		spa->spa_ddt_capped = 1;
-		spa_event_notify(spa, NULL, ESC_ZFS_DEDUP_OFF);
+		spa_event_notify(spa, NULL, NULL, ESC_ZFS_DEDUP_OFF);
 	}
 
 	return (0);
@@ -1084,13 +1084,14 @@ ddt_repair_done(ddt_t *ddt, ddt_entry_t *dde)
 	avl_index_t where;
 
 	mutex_enter(&ddt->ddt_repair_lock);
-	if (dde->dde_repair_data != NULL && spa_writeable(ddt->ddt_spa) &&
+
+	if (dde->dde_repair_abd != NULL && spa_writeable(ddt->ddt_spa) &&
 	    avl_find(&ddt->ddt_repair_tree, dde, &where) == NULL)
 		avl_insert(&ddt->ddt_repair_tree, dde, where);
 	else
 		ddt_free(dde);
 
-	mutex_exit(&ddt->ddt_repair_lock);
+	mutex_exit(&ddt->ddt_repair_lock);;
 }
 
 static void
@@ -1121,7 +1122,7 @@ ddt_repair_entry(ddt_t *ddt, ddt_entry_t *dde, ddt_entry_t *rdde, zio_t *rio)
 			continue;
 		ddt_bp_create(ddt->ddt_checksum, ddk, ddp, &blk);
 		zio_nowait(zio_rewrite(zio, zio->io_spa, 0, &blk,
-		    rdde->dde_repair_data, DDK_GET_PSIZE(rddk), NULL, NULL,
+		    rdde->dde_repair_abd, DDK_GET_PSIZE(rddk), NULL, NULL,
 		    ZIO_PRIORITY_SYNC_WRITE, ZIO_DDT_CHILD_FLAGS(zio), NULL));
 	}
 
@@ -1316,11 +1317,11 @@ ddt_sync_table(ddt_t *ddt, dmu_tx_t *tx, uint64_t txg)
 	if (spa_enable_dedup_cap(spa) && spa->spa_ddt_capped == 0) {
 		/* notify that dedup cap is now active */
 		spa->spa_ddt_capped = 1;
-		spa_event_notify(spa, NULL, ESC_ZFS_DEDUP_OFF);
+		spa_event_notify(spa, NULL, NULL, ESC_ZFS_DEDUP_OFF);
 	} else if (!spa_enable_dedup_cap(spa) && spa->spa_ddt_capped == 1) {
 		/* notify that dedup cap is now inactive */
 		spa->spa_ddt_capped = 0;
-		spa_event_notify(spa, NULL, ESC_ZFS_DEDUP_ON);
+		spa_event_notify(spa, NULL, NULL, ESC_ZFS_DEDUP_ON);
 	}
 
 	/* update the cached stats with the values calculated above */

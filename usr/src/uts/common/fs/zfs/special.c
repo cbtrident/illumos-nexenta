@@ -206,21 +206,21 @@ spa_check_watermarks(spa_t *spa)
 	if (aspace <= spa->spa_lwm_space) {
 		if (spa->spa_watermark != SPA_WM_NONE) {
 			spa->spa_watermark = SPA_WM_NONE;
-			spa_event_notify(spa, vd, ESC_ZFS_NONE_WATERMARK);
+			spa_event_notify(spa, vd, NULL, ESC_ZFS_NONE_WATERMARK);
 		}
 		spa_enable_special(spa, B_TRUE);
 	} else if (aspace > spa->spa_hwm_space) {
 		if (spa->spa_watermark != SPA_WM_HIGH) {
 			spa->spa_watermark = SPA_WM_HIGH;
 			spa_enable_special(spa, B_FALSE);
-			spa_event_notify(spa, vd, ESC_ZFS_HIGH_WATERMARK);
+			spa_event_notify(spa, vd, NULL, ESC_ZFS_HIGH_WATERMARK);
 		}
 	} else {
 		if (spa->spa_watermark != SPA_WM_LOW) {
 			if (spa->spa_watermark == SPA_WM_NONE)
 				spa_enable_special(spa, B_TRUE);
 			spa->spa_watermark = SPA_WM_LOW;
-			spa_event_notify(spa, vd, ESC_ZFS_LOW_WATERMARK);
+			spa_event_notify(spa, vd, NULL, ESC_ZFS_LOW_WATERMARK);
 		}
 
 		/*
@@ -1108,8 +1108,9 @@ clock_t spa_avg_stat_update_ticks = 75;
 
 /* Performance monitor thread */
 static void
-spa_perfmon_thread(spa_t *spa)
+spa_perfmon_thread(void *void_spa)
 {
+	spa_t *spa = void_spa;
 	spa_perfmon_data_t *data = &spa->spa_perfmon;
 	spa_acc_stat_t spa_acc;
 	uint64_t rotor = 0;

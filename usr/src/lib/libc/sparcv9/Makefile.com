@@ -18,15 +18,14 @@
 #
 # CDDL HEADER END
 #
+
 #
 # Copyright 2016 Gary Mills
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2015, Joyent, Inc.  All rights reserved.
 # Copyright (c) 2013, OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2013 Garrett D'Amore <garrett@damore.org>
-#
-# Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
-# Use is subject to license terms.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 LIBCDIR=	$(SRC)/lib/libc
@@ -39,12 +38,12 @@ TARGET_ARCH=	sparc
 
 # Symbol capabilities objects.
 EXTPICS=			\
-        $(LIBCDIR)/capabilities/sun4u/sparcv9/pics/symcap.o \
-        $(LIBCDIR)/capabilities/sun4u-opl/sparcv9/pics/symcap.o \
-        $(LIBCDIR)/capabilities/sun4u-us3-hwcap1/sparcv9/pics/symcap.o \
-        $(LIBCDIR)/capabilities/sun4u-us3-hwcap2/sparcv9/pics/symcap.o \
-        $(LIBCDIR)/capabilities/sun4v-hwcap1/sparcv9/pics/symcap.o \
-        $(LIBCDIR)/capabilities/sun4v-hwcap2/sparcv9/pics/symcap.o
+	$(LIBCDIR)/capabilities/sun4u/sparcv9/pics/symcap.o \
+	$(LIBCDIR)/capabilities/sun4u-opl/sparcv9/pics/symcap.o \
+	$(LIBCDIR)/capabilities/sun4u-us3-hwcap1/sparcv9/pics/symcap.o \
+	$(LIBCDIR)/capabilities/sun4u-us3-hwcap2/sparcv9/pics/symcap.o \
+	$(LIBCDIR)/capabilities/sun4v-hwcap1/sparcv9/pics/symcap.o \
+	$(LIBCDIR)/capabilities/sun4v-hwcap2/sparcv9/pics/symcap.o
 
 # local objects
 STRETS=
@@ -368,14 +367,14 @@ PORTGEN=			\
 	addsev.o		\
 	ascii_strncasecmp.o	\
 	assert.o		\
-	attrat.o		\
+	atexit.o		\
+	atfork.o		\
 	atof.o			\
 	atoi.o			\
 	atol.o			\
 	atoll.o			\
+	attrat.o		\
 	attropen.o		\
-	atexit.o		\
-	atfork.o		\
 	basename.o		\
 	calloc.o		\
 	catgets.o		\
@@ -415,10 +414,13 @@ PORTGEN=			\
 	flock.o			\
 	fls.o			\
 	fmtmsg.o		\
+	freezero.o		\
 	ftime.o			\
 	ftok.o			\
+	fts.o			\
 	ftw.o			\
 	gcvt.o			\
+	get_nprocs.o		\
 	getauxv.o		\
 	getcwd.o		\
 	getdate_err.o		\
@@ -436,7 +438,6 @@ PORTGEN=			\
 	getlogin.o		\
 	getmntent.o		\
 	getnetgrent.o		\
-	get_nprocs.o		\
 	getopt.o		\
 	getopt_long.o		\
 	getpagesize.o		\
@@ -518,8 +519,8 @@ PORTGEN=			\
 	posix_madvise.o		\
 	posix_memalign.o	\
 	priocntl.o		\
-	privlib.o		\
 	priv_str_xlate.o	\
+	privlib.o		\
 	psecflags.o		\
 	psiginfo.o		\
 	psignal.o		\
@@ -532,6 +533,8 @@ PORTGEN=			\
 	rctlops.o		\
 	readdir.o		\
 	readdir_r.o		\
+	reallocarray.o		\
+	recallocarray.o		\
 	realpath.o		\
 	reboot.o		\
 	regexpr.o		\
@@ -573,6 +576,7 @@ PORTGEN=			\
 	strtoimax.o		\
 	strtok.o		\
 	strtok_r.o		\
+	strtonum.o		\
 	strtoumax.o		\
 	swab.o			\
 	swapctl.o		\
@@ -780,10 +784,6 @@ PORTLOCALE=			\
 	nextwctype.o		\
 	nl_langinfo.o		\
 	none.o			\
-	regcomp.o		\
-	regfree.o		\
-	regerror.o		\
-	regexec.o		\
 	rune.o			\
 	runetype.o		\
 	setlocale.o		\
@@ -948,7 +948,11 @@ PORTSYS=			\
 PORTREGEX=			\
 	glob.o			\
 	regcmp.o		\
+	regcomp.o		\
+	regerror.o		\
 	regex.o			\
+	regexec.o		\
+	regfree.o		\
 	wordexp.o
 
 VALUES=	values-Xa.o
@@ -1000,7 +1004,7 @@ TRACEOBJS=			\
 	plockstat.o
 
 # NOTE:	libc.so.1 must be linked with the minimal crti.o and crtn.o
-# modules whose source is provided in the $(SRC)/lib/common directory.
+# modules whose source is provided in the $(SRC)/lib/crt directory.
 # This must be done because otherwise the Sun C compiler would insert
 # its own versions of these modules and those versions contain code
 # to call out to C++ initialization functions.  Such C++ initialization
@@ -1009,7 +1013,7 @@ TRACEOBJS=			\
 # Since libc contains no C++ code, linking with the minimal crti.o and
 # crtn.o modules is safe and avoids the problems described above.
 OBJECTS= $(CRTI) $(MOSTOBJS) $(CRTN)
-CRTSRCS= ../../common/sparcv9
+CRTSRCS= ../../crt/sparc
 
 # include common library definitions
 include $(SRC)/lib/Makefile.lib
@@ -1105,23 +1109,23 @@ SRCS=							\
 	$(ATOMICOBJS:%.o=$(SRC)/common/atomic/%.c)	\
 	$(XATTROBJS:%.o=$(SRC)/common/xattr/%.c)	\
 	$(COMOBJS:%.o=$(SRC)/common/util/%.c)		\
-	$(PORTFP:%.o=$(LIBCDIR)/port/fp/%.c)			\
-	$(PORTGEN:%.o=$(LIBCDIR)/port/gen/%.c)			\
-	$(PORTI18N:%.o=$(LIBCDIR)/port/i18n/%.c)		\
-	$(PORTLOCALE:%.o=$(LIBCDIR)/port/locale/%.c)		\
-	$(PORTPRINT:%.o=$(LIBCDIR)/port/print/%.c)		\
-	$(PORTREGEX:%.o=$(LIBCDIR)/port/regex/%.c)		\
-	$(PORTSTDIO:%.o=$(LIBCDIR)/port/stdio/%.c)		\
-	$(PORTSYS:%.o=$(LIBCDIR)/port/sys/%.c)			\
-	$(AIOOBJS:%.o=$(LIBCDIR)/port/aio/%.c)			\
-	$(RTOBJS:%.o=$(LIBCDIR)/port/rt/%.c)			\
-	$(SECFLAGSOBJS:%.o=$(SRC)/common/secflags/%.c)		\
-	$(TPOOLOBJS:%.o=$(LIBCDIR)/port/tpool/%.c)		\
-	$(THREADSOBJS:%.o=$(LIBCDIR)/port/threads/%.c)		\
-	$(THREADSMACHOBJS:%.o=$(LIBCDIR)/$(MACH)/threads/%.c)	\
+	$(PORTFP:%.o=$(LIBCDIR)/port/fp/%.c)		\
+	$(PORTGEN:%.o=$(LIBCDIR)/port/gen/%.c)		\
+	$(PORTI18N:%.o=$(LIBCDIR)/port/i18n/%.c)	\
+	$(PORTLOCALE:%.o=$(LIBCDIR)/port/locale/%.c)	\
+	$(PORTPRINT:%.o=$(LIBCDIR)/port/print/%.c)	\
+	$(PORTREGEX:%.o=$(LIBCDIR)/port/regex/%.c)	\
+	$(PORTSTDIO:%.o=$(LIBCDIR)/port/stdio/%.c)	\
+	$(PORTSYS:%.o=$(LIBCDIR)/port/sys/%.c)		\
+	$(AIOOBJS:%.o=$(LIBCDIR)/port/aio/%.c)		\
+	$(RTOBJS:%.o=$(LIBCDIR)/port/rt/%.c)		\
+	$(SECFLAGSOBJS:%.o=$(SRC)/common/secflags/%.c)	\
+	$(TPOOLOBJS:%.o=$(LIBCDIR)/port/tpool/%.c)	\
+	$(THREADSOBJS:%.o=$(LIBCDIR)/port/threads/%.c)	\
+	$(THREADSMACHOBJS:%.o=$(LIBCDIR)/$(MACH)/threads/%.c) \
 	$(UNICODEOBJS:%.o=$(SRC)/common/unicode/%.c)	\
-	$(UNWINDMACHOBJS:%.o=$(LIBCDIR)/port/unwind/%.c)	\
-	$(FPOBJS:%.o=$(LIBCDIR)/$(MACH)/fp/%.c)			\
+	$(UNWINDMACHOBJS:%.o=$(LIBCDIR)/port/unwind/%.c) \
+	$(FPOBJS:%.o=$(LIBCDIR)/$(MACH)/fp/%.c)		\
 	$(FPOBJS64:%.o=$(LIBCBASE)/fp/%.c)		\
 	$(LIBCBASE)/crt/_ftou.c				\
 	$(LIBCBASE)/gen/_xregs_clrptr.c			\

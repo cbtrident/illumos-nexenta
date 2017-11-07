@@ -21,10 +21,11 @@
 
 /*
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Joyent, Inc.
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 #ifndef _SYS_PROC_H
 #define	_SYS_PROC_H
@@ -770,6 +771,7 @@ extern	void	lwp_freeregs(klwp_t *, int);
 extern	caddr_t	lwp_stk_init(klwp_t *, caddr_t);
 extern	void	lwp_stk_cache_init(void);
 extern	void	lwp_stk_fini(klwp_t *);
+extern	void	lwp_fp_init(klwp_t *);
 extern	void	lwp_installctx(klwp_t *);
 extern	void	lwp_rtt(void);
 extern	void	lwp_rtt_initial(void);

@@ -22,8 +22,11 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ */
+
+/*
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2016, 2017 by Delphix. All rights reserved.
  */
 
 #include <sys/param.h>
@@ -2491,7 +2494,7 @@ start:
 			rw_enter(&rp->r_hashq->r_lock, RW_WRITER);
 			mutex_enter(&vp->v_lock);
 			if (vp->v_count > 1) {
-				vp->v_count--;
+				VN_RELE_LOCKED(vp);
 				mutex_exit(&vp->v_lock);
 				rw_exit(&rp->r_hashq->r_lock);
 				rw_enter(&rhtp->r_lock, RW_READER);
@@ -2506,7 +2509,7 @@ start:
 
 		mutex_enter(&vp->v_lock);
 		if (vp->v_count > 1) {
-			vp->v_count--;
+			VN_RELE_LOCKED(vp);
 			mutex_exit(&vp->v_lock);
 			rw_enter(&rhtp->r_lock, RW_READER);
 			goto start;
@@ -2699,7 +2702,7 @@ rp_addfree(rnode_t *rp, cred_t *cr)
 			rw_enter(&rp->r_hashq->r_lock, RW_WRITER);
 			mutex_enter(&vp->v_lock);
 			if (vp->v_count > 1) {
-				vp->v_count--;
+				VN_RELE_LOCKED(vp);
 				mutex_exit(&vp->v_lock);
 				rw_exit(&rp->r_hashq->r_lock);
 				return;
@@ -2732,7 +2735,7 @@ rp_addfree(rnode_t *rp, cred_t *cr)
 		 */
 		mutex_enter(&vp->v_lock);
 		if (vp->v_count > 1) {
-			vp->v_count--;
+			VN_RELE_LOCKED(vp);
 			mutex_exit(&vp->v_lock);
 			return;
 		}
@@ -2754,7 +2757,7 @@ rp_addfree(rnode_t *rp, cred_t *cr)
 
 	mutex_enter(&vp->v_lock);
 	if (vp->v_count > 1) {
-		vp->v_count--;
+		VN_RELE_LOCKED(vp);
 		mutex_exit(&vp->v_lock);
 		rw_exit(&rp->r_hashq->r_lock);
 		return;
@@ -4082,7 +4085,7 @@ nfs_rnode_reclaim(void)
 			rw_enter(&rp->r_hashq->r_lock, RW_WRITER);
 			mutex_enter(&vp->v_lock);
 			if (vp->v_count > 1) {
-				vp->v_count--;
+				VN_RELE_LOCKED(vp);
 				mutex_exit(&vp->v_lock);
 				rw_exit(&rp->r_hashq->r_lock);
 				mutex_enter(&rpfreelist_lock);
@@ -4761,7 +4764,7 @@ nfs_rw_enter_sig(nfs_rwlock_t *l, krw_t rw, int intr)
 
 				if (lwp != NULL)
 					lwp->lwp_nostop++;
-				if (cv_wait_sig(&l->cv, &l->lock) == 0) {
+				if (cv_wait_sig(&l->cv_rd, &l->lock) == 0) {
 					if (lwp != NULL)
 						lwp->lwp_nostop--;
 					mutex_exit(&l->lock);
@@ -4770,26 +4773,7 @@ nfs_rw_enter_sig(nfs_rwlock_t *l, krw_t rw, int intr)
 				if (lwp != NULL)
 					lwp->lwp_nostop--;
 			} else
-				cv_wait(&l->cv, &l->lock);
-
-			/*
-			 * If there are no readers active nor a writer active
-			 * we need to wake up the next waiter.  If there is a
-			 * writer waiting we will wait again so we need to wake
-			 * up the next waiter (possible writer).  If there is
-			 * no writer waiting we need to wake up the next
-			 * waiting reader (if any) so it is invited to the
-			 * party.
-			 */
-			if (l->count == 0)
-				cv_signal(&l->cv);
-
-			/*
-			 * If there are readers active and no writers waiting
-			 * then wake up the next waiting reader (if any).
-			 */
-			if (l->count > 0 && l->waiters == 0)
-				cv_signal(&l->cv);
+				cv_wait(&l->cv_rd, &l->lock);
 		}
 		ASSERT(l->count < INT_MAX);
 #ifdef	DEBUG
@@ -4821,11 +4805,11 @@ nfs_rw_enter_sig(nfs_rwlock_t *l, krw_t rw, int intr)
 					l->waiters--;
 					/*
 					 * If there are readers active and no
-					 * writers waiting then wake up the
-					 * next waiting reader (if any).
+					 * writers waiting then wake up all of
+					 * the waiting readers (if any).
 					 */
 					if (l->count > 0 && l->waiters == 0)
-						cv_signal(&l->cv);
+						cv_broadcast(&l->cv_rd);
 					mutex_exit(&l->lock);
 					return (EINTR);
 				}
@@ -4899,31 +4883,43 @@ nfs_rw_exit(nfs_rwlock_t *l)
 {
 
 	mutex_enter(&l->lock);
-	/*
-	 * If this is releasing a writer lock, then increment count to
-	 * indicate that there is one less writer active.  If this was
-	 * the last of possibly nested writer locks, then clear the owner
-	 * field as well to indicate that there is no writer active
-	 * and wakeup the first waiting writer or reader.
-	 *
-	 * If releasing a reader lock, then just decrement count to
-	 * indicate that there is one less reader active.  If this was
-	 * the last active reader and there are writer(s) waiting,
-	 * then wake up the first.
-	 */
+
 	if (l->owner != NULL) {
 		ASSERT(l->owner == curthread);
+
+		/*
+		 * To release a writer lock increment count to indicate that
+		 * there is one less writer active.  If this was the last of
+		 * possibly nested writer locks, then clear the owner field as
+		 * well to indicate that there is no writer active.
+		 */
+		ASSERT(l->count < 0);
 		l->count++;
 		if (l->count == 0) {
 			l->owner = NULL;
-			cv_signal(&l->cv);
+
+			/*
+			 * If there are no writers waiting then wakeup all of
+			 * the waiting readers (if any).
+			 */
+			if (l->waiters == 0)
+				cv_broadcast(&l->cv_rd);
 		}
 	} else {
+		/*
+		 * To release a reader lock just decrement count to indicate
+		 * that there is one less reader active.
+		 */
 		ASSERT(l->count > 0);
 		l->count--;
-		if (l->count == 0 && l->waiters > 0)
-			cv_signal(&l->cv);
 	}
+
+	/*
+	 * If there are no readers active nor a writer active and there is a
+	 * writer waiting we need to wake up it.
+	 */
+	if (l->count == 0 && l->waiters > 0)
+		cv_signal(&l->cv);
 	mutex_exit(&l->lock);
 }
 
@@ -4947,6 +4943,7 @@ nfs_rw_init(nfs_rwlock_t *l, char *name, krw_type_t type, void *arg)
 	l->owner = NULL;
 	mutex_init(&l->lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&l->cv, NULL, CV_DEFAULT, NULL);
+	cv_init(&l->cv_rd, NULL, CV_DEFAULT, NULL);
 }
 
 void
@@ -4955,6 +4952,7 @@ nfs_rw_destroy(nfs_rwlock_t *l)
 
 	mutex_destroy(&l->lock);
 	cv_destroy(&l->cv);
+	cv_destroy(&l->cv_rd);
 }
 
 int

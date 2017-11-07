@@ -24,6 +24,7 @@
 # Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright (c) 2016, Chris Fraire <cfraire@me.com>.
 #
 
 include ../Makefile.master
@@ -58,8 +59,11 @@ COMMON_SUBDIRS= \
 #  special versions of commands for use only in build
 #
 UNSHIPPED_SUBDIRS = \
-	elfsign \
-	mandoc
+	localedef \
+	mandoc \
+	tic \
+	vtfontcvt \
+	zic
 
 sparc_SUBDIRS= \
 	chk4ubin \
@@ -128,6 +132,10 @@ DOROOTDIRS= $(ROOTDIRS)
 clobber:= DOROOTDIRS=
 clean:= DOROOTDIRS=
 
+DOROOTONBLDLIBPY= $(ROOTONBLDLIBPY)
+clobber:= DOROOTONBLDLIBPY=
+clean:= DOROOTONBLDLIBPY=
+
 all install: $(SUBDIRS)
 
 clean: $(SUBDIRS)
@@ -143,7 +151,7 @@ _msg: $(MSGSUBDIRS)
 
 $(SUBDIRS) $(CLOSED_SUBDIRS): $(BOOT_SUBDIRS)
 
-$(BOOT_SUBDIRS) $(SUBDIRS): $$(DOROOTDIRS) $(ROOTONBLDLIBPY) FRC
+$(BOOT_SUBDIRS) $(SUBDIRS): $$(DOROOTDIRS) $$(DOROOTONBLDLIBPY) FRC
 	@cd $@; pwd; $(MAKE) $(TARGET)
 
 $(ROOTDIRS):

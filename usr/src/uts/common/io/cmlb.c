@@ -247,6 +247,7 @@ static i_ddi_prop_dyn_t cmlb_prop_dyn[] = {
 	{"device-nblocks",	DDI_PROP_TYPE_INT64},
 	{"device-blksize",	DDI_PROP_TYPE_INT},
 	{"device-solid-state",	DDI_PROP_TYPE_INT},
+	{"device-rotational",	DDI_PROP_TYPE_INT},
 	{NULL}
 };
 
@@ -5727,7 +5728,7 @@ cmlb_prop_op(cmlb_handle_t cmlbhandle,
 	struct cmlb_lun	*cl;
 	diskaddr_t	capacity;
 	uint32_t	lbasize;
-	enum		dp { DP_NBLOCKS, DP_BLKSIZE, DP_SSD } dp;
+	enum		dp { DP_NBLOCKS, DP_BLKSIZE, DP_SSD, DP_ROT } dp;
 	int		callers_length;
 	caddr_t		buffer;
 	uint64_t	nblocks64;
@@ -5758,6 +5759,8 @@ fallback:	return (ddi_prop_op(dev, dip, prop_op, mod_flags,
 			dp = DP_BLKSIZE;
 		else if (strcmp(name, "device-solid-state") == 0)
 			dp = DP_SSD;
+		else if (strcmp(name, "device-rotational") == 0)
+			dp = DP_ROT;
 		else
 			goto fallback;
 
@@ -5805,6 +5808,12 @@ fallback:	return (ddi_prop_op(dev, dip, prop_op, mod_flags,
 				tgattr.media_is_solid_state = B_FALSE;
 			*((uint32_t *)buffer) =
 			    tgattr.media_is_solid_state ? 1 : 0;
+			break;
+		case DP_ROT:
+			if (DK_TG_GETATTRIBUTE(cl, &tgattr, tg_cookie) != 0)
+				tgattr.media_is_rotational = B_TRUE;
+			*((uint32_t *)buffer) =
+			    tgattr.media_is_rotational ? 1 : 0;
 			break;
 		}
 		return (DDI_PROP_SUCCESS);

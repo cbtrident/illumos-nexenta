@@ -43,7 +43,7 @@ SRCS=		$(LOCALSRCS) $(COMMONSRCS)
 CPPFLAGS +=	-I$(CMDINETCOMMONDIR)
 CERRWARN +=	-_gcc=-Wno-unused-label
 CERRWARN +=	-_gcc=-Wno-uninitialized
-LDLIBS +=       -linetutil -lipadm -lnvpair -lipmp -lcmdutils
+LDLIBS +=       -lofmt -linetutil -lipadm -lnvpair -lipmp -lcmdutils
 LINTFLAGS +=	-m
 
 ROOTUSRSBINLINKS = $(PROG:%=$(ROOTUSRSBIN)/%)

@@ -25,7 +25,7 @@
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2016 Toomas Soome <tsoome@me.com>
-# Copyright 2016 Joyent, Inc.
+# Copyright 2017 Joyent, Inc.
 #
 
 #
@@ -38,7 +38,7 @@ include Makefile.master
 # it defines TARGETDIRS and ROOTDIRS.
 include Targetdirs
 
-COMMON_SUBDIRS=	uts lib cmd ucblib ucbcmd psm man test
+COMMON_SUBDIRS=	data uts lib cmd ucblib ucbcmd psm man test
 sparc_SUBDIRS= stand
 i386_SUBDIRS= grub boot
 
@@ -64,7 +64,7 @@ PARALLEL_HEADERS = sysheaders userheaders libheaders cmdheaders
 #
 # Directories that can be built in parallel
 #
-PARALLEL_DIRS = uts lib man
+PARALLEL_DIRS = data uts lib man
 
 # The check target also causes smf(5) service manifests to be validated.
 CHKMFSTSUBDIRS=	cmd
@@ -72,7 +72,7 @@ CHKMFSTSUBDIRS=	cmd
 # And man page formats
 CHKMANSUBDIRS = man
 
-MSGSUBDIRS=	cmd ucbcmd lib
+MSGSUBDIRS=	cmd ucbcmd lib data
 DOMAINS= \
 	SUNW_OST_ADMIN \
 	SUNW_OST_NETRPC \
@@ -123,7 +123,7 @@ stage-licenses: install2
 
 install1: mapfiles closedbins sgs
 
-install2: install1 $(SUBDIRS)
+install2: install1 .WAIT $(SUBDIRS)
 
 _msg: _msgdirs rootdirs FRC
 	@for m in $(MSGSUBDIRS); do \

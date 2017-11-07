@@ -1240,8 +1240,9 @@ out:
 }
 
 void
-autosnap_destroyer_thread(spa_t *spa)
+autosnap_destroyer_thread(void *void_spa)
 {
+	spa_t *spa = void_spa;
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 
 	mutex_enter(&autosnap->autosnap_lock);

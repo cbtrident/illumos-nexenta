@@ -21,11 +21,12 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
- * Copyright (c) 2013, Joyent, Inc. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013, Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Joyent, Inc.
+ * Copyright (c) 2017 Datto Inc.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -236,6 +237,7 @@ typedef enum {
 	ZPOOL_PROP_SMALL_DATA_TO_METADEV,
 	ZPOOL_PROP_MINWATERMARK,
 	ZPOOL_PROP_SYNC_TO_SPECIAL,
+	ZPOOL_PROP_BOOTSIZE,
 	ZPOOL_NUM_PROPS
 } zpool_prop_t;
 
@@ -344,11 +346,17 @@ typedef int (*zprop_func)(int, void *);
 #define	ZPOOL_ROOTFS_PROPS	"root-props-nvl"
 
 /*
+ * Length of 'written@' and 'written#'
+ */
+#define	ZFS_WRITTEN_PROP_PREFIX_LEN	8
+
+/*
  * Dataset property functions shared between libzfs and kernel.
  */
 const char *zfs_prop_default_string(zfs_prop_t);
 uint64_t zfs_prop_default_numeric(zfs_prop_t);
 boolean_t zfs_prop_readonly(zfs_prop_t);
+boolean_t zfs_prop_visible(zfs_prop_t prop);
 boolean_t zfs_prop_inheritable(zfs_prop_t);
 boolean_t zfs_prop_setonce(zfs_prop_t);
 const char *zfs_prop_to_name(zfs_prop_t);
@@ -829,6 +837,15 @@ typedef struct trim_cmd_info_s {
 } trim_cmd_info_t;
 
 /*
+ * Used to control scrub pause and resume.
+ */
+typedef enum pool_scrub_cmd {
+	POOL_SCRUB_NORMAL = 0,
+	POOL_SCRUB_PAUSE,
+	POOL_SCRUB_FLAGS_END
+} pool_scrub_cmd_t;
+
+/*
  * ZIO types.  Needed to interpret vdev statistics below.
  */
 typedef enum zio_type {
@@ -862,6 +879,9 @@ typedef struct pool_scan_stat {
 	uint64_t	pss_pass_exam;	/* examined bytes per scan pass */
 	uint64_t	pss_pass_work;	/* issued bytes per scan pass */
 	uint64_t	pss_pass_start;	/* start time of a scan pass */
+	uint64_t	pss_pass_scrub_pause; /* pause time of a scurb pass */
+	/* cumulative time scrub spent paused, needed for rate calculation */
+	uint64_t	pss_pass_scrub_spent_paused;
 } pool_scan_stat_t;
 
 typedef enum dsl_scan_state {
@@ -1037,6 +1057,7 @@ typedef enum zfs_ioc {
 	ZFS_IOC_CHECK_KRRP,
 	ZFS_IOC_BULK_LIST,
 	ZFS_IOC_POOL_TRIM,
+	ZFS_IOC_CHANNEL_PROGRAM,
 	ZFS_IOC_LAST
 } zfs_ioc_t;
 
@@ -1081,6 +1102,7 @@ typedef enum {
 #define	ZPOOL_HIST_OUTPUT_NVL	"out_nvl"
 #define	ZPOOL_HIST_DSNAME	"dsname"
 #define	ZPOOL_HIST_DSID		"dsid"
+#define	ZPOOL_HIST_ERRNO	"errno"
 
 /*
  * Flags for ZFS_IOC_VDEV_SET_STATE
@@ -1099,6 +1121,24 @@ typedef enum {
 #define	ZFS_IMPORT_ANY_HOST	0x2
 #define	ZFS_IMPORT_MISSING_LOG	0x4
 #define	ZFS_IMPORT_ONLY		0x8
+
+/*
+ * Channel program argument/return nvlist keys and defaults.
+ */
+#define	ZCP_ARG_PROGRAM		"program"
+#define	ZCP_ARG_ARGLIST		"arg"
+#define	ZCP_ARG_INSTRLIMIT	"instrlimit"
+#define	ZCP_ARG_MEMLIMIT	"memlimit"
+
+#define	ZCP_ARG_CLIARGV		"argv"
+
+#define	ZCP_RET_ERROR		"error"
+#define	ZCP_RET_RETURN		"return"
+
+#define	ZCP_DEFAULT_INSTRLIMIT	(10 * 1000 * 1000)
+#define	ZCP_MAX_INSTRLIMIT	(10 * ZCP_DEFAULT_INSTRLIMIT)
+#define	ZCP_DEFAULT_MEMLIMIT	(10 * 1024 * 1024)
+#define	ZCP_MAX_MEMLIMIT	(10 * ZCP_DEFAULT_MEMLIMIT)
 
 /*
  * Sysevent payload members.  ZFS will generate the following sysevents with the
@@ -1120,11 +1160,45 @@ typedef enum {
  *		ZFS_EV_POOL_GUID	DATA_TYPE_UINT64
  *		ZFS_EV_VDEV_PATH	DATA_TYPE_STRING	(optional)
  *		ZFS_EV_VDEV_GUID	DATA_TYPE_UINT64
+ *
+ *	ESC_ZFS_HISTORY_EVENT
+ *
+ *		ZFS_EV_POOL_NAME	DATA_TYPE_STRING
+ *		ZFS_EV_POOL_GUID	DATA_TYPE_UINT64
+ *		ZFS_EV_HIST_TIME	DATA_TYPE_UINT64	(optional)
+ *		ZFS_EV_HIST_CMD		DATA_TYPE_STRING	(optional)
+ *		ZFS_EV_HIST_WHO		DATA_TYPE_UINT64	(optional)
+ *		ZFS_EV_HIST_ZONE	DATA_TYPE_STRING	(optional)
+ *		ZFS_EV_HIST_HOST	DATA_TYPE_STRING	(optional)
+ *		ZFS_EV_HIST_TXG		DATA_TYPE_UINT64	(optional)
+ *		ZFS_EV_HIST_INT_EVENT	DATA_TYPE_UINT64	(optional)
+ *		ZFS_EV_HIST_INT_STR	DATA_TYPE_STRING	(optional)
+ *		ZFS_EV_HIST_INT_NAME	DATA_TYPE_STRING	(optional)
+ *		ZFS_EV_HIST_IOCTL	DATA_TYPE_STRING	(optional)
+ *		ZFS_EV_HIST_DSNAME	DATA_TYPE_STRING	(optional)
+ *		ZFS_EV_HIST_DSID	DATA_TYPE_UINT64	(optional)
+ *
+ * The ZFS_EV_HIST_* members will correspond to the ZPOOL_HIST_* members in the
+ * history log nvlist.  The keynames will be free of any spaces or other
+ * characters that could be potentially unexpected to consumers of the
+ * sysevents.
  */
 #define	ZFS_EV_POOL_NAME	"pool_name"
 #define	ZFS_EV_POOL_GUID	"pool_guid"
 #define	ZFS_EV_VDEV_PATH	"vdev_path"
 #define	ZFS_EV_VDEV_GUID	"vdev_guid"
+#define	ZFS_EV_HIST_TIME	"history_time"
+#define	ZFS_EV_HIST_CMD		"history_command"
+#define	ZFS_EV_HIST_WHO		"history_who"
+#define	ZFS_EV_HIST_ZONE	"history_zone"
+#define	ZFS_EV_HIST_HOST	"history_hostname"
+#define	ZFS_EV_HIST_TXG		"history_txg"
+#define	ZFS_EV_HIST_INT_EVENT	"history_internal_event"
+#define	ZFS_EV_HIST_INT_STR	"history_internal_str"
+#define	ZFS_EV_HIST_INT_NAME	"history_internal_name"
+#define	ZFS_EV_HIST_IOCTL	"history_ioctl"
+#define	ZFS_EV_HIST_DSNAME	"history_dsname"
+#define	ZFS_EV_HIST_DSID	"history_dsid"
 
 #ifdef	__cplusplus
 }

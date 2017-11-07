@@ -27,6 +27,7 @@
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright (c) 2017 Datto Inc.
  */
 
 #ifndef	_LIBZFS_H
@@ -135,10 +136,23 @@ typedef enum zfs_error {
 	EZFS_WBCNOTSUP,		/* 'feature@wbc' is not enabled */
 	EZFS_WBCCHILD,		/* child ds has enabled WBC */
 	EZFS_WBCPARENT,		/* parent ds has enabled WBC */
-	EZFS_WBCALREADY,    /* WBC already enabled or disabled */
-	EZFS_WBCINPROGRESS, /* WBC is disabling */
+	EZFS_WBCALREADY,	/* WBC already enabled or disabled */
+	EZFS_WBCINPROGRESS,	/* WBC is disabling */
+	EZFS_SCRUB_PAUSED,	/* scrub currently paused */
 	EZFS_UNKNOWN
 } zfs_error_t;
+
+/*
+ * UEFI boot support parameters. When creating whole disk boot pool,
+ * zpool create should allow to create EFI System partition for UEFI boot
+ * program. In case of BIOS, the EFI System partition is not used
+ * even if it does exist.
+ */
+typedef enum zpool_boot_label {
+	ZPOOL_NO_BOOT_LABEL = 0,
+	ZPOOL_CREATE_BOOT_LABEL,
+	ZPOOL_COPY_BOOT_LABEL
+} zpool_boot_label_t;
 
 /*
  * The following data structures are all part
@@ -249,7 +263,7 @@ typedef struct splitflags {
 /*
  * Functions to manipulate pool and vdev state
  */
-extern int zpool_scan(zpool_handle_t *, pool_scan_func_t);
+extern int zpool_scan(zpool_handle_t *, pool_scan_func_t, pool_scrub_cmd_t);
 extern int zpool_trim(zpool_handle_t *, boolean_t start, uint64_t rate);
 extern int zpool_clear(zpool_handle_t *, const char *, nvlist_t *);
 extern int zpool_reguid(zpool_handle_t *);
@@ -273,7 +287,8 @@ extern nvlist_t *zpool_find_vdev(zpool_handle_t *, const char *, boolean_t *,
     boolean_t *, boolean_t *, boolean_t *);
 extern nvlist_t *zpool_find_vdev_by_physpath(zpool_handle_t *, const char *,
     boolean_t *, boolean_t *, boolean_t *);
-extern int zpool_label_disk(libzfs_handle_t *, zpool_handle_t *, const char *);
+extern int zpool_label_disk(libzfs_handle_t *, zpool_handle_t *, const char *,
+    zpool_boot_label_t, uint64_t, int *);
 
 /*
  * Functions to manage pool properties
@@ -356,6 +371,7 @@ extern nvlist_t *zpool_get_config(zpool_handle_t *, nvlist_t **);
 extern nvlist_t *zpool_get_features(zpool_handle_t *);
 extern int zpool_refresh_stats(zpool_handle_t *, boolean_t *);
 extern int zpool_get_errlog(zpool_handle_t *, nvlist_t **);
+extern boolean_t zpool_is_bootable(zpool_handle_t *);
 
 /*
  * Import and export functions
@@ -834,6 +850,17 @@ extern int zpool_fru_set(zpool_handle_t *, uint64_t, const char *);
 
 extern int zfs_get_hole_count(const char *, uint64_t *, uint64_t *);
 
+/* Allow consumers to initialize libshare externally for optimal performance */
+extern int zfs_init_libshare_arg(libzfs_handle_t *, int, void *);
+/*
+ * For most consumers, zfs_init_libshare_arg is sufficient on its own, and
+ * zfs_uninit_libshare is unnecessary. zfs_uninit_libshare should only be called
+ * if the caller has already initialized libshare for one set of zfs handles,
+ * and wishes to share or unshare filesystems outside of that set. In that case,
+ * the caller should uninitialize libshare, and then re-initialize it with the
+ * new handles being shared or unshared.
+ */
+extern void zfs_uninit_libshare(libzfs_handle_t *);
 #ifdef	__cplusplus
 }
 #endif

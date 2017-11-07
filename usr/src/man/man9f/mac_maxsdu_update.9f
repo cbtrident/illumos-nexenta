@@ -41,9 +41,10 @@ function is used to inform the MAC layer that the device represented by
 the handle
 .Fa mh
 has changed the largest size frame that it can transmit, also known as
-its Send Data Unit (SDU). This should be called when the device's MTU
-has been requested to be changed when a driver's
-.Xr mac_setprop 9E
+its Send Data Unit (SDU).
+This should be called when the device's MTU has been requested to be changed
+when a driver's
+.Xr mc_setprop 9E
 entry point has been called with the property
 .Sy MAC_PROP_MTU
 or some other device-related event occurring.
@@ -51,13 +52,14 @@ or some other device-related event occurring.
 The
 .Fa sdu
 represents the size of the largest payload ignoring the size of its own
-headers or any margin. For example, for an Ethernet-based device, this
-size should not include the Ethernet header or any VLAN tags.
+headers or any margin.
+For example, for an Ethernet-based device, this size should not include the
+Ethernet header or any VLAN tags.
 .Pp
 Through VNICs and other virtual data links, many different devices may
-be using a single physical device and have their own MTUs. The system
-takes care of those concerns and will not ask a device driver to update
-the MTU without verifying this.
+be using a single physical device and have their own MTUs.
+The system takes care of those concerns and will not ask a device driver to
+update the MTU without verifying this.
 .Sh RETURN VALUES
 Upon successful completion, the
 .Fn mac_maxsdu_update
@@ -70,7 +72,7 @@ For an example of how a device driver should use the
 function, see the
 .Sx EXAMPLES
 section in
-.Xr mac_setprop 9E .
+.Xr mc_setprop 9E .
 .Sh ERRORS
 The
 .Fn max_maxsdu_update
@@ -83,5 +85,5 @@ is lower than the minimum SDU of the device.
 .El
 .Sh SEE ALSO
 .Xr mac 9E ,
-.Xr mac_setprop 9E ,
+.Xr mc_setprop 9E ,
 .Xr mac_register 9F
