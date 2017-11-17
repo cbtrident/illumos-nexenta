@@ -34,7 +34,7 @@
  *
  */
 
-/* Copyright 2012 Nexenta Systems, Inc.  All rights reserved. */
+/* Copyright 2017 Nexenta Systems, Inc.  All rights reserved. */
 
 /*
  * Copyright 2013 Damian Bogel. All rights reserved.
@@ -173,6 +173,7 @@ main(int argc, char **argv)
 		if (strcmp(argv[i], "--") == 0)
 			break;
 
+		/* isdigit() check prevents negative arguments */
 		if ((argv[i][0] == '-') && isdigit(argv[i][1])) {
 			if (strlen(&argv[i][1]) !=
 			    strspn(&argv[i][1], "0123456789")) {
@@ -181,16 +182,14 @@ main(int argc, char **argv)
 				usage();
 			}
 
+			errno = 0;
 			conalen = conblen = strtoul(&argv[i][1], (char **)NULL,
 			    10);
 
-			/* isdigit() check prevents negative arguments */
-			if (conalen >= ULONG_MAX) {
+			if (errno != 0 || conalen >= ULONG_MAX) {
 				(void) fprintf(stderr, gettext(
 				    "%s: Bad context argument\n"), argv[0]);
-			}
-
-			if (conalen)
+			} else if (conalen)
 				conflag = CONTEXT;
 
 			while (i < argc) {
@@ -303,11 +302,14 @@ main(int argc, char **argv)
 			break;
 
 		case 'A':	/* print N lines after each match */
+			errno = 0;
 			conalen = strtoul(optarg, &test, 10);
 			/* *test will be non-null if optarg is negative */
-			if (*test != '\0' || conalen >= ULONG_MAX) {
+			if (errno != 0 || *test != '\0' ||
+			    conalen >= ULONG_MAX) {
 				(void) fprintf(stderr, gettext(
-				    "%s: Bad context argument\n"), argv[0]);
+				    "%s: Bad context argument: %s\n"),
+				    argv[0], optarg);
 				exit(2);
 			}
 			if (conalen)
@@ -316,11 +318,14 @@ main(int argc, char **argv)
 				conflag &= ~AFTER;
 			break;
 		case 'B':	/* print N lines before each match */
+			errno = 0;
 			conblen = strtoul(optarg, &test, 10);
 			/* *test will be non-null if optarg is negative */
-			if (*test != '\0' || conblen >= ULONG_MAX) {
+			if (errno != 0 || *test != '\0' ||
+			    conblen >= ULONG_MAX) {
 				(void) fprintf(stderr, gettext(
-				    "%s: Bad context argument\n"), argv[0]);
+				    "%s: Bad context argument: %s\n"),
+				    argv[0], optarg);
 				exit(2);
 			}
 			if (conblen)
@@ -329,16 +334,21 @@ main(int argc, char **argv)
 				conflag &= ~BEFORE;
 			break;
 		case 'C':	/* print N lines around each match */
+			errno = 0;
 			tval = strtoul(optarg, &test, 10);
 			/* *test will be non-null if optarg is negative */
-			if (*test != '\0' || tval >= ULONG_MAX) {
+			if (errno != 0 || *test != '\0' || tval >= ULONG_MAX) {
 				(void) fprintf(stderr, gettext(
-				    "%s: Bad context argument\n"), argv[0]);
+				    "%s: Bad context argument: %s\n"),
+				    argv[0], optarg);
 				exit(2);
 			}
 			if (tval) {
+				if (!(conflag & BEFORE))
+					conblen = tval;
+				if (!(conflag & AFTER))
+					conalen = tval;
 				conflag = CONTEXT;
-				conalen = conblen = tval;
 			}
 			break;
 
@@ -897,7 +907,7 @@ grep(int fd, const char *fn)
 	char	*conptr = NULL, *conptrend = NULL;
 	char	*matchptr = NULL;
 	int	conaprnt = 0, conbprnt = 0, lastmatch = 0;
-	int	nearmatch = conmatches ? 1 : 0; /* w/in N+1 of last match */
+	boolean_t	nearmatch; /* w/in N+1 of last match */
 	size_t	prntlen;
 
 	if (patterns == NULL)
@@ -937,6 +947,7 @@ grep(int fd, const char *fn)
 		}
 	}
 
+	nearmatch = (conmatches != 0);
 	blkoffset = line_offset = 0;
 	lineno = 0;
 	linenum = 1;
@@ -945,8 +956,9 @@ grep(int fd, const char *fn)
 	for (; ; ) {
 		long	count;
 		off_t	offset = 0;
-		int	eof = 0, rv = REG_NOMATCH;
+		int	rv = REG_NOMATCH;
 		char	separate;
+		boolean_t	last_ctx = B_FALSE, eof = B_FALSE;
 
 		if (data_len == 0) {
 			/*
@@ -979,15 +991,13 @@ grep(int fd, const char *fn)
 				return (0);
 			} else if (count == 0) {
 				/* no new data */
-				eof = 1;
-
-				/* we never want to match EOF */
-				pp = (PATTERN *) !nvflag;
+				eof = B_TRUE;
 
 				if (data_len == 0) {
 					/* end of file already reached */
 					if (conflag) {
 						*conptrend = '\n';
+						last_ctx = B_TRUE;
 						goto L_next_line;
 					} else {
 						goto out;
@@ -1022,6 +1032,14 @@ grep(int fd, const char *fn)
 				/*
 				 * Not enough room in the buffer
 				 */
+				if (prntbuflen > SIZE_MAX - BUFSIZE) {
+					(void) fprintf(stderr,
+					    gettext("%s: buflen would"
+					    " overflow\n"),
+					    cmdname);
+					exit(2);
+				}
+
 				prntbuflen += BUFSIZE;
 				prntbuf = realloc(prntbuf, prntbuflen + 1);
 				if (prntbuf == NULL) {
@@ -1256,10 +1274,18 @@ L_start_process:
 		if (!conflag)
 			goto L_next_line;
 
-		if (line_len + (conptrend - conbuf) > conbuflen) {
+		/* Do we have room to add this line to the context buffer? */
+		if (line_len > conbuflen - (conptrend - conbuf)) {
 			char *oldconbuf = conbuf;
 			char *oldconptr = conptr;
 			long tmp = matchptr - conptr;
+
+			if (conbuflen > SIZE_MAX - BUFSIZE) {
+				(void) fprintf(stderr,
+				    gettext("%s: buflen would overflow\n"),
+				    cmdname);
+				exit(2);
+			}
 
 			conbuflen += BUFSIZE;
 			conbuf = realloc(conbuf, conbuflen + 1);
@@ -1294,7 +1320,6 @@ L_start_process:
 				if (conflag == AFTER) {
 					conptr = conptrend - (line_len);
 					linenum = lineno;
-					blkoffset = line_offset;
 				}
 				blkoffset = line_offset -
 				    (conptrend - conptr - line_len);
@@ -1316,13 +1341,13 @@ L_start_process:
 					if (bflag)
 						blkoffset += conptr - tmp;
 					linenum++;
-					nearmatch = 1;
+					nearmatch = B_TRUE;
 				} else {
 					conbcnt++;
 				}
 			}
 			if (conflag == AFTER)
-				nearmatch = 1;
+				nearmatch = B_TRUE;
 		} else  {
 			if (++conacnt >= conalen && !conaprnt && conalen)
 				conaprnt = 1;
@@ -1335,7 +1360,7 @@ L_next_line:
 		 * Here, if pp points to non-NULL, something has been matched
 		 * to the pattern.
 		 */
-		if (nvflag == (pp != NULL)) {
+		if (!last_ctx && nvflag == (pp != NULL)) {
 			matches++;
 			if (!nextend)
 				matchptr = conflag ? conptrend : ptrend;
@@ -1446,7 +1471,7 @@ L_next_line:
 		if (conflag) {
 			conptr = conbuf;
 			conaprnt = conbprnt = 0;
-			nearmatch = 0;
+			nearmatch = B_FALSE;
 			conacnt = conbcnt = 0;
 
 			if (nextptr) {
@@ -1495,45 +1520,53 @@ usage(void)
 	if (egrep || fgrep) {
 		(void) fprintf(stderr, gettext("Usage:\t%s"), cmdname);
 		(void) fprintf(stderr,
-		    gettext(" [-c|-l|-q] [-r|-R] [-A #|-B #|-C #|-#] "
+		    gettext(" [-c|-l|-q] [-r|-R] "
+		    "[-A num] [-B num] [-C num|-num] "
 		    "[-bhHinsvx] pattern_list [file ...]\n"));
 
 		(void) fprintf(stderr, "\t%s", cmdname);
 		(void) fprintf(stderr,
-		    gettext(" [-c|-l|-q] [-r|-R] [-A #|-B #|-C #|-#] "
+		    gettext(" [-c|-l|-q] [-r|-R] "
+		    "[-A num] [-B num] [-C num|-num] "
 		    "[-bhHinsvx] [-e pattern_list]... "
 		    "[-f pattern_file]... [file...]\n"));
 	} else {
 		(void) fprintf(stderr, gettext("Usage:\t%s"), cmdname);
 		(void) fprintf(stderr,
-		    gettext(" [-c|-l|-q] [-r|-R] [-A #|-B #|-C #|-#] "
+		    gettext(" [-c|-l|-q] [-r|-R] "
+		    "[-A num] [-B num] [-C num|-num] "
 		    "[-bhHinsvx] pattern_list [file ...]\n"));
 
 		(void) fprintf(stderr, "\t%s", cmdname);
 		(void) fprintf(stderr,
-		    gettext(" [-c|-l|-q] [-r|-R] [-A #|-B #|-C #|-#] "
+		    gettext(" [-c|-l|-q] [-r|-R] "
+		    "[-A num] [-B num] [-C num|-num] "
 		    "[-bhHinsvx] [-e pattern_list]... "
 		    "[-f pattern_file]... [file...]\n"));
 
 		(void) fprintf(stderr, "\t%s", cmdname);
 		(void) fprintf(stderr,
-		    gettext(" -E [-c|-l|-q] [-r|-R] [-A #|-B #|-C #|-#] "
+		    gettext(" -E [-c|-l|-q] [-r|-R] "
+		    "[-A num] [-B num] [-C num|-num] "
 		    "[-bhHinsvx] pattern_list [file ...]\n"));
 
 		(void) fprintf(stderr, "\t%s", cmdname);
 		(void) fprintf(stderr,
-		    gettext(" -E [-c|-l|-q] [-r|-R] [-A #|-B #|-C #|-#] "
+		    gettext(" -E [-c|-l|-q] [-r|-R] "
+		    "[-A num] [-B num] [-C num|-num] "
 		    "[-bhHinsvx] [-e pattern_list]... "
 		    "[-f pattern_file]... [file...]\n"));
 
 		(void) fprintf(stderr, "\t%s", cmdname);
 		(void) fprintf(stderr,
-		    gettext(" -F [-c|-l|-q] [-r|-R] [-A #|-B #|-C #|-#] "
+		    gettext(" -F [-c|-l|-q] [-r|-R] "
+		    "[-A num] [-B num] [-C num|-num] "
 		    "[-bhHinsvx] pattern_list [file ...]\n"));
 
 		(void) fprintf(stderr, "\t%s", cmdname);
 		(void) fprintf(stderr,
-		    gettext(" -F [-c|-l|-q] [-A #|-B #|-C #|-#] "
+		    gettext(" -F [-c|-l|-q] "
+		    "[-A num] [-B num] [-C num|-num] "
 		    "[-bhHinsvx] [-e pattern_list]... "
 		    "[-f pattern_file]... [file...]\n"));
 	}
