@@ -52,6 +52,9 @@
 #define	SMB_DCLOCATOR_TIMEOUT	45	/* seconds */
 #define	SMB_IS_FQDN(domain)	(strchr(domain, '.') != NULL)
 
+/* How long to pause after a failure to find any domain controllers. */
+int smb_ddiscover_failure_pause = 5; /* sec. */
+
 typedef struct smb_dclocator {
 	smb_dcinfo_t	sdl_dci; /* .dc_name .dc_addr */
 	char		sdl_domain[SMB_PI_MAX_DOMAIN];
@@ -350,7 +353,7 @@ smb_ddiscover_service(void *arg)
 			syslog(LOG_DEBUG, "smb_ddiscover_service "
 			    "retry after STATUS_%s",
 			    xlate_nt_status(status));
-			(void) sleep(5);
+			(void) sleep(smb_ddiscover_failure_pause);
 			goto find_again;
 		}
 
