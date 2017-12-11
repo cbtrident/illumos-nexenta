@@ -72,6 +72,7 @@ smb2_qinfo_fs(smb_request_t *sr, smb_queryinfo_t *qi)
 	case FileFsObjectIdInformation:	/* 8 */
 		status = smb2_qfs_obj_id(sr);
 		break;
+	case FileFsDriverPathInformation:	/* 9 */
 	case FileFsVolumeFlagsInformation:	/* A */
 		status = NT_STATUS_INVALID_INFO_CLASS;
 		break;
