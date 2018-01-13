@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2017 RackTop Systems.
 #
 
@@ -18,6 +18,7 @@ LIBRARY =	libfakekernel.a
 VERS =		.1
 
 COBJS = \
+	audit.o \
 	clock.o \
 	cond.o \
 	copy.o \

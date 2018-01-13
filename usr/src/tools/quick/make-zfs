@@ -88,6 +88,7 @@ then
     (cd $SRC/uts && $make -k install_h)
   test -f $ROOT/usr/include/rpcsvc/daemon_utils.h ||
     (cd $SRC/head && $make install_h)
+  (cd $SRC/uts/common/c2 && $make -k install_h)
 
   # always update the sys headers to be safe
   (cd $SRC/uts/common/sys && $make -k install_h)
