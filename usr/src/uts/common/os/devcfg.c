@@ -18,11 +18,12 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved
+ * Copyright 2018 Nexenta Systems, Inc.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -4599,9 +4600,9 @@ i_ndi_init_hw_children(dev_info_t *pdip, uint_t flags)
  * report device status
  */
 static void
-i_ndi_devi_report_status_change(dev_info_t *dip, char *path)
+i_ndi_devi_report_status_change(dev_info_t *dip)
 {
-	char *status;
+	const char *status;
 
 	if (!DEVI_NEED_REPORT(dip) ||
 	    (i_ddi_node_state(dip) < DS_INITIALIZED) ||
@@ -4628,17 +4629,8 @@ i_ndi_devi_report_status_change(dev_info_t *dip, char *path)
 		status = "unknown";
 	}
 
-	if (path == NULL) {
-		path = kmem_alloc(MAXPATHLEN, KM_SLEEP);
-		cmn_err(CE_CONT, "?%s (%s%d) %s\n",
-		    ddi_pathname(dip, path), ddi_driver_name(dip),
-		    ddi_get_instance(dip), status);
-		kmem_free(path, MAXPATHLEN);
-	} else {
-		cmn_err(CE_CONT, "?%s (%s%d) %s\n",
-		    path, ddi_driver_name(dip),
-		    ddi_get_instance(dip), status);
-	}
+	cmn_err(CE_CONT, "?%s%d %s\n", ddi_driver_name(dip),
+	    ddi_get_instance(dip), status);
 
 	mutex_enter(&(DEVI(dip)->devi_lock));
 	DEVI_REPORT_DONE(dip);
@@ -5226,7 +5218,7 @@ devi_attach_node(dev_info_t *dip, uint_t flags)
 		return (NDI_FAILURE);
 	}
 
-	i_ndi_devi_report_status_change(dip, NULL);
+	i_ndi_devi_report_status_change(dip);
 
 	/*
 	 * log an event, but not during devfs lookups in which case
@@ -5947,8 +5939,7 @@ devi_detach_node(dev_info_t *dip, uint_t flags)
 			(void) ddi_pathname(dip, devi->devi_ev_path);
 		}
 		if (flags & NDI_DEVI_OFFLINE)
-			i_ndi_devi_report_status_change(dip,
-			    devi->devi_ev_path);
+			i_ndi_devi_report_status_change(dip);
 
 		if (need_remove_event(dip, flags)) {
 			/*
@@ -8110,7 +8101,7 @@ ndi_devi_config_vhci(char *drvname, int flags)
 	dnp->dn_head = dip;
 	UNLOCK_DEV_OPS(&dnp->dn_lock);
 
-	i_ndi_devi_report_status_change(dip, NULL);
+	i_ndi_devi_report_status_change(dip);
 
 	return (dip);
 }
@@ -8157,7 +8148,7 @@ ndi_devi_device_remove(dev_info_t *dip)
 	mutex_exit(&(DEVI(dip)->devi_lock));
 
 	/* report remove (as 'removed') */
-	i_ndi_devi_report_status_change(dip, NULL);
+	i_ndi_devi_report_status_change(dip);
 
 	/*
 	 * Invalidate the cache to ensure accurate
@@ -8194,7 +8185,7 @@ ndi_devi_device_insert(dev_info_t *dip)
 	mutex_exit(&(DEVI(dip)->devi_lock));
 
 	/* report insert (as 'online') */
-	i_ndi_devi_report_status_change(dip, NULL);
+	i_ndi_devi_report_status_change(dip);
 
 	/*
 	 * Invalidate the cache to ensure accurate
