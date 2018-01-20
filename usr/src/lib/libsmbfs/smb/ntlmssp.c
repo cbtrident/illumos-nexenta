@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -67,7 +67,7 @@
 #include "ntlmssp.h"
 
 /* A shorter alias for a crazy long name from [MS-NLMP] */
-#define	NTLMSSP_NEGOTIATE_NTLM2 \
+#define	NTLMSSP_NEGOTIATE_ESS \
 	NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY
 
 typedef struct ntlmssp_state {
@@ -249,16 +249,14 @@ ntlmssp_put_type1(struct ssp_ctx *sp, struct mbdata *out_mb)
 	    NTLMSSP_NEGOTIATE_SEAL |
 	    /* NTLMSSP_NEGOTIATE_LM_KEY (never) */
 	    NTLMSSP_NEGOTIATE_NTLM |
-	    /* NTLMSSP_NEGOTIATE_ALWAYS_SIGN (set below) */
-	    NTLMSSP_NEGOTIATE_NTLM2 |
+	    NTLMSSP_NEGOTIATE_ALWAYS_SIGN |
+	    NTLMSSP_NEGOTIATE_ESS |
 	    NTLMSSP_NEGOTIATE_128 |
 	    NTLMSSP_NEGOTIATE_KEY_EXCH |
 	    NTLMSSP_NEGOTIATE_56;
 
-	if (ctx->ct_vcflags & SMBV_WILL_SIGN) {
-		ssp_st->ss_flags |= NTLMSSP_NEGOTIATE_ALWAYS_SIGN;
-		ctx->ct_hflags2 |= SMB_FLAGS2_SECURITY_SIGNATURE;
-	}
+	if ((ctx->ct_vopt & SMBVOPT_SIGNING_ENABLED) == 0)
+		ssp_st->ss_flags &= ~NTLMSSP_NEGOTIATE_ALWAYS_SIGN;
 
 	bcopy(ntlmssp_id, &hdr.h_id, ID_SZ);
 	hdr.h_type = NTLMSSP_MSGTYPE_NEGOTIATE;
@@ -447,15 +445,19 @@ ntlmssp_put_type3(struct ssp_ctx *sp, struct mbdata *out_mb)
 		/*
 		 * We're setting up a NULL session, meaning
 		 * the lm_mbc, nt_mbc parts remain empty.
-		 * Let's add the "anon" flag (hint).
-		 * As there is no session key, disable the
-		 * fancy session key stuff.
+		 * Let's add the "anon" flag (hint), and
+		 * as we have no OWF hashes, we can't use
+		 * "extended session security" (_ESS).
+		 * The SessionBaseKey is all zeros, so
+		 * the KeyExchangeKey is too.  Otherwise
+		 * this is like NTLMv2/LMv2
 		 */
-		hdr.h_flags |= NTLMSSP_NEGOTIATE_NULL_SESSION;
-		ssp_st->ss_flags &= ~(
-		    NTLMSSP_NEGOTIATE_NTLM2 |
-		    NTLMSSP_NEGOTIATE_KEY_EXCH);
+		ssp_st->ss_flags |= NTLMSSP_NEGOTIATE_NULL_SESSION;
+		ssp_st->ss_flags &= ~NTLMSSP_NEGOTIATE_ESS;
+		hdr.h_flags = ssp_st->ss_flags;
 		err = 0;
+		/* KeyExchangeKey = SessionBaseKey = (zeros) */
+		memset(ssp_st->ss_kxkey, 0, NTLM_HASH_SZ);
 	} else if (ctx->ct_authflags & SMB_AT_NTLM2) {
 		/*
 		 * Doing NTLMv2/LMv2
@@ -468,10 +470,9 @@ ntlmssp_put_type3(struct ssp_ctx *sp, struct mbdata *out_mb)
 		    &lm_mbc, &nt_mbc);
 		if (err)
 			goto out;
-		/* The "key exg. key" is the session base key */
+		/* KeyExchangeKey = SessionBaseKey (v2) */
 		memcpy(ssp_st->ss_kxkey, ctx->ct_ssn_key, NTLM_HASH_SZ);
-
-	} else if (ssp_st->ss_flags & NTLMSSP_NEGOTIATE_NTLM2) {
+	} else if (ssp_st->ss_flags & NTLMSSP_NEGOTIATE_ESS) {
 		/*
 		 * Doing NTLM ("v1x") which is NTLM with
 		 * "Extended Session Security"
@@ -480,7 +481,10 @@ ntlmssp_put_type3(struct ssp_ctx *sp, struct mbdata *out_mb)
 		    &lm_mbc, &nt_mbc);
 		if (err)
 			goto out;
-		/* Compute the "Key exchange key". */
+		/*
+		 * "v1x computes the KeyExchangeKey from both the
+		 * server and client nonce and (v1) SessionBaseKey.
+		 */
 		ntlm2_kxkey(ctx, &lm_mbc, ssp_st->ss_kxkey);
 	} else {
 		/*
@@ -490,14 +494,13 @@ ntlmssp_put_type3(struct ssp_ctx *sp, struct mbdata *out_mb)
 		    &lm_mbc, &nt_mbc);
 		if (err)
 			goto out;
-		/* The "key exg. key" is the session base key */
+		/* KeyExchangeKey = SessionBaseKey (v1) */
 		memcpy(ssp_st->ss_kxkey, ctx->ct_ssn_key, NTLM_HASH_SZ);
 	}
 
 	/*
-	 * Compute the "Exported Session Key" and (possibly)
-	 * the "Encrypted Random Sesion Key".
-	 * [MS-NLMP 3.1.5.1.2]
+	 * Compute the "ExportedSessionKey" and (possibly) the
+	 * "EncryptedRandomSesionKey". [MS-NLMP 3.1.5.1.2]
 	 */
 	if (ssp_st->ss_flags & NTLMSSP_NEGOTIATE_KEY_EXCH) {
 		err = ntlm_rand_ssn_key(ctx, ssp_st, &ek_mbc);
@@ -629,8 +632,7 @@ ntlmssp_final(struct ssp_ctx *sp)
 	 * MAC_key is just the session key, but
 	 * Only on the first successful auth.
 	 */
-	if ((ctx->ct_hflags2 & SMB_FLAGS2_SECURITY_SIGNATURE) &&
-	    (ctx->ct_mackey == NULL)) {
+	if (ctx->ct_mackey == NULL) {
 		ctx->ct_mackeylen = NTLM_HASH_SZ;
 		ctx->ct_mackey = malloc(ctx->ct_mackeylen);
 		if (ctx->ct_mackey == NULL) {
@@ -639,11 +641,6 @@ ntlmssp_final(struct ssp_ctx *sp)
 			goto out;
 		}
 		memcpy(ctx->ct_mackey, ctx->ct_ssn_key, NTLM_HASH_SZ);
-		/*
-		 * Apparently, the server used seq. no. zero
-		 * for our previous message, so next is two.
-		 */
-		ctx->ct_mac_seqno = 2;
 	}
 
 out:
@@ -728,12 +725,16 @@ int
 ntlmssp_init_client(struct ssp_ctx *sp)
 {
 	ntlmssp_state_t *ssp_st;
+	smb_ctx_t *ctx = sp->smb_ctx;
 
-	if ((sp->smb_ctx->ct_authflags &
+	if ((ctx->ct_authflags &
 	    (SMB_AT_NTLM2 | SMB_AT_NTLM1 | SMB_AT_ANON)) == 0) {
 		DPRINT("No NTLM authflags");
 		return (EINVAL);
 	}
+
+	/* Get the client nonce. */
+	(void) smb_get_urandom(ctx->ct_clnonce, NTLM_CHAL_SZ);
 
 	ssp_st = calloc(1, sizeof (*ssp_st));
 	if (ssp_st == NULL)

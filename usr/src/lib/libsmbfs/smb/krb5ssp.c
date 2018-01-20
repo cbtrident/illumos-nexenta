@@ -32,6 +32,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -268,9 +269,6 @@ krb5ssp_put_request(struct ssp_ctx *sp, struct mbdata *out_mb)
 	if ((err = mb_put_mem(out_mb, gtok, gtoklen, MB_MSYSTEM)) != 0)
 		goto out;
 
-	if (ctx->ct_vcflags & SMBV_WILL_SIGN)
-		ctx->ct_hflags2 |= SMB_FLAGS2_SECURITY_SIGNATURE;
-
 out:
 	if (gtok)
 		free(gtok);
@@ -406,8 +404,7 @@ krb5ssp_final(struct ssp_ctx *sp)
 	/*
 	 * Set the MAC key on the first successful auth.
 	 */
-	if ((ctx->ct_hflags2 & SMB_FLAGS2_SECURITY_SIGNATURE) &&
-	    (ctx->ct_mackey == NULL)) {
+	if (ctx->ct_mackey == NULL) {
 		ctx->ct_mackeylen = ssn_key->length;
 		ctx->ct_mackey = malloc(ctx->ct_mackeylen);
 		if (ctx->ct_mackey == NULL) {
@@ -417,11 +414,6 @@ krb5ssp_final(struct ssp_ctx *sp)
 		}
 		memcpy(ctx->ct_mackey, ssn_key->contents,
 		    ctx->ct_mackeylen);
-		/*
-		 * Apparently, the server used seq. no. zero
-		 * for our previous message, so next is two.
-		 */
-		ctx->ct_mac_seqno = 2;
 	}
 	err = 0;
 
