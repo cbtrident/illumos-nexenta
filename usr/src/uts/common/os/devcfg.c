@@ -171,10 +171,9 @@ int driver_conf_allow_path_alias = 1;
 int identify_9e = 0;
 
 /*
- * Add flag so behaviour of preventing attach for retired persistant nodes
- * can be disabled.
+ * Don't prevent attaching retired devices by default.
  */
-int retire_prevents_attach = 1;
+int retire_prevents_attach = 0;
 
 int mtc_off;					/* turn off mt config */
 
