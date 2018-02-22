@@ -22,7 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright (c) 2012 Nexenta Systems, Inc. All rights reserved.
- * Copyright (c) 2017 Joyent, Inc.
+ * Copyright (c) 2018 Joyent, Inc.
  */
 
 #include <sys/types.h>
@@ -2330,7 +2330,12 @@ sadb_form_query(keysock_in_t *ksi, uint32_t req, uint32_t match,
 
 	if ((match & IPSA_Q_KMC) && (sq->kmcext)) {
 		sq->kmp = sq->kmcext->sadb_x_kmc_proto;
-		/* Be liberal in what we receive.  Special-case IKEv1. */
+		/*
+		 * Be liberal in what we receive.  Special-case the IKEv1
+		 * cookie, which closed-source in.iked assumes is 32 bits.
+		 * Now that we store all 64 bits, we should pre-zero the
+		 * reserved field on behalf of closed-source in.iked.
+		 */
 		if (sq->kmp == SADB_X_KMP_IKE) {
 			/* Just in case in.iked is misbehaving... */
 			sq->kmcext->sadb_x_kmc_reserved = 0;
@@ -3137,7 +3142,12 @@ sadb_common_add(queue_t *pfkey_q, mblk_t *mp, sadb_msg_t *samsg,
 
 	if (kmcext != NULL) {
 		newbie->ipsa_kmp = kmcext->sadb_x_kmc_proto;
-		/* Be liberal in what we receive.  Special-case IKEv1. */
+		/*
+		 * Be liberal in what we receive.  Special-case the IKEv1
+		 * cookie, which closed-source in.iked assumes is 32 bits.
+		 * Now that we store all 64 bits, we should pre-zero the
+		 * reserved field on behalf of closed-source in.iked.
+		 */
 		if (newbie->ipsa_kmp == SADB_X_KMP_IKE) {
 			/* Just in case in.iked is misbehaving... */
 			kmcext->sadb_x_kmc_reserved = 0;
@@ -4458,7 +4468,9 @@ sadb_check_kmc(ipsa_query_t *sq, ipsa_t *sa, int *diagnostic)
 		return (EINVAL);
 	}
 
-	if ((kmc != 0) && (sa->ipsa_kmc != 0) && (sa->ipsa_kmc != kmc)) {
+	/* Allow IKEv2 KMCs to update the kmc value for rekeying */
+	if ((kmp != SADB_X_KMP_IKEV2) && (kmc != 0) && (sa->ipsa_kmc != 0) &&
+	    (sa->ipsa_kmc != kmc)) {
 		*diagnostic = SADB_X_DIAGNOSTIC_DUPLICATE_KMC;
 		return (EINVAL);
 	}
@@ -5114,7 +5126,7 @@ sadb_acquire_prop(ipsec_action_t *ap, netstack_t *ns, boolean_t do_esp)
 	sadb_comb_t *comb;
 	ipsec_action_t *walker;
 	int ncombs, allocsize, ealgid, aalgid, aminbits, amaxbits, eminbits,
-	    emaxbits, replay;
+	    emaxbits, esaltlen, replay;
 	uint64_t softbytes, hardbytes, softaddtime, hardaddtime, softusetime,
 	    hardusetime;
 	uint64_t kmc = 0;
@@ -5242,13 +5254,14 @@ sadb_acquire_prop(ipsec_action_t *ap, netstack_t *ns, boolean_t do_esp)
 		}
 
 		if (ealg == NULL) {
-			ealgid = eminbits = emaxbits = 0;
+			ealgid = eminbits = emaxbits = esaltlen = 0;
 		} else {
 			ealgid = ealg->alg_id;
 			eminbits =
 			    MAX(prot->ipp_espe_minbits, ealg->alg_ef_minbits);
 			emaxbits =
 			    MIN(prot->ipp_espe_maxbits, ealg->alg_ef_maxbits);
+			esaltlen = ealg->alg_saltlen;
 		}
 
 		if (aalg == NULL) {
@@ -5266,6 +5279,7 @@ sadb_acquire_prop(ipsec_action_t *ap, netstack_t *ns, boolean_t do_esp)
 		comb->sadb_comb_encrypt = ealgid;
 		comb->sadb_comb_encrypt_minbits = eminbits;
 		comb->sadb_comb_encrypt_maxbits = emaxbits;
+		comb->sadb_x_comb_encrypt_saltbits = SADB_8TO1(esaltlen);
 		comb->sadb_comb_auth = aalgid;
 		comb->sadb_comb_auth_minbits = aminbits;
 		comb->sadb_comb_auth_maxbits = amaxbits;
@@ -5929,7 +5943,7 @@ sadb_new_algdesc(uint8_t *start, uint8_t *limit,
 		maxbits = algp->alg_ef_maxbits;
 	rw_exit(&ipss->ipsec_alg_lock);
 
-	algdesc->sadb_x_algdesc_reserved = SADB_8TO1(algp->alg_saltlen);
+	algdesc->sadb_x_algdesc_saltbits = SADB_8TO1(algp->alg_saltlen);
 	algdesc->sadb_x_algdesc_satype = satype;
 	algdesc->sadb_x_algdesc_algtype = algtype;
 	algdesc->sadb_x_algdesc_alg = alg;

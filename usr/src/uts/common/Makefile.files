@@ -1487,10 +1487,12 @@ ZFS_COMMON_OBJS +=		\
 	zio_compress.o		\
 	zio_inject.o		\
 	zle.o			\
-	zrlock.o		\
-	special.o		\
+	zrlock.o
+
+ZFS_COMMON_OBJS +=		\
 	cos.o			\
 	spa_vdev_props.o	\
+	special.o		\
 	wbc.o
 
 ZFS_SHARED_OBJS +=		\
@@ -2258,6 +2260,7 @@ BNXE_OBJS +=	bnxe_cfg.o		\
 		bnxe_tx.o		\
 		bnxe_workq.o		\
 		bnxe_clc.o		\
+		bnxe_illumos.o		\
 		ecore_sp_verbs.o	\
 		bnxe_context.o		\
 		57710_init_values.o	\

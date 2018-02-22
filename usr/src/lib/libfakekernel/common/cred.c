@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 RackTop Systems.
  */
 
 #include <sys/types.h>
@@ -70,6 +71,34 @@ uid_t
 crgetuid(const cred_t *cr)
 {
 	return (cr->cr_uid);
+}
+
+/*ARGSUSED*/
+uid_t
+crgetruid(const cred_t *cr)
+{
+	return (0);
+}
+
+/*ARGSUSED*/
+uid_t
+crgetgid(const cred_t *cr)
+{
+	return (0);
+}
+
+/*ARGSUSED*/
+int
+crgetngroups(const cred_t *cr)
+{
+	return (0);
+}
+
+/*ARGSUSED*/
+const gid_t *
+crgetgroups(const cred_t *cr)
+{
+	return (NULL);
 }
 
 cred_t *
