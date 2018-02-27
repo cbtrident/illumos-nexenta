@@ -37,6 +37,7 @@
 #include <memory.h>
 #include <libelf.h>
 #include <gelf.h>
+#include <utility.h>
 
 /*
  * Tool to inspect a sun4u bootable module for a symbol table size
@@ -82,8 +83,8 @@
  * included this bug.  The bug only occurs for allocations
  * pagesize or greater, and the only such OBP allocation is for a
  * module's symbol table, for the sum of the SYMTAB and STRTAB
- * sections.  The inetboot binary does not include these sections
- * and is therefore also unaffected.
+ * sections.  The wanboot and inetboot binaries do not include
+ * these sections and are therefore also unaffected.
  */
 
 static char	*whoami;

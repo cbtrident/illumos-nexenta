@@ -27,14 +27,15 @@
 SUBDIRS=	bridged ilbd in.chargend in.daytimed \
 		in.discardd in.echod in.mpathd in.ndpd \
 		in.ripngd in.timed inetd mdnsd ncaconfd pppoe \
-		slpd vrrpd wpad
+		slpd vrrpd wanboot wpad
 
-MSGSUBDIRS=	ilbd inetd ncaconfd vrrpd
+MSGSUBDIRS=	ilbd inetd ncaconfd vrrpd wanboot
 
 include ../../Makefile.cmd
 include ./Makefile.lib
 
-POFILES=	inetd/inetd.po ncaconfd/ncaconfd.po vrrpd/vrrpd.po
+POFILES=	inetd/inetd.po ncaconfd/ncaconfd.po vrrpd/vrrpd.po \
+		wanboot/wanboot.po
 POFILE=		usr.lib.po
 
 all:=		TARGET= all

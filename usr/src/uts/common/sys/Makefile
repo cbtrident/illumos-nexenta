@@ -673,6 +673,7 @@ CHKHDRS=			\
 	vuid_store.h		\
 	wait.h			\
 	waitq.h			\
+	wanboot_impl.h		\
 	watchpoint.h		\
 	winlockio.h		\
 	zcons.h			\
