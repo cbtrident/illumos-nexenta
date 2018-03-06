@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN Inc.  All rights reserved.
  * Copyright (c) 2015, Joyent, Inc.
  */
 
@@ -142,12 +142,12 @@ nfs4_vget_pseudo(struct exportinfo *exi, vnode_t **vpp, fid_t *fidp)
  *
  * A visible list has a per-file-system scope.  Any exportinfo
  * struct (real or pseudo) can have a visible list as long as
- * a) its export root is VROOT
+ * a) its export root is VROOT, or is the zone's root for in-zone NFS service
  * b) a descendant of the export root is shared
  */
 struct exportinfo *
-pseudo_exportfs(nfs_export_t *ne, vnode_t *vp, fid_t *fid, struct exp_visible *vis_head,
-    struct exportdata *exdata)
+pseudo_exportfs(nfs_export_t *ne, vnode_t *vp, fid_t *fid,
+    struct exp_visible *vis_head, struct exportdata *exdata)
 {
 	struct exportinfo *exi;
 	struct exportdata *kex;
@@ -165,6 +165,7 @@ pseudo_exportfs(nfs_export_t *ne, vnode_t *vp, fid_t *fid, struct exp_visible *v
 	VN_HOLD(exi->exi_vp);
 	exi->exi_visible = vis_head;
 	exi->exi_count = 1;
+	exi->exi_zoneid = ne->ne_globals->nfs_zoneid;
 	exi->exi_volatile_dev = (vfssw[vp->v_vfsp->vfs_fstype].vsw_flag &
 	    VSW_VOLATILEDEV) ? 1 : 0;
 	mutex_init(&exi->exi_lock, NULL, MUTEX_DEFAULT, NULL);
@@ -217,6 +218,7 @@ pseudo_exportfs(nfs_export_t *ne, vnode_t *vp, fid_t *fid, struct exp_visible *v
 	exi->exi_id = exi_id_get_next();
 	avl_add(&exi_id_tree, exi);
 	mutex_exit(&nfs_exi_id_lock);
+
 	exi->exi_kstats = exp_kstats_init(getzoneid(), exi->exi_id,
 	    kex->ex_path, vpathlen, TRUE);
 
@@ -641,8 +643,10 @@ treeclimb_export(struct exportinfo *exip)
 	struct vattr va;
 	treenode_t *tree_head = NULL;
 	timespec_t now;
-	nfs_export_t *ne = nfs_get_export();
+	nfs_export_t *ne;
 
+	ne = exip->exi_ne;
+	ASSERT3P(ne, ==, nfs_get_export());	/* curzone reality check */
 	ASSERT(RW_WRITE_HELD(&ne->exported_lock));
 
 	gethrestime(&now);
@@ -659,11 +663,13 @@ treeclimb_export(struct exportinfo *exip)
 		if (error)
 			break;
 
+		ASSERT3U(exip->exi_zoneid, ==, curzone->zone_id);
 		/*
-		 * The root of the file system needs special handling
+		 * The root of the file system, or the zone's root for
+		 * in-zone NFS service needs special handling
 		 */
-		if (vp->v_flag & VROOT) {
-			if (! exportdir) {
+		if (vp->v_flag & VROOT || vp == EXI_TO_ZONEROOTVP(exip)) {
+			if (!exportdir) {
 				struct exportinfo *exi;
 
 				/*
@@ -697,7 +703,7 @@ treeclimb_export(struct exportinfo *exip)
 				vis_head = NULL;
 			}
 
-			if (VN_CMP(vp, ZONE_ROOTVP())) {
+			if (VN_IS_CURZONEROOT(vp)) {
 				/* at system root */
 				/*
 				 * If sharing "/", new_exi is shared exportinfo
@@ -717,7 +723,7 @@ treeclimb_export(struct exportinfo *exip)
 			 * Traverse across the mountpoint and continue the
 			 * climb on the mounted-on filesystem.
 			 */
-			vp = untraverse(vp);
+			vp = untraverse(vp, ne->exi_root->exi_vp);
 			exportdir = 0;
 			continue;
 		}
@@ -804,11 +810,12 @@ treeclimb_export(struct exportinfo *exip)
 			/* exip will be freed in exportfs() */
 			if (e && e != exip) {
 				exp_kstats_delete(e->exi_kstats);
+
 				mutex_enter(&nfs_exi_id_lock);
 				avl_remove(&exi_id_tree, e);
 				mutex_exit(&nfs_exi_id_lock);
 				export_unlink(ne, e);
-				exi_rele(&e);
+				exi_rele(e);
 			}
 			tree_head = tree_head->tree_child_first;
 			kmem_free(t2, sizeof (*t2));
@@ -828,7 +835,7 @@ treeclimb_export(struct exportinfo *exip)
  * node was a leaf node.
  * Deleting of nodes will finish when we reach a node which
  * has children or is a real export, then we might still need
- * to continue releasing visibles, until we reach VROOT node.
+ * to continue releasing visibles, until we reach VROOT or zone's root node.
  */
 void
 treeclimb_unexport(nfs_export_t *ne, struct exportinfo *exip)
@@ -837,8 +844,21 @@ treeclimb_unexport(nfs_export_t *ne, struct exportinfo *exip)
 	treenode_t *connect_point = NULL;
 
 	ASSERT(RW_WRITE_HELD(&ne->exported_lock));
+	ASSERT(curzone->zone_id == exip->exi_zoneid ||
+	    curzone->zone_id == global_zone->zone_id);
 
+	/*
+	 * exi_tree can be null for the zone root
+	 * which means we're already at the "top"
+	 * and there's nothing more to "climb".
+	 */
 	tnode = exip->exi_tree;
+	if (tnode == NULL) {
+		/* Should only happen for... */
+		ASSERT(exip == ne->exi_root);
+		return;
+	}
+
 	/*
 	 * The unshared exportinfo was unlinked in unexport().
 	 * Zeroing tree_exi ensures that we will skip it.
@@ -850,7 +870,10 @@ treeclimb_unexport(nfs_export_t *ne, struct exportinfo *exip)
 
 	while (tnode != NULL) {
 
-		/* Stop at VROOT node which is exported or has child */
+		/*
+		 * Stop at VROOT (or zone root) node which is exported or has
+		 * child.
+		 */
 		if (TREE_ROOT(tnode) &&
 		    (TREE_EXPORTED(tnode) || tnode->tree_child_first != NULL))
 			break;
@@ -859,11 +882,13 @@ treeclimb_unexport(nfs_export_t *ne, struct exportinfo *exip)
 		if (TREE_ROOT(tnode) && !TREE_EXPORTED(tnode) &&
 		    tnode->tree_child_first == NULL) {
 			exp_kstats_delete(tnode->tree_exi->exi_kstats);
+
 			mutex_enter(&nfs_exi_id_lock);
 			avl_remove(&exi_id_tree, tnode->tree_exi);
 			mutex_exit(&nfs_exi_id_lock);
 			export_unlink(ne, tnode->tree_exi);
-			exi_rele(&tnode->tree_exi);
+			exi_rele(tnode->tree_exi);
+			tnode->tree_exi = NULL;
 		}
 
 		/* Release visible in parent's exportinfo */
@@ -893,13 +918,13 @@ treeclimb_unexport(nfs_export_t *ne, struct exportinfo *exip)
  * vnode.
  */
 vnode_t *
-untraverse(vnode_t *vp)
+untraverse(vnode_t *vp, vnode_t *zone_rootvp)
 {
 	vnode_t *tvp, *nextvp;
 
 	tvp = vp;
 	for (;;) {
-		if (! (tvp->v_flag & VROOT))
+		if (!(tvp->v_flag & VROOT) && !VN_CMP(tvp, zone_rootvp))
 			break;
 
 		/* lock vfs to prevent unmount of this vfs */
@@ -930,7 +955,7 @@ untraverse(vnode_t *vp)
 
 /*
  * Given an exportinfo, climb up to find the exportinfo for the VROOT
- * of the filesystem.
+ * (or zone root) of the filesystem.
  *
  * e.g.         /
  *              |
@@ -947,7 +972,7 @@ untraverse(vnode_t *vp)
  *
  * If d is shared, then c will be put into a's visible list.
  * Note: visible list is per filesystem and is attached to the
- * VROOT exportinfo.
+ * VROOT exportinfo.  Returned exi does NOT have a new hold.
  */
 struct exportinfo *
 get_root_export(struct exportinfo *exip)
@@ -979,12 +1004,15 @@ has_visible(struct exportinfo *exi, vnode_t *vp)
 	vp_is_exported = VN_CMP(vp, exi->exi_vp);
 
 	/*
-	 * An exported root vnode has a sub-dir shared if it has a visible list.
-	 * i.e. if it does not have a visible list, then there is no node in
-	 * this filesystem leads to any other shared node.
+	 * An exported root vnode has a sub-dir shared if it has a visible
+	 * list.  i.e. if it does not have a visible list, then there is no
+	 * node in this filesystem leads to any other shared node.
 	 */
-	if (vp_is_exported && (vp->v_flag & VROOT))
+	ASSERT3P(curzone->zone_id, ==, exi->exi_zoneid);
+	if (vp_is_exported &&
+	    ((vp->v_flag & VROOT) || VN_IS_CURZONEROOT(vp))) {
 		return (exi->exi_visible ? 1 : 0);
+	}
 
 	/*
 	 * Only the exportinfo of a fs root node may have a visible list.
@@ -1057,7 +1085,7 @@ nfs_visible(struct exportinfo *exi, vnode_t *vp, int *expseudo)
 	 * Only a PSEUDO node has a visible list or an exported VROOT
 	 * node may have a visible list.
 	 */
-	if (! PSEUDO(exi))
+	if (!PSEUDO(exi))
 		exi = get_root_export(exi);
 
 	/* Get the fid of the vnode */
@@ -1165,7 +1193,7 @@ nfs_visible_inode(struct exportinfo *exi, ino64_t ino,
 	 * Only a PSEUDO node has a visible list or an exported VROOT
 	 * node may have a visible list.
 	 */
-	if (! PSEUDO(exi))
+	if (!PSEUDO(exi))
 		exi = get_root_export(exi);
 
 	for (*visp = exi->exi_visible; *visp != NULL; *visp = (*visp)->vis_next)

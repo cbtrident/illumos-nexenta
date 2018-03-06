@@ -30,7 +30,7 @@
 
 /*
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/param.h>
@@ -120,8 +120,8 @@ static int rdma_setup_read_data4(READ4args *, READ4res *);
  *	sizeof nfsstat4 (4 bytes) +
  *	sizeof verifier4 (8 bytes) +
  *	sizeof entry4list bool (4 bytes) +
- *	sizeof entry4 	(36 bytes) +
- *	sizeof eof bool  (4 bytes)
+ *	sizeof entry4 (36 bytes) +
+ *	sizeof eof bool (4 bytes)
  *
  * RFS4_MINLEN_RDDIR_BUF: minimum length of buffer server will provide to
  *	VOP_READDIR.  Its value is the size of the maximum possible dirent
@@ -152,8 +152,6 @@ static int rdma_setup_read_data4(READ4args *, READ4res *);
  */
 #define	DIRENT64_TO_DIRCOUNT(dp) \
 	(3 * BYTES_PER_XDR_UNIT + DIRENT64_NAMELEN((dp)->d_reclen))
-
-zone_key_t	rfs4_zone_key;
 
 static sysid_t		lockt_sysid;	/* dummy sysid for all LOCKT calls */
 
@@ -535,9 +533,17 @@ static const fs_operation_def_t nfs4_wr_deleg_tmpl[] = {
 	NULL,			NULL
 };
 
-/* ARGSUSED */
-static void *
-rfs4_zone_init(zoneid_t zoneid)
+nfs4_srv_t *
+nfs4_get_srv(void)
+{
+	nfs_globals_t *ng = nfs_srv_getzg();
+	nfs4_srv_t *srv = ng->nfs4_srv;
+	ASSERT(srv != NULL);
+	return (srv);
+}
+
+void
+rfs4_srv_zone_init(nfs_globals_t *ng)
 {
 	nfs4_srv_t *nsrv4;
 	timespec32_t verf;
@@ -583,14 +589,15 @@ rfs4_zone_init(zoneid_t zoneid)
 	mutex_init(&nsrv4->servinst_lock, NULL, MUTEX_DEFAULT, NULL);
 	rw_init(&nsrv4->deleg_policy_lock, NULL, RW_DEFAULT, NULL);
 
-	return (nsrv4);
+	ng->nfs4_srv = nsrv4;
 }
 
-/* ARGSUSED */
-static void
-rfs4_zone_fini(zoneid_t zoneid, void *data)
+void
+rfs4_srv_zone_fini(nfs_globals_t *ng)
 {
-	nfs4_srv_t *nsrv4 = data;
+	nfs4_srv_t *nsrv4 = ng->nfs4_srv;
+
+	ng->nfs4_srv = NULL;
 
 	mutex_destroy(&nsrv4->deleg_lock);
 	mutex_destroy(&nsrv4->state_lock);
@@ -605,10 +612,7 @@ rfs4_srvrinit(void)
 {
 	extern void rfs4_attr_init();
 
-	zone_key_create(&rfs4_zone_key, rfs4_zone_init, NULL, rfs4_zone_fini);
-
 	rfs4_attr_init();
-
 
 	if (fem_create("deleg_rdops", nfs4_rd_deleg_tmpl, &deleg_rdops) != 0) {
 		rfs4_disable_delegation();
@@ -636,15 +640,13 @@ rfs4_srvrfini(void)
 
 	fem_free(deleg_rdops);
 	fem_free(deleg_wrops);
-
-	(void) zone_key_delete(rfs4_zone_key);
 }
 
 void
 rfs4_do_server_start(int server_upordown,
     int srv_delegation, int cluster_booted)
 {
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	/* Is this a warm start? */
 	if (server_upordown == NFS_SERVER_QUIESCED) {
@@ -850,8 +852,8 @@ rfs4_servinst_create(nfs4_srv_t *nsrv4, int start_grace,
 	    sizeof (rfs4_dss_path_t *), KM_SLEEP);
 
 	for (i = 0; i < dss_npaths; i++) {
-		/* CSTYLED */
-		sip->dss_paths[i] = rfs4_dss_newpath(nsrv4, sip, dss_paths[i], i);
+		sip->dss_paths[i] =
+		    rfs4_dss_newpath(nsrv4, sip, dss_paths[i], i);
 	}
 
 	mutex_enter(&nsrv4->servinst_lock);
@@ -889,9 +891,25 @@ rfs4_servinst_destroy_all(nfs4_srv_t *nsrv4)
 		rw_destroy(&sip->rwlock);
 		if (sip->oldstate)
 			kmem_free(sip->oldstate, sizeof (rfs4_oldstate_t));
-		if (sip->dss_paths)
+		if (sip->dss_paths) {
+			int i = sip->dss_npaths;
+
+			while (i > 0) {
+				i--;
+				if (sip->dss_paths[i] != NULL) {
+					char *path = sip->dss_paths[i]->path;
+
+					if (path != NULL) {
+						kmem_free(path,
+						    strlen(path) + 1);
+					}
+					kmem_free(sip->dss_paths[i],
+					    sizeof (rfs4_dss_path_t));
+				}
+			}
 			kmem_free(sip->dss_paths,
 			    sip->dss_npaths * sizeof (rfs4_dss_path_t *));
+		}
 		kmem_free(sip, sizeof (rfs4_servinst_t));
 #ifdef DEBUG
 		n++;
@@ -969,7 +987,7 @@ do_rfs4_op_secinfo(struct compound_state *cs, char *nm, SECINFO4res *resp)
 {
 	int error, different_export = 0;
 	vnode_t *dvp, *vp;
-	struct exportinfo *exi = NULL;
+	struct exportinfo *exi;
 	fid_t fid;
 	uint_t count, i;
 	secinfo4 *resok_val;
@@ -980,6 +998,8 @@ do_rfs4_op_secinfo(struct compound_state *cs, char *nm, SECINFO4res *resp)
 	nfs_export_t *ne = nfs_get_export();
 
 	dvp = cs->vp;
+	exi = cs->exi;
+	ASSERT(exi != NULL);
 	dotdot = (nm[0] == '.' && nm[1] == '.' && nm[2] == '\0');
 
 	/*
@@ -987,25 +1007,27 @@ do_rfs4_op_secinfo(struct compound_state *cs, char *nm, SECINFO4res *resp)
 	 * root of a filesystem, or above an export point.
 	 */
 	if (dotdot) {
+		vnode_t *zone_rootvp = ne->exi_root->exi_vp;
 
+		ASSERT3U(exi->exi_zoneid, ==, ne->exi_root->exi_zoneid);
 		/*
 		 * If dotdotting at the root of a filesystem, then
 		 * need to traverse back to the mounted-on filesystem
 		 * and do the dotdot lookup there.
 		 */
-		if (cs->vp->v_flag & VROOT) {
+		if ((dvp->v_flag & VROOT) || VN_CMP(dvp, zone_rootvp)) {
 
 			/*
 			 * If at the system root, then can
 			 * go up no further.
 			 */
-			if (VN_CMP(dvp, ZONE_ROOTVP()))
+			if (VN_CMP(dvp, zone_rootvp))
 				return (puterrno4(ENOENT));
 
 			/*
 			 * Traverse back to the mounted-on filesystem
 			 */
-			dvp = untraverse(cs->vp);
+			dvp = untraverse(dvp, zone_rootvp);
 
 			/*
 			 * Set the different_export flag so we remember
@@ -1019,7 +1041,7 @@ do_rfs4_op_secinfo(struct compound_state *cs, char *nm, SECINFO4res *resp)
 			 * If dotdotting above an export point then set
 			 * the different_export to get new export info.
 			 */
-			different_export = nfs_exported(cs->exi, cs->vp);
+			different_export = nfs_exported(exi, dvp);
 		}
 	}
 
@@ -1038,9 +1060,9 @@ do_rfs4_op_secinfo(struct compound_state *cs, char *nm, SECINFO4res *resp)
 	 * check whether this vnode is visible.
 	 */
 	if (!different_export &&
-	    (PSEUDO(cs->exi) || ! is_exported_sec(cs->nfsflavor, cs->exi) ||
+	    (PSEUDO(exi) || !is_exported_sec(cs->nfsflavor, exi) ||
 	    cs->access & CS_ACCESS_LIMITED)) {
-		if (! nfs_visible(cs->exi, vp, &different_export)) {
+		if (! nfs_visible(exi, vp, &different_export)) {
 			VN_RELE(vp);
 			return (puterrno4(ENOENT));
 		}
@@ -1082,6 +1104,7 @@ do_rfs4_op_secinfo(struct compound_state *cs, char *nm, SECINFO4res *resp)
 			return (puterrno4(error));
 		}
 
+		/* We'll need to reassign "exi". */
 		if (dotdot)
 			exi = nfs_vptoexi(NULL, vp, cs->cr, &walk, NULL, TRUE);
 		else
@@ -1102,8 +1125,6 @@ do_rfs4_op_secinfo(struct compound_state *cs, char *nm, SECINFO4res *resp)
 				return (puterrno4(EACCES));
 			}
 		}
-	} else {
-		exi = cs->exi;
 	}
 	ASSERT(exi != NULL);
 
@@ -1536,7 +1557,7 @@ rfs4_op_commit(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto out;
 	}
 
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nsrv4 = nfs4_get_srv();
 	*cs->statusp = resp->status = NFS4_OK;
 	resp->writeverf = nsrv4->write4verf;
 out:
@@ -2801,25 +2822,28 @@ do_rfs4_op_lookup(char *nm, struct svc_req *req, struct compound_state *cs)
 	 * export point.
 	 */
 	if (dotdot) {
+		vnode_t *zone_rootvp;
 
+		ASSERT(cs->exi != NULL);
+		zone_rootvp = cs->exi->exi_ne->exi_root->exi_vp;
 		/*
 		 * If dotdotting at the root of a filesystem, then
 		 * need to traverse back to the mounted-on filesystem
 		 * and do the dotdot lookup there.
 		 */
-		if (cs->vp->v_flag & VROOT) {
+		if ((cs->vp->v_flag & VROOT) || VN_CMP(cs->vp, zone_rootvp)) {
 
 			/*
 			 * If at the system root, then can
 			 * go up no further.
 			 */
-			if (VN_CMP(cs->vp, ZONE_ROOTVP()))
+			if (VN_CMP(cs->vp, zone_rootvp))
 				return (puterrno4(ENOENT));
 
 			/*
 			 * Traverse back to the mounted-on filesystem
 			 */
-			cs->vp = untraverse(cs->vp);
+			cs->vp = untraverse(cs->vp, zone_rootvp);
 
 			/*
 			 * Set the different_export flag so we remember
@@ -3977,10 +4001,12 @@ rfs4_op_readlink(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	if (is_referral) {
 		char *s;
 		size_t strsz;
+		kstat_named_t *stat =
+		    cs->exi->exi_ne->ne_globals->svstat[NFS_V4];
 
 		/* Get an artificial symlink based on a referral */
 		s = build_symlink(vp, cs->cr, &strsz);
-		global_svstat_ptr[4][NFS_REFERLINKS].value.ui64++;
+		stat[NFS_REFERLINKS].value.ui64++;
 		DTRACE_PROBE2(nfs4serv__func__referral__reflink,
 		    vnode_t *, vp, char *, s);
 		if (s == NULL)
@@ -5956,7 +5982,7 @@ rfs4_op_write(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto out;
 	}
 
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nsrv4 = nfs4_get_srv();
 	if (args->data_len == 0) {
 		*cs->statusp = resp->status = NFS4_OK;
 		resp->count = 0;
@@ -6083,20 +6109,25 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 {
 	uint_t i;
 	struct compound_state cs;
-	nfs4_srv_t *nsrv4;
-	nfs_export_t *ne = nfs_get_export();
+	nfs_globals_t *ng = nfs_srv_getzg();
+	nfs_export_t *ne = ng->nfs_export;
+	nfs4_srv_t *nsrv4 = ng->nfs4_srv;
 
 	if (rv != NULL)
 		*rv = 0;
 	rfs4_init_compound_state(&cs);
 	/*
-	 * Form a reply tag by copying over the reqeuest tag.
+	 * Form a reply tag by copying over the request tag.
 	 */
-	resp->tag.utf8string_val =
-	    kmem_alloc(args->tag.utf8string_len, KM_SLEEP);
 	resp->tag.utf8string_len = args->tag.utf8string_len;
-	bcopy(args->tag.utf8string_val, resp->tag.utf8string_val,
-	    resp->tag.utf8string_len);
+	if (args->tag.utf8string_len != 0) {
+		resp->tag.utf8string_val =
+		    kmem_alloc(args->tag.utf8string_len, KM_SLEEP);
+		bcopy(args->tag.utf8string_val, resp->tag.utf8string_val,
+		    resp->tag.utf8string_len);
+	} else {
+		resp->tag.utf8string_val = NULL;
+	}
 
 	cs.statusp = &resp->status;
 	cs.req = req;
@@ -6143,7 +6174,6 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 	    KM_SLEEP);
 
 	cs.basecr = cr;
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
 
 	DTRACE_NFSV4_2(compound__start, struct compound_state *, &cs,
 	    COMPOUND4args *, args);
@@ -6178,6 +6208,8 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 		nfs_argop4 *argop;
 		nfs_resop4 *resop;
 		uint_t op;
+		kstat_named_t *stat = ng->rfsproccnt[NFS_V4];
+		kstat_t **prociop = ng->rfsprociop[NFS_V4];
 
 		argop = &args->array[i];
 		resop = &resp->array[i];
@@ -6185,15 +6217,17 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 		op = (uint_t)resop->resop;
 
 		if (op < rfsv4disp_cnt) {
-			kstat_t *ksp = rfsprocio_v4_ptr[op];
+			kstat_t *ksp = NULL;
 			kstat_t *exi_ksp = NULL;
 
 			/*
 			 * Count the individual ops here; NULL and COMPOUND
 			 * are counted in common_dispatch()
 			 */
-			rfsproccnt_v4_ptr[op].value.ui64++;
+			stat[op].value.ui64++;
 
+			if (prociop != NULL)
+				ksp = prociop[op];
 			if (ksp != NULL) {
 				mutex_enter(ksp->ks_lock);
 				kstat_runq_enter(KSTAT_IO_PTR(ksp));
@@ -6268,7 +6302,7 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			 * day when XDR code doesn't verify v4 opcodes.
 			 */
 			op = OP_ILLEGAL;
-			rfsproccnt_v4_ptr[OP_ILLEGAL_IDX].value.ui64++;
+			stat[OP_ILLEGAL_IDX].value.ui64++;
 
 			rfs4_op_illegal(argop, resop, req, &cs);
 			cs.cont = FALSE;
@@ -6396,13 +6430,15 @@ void
 rfs4_compound_kstat_args(COMPOUND4args *args)
 {
 	int i;
+	nfs_globals_t *ng = nfs_srv_getzg();
+	kstat_t **prociop = ng->rfsprociop[NFS_V4];
 
 	for (i = 0; i < args->array_len; i++) {
 		uint_t op = (uint_t)args->array[i].argop;
 
 		if (op < rfsv4disp_cnt) {
-			kstat_t *ksp = rfsprocio_v4_ptr[op];
-
+			kstat_t *ksp = (prociop != NULL) ?
+			    prociop[op] : NULL;
 			if (ksp != NULL) {
 				mutex_enter(ksp->ks_lock);
 				KSTAT_IO_PTR(ksp)->nwritten +=
@@ -6429,13 +6465,16 @@ void
 rfs4_compound_kstat_res(COMPOUND4res *res)
 {
 	int i;
-	nfs_export_t *ne = nfs_get_export();
+	nfs_globals_t *ng = nfs_srv_getzg();
+	nfs_export_t *ne = ng->nfs_export;
+	kstat_t **prociop = ng->rfsprociop[NFS_V4];
 
 	for (i = 0; i < res->array_len; i++) {
 		uint_t op = (uint_t)res->array[i].resop;
 
 		if (op < rfsv4disp_cnt) {
-			kstat_t *ksp = rfsprocio_v4_ptr[op];
+			kstat_t *ksp = (prociop != NULL) ?
+			    prociop[op] : NULL;
 			struct exportinfo *exi = res->array[i].exi;
 
 			if (ksp != NULL) {
@@ -6463,7 +6502,7 @@ rfs4_compound_kstat_res(COMPOUND4res *res)
 					mutex_exit(exi_ksp->ks_lock);
 				}
 
-				exi_rele(&exi);
+				exi_rele(exi);
 				res->array[i].exi = NULL;
 				rw_exit(&ne->exported_lock);
 			}
@@ -7128,7 +7167,7 @@ rfs4_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 			 * We are writing over an existing file.
 			 * Check to see if we need to recall a delegation.
 			 */
-			nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+			nsrv4 = nfs4_get_srv();
 			rfs4_hold_deleg_policy(nsrv4);
 			if ((fp = rfs4_findfile(vp, NULL, &create)) != NULL) {
 				if (rfs4_check_delegated_byfp(FWRITE, fp,
@@ -8705,7 +8744,7 @@ rfs4_op_setclientid_confirm(nfs_argop4 *argop, nfs_resop4 *resop,
 	    struct compound_state *, cs,
 	    SETCLIENTID_CONFIRM4args *, args);
 
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nsrv4 = nfs4_get_srv();
 	*cs->statusp = res->status = NFS4_OK;
 
 	cp = rfs4_findclient_by_id(args->clientid, TRUE);

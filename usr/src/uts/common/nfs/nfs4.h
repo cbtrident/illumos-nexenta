@@ -25,7 +25,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef _NFS4_H
@@ -39,7 +39,6 @@
 
 #ifdef _KERNEL
 #include <nfs/nfs4_kprot.h>
-#include <nfs/nfs4_drc.h>
 #include <sys/nvpair.h>
 #else
 #include <rpcsvc/nfs4_prot.h>
@@ -123,7 +122,7 @@ typedef struct {		/* opaque entry type for later use */
 /*
  * NFSv4 server state databases
  *
- * Initilized when the module is loaded and used by NFSv4 state tables.
+ * Initialized when the module is loaded and used by NFSv4 state tables.
  * These kmem_cache free pools are used globally, the NFSv4 state tables
  * which make use of these kmem_cache free pools are per zone.
  */
@@ -806,7 +805,7 @@ typedef struct nfs4_srv {
 	 */
 	rfs4_dss_path_t	*dss_pathlist;
 	/* Duplicate request cache */
-	rfs4_drc_t	*nfs4_drc;
+	struct rfs4_drc	*nfs4_drc;
 	/* nfsv4 server start time */
 	time_t rfs4_start_time;
 	/* Used to serialize lookups of clientids */
@@ -899,7 +898,6 @@ extern void		rfs4_dss_readstate(nfs4_srv_t *, int, char **);
  * Various interfaces to manipulate the state structures introduced
  * above
  */
-extern	void		rfs4_clean_state_exi(struct exportinfo *exi);
 extern	void		rfs4_free_reply(nfs_resop4 *);
 extern	void		rfs4_copy_reply(nfs_resop4 *, nfs_resop4 *);
 
@@ -1455,8 +1453,6 @@ extern vtype_t	nf4_to_vt[];
 extern struct nfs4_ntov_map nfs4_ntov_map[];
 extern uint_t nfs4_ntov_map_size;
 
-extern kstat_named_t	*rfsproccnt_v4_ptr;
-extern kstat_t		**rfsprocio_v4_ptr;
 extern struct vfsops	*nfs4_vfsops;
 extern struct vnodeops	*nfs4_vnodeops;
 extern const struct	fs_operation_def nfs4_vnodeops_template[];
@@ -1495,10 +1491,13 @@ extern void	rfs4_compound_kstat_res(COMPOUND4res *);
 
 extern void	rfs4_srvrinit(void);
 extern void	rfs4_srvrfini(void);
+extern void	rfs4_srv_zone_init(nfs_globals_t *);
+extern void	rfs4_srv_zone_fini(nfs_globals_t *);
 extern void	rfs4_state_g_init(void);
 extern void	rfs4_state_zone_init(nfs4_srv_t *);
 extern void	rfs4_state_g_fini(void);
 extern void	rfs4_state_zone_fini(void);
+extern nfs4_srv_t *nfs4_get_srv(void);
 
 /*
  * NFSv4 auditing functions

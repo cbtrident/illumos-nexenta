@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN Inc.  All rights reserved.
  */
 
 #include <sys/systm.h>
@@ -32,6 +32,7 @@
 #include <sys/kmem.h>
 #include <sys/disp.h>
 #include <sys/id_space.h>
+#include <sys/atomic.h>
 #include <rpc/rpc.h>
 #include <nfs/nfs4.h>
 #include <nfs/nfs4_db_impl.h>
@@ -64,13 +65,7 @@ rfs4_dbe_getid(rfs4_dbe_t *entry)
 void
 rfs4_dbe_hold(rfs4_dbe_t *entry)
 {
-	if (!MUTEX_HELD(entry->dbe_lock)) {
-		mutex_enter(entry->dbe_lock);
-		entry->dbe_refcnt++;
-		mutex_exit(entry->dbe_lock);
-	} else {
-		entry->dbe_refcnt++;
-	}
+	atomic_inc_32(&entry->dbe_refcnt);
 }
 
 /*
@@ -79,14 +74,7 @@ rfs4_dbe_hold(rfs4_dbe_t *entry)
 void
 rfs4_dbe_rele_nolock(rfs4_dbe_t *entry)
 {
-	if (!MUTEX_HELD(entry->dbe_lock)) {
-		ASSERT(entry->dbe_refcnt > 0);
-		mutex_enter(entry->dbe_lock);
-		entry->dbe_refcnt--;
-		mutex_exit(entry->dbe_lock);
-	} else {
-		entry->dbe_refcnt--;
-	}
+	atomic_dec_32(&entry->dbe_refcnt);
 }
 
 
@@ -103,15 +91,8 @@ rfs4_dbe_refcnt(rfs4_dbe_t *entry)
 void
 rfs4_dbe_invalidate(rfs4_dbe_t *entry)
 {
-	if (!MUTEX_HELD(entry->dbe_lock)) {
-		mutex_enter(entry->dbe_lock);
-		entry->dbe_invalid = TRUE;
-		entry->dbe_skipsearch = TRUE;
-		mutex_exit(entry->dbe_lock);
-	} else {
-		entry->dbe_invalid = TRUE;
-		entry->dbe_skipsearch = TRUE;
-	}
+	entry->dbe_invalid = TRUE;
+	entry->dbe_skipsearch = TRUE;
 }
 
 /*
@@ -153,7 +134,7 @@ rfs4_dbe_rele(rfs4_dbe_t *entry)
 {
 	mutex_enter(entry->dbe_lock);
 	ASSERT(entry->dbe_refcnt > 1);
-	entry->dbe_refcnt--;
+	atomic_dec_32(&entry->dbe_refcnt);
 	entry->dbe_time_rele = gethrestime_sec();
 	mutex_exit(entry->dbe_lock);
 }
@@ -752,7 +733,7 @@ rfs4_cpr_callb(void *arg, int code)
 	rfs4_client_t *cp;
 	int i;
 
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 	rfs4_table_t *table = nsrv4->rfs4_client_tab;
 
 	/*
@@ -841,34 +822,41 @@ rfs4_dbe_reap(rfs4_table_t *table, time_t cache_time, uint32_t desired)
 
 	/* Walk the buckets looking for entries to release/destroy */
 	for (i = 0; i < table->dbt_len; i++) {
-		int retries = 0;
 		bp = &buckets[i];
 		do {
 			found = FALSE;
 			rw_enter(bp->dbk_lock, RW_READER);
 			for (l = bp->dbk_head; l; l = l->next) {
+				uint32_t refcnt;
+
 				entry = l->entry;
-				mutex_enter(entry->dbe_lock);
-				ASSERT(entry->dbe_refcnt != 0);
 				/*
 				 * Examine an entry.  Ref count of 1 means
 				 * that the only reference is for the hash
 				 * table reference.
 				 */
-				if (entry->dbe_refcnt != 1) {
-#ifdef DEBUG
-					rfs4_dbe_debug(entry);
-#endif
-					mutex_exit(entry->dbe_lock);
+				if (entry->dbe_refcnt != 1)
 					continue;
-				}
+				mutex_enter(entry->dbe_lock);
+				/*
+				 * Recheck the ref. count with the lock,
+				 * and if non-zero, leave things alone.
+				 */
 				if ((entry->dbe_refcnt == 1) &&
 				    (table->dbt_reaper_shutdown ||
 				    table->dbt_expiry == NULL ||
 				    (*table->dbt_expiry)(entry->dbe_data))) {
-					rfs4_dbe_rele_nolock(entry);
-					count++;
-					found = TRUE;
+					refcnt = atomic_dec_32_nv(&entry->dbe_refcnt);
+					if (refcnt == 0) {
+						count++;
+						found = TRUE;
+					} else {
+						/*
+						 * Lost race w/ incr.
+						 * Leave it as it was
+						 */
+						atomic_inc_32(&entry->dbe_refcnt);
+					}
 				}
 				mutex_exit(entry->dbe_lock);
 			}
@@ -883,16 +871,13 @@ rfs4_dbe_reap(rfs4_table_t *table, time_t cache_time, uint32_t desired)
 					t = l;
 					entry = t->entry;
 					l = l->next;
-					mutex_enter(entry->dbe_lock);
 					if (entry->dbe_refcnt == 0) {
 						DEQUEUE(bp->dbk_head, t);
-						mutex_exit(entry->dbe_lock);
 						t->next = NULL;
 						t->prev = NULL;
 						INVALIDATE_ADDR(t->entry);
 						rfs4_dbe_destroy(entry);
-					} else
-						mutex_exit(entry->dbe_lock);
+					}
 				}
 			}
 			rw_exit(bp->dbk_lock);
@@ -905,15 +890,13 @@ rfs4_dbe_reap(rfs4_table_t *table, time_t cache_time, uint32_t desired)
 			 * released.  This is only done in the
 			 * instance that the tables are being shut down.
 			 */
-			if (table->dbt_reaper_shutdown && bp->dbk_head != NULL) {
+			if (table->dbt_reaper_shutdown && bp->dbk_head != NULL)
 				delay(hz/100);
-				retries++;
-			}
 		/*
 		 * If this is a table shutdown, keep going until
 		 * everything is gone
 		 */
-		} while (table->dbt_reaper_shutdown && bp->dbk_head != NULL && retries < 5);
+		} while (table->dbt_reaper_shutdown && bp->dbk_head != NULL);
 
 		if (!table->dbt_reaper_shutdown && desired && count >= desired)
 			break;

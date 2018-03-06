@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2020 Nexenta by DDN Inc.  All rights reserved.
  */
 
 /* Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T */
@@ -560,13 +562,17 @@ cb_compound(CB_COMPOUND4args *args, CB_COMPOUND4res *resp, struct svc_req *req,
 	cs.cont = TRUE;
 
 	/*
-	 * Form a reply tag by copying over the reqeuest tag.
+	 * Form a reply tag by copying over the request tag.
 	 */
 	resp->tag.utf8string_len = args->tag.utf8string_len;
-	resp->tag.utf8string_val = kmem_alloc(resp->tag.utf8string_len,
-	    KM_SLEEP);
-	bcopy(args->tag.utf8string_val, resp->tag.utf8string_val,
-	    args->tag.utf8string_len);
+	if (args->tag.utf8string_len != 0) {
+		resp->tag.utf8string_val =
+		    kmem_alloc(resp->tag.utf8string_len, KM_SLEEP);
+		bcopy(args->tag.utf8string_val, resp->tag.utf8string_val,
+		    args->tag.utf8string_len);
+	} else {
+		resp->tag.utf8string_val = NULL;
+	}
 
 	/*
 	 * XXX for now, minorversion should be zero

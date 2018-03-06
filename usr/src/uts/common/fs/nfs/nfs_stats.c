@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Nexenta by DDN Inc.  All rights reserved.
  */
 
 /*
@@ -39,7 +39,7 @@
 
 /*
  * Key to retrieve per-zone data corresponding to NFS kstats consumed by
- * nfsstat(1m).
+ * nfsstat(1m).  These is only used for the client-side stats.
  */
 zone_key_t nfsstat_zone_key;
 
@@ -50,7 +50,8 @@ zone_key_t nfsstat_zone_key;
  */
 static kstat_named_t *
 nfsstat_zone_init_common(zoneid_t zoneid, const char *module, int vers,
-    const char *name, const kstat_named_t *template, size_t template_size)
+    const char *name, const kstat_named_t *template,
+    size_t template_size)
 {
 	kstat_t *ksp;
 	kstat_named_t *ks_data;
@@ -93,38 +94,22 @@ static const kstat_named_t svstat_tmpl[] = {
 	{ "referlinks",	KSTAT_DATA_UINT64 },
 };
 
-/* Points to the global zone server kstat data for all nfs versions */
-kstat_named_t *global_svstat_ptr[NFS_VERSMAX + 1];
-
 static void
 nfsstat_zone_init_server(zoneid_t zoneid, kstat_named_t *svstatp[])
 {
 	int vers;
 
-	/*
-	 * first two indexes of these arrays are not used, so initialize
-	 * to NULL
-	 */
-	svstatp[0] = NULL;
-	svstatp[1] = NULL;
-	global_svstat_ptr[0] = NULL;
-	global_svstat_ptr[0] = NULL;
-
 	for (vers = NFS_VERSION; vers <= NFS_V4; vers++) {
 		svstatp[vers] = nfsstat_zone_init_common(zoneid, "nfs", vers,
 		    "nfs_server", svstat_tmpl, sizeof (svstat_tmpl));
-		if (zoneid == GLOBAL_ZONEID)
-			global_svstat_ptr[vers] = svstatp[vers];
 	}
 }
 
 static void
-nfsstat_zone_fini_server(zoneid_t zoneid, kstat_named_t **svstatp)
+nfsstat_zone_fini_server(zoneid_t zoneid, kstat_named_t *svstatp[])
 {
 	int vers;
 	for (vers = NFS_VERSION; vers <= NFS_V4; vers++) {
-		if (zoneid == GLOBAL_ZONEID)
-			global_svstat_ptr[vers] = NULL;
 		nfsstat_zone_fini_common(zoneid, "nfs", vers, "nfs_server");
 		kmem_free(svstatp[vers], sizeof (svstat_tmpl));
 	}
@@ -239,46 +224,6 @@ static const kstat_named_t rfsproccnt_v2_tmpl[] = {
 	{ "statfs",	KSTAT_DATA_UINT64 }
 };
 
-#define	RFSPROCCNT_V2_COUNT	\
-	(sizeof (rfsproccnt_v2_tmpl) / sizeof (rfsproccnt_v2_tmpl[0]))
-
-kstat_named_t *rfsproccnt_v2_ptr;
-kstat_t **rfsprocio_v2_ptr;
-
-static void
-nfsstat_zone_init_rfsproc_v2(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	statsp->rfsproccnt_ptr = nfsstat_zone_init_common(zoneid, "nfs", 0,
-	    "rfsproccnt_v2", rfsproccnt_v2_tmpl, sizeof (rfsproccnt_v2_tmpl));
-
-	mutex_init(&statsp->rfsprocio_lock, NULL, MUTEX_DEFAULT, NULL);
-
-	statsp->rfsprocio_ptr = rfs_kstat_io_init(zoneid, "nfs", 0,
-	    "rfsprocio_v2", "rfsprocio_v2", rfsproccnt_v2_tmpl,
-	    RFSPROCCNT_V2_COUNT, &statsp->rfsprocio_lock);
-
-	if (zoneid == GLOBAL_ZONEID) {
-		rfsproccnt_v2_ptr = statsp->rfsproccnt_ptr;
-		rfsprocio_v2_ptr = statsp->rfsprocio_ptr;
-	}
-}
-
-static void
-nfsstat_zone_fini_rfsproc_v2(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	if (zoneid == GLOBAL_ZONEID) {
-		rfsproccnt_v2_ptr = NULL;
-		rfsprocio_v2_ptr = NULL;
-	}
-
-	nfsstat_zone_fini_common(zoneid, "nfs", 0, "rfsproccnt_v2");
-	kmem_free(statsp->rfsproccnt_ptr, sizeof (rfsproccnt_v2_tmpl));
-
-	rfs_kstat_io_free(statsp->rfsprocio_ptr, RFSPROCCNT_V2_COUNT);
-
-	mutex_destroy(&statsp->rfsprocio_lock);
-}
-
 /*
  * NFSv2 client ACL stats
  */
@@ -316,46 +261,6 @@ static const kstat_named_t aclproccnt_v2_tmpl[] = {
 	{ "access",	KSTAT_DATA_UINT64 },
 	{ "getxattrdir",	KSTAT_DATA_UINT64 }
 };
-
-#define	ACLPROCCNT_V2_COUNT	\
-	(sizeof (aclproccnt_v2_tmpl) / sizeof (aclproccnt_v2_tmpl[0]))
-
-kstat_named_t *aclproccnt_v2_ptr;
-kstat_t **aclprocio_v2_ptr;
-
-static void
-nfsstat_zone_init_aclproc_v2(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	statsp->aclproccnt_ptr = nfsstat_zone_init_common(zoneid, "nfs_acl", 0,
-	    "aclproccnt_v2", aclproccnt_v2_tmpl, sizeof (aclproccnt_v2_tmpl));
-
-	mutex_init(&statsp->aclprocio_lock, NULL, MUTEX_DEFAULT, NULL);
-
-	statsp->aclprocio_ptr = rfs_kstat_io_init(zoneid, "nfs_acl", 0,
-	    "aclprocio_v2", "aclprocio_v2", aclproccnt_v2_tmpl,
-	    ACLPROCCNT_V2_COUNT, &statsp->aclprocio_lock);
-
-	if (zoneid == GLOBAL_ZONEID) {
-		aclproccnt_v2_ptr = statsp->aclproccnt_ptr;
-		aclprocio_v2_ptr = statsp->aclprocio_ptr;
-	}
-}
-
-static void
-nfsstat_zone_fini_aclproc_v2(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	if (zoneid == GLOBAL_ZONEID) {
-		aclproccnt_v2_ptr = NULL;
-		aclprocio_v2_ptr = NULL;
-	}
-
-	nfsstat_zone_fini_common(zoneid, "nfs_acl", 0, "aclproccnt_v2");
-	kmem_free(statsp->aclproccnt_ptr, sizeof (aclproccnt_v2_tmpl));
-
-	rfs_kstat_io_free(statsp->aclprocio_ptr, ACLPROCCNT_V2_COUNT);
-
-	mutex_destroy(&statsp->aclprocio_lock);
-}
 
 /*
  * NFSv3 client stats
@@ -427,46 +332,6 @@ static const kstat_named_t rfsproccnt_v3_tmpl[] = {
 	{ "commit",	KSTAT_DATA_UINT64 }
 };
 
-#define	RFSPROCCNT_V3_COUNT	\
-	(sizeof (rfsproccnt_v3_tmpl) / sizeof (rfsproccnt_v3_tmpl[0]))
-
-kstat_named_t *rfsproccnt_v3_ptr;
-kstat_t **rfsprocio_v3_ptr;
-
-static void
-nfsstat_zone_init_rfsproc_v3(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	statsp->rfsproccnt_ptr = nfsstat_zone_init_common(zoneid, "nfs", 0,
-	    "rfsproccnt_v3", rfsproccnt_v3_tmpl, sizeof (rfsproccnt_v3_tmpl));
-
-	mutex_init(&statsp->rfsprocio_lock, NULL, MUTEX_DEFAULT, NULL);
-
-	statsp->rfsprocio_ptr = rfs_kstat_io_init(zoneid, "nfs", 0,
-	    "rfsprocio_v3", "rfsprocio_v3", rfsproccnt_v3_tmpl,
-	    RFSPROCCNT_V3_COUNT, &statsp->rfsprocio_lock);
-
-	if (zoneid == GLOBAL_ZONEID) {
-		rfsproccnt_v3_ptr = statsp->rfsproccnt_ptr;
-		rfsprocio_v3_ptr = statsp->rfsprocio_ptr;
-	}
-}
-
-static void
-nfsstat_zone_fini_rfsproc_v3(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	if (zoneid == GLOBAL_ZONEID) {
-		rfsproccnt_v3_ptr = NULL;
-		rfsprocio_v3_ptr = NULL;
-	}
-
-	nfsstat_zone_fini_common(zoneid, "nfs", 0, "rfsproccnt_v3");
-	kmem_free(statsp->rfsproccnt_ptr, sizeof (rfsproccnt_v3_tmpl));
-
-	rfs_kstat_io_free(statsp->rfsprocio_ptr, RFSPROCCNT_V3_COUNT);
-
-	mutex_destroy(&statsp->rfsprocio_lock);
-}
-
 /*
  * NFSv3 client ACL stats
  */
@@ -500,46 +365,6 @@ static const kstat_named_t aclproccnt_v3_tmpl[] = {
 	{ "setacl",	KSTAT_DATA_UINT64 },
 	{ "getxattrdir",	KSTAT_DATA_UINT64 }
 };
-
-#define	ACLPROCCNT_V3_COUNT	\
-	(sizeof (aclproccnt_v3_tmpl) / sizeof (aclproccnt_v3_tmpl[0]))
-
-kstat_named_t *aclproccnt_v3_ptr;
-kstat_t **aclprocio_v3_ptr;
-
-static void
-nfsstat_zone_init_aclproc_v3(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	statsp->aclproccnt_ptr = nfsstat_zone_init_common(zoneid, "nfs_acl", 0,
-	    "aclproccnt_v3", aclproccnt_v3_tmpl, sizeof (aclproccnt_v3_tmpl));
-
-	mutex_init(&statsp->aclprocio_lock, NULL, MUTEX_DEFAULT, NULL);
-
-	statsp->aclprocio_ptr = rfs_kstat_io_init(zoneid, "nfs_acl", 0,
-	    "aclprocio_v3", "aclprocio_v3", aclproccnt_v3_tmpl,
-	    ACLPROCCNT_V3_COUNT, &statsp->aclprocio_lock);
-
-	if (zoneid == GLOBAL_ZONEID) {
-		aclproccnt_v3_ptr = statsp->aclproccnt_ptr;
-		aclprocio_v3_ptr = statsp->aclprocio_ptr;
-	}
-}
-
-static void
-nfsstat_zone_fini_aclproc_v3(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	if (zoneid == GLOBAL_ZONEID) {
-		aclproccnt_v3_ptr = NULL;
-		aclprocio_v3_ptr = NULL;
-	}
-
-	nfsstat_zone_fini_common(zoneid, "nfs_acl", 0, "aclproccnt_v3");
-	kmem_free(statsp->aclproccnt_ptr, sizeof (aclproccnt_v3_tmpl));
-
-	rfs_kstat_io_free(statsp->aclprocio_ptr, ACLPROCCNT_V3_COUNT);
-
-	mutex_destroy(&statsp->aclprocio_lock);
-}
 
 /*
  * NFSv4 client stats
@@ -647,46 +472,6 @@ static const kstat_named_t rfsproccnt_v4_tmpl[] = {
 	{ "illegal",	KSTAT_DATA_UINT64 },
 };
 
-#define	RFSPROCCNT_V4_COUNT	\
-	(sizeof (rfsproccnt_v4_tmpl) / sizeof (rfsproccnt_v4_tmpl[0]))
-
-kstat_named_t *rfsproccnt_v4_ptr;
-kstat_t **rfsprocio_v4_ptr;
-
-static void
-nfsstat_zone_init_rfsproc_v4(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	statsp->rfsproccnt_ptr = nfsstat_zone_init_common(zoneid, "nfs", 0,
-	    "rfsproccnt_v4", rfsproccnt_v4_tmpl, sizeof (rfsproccnt_v4_tmpl));
-
-	mutex_init(&statsp->rfsprocio_lock, NULL, MUTEX_DEFAULT, NULL);
-
-	statsp->rfsprocio_ptr = rfs_kstat_io_init(zoneid, "nfs", 0,
-	    "rfsprocio_v4", "rfsprocio_v4", rfsproccnt_v4_tmpl,
-	    RFSPROCCNT_V4_COUNT, &statsp->rfsprocio_lock);
-
-	if (zoneid == GLOBAL_ZONEID) {
-		rfsproccnt_v4_ptr = statsp->rfsproccnt_ptr;
-		rfsprocio_v4_ptr = statsp->rfsprocio_ptr;
-	}
-}
-
-static void
-nfsstat_zone_fini_rfsproc_v4(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	if (zoneid == GLOBAL_ZONEID) {
-		rfsproccnt_v4_ptr = NULL;
-		rfsprocio_v4_ptr = NULL;
-	}
-
-	nfsstat_zone_fini_common(zoneid, "nfs", 0, "rfsproccnt_v4");
-	kmem_free(statsp->rfsproccnt_ptr, sizeof (rfsproccnt_v4_tmpl));
-
-	rfs_kstat_io_free(statsp->rfsprocio_ptr, RFSPROCCNT_V4_COUNT);
-
-	mutex_destroy(&statsp->rfsprocio_lock);
-}
-
 /*
  * NFSv4 client ACL stats
  */
@@ -710,39 +495,6 @@ nfsstat_zone_fini_aclreq_v4(zoneid_t zoneid, struct nfs_version_stats *statsp)
 	kmem_free(statsp->aclreqcnt_ptr, sizeof (aclreqcnt_v4_tmpl));
 }
 
-/*
- * NFSv4 server ACL stats
- */
-static const kstat_named_t aclproccnt_v4_tmpl[] = {
-	{ "null",	KSTAT_DATA_UINT64 },
-	{ "getacl",	KSTAT_DATA_UINT64 },
-	{ "setacl",	KSTAT_DATA_UINT64 }
-};
-
-kstat_named_t *aclproccnt_v4_ptr;
-
-static void
-nfsstat_zone_init_aclproc_v4(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	kstat_named_t *ks_data;
-
-	ks_data = nfsstat_zone_init_common(zoneid, "nfs_acl", 0,
-	    "aclproccnt_v4", aclproccnt_v4_tmpl,
-	    sizeof (aclproccnt_v4_tmpl));
-	statsp->aclproccnt_ptr = ks_data;
-	if (zoneid == GLOBAL_ZONEID)
-		aclproccnt_v4_ptr = ks_data;
-}
-
-static void
-nfsstat_zone_fini_aclproc_v4(zoneid_t zoneid, struct nfs_version_stats *statsp)
-{
-	if (zoneid == GLOBAL_ZONEID)
-		aclproccnt_v4_ptr = NULL;
-	nfsstat_zone_fini_common(zoneid, "nfs_acl", 0, "aclproccnt_v4");
-	kmem_free(statsp->aclproccnt_ptr, sizeof (aclproccnt_v4_tmpl));
-}
-
 
 /*
  * NFS server per share kstats (exp_kstats)
@@ -759,7 +511,8 @@ static const kstat_named_t rfsshr_tmpl[] = {
 	(sizeof (rfsshr_tmpl) / sizeof (rfsshr_tmpl[0]))
 
 /*
- * Zone initializer callback to setup the kstats.
+ * Zone initializer callback to setup the client kstats.
+ * See nfs_common.c client _init code.
  */
 void *
 nfsstat_zone_init(zoneid_t zoneid)
@@ -769,37 +522,27 @@ nfsstat_zone_init(zoneid_t zoneid)
 	nfs_stats_ptr = kmem_zalloc(sizeof (*nfs_stats_ptr), KM_SLEEP);
 
 	/*
-	 * Initialize all versions of the nfs_server
-	 */
-	nfsstat_zone_init_server(zoneid, nfs_stats_ptr->nfs_stats_svstat_ptr);
-
-	/*
 	 * Initialize v2 stats
 	 */
 	nfsstat_zone_init_rfsreq_v2(zoneid, &nfs_stats_ptr->nfs_stats_v2);
-	nfsstat_zone_init_rfsproc_v2(zoneid, &nfs_stats_ptr->nfs_stats_v2);
 	nfsstat_zone_init_aclreq_v2(zoneid, &nfs_stats_ptr->nfs_stats_v2);
-	nfsstat_zone_init_aclproc_v2(zoneid, &nfs_stats_ptr->nfs_stats_v2);
 	/*
 	 * Initialize v3 stats
 	 */
 	nfsstat_zone_init_rfsreq_v3(zoneid, &nfs_stats_ptr->nfs_stats_v3);
-	nfsstat_zone_init_rfsproc_v3(zoneid, &nfs_stats_ptr->nfs_stats_v3);
 	nfsstat_zone_init_aclreq_v3(zoneid, &nfs_stats_ptr->nfs_stats_v3);
-	nfsstat_zone_init_aclproc_v3(zoneid, &nfs_stats_ptr->nfs_stats_v3);
 	/*
 	 * Initialize v4 stats
 	 */
 	nfsstat_zone_init_rfsreq_v4(zoneid, &nfs_stats_ptr->nfs_stats_v4);
-	nfsstat_zone_init_rfsproc_v4(zoneid, &nfs_stats_ptr->nfs_stats_v4);
 	nfsstat_zone_init_aclreq_v4(zoneid, &nfs_stats_ptr->nfs_stats_v4);
-	nfsstat_zone_init_aclproc_v4(zoneid, &nfs_stats_ptr->nfs_stats_v4);
 
 	return (nfs_stats_ptr);
 }
 
 /*
- * Zone destructor callback to tear down the various kstats.
+ * Zone destructor callback to tear down the client kstats.
+ * See nfs_common.c client _fini code.
  */
 void
 nfsstat_zone_fini(zoneid_t zoneid, void *data)
@@ -807,31 +550,20 @@ nfsstat_zone_fini(zoneid_t zoneid, void *data)
 	struct nfs_stats *nfs_stats_ptr = data;
 
 	/*
-	 * Free nfs:0:nfs_server stats
-	 */
-	nfsstat_zone_fini_server(zoneid, nfs_stats_ptr->nfs_stats_svstat_ptr);
-
-	/*
 	 * Free v2 stats
 	 */
 	nfsstat_zone_fini_rfsreq_v2(zoneid, &nfs_stats_ptr->nfs_stats_v2);
-	nfsstat_zone_fini_rfsproc_v2(zoneid, &nfs_stats_ptr->nfs_stats_v2);
 	nfsstat_zone_fini_aclreq_v2(zoneid, &nfs_stats_ptr->nfs_stats_v2);
-	nfsstat_zone_fini_aclproc_v2(zoneid, &nfs_stats_ptr->nfs_stats_v2);
 	/*
 	 * Free v3 stats
 	 */
 	nfsstat_zone_fini_rfsreq_v3(zoneid, &nfs_stats_ptr->nfs_stats_v3);
-	nfsstat_zone_fini_rfsproc_v3(zoneid, &nfs_stats_ptr->nfs_stats_v3);
 	nfsstat_zone_fini_aclreq_v3(zoneid, &nfs_stats_ptr->nfs_stats_v3);
-	nfsstat_zone_fini_aclproc_v3(zoneid, &nfs_stats_ptr->nfs_stats_v3);
 	/*
 	 * Free v4 stats
 	 */
 	nfsstat_zone_fini_rfsreq_v4(zoneid, &nfs_stats_ptr->nfs_stats_v4);
-	nfsstat_zone_fini_rfsproc_v4(zoneid, &nfs_stats_ptr->nfs_stats_v4);
 	nfsstat_zone_fini_aclreq_v4(zoneid, &nfs_stats_ptr->nfs_stats_v4);
-	nfsstat_zone_fini_aclproc_v4(zoneid, &nfs_stats_ptr->nfs_stats_v4);
 
 	kmem_free(nfs_stats_ptr, sizeof (*nfs_stats_ptr));
 }
@@ -997,4 +729,120 @@ exp_kstats_v4(struct exp_kstats *exp_kstats, uint_t op)
 	default:
 		return (NULL);
 	}
+}
+
+void
+nfsstat_zone_init_procio(nfs_globals_t *ng, const char *module, int vers,
+	const char *name, const kstat_named_t *tmpl, size_t tmpl_size)
+{
+	kstat_t **kspp;
+	kmutex_t *lk;
+	uint_t cnt = tmpl_size / sizeof (*tmpl);
+	uint_t i;
+
+	ASSERT(vers <= NFS_VERSMAX);
+
+	/* Should be able to leave these "lock-less"! */
+	lk = &ng->rfsprociolk[vers];
+	mutex_init(lk, NULL, MUTEX_DEFAULT, NULL);
+
+	kspp = rfs_kstat_io_init(ng->nfs_zoneid, module, vers,
+	    name, name, tmpl, cnt, lk);
+	ng->rfsprociop[vers] = kspp;
+}
+
+void
+nfsstat_zone_fini_procio(nfs_globals_t *ng, int vers,
+	const kstat_named_t *tmpl, size_t tmpl_size)
+{
+	kstat_t **kspp;
+	uint_t cnt = tmpl_size / sizeof (*tmpl);
+
+	ASSERT(vers <= NFS_VERSMAX);
+
+	kspp = ng->rfsprociop[vers];
+	ng->rfsprociop[vers] = NULL;
+
+	if (kspp != NULL) {
+		rfs_kstat_io_free(kspp, cnt);
+	}
+	mutex_destroy(&ng->rfsprociolk[vers]);
+}
+
+/*
+ * Server side per-zone stat init
+ */
+void
+rfs_stat_zone_init(nfs_globals_t *ng)
+{
+	zoneid_t zoneid = ng->nfs_zoneid;
+
+	/* Initialize all versions of the nfs_server */
+	nfsstat_zone_init_server(zoneid, ng->svstat);
+
+	/* NFS proc counts */
+	ng->rfsproccnt[NFS_V2] = nfsstat_zone_init_common(zoneid, "nfs", 0,
+	    "rfsproccnt_v2", rfsproccnt_v2_tmpl, sizeof (rfsproccnt_v2_tmpl));
+
+	ng->rfsproccnt[NFS_V3] = nfsstat_zone_init_common(zoneid, "nfs", 0,
+	    "rfsproccnt_v3", rfsproccnt_v3_tmpl, sizeof (rfsproccnt_v3_tmpl));
+
+	ng->rfsproccnt[NFS_V4] = nfsstat_zone_init_common(zoneid, "nfs", 0,
+	    "rfsproccnt_v4", rfsproccnt_v4_tmpl, sizeof (rfsproccnt_v4_tmpl));
+
+	/* ACL proc counts */
+	ng->aclproccnt[NFS_V2] = nfsstat_zone_init_common(zoneid, "nfs_acl", 0,
+	    "aclproccnt_v2", aclproccnt_v2_tmpl, sizeof (aclproccnt_v2_tmpl));
+
+	ng->aclproccnt[NFS_V3] = nfsstat_zone_init_common(zoneid, "nfs_acl", 0,
+	    "aclproccnt_v3", aclproccnt_v3_tmpl, sizeof (aclproccnt_v3_tmpl));
+
+	/* NFS proc IO */
+	nfsstat_zone_init_procio(ng, "nfs", NFS_V2,
+	    "rfsprocio_v2", rfsproccnt_v2_tmpl, sizeof (rfsproccnt_v2_tmpl));
+
+	nfsstat_zone_init_procio(ng, "nfs", NFS_V3,
+	    "rfsprocio_v3", rfsproccnt_v3_tmpl, sizeof (rfsproccnt_v3_tmpl));
+
+	nfsstat_zone_init_procio(ng, "nfs", NFS_V4,
+	    "rfsprocio_v4", rfsproccnt_v4_tmpl, sizeof (rfsproccnt_v4_tmpl));
+}
+
+/*
+ * Server side per-zone stat fini
+ */
+void
+rfs_stat_zone_fini(nfs_globals_t *ng)
+{
+	zoneid_t zoneid = ng->nfs_zoneid;
+
+	/* Free nfs:x:nfs_server stats */
+	nfsstat_zone_fini_server(zoneid, ng->svstat);
+
+	/* NFS proc counts */
+	nfsstat_zone_fini_common(zoneid, "nfs", 0, "rfsproccnt_v2");
+	kmem_free(ng->rfsproccnt[NFS_V2], sizeof (rfsproccnt_v2_tmpl));
+
+	nfsstat_zone_fini_common(zoneid, "nfs", 0, "rfsproccnt_v3");
+	kmem_free(ng->rfsproccnt[NFS_V3], sizeof (rfsproccnt_v3_tmpl));
+
+	nfsstat_zone_fini_common(zoneid, "nfs", 0, "rfsproccnt_v4");
+	kmem_free(ng->rfsproccnt[NFS_V4], sizeof (rfsproccnt_v4_tmpl));
+
+	/* ACL proc counts */
+	nfsstat_zone_fini_common(zoneid, "nfs_acl", 0, "aclproccnt_v2");
+	kmem_free(ng->aclproccnt[NFS_V2], sizeof (aclproccnt_v2_tmpl));
+
+	nfsstat_zone_fini_common(zoneid, "nfs_acl", 0, "aclproccnt_v3");
+	kmem_free(ng->aclproccnt[NFS_V3], sizeof (aclproccnt_v3_tmpl));
+
+	/* NFS proc IO */
+	nfsstat_zone_fini_procio(ng, NFS_V2,
+	    rfsproccnt_v2_tmpl, sizeof (rfsproccnt_v2_tmpl));
+
+	nfsstat_zone_fini_procio(ng, NFS_V3,
+	    rfsproccnt_v3_tmpl, sizeof (rfsproccnt_v3_tmpl));
+
+	nfsstat_zone_fini_procio(ng, NFS_V4,
+	    rfsproccnt_v4_tmpl, sizeof (rfsproccnt_v4_tmpl));
 }

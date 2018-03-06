@@ -402,7 +402,7 @@ static rfs4_ss_pn_t *
 rfs4_ss_pnalloc(char *dir, char *leaf)
 {
 	rfs4_ss_pn_t *ss_pn;
-	int 	dir_len, leaf_len;
+	int dir_len, leaf_len;
 
 	/*
 	 * validate we have a resonable path
@@ -1135,7 +1135,7 @@ void
 rfs4_clear_client_state(struct nfs4clrst_args *clr)
 {
 	nfs4_srv_t *nsrv4;
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nsrv4 = nfs4_get_srv();
 	(void) rfs4_dbe_walk(nsrv4->rfs4_client_tab, rfs4_client_scrub, clr);
 }
 
@@ -1157,9 +1157,10 @@ rfs4_state_g_init()
 	/*
 	 * NFSv4 server state databases
 	 *
-	 * Initilized when the module is loaded and used by NFSv4 state tables.
-	 * These kmem_cache free pools are used globally, the NFSv4 state
-	 * tables which make use of these kmem_cache free pools are per zone.
+	 * Initialized when the module is loaded and used by NFSv4 state
+	 * tables.  These kmem_cache free pools are used globally, the NFSv4
+	 * state tables which make use of these kmem_cache free pools are per
+	 * zone.
 	 *
 	 * initialize the global kmem_cache free pools which will be used by
 	 * the NFSv4 state tables.
@@ -1257,17 +1258,20 @@ rfs4_state_zone_init(nfs4_srv_t *nsrv4)
 	if (curzone == global_zone && rfs4_dss_numnewpaths > 0) {
 		int i;
 		char **dss_allpaths = NULL;
-		dss_allpaths = kmem_alloc(sizeof (char *) * (rfs4_dss_numnewpaths + 1), KM_SLEEP);
+		dss_allpaths = kmem_alloc(sizeof (char *) *
+		    (rfs4_dss_numnewpaths + 1), KM_SLEEP);
 		/*
 		 * Add the default path into the list of paths for saving
 		 * state informantion.
 		 */
 		dss_allpaths[0] = dss_path;
-		for ( i = 0; i < rfs4_dss_numnewpaths; i++) {
+		for (i = 0; i < rfs4_dss_numnewpaths; i++) {
 			dss_allpaths[i + 1] = rfs4_dss_newpaths[i];
 		}
-		rfs4_servinst_create(nsrv4, start_grace, (rfs4_dss_numnewpaths + 1), dss_allpaths);
-		kmem_free(dss_allpaths, (sizeof (char *) * (rfs4_dss_numnewpaths + 1)));
+		rfs4_servinst_create(nsrv4, start_grace,
+		    (rfs4_dss_numnewpaths + 1), dss_allpaths);
+		kmem_free(dss_allpaths,
+		    (sizeof (char *) * (rfs4_dss_numnewpaths + 1)));
 	} else {
 		rfs4_servinst_create(nsrv4, start_grace, 1, &dss_path);
 	}
@@ -1494,9 +1498,17 @@ rfs4_state_zone_fini()
 {
 	rfs4_database_t *dbp;
 	nfs4_srv_t *nsrv4;
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nsrv4 = nfs4_get_srv();
 
 	rfs4_set_deleg_policy(nsrv4, SRV_NEVER_DELEGATE);
+
+	/*
+	 * Clean up any dangling stable storage structures BEFORE calling
+	 * rfs4_servinst_destroy_all() so there are no dangling structures
+	 * (i.e. the srvinsts are all cleared of danglers BEFORE they get
+	 * freed).
+	 */
+	rfs4_ss_fini(nsrv4);
 
 	mutex_enter(&nsrv4->state_lock);
 
@@ -1518,13 +1530,16 @@ rfs4_state_zone_fini()
 
 	/* First stop all of the reaper threads in the database */
 	rfs4_database_shutdown(dbp);
+
 	/*
-	 * XXX workaround
-	 * Skip destrying the state database yet just in case there
-	 * are unfinished operations depending on it.
+	 * WARNING: There may be consumers of the rfs4 database still
+	 * active as we destroy these.  IF that's the case, consider putting
+	 * some of their _zone_fini()-like functions into the zsd key as
+	 * ~~SHUTDOWN~~ functions instead of ~~DESTROY~~ functions.  We can
+	 * maintain some ordering guarantees better that way.
 	 */
 	/* Now destroy/release the database tables */
-	/* rfs4_database_destroy(dbp); */
+	rfs4_database_destroy(dbp);
 
 	/* Reset the cache timers for next time */
 	nsrv4->rfs4_client_cache_time = 0;
@@ -1536,9 +1551,6 @@ rfs4_state_zone_fini()
 	nsrv4->rfs4_deleg_state_cache_time = 0;
 
 	mutex_exit(&nsrv4->state_lock);
-
-	/* clean up any dangling stable storage structures */
-	rfs4_ss_fini(nsrv4);
 }
 
 typedef union {
@@ -1663,7 +1675,7 @@ rfs4_dss_remove_cpleaf(rfs4_client_t *cp)
 	 * from all server instances.
 	 */
 
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nsrv4 = nfs4_get_srv();
 	mutex_enter(&nsrv4->servinst_lock);
 	for (sip = nsrv4->nfs4_cur_servinst; sip != NULL; sip = sip->prev) {
 		/* remove the leaf file associated with this server instance */
@@ -1739,7 +1751,7 @@ rfs4_client_create(rfs4_entry_t u_entry, void *arg)
 	scid_confirm_verf *scvp;
 	nfs4_srv_t *nsrv4;
 
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nsrv4 = nfs4_get_srv();
 
 	/* Get a clientid to give to the client */
 	cidp = (cid *)&cp->rc_clientid;
@@ -1833,8 +1845,7 @@ rfs4_findclient(nfs_client_id4 *client, bool_t *create,	rfs4_client_t *oldcp)
 {
 	rfs4_client_t *cp;
 	nfs4_srv_t *nsrv4;
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
-
+	nsrv4 = nfs4_get_srv();
 
 	if (oldcp) {
 		rw_enter(&nsrv4->rfs4_findclient_lock, RW_WRITER);
@@ -1860,7 +1871,7 @@ rfs4_findclient_by_id(clientid4 clientid, bool_t find_unconfirmed)
 	rfs4_client_t *cp;
 	bool_t create = FALSE;
 	cid *cidp = (cid *)&clientid;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	/* If we're a cluster and the nodeid isn't right, short-circuit */
 	if (cluster_bootflags & CLUSTER_BOOTED && foreign_clientid(cidp))
@@ -1981,7 +1992,7 @@ rfs4_find_clntip(struct sockaddr *addr, bool_t *create)
 	rfs4_clntip_t *cp;
 	nfs4_srv_t *nsrv4;
 
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nsrv4 = nfs4_get_srv();
 
 	rw_enter(&nsrv4->rfs4_findclient_lock, RW_READER);
 
@@ -1998,7 +2009,7 @@ rfs4_invalidate_clntip(struct sockaddr *addr)
 {
 	rfs4_clntip_t *cp;
 	bool_t create = FALSE;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	rw_enter(&nsrv4->rfs4_findclient_lock, RW_READER);
 
@@ -2159,7 +2170,7 @@ rfs4_openowner_create(rfs4_entry_t u_entry, void *arg)
 	seqid4 seqid = argp->ro_open_seqid;
 	rfs4_client_t *cp;
 	bool_t create = FALSE;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	rw_enter(&nsrv4->rfs4_findclient_lock, RW_READER);
 
@@ -2209,7 +2220,7 @@ rfs4_findopenowner(open_owner4 *openowner, bool_t *create, seqid4 seqid)
 {
 	rfs4_openowner_t *oo;
 	rfs4_openowner_t arg;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	arg.ro_owner = *openowner;
 	arg.ro_open_seqid = seqid;
@@ -2357,7 +2368,7 @@ rfs4_lockowner_create(rfs4_entry_t u_entry, void *arg)
 	lock_owner4 *lockowner = (lock_owner4 *)arg;
 	rfs4_client_t *cp;
 	bool_t create = FALSE;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	rw_enter(&nsrv4->rfs4_findclient_lock, RW_READER);
 
@@ -2386,7 +2397,7 @@ rfs4_lockowner_t *
 rfs4_findlockowner(lock_owner4 *lockowner, bool_t *create)
 {
 	rfs4_lockowner_t *lo;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	/* CSTYLED */
 	lo = (rfs4_lockowner_t *)rfs4_dbsearch(nsrv4->rfs4_lockowner_idx, lockowner,
@@ -2400,7 +2411,7 @@ rfs4_findlockowner_by_pid(pid_t pid)
 {
 	rfs4_lockowner_t *lo;
 	bool_t create = FALSE;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	lo = (rfs4_lockowner_t *)rfs4_dbsearch(nsrv4->rfs4_lockowner_pid_idx,
 	    (void *)(uintptr_t)pid, &create, NULL, RFS4_DBS_VALID);
@@ -2513,7 +2524,7 @@ rfs4_findfile(vnode_t *vp, nfs_fh4 *fh, bool_t *create)
 {
 	rfs4_file_t *fp;
 	rfs4_fcreate_arg arg;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	arg.vp = vp;
 	arg.fh = fh;
@@ -2555,7 +2566,7 @@ rfs4_findfile_withlock(vnode_t *vp, nfs_fh4 *fh, bool_t *create)
 	rfs4_file_t *fp;
 	rfs4_fcreate_arg arg;
 	bool_t screate = *create;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	if (screate == FALSE) {
 		mutex_enter(&vp->v_vsd_lock);
@@ -2742,7 +2753,7 @@ rfs4_findlo_state(stateid_t *id, bool_t lock_fp)
 {
 	rfs4_lo_state_t *lsp;
 	bool_t create = FALSE;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	lsp = (rfs4_lo_state_t *)rfs4_dbsearch(nsrv4->rfs4_lo_state_idx, id,
 	    &create, NULL, RFS4_DBS_VALID);
@@ -2783,7 +2794,7 @@ rfs4_findlo_state_by_owner(rfs4_lockowner_t *lo, rfs4_state_t *sp,
 {
 	rfs4_lo_state_t *lsp;
 	rfs4_lo_state_t arg;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	arg.rls_locker = lo;
 	arg.rls_state = sp;
@@ -2800,7 +2811,7 @@ get_stateid(id_t eid)
 	stateid_t id;
 	nfs4_srv_t *nsrv4;
 
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nsrv4 = nfs4_get_srv();
 
 	id.bits.boottime = nsrv4->rfs4_start_time;
 	id.bits.ident = eid;
@@ -3058,7 +3069,7 @@ rfs4_deleg_state_t *
 rfs4_finddeleg(rfs4_state_t *sp, bool_t *create)
 {
 	rfs4_deleg_state_t ds, *dsp;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	ds.rds_client = sp->rs_owner->ro_client;
 	ds.rds_finfo = sp->rs_finfo;
@@ -3074,7 +3085,7 @@ rfs4_finddelegstate(stateid_t *id)
 {
 	rfs4_deleg_state_t *dsp;
 	bool_t create = FALSE;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	dsp = (rfs4_deleg_state_t *)rfs4_dbsearch(nsrv4->rfs4_deleg_state_idx,
 	    id, &create, NULL, RFS4_DBS_VALID);
@@ -3196,7 +3207,7 @@ rfs4_findstate_by_owner_file(rfs4_openowner_t *oo, rfs4_file_t *fp,
 {
 	rfs4_state_t *sp;
 	rfs4_state_t key;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	key.rs_owner = oo;
 	key.rs_finfo = fp;
@@ -3212,7 +3223,7 @@ static rfs4_state_t *
 rfs4_findstate_by_file(rfs4_file_t *fp)
 {
 	bool_t create = FALSE;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	return ((rfs4_state_t *)rfs4_dbsearch(nsrv4->rfs4_state_file_idx, fp,
 	    &create, fp, RFS4_DBS_VALID));
@@ -3265,7 +3276,7 @@ rfs4_findstate(stateid_t *id, rfs4_dbsearch_type_t find_invalid, bool_t lock_fp)
 {
 	rfs4_state_t *sp;
 	bool_t create = FALSE;
-	nfs4_srv_t *nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
 
 	sp = (rfs4_state_t *)rfs4_dbsearch(nsrv4->rfs4_state_idx, id,
 	    &create, NULL, find_invalid);
@@ -3337,7 +3348,7 @@ rfs4_check_clientid(clientid4 *cp, int setclid_confirm)
 	cid *cidp = (cid *) cp;
 	nfs4_srv_t *nsrv4;
 
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nsrv4 = nfs4_get_srv();
 
 	/*
 	 * If we are booted as a cluster node, check the embedded nodeid.
@@ -3369,7 +3380,7 @@ what_stateid_error(stateid_t *id, stateid_type_t type)
 {
 	nfs4_srv_t *nsrv4;
 
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	nsrv4 = nfs4_get_srv();
 
 	/* If we are booted as a cluster node, was stateid locally generated? */
 	if ((cluster_bootflags & CLUSTER_BOOTED) && foreign_stateid(id))
@@ -4112,13 +4123,21 @@ rfs4_file_walk_callout(rfs4_entry_t u_entry, void *e)
  * state in the server that refers to objects residing underneath this
  * particular export.  The ordering of the release is important.
  * Lock_owner, then state and then file.
+ *
+ * NFS zones note: nfs_export.c:unexport() calls this from a
+ * thread in the global zone for NGZ data structures, so we
+ * CANNOT use zone_getspecific anywhere in this code path.
  */
 void
-rfs4_clean_state_exi(struct exportinfo *exi)
+rfs4_clean_state_exi(nfs_export_t *ne, struct exportinfo *exi)
 {
+	nfs_globals_t *ng;
 	nfs4_srv_t *nsrv4;
 
-	nsrv4 = zone_getspecific(rfs4_zone_key, curzone);
+	ng = ne->ne_globals;
+	ASSERT(ng->nfs_zoneid == exi->exi_zoneid);
+	nsrv4 = ng->nfs4_srv;
+
 	mutex_enter(&nsrv4->state_lock);
 
 	if (nsrv4->nfs4_server_state == NULL) {
@@ -4126,11 +4145,11 @@ rfs4_clean_state_exi(struct exportinfo *exi)
 		return;
 	}
 
-	/* CSTYLED */
-	rfs4_dbe_walk(nsrv4->rfs4_lo_state_tab, rfs4_lo_state_walk_callout, exi);
+	rfs4_dbe_walk(nsrv4->rfs4_lo_state_tab,
+	    rfs4_lo_state_walk_callout, exi);
 	rfs4_dbe_walk(nsrv4->rfs4_state_tab, rfs4_state_walk_callout, exi);
-	/* CSTYLED */
-	rfs4_dbe_walk(nsrv4->rfs4_deleg_state_tab, rfs4_deleg_state_walk_callout, exi);
+	rfs4_dbe_walk(nsrv4->rfs4_deleg_state_tab,
+	    rfs4_deleg_state_walk_callout, exi);
 	rfs4_dbe_walk(nsrv4->rfs4_file_tab, rfs4_file_walk_callout, exi);
 
 	mutex_exit(&nsrv4->state_lock);

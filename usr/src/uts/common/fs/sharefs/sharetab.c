@@ -24,7 +24,8 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN Inc.  All rights reserved.
+ * Copyright 2020 Joyent, Inc.
  */
 
 #include <sys/types.h>
@@ -219,7 +220,7 @@ sharefs_add(sharetab_globals_t *sg, share_t *sh, sharefs_lens_t *shl)
 		    strlen(sh->sh_opts) + strlen(sh->sh_descr);
 	}
 
-	/* We need to account for field seperators and the EOL */
+	/* We need to account for field separators and the EOL */
 	sh->sh_size += 5;
 
 	/* Now walk down the hash table and add the new entry */
@@ -308,6 +309,27 @@ sharetab_zone_fini(zoneid_t zoneid, void *data)
 
 	rw_destroy(&sg->sharefs_lock);
 	rw_destroy(&sg->sharetab_lock);
+
+	/* ALL of the allocated things must be cleaned before we free sg. */
+	while (sg->sharefs_sharetab != NULL) {
+		int i;
+		sharetab_t *freeing = sg->sharefs_sharetab;
+
+		sg->sharefs_sharetab = freeing->s_next;
+		kmem_free(freeing->s_fstype, strlen(freeing->s_fstype) + 1);
+		for (i = 0; i < PKP_HASH_SIZE; i++) {
+			sharefs_hash_head_t *bucket;
+
+			bucket = &(freeing->s_buckets[i]);
+			while (bucket->ssh_sh != NULL) {
+				share_t *share = bucket->ssh_sh;
+
+				bucket->ssh_sh = share->sh_next;
+				sharefree(share, NULL);
+			}
+		}
+		kmem_free(freeing, sizeof (*freeing));
+	}
 
 	kmem_free(sg, sizeof (*sg));
 }
@@ -418,7 +440,7 @@ sharefs(enum sharefs_sys_op opcode, share_t *sh_in, uint32_t iMaxLen)
 {
 	/*
 	 * If we're in the global zone PRIV_SYS_CONFIG gives us the
-	 * priviledges needed to act on sharetab. However if we're in
+	 * privileges needed to act on sharetab. However if we're in
 	 * a non-global zone PRIV_SYS_CONFIG is not allowed. To work
 	 * around this issue PRIV_SYS_NFS is used in this case.
 	 *

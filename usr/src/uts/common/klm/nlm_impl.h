@@ -28,7 +28,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN Inc.  All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
@@ -460,6 +460,7 @@ struct nlm_globals {
 	int				cn_idle_tmo;		/* (z) */
 	int				grace_period;		/* (z) */
 	int				retrans_tmo;		/* (z) */
+	zoneid_t			nlm_zoneid;		/* (c) */
 	kmutex_t			clean_lock;		/* (c) */
 	TAILQ_ENTRY(nlm_globals)	nlm_link;		/* (g) */
 };

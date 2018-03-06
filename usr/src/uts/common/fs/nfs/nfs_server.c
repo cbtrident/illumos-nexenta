@@ -24,8 +24,7 @@
  * Copyright (c) 2011 Bayard G. Bell. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2017 Joyent Inc
- * Copyright 2018 Nexenta Systems, Inc.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -115,7 +114,10 @@ static struct modlinkage modlinkage = {
 	MODREV_1, (void *)&modlmisc, NULL
 };
 
-zone_key_t nfssrv_zone_key;
+zone_key_t	nfssrv_zone_key;
+list_t		nfssrv_globals_list;
+krwlock_t	nfssrv_globals_rwl;
+
 kmem_cache_t *nfs_xuio_cache;
 int nfs_loaned_buffers = 0;
 
@@ -192,17 +194,15 @@ static void	rfs4_server_start(nfs_globals_t *, int);
 static void	nullfree(void);
 static void	rfs_dispatch(struct svc_req *, SVCXPRT *);
 static void	acl_dispatch(struct svc_req *, SVCXPRT *);
-static void	common_dispatch(struct svc_req *, SVCXPRT *,
-		rpcvers_t, rpcvers_t, char *,
-		struct rpc_disptable *);
 static	int	checkauth(struct exportinfo *, struct svc_req *, cred_t *, int,
 		bool_t, bool_t *);
 static char	*client_name(struct svc_req *req);
 static char	*client_addr(struct svc_req *req, char *buf);
 extern	int	sec_svc_getcred(struct svc_req *, cred_t *cr, char **, int *);
 extern	bool_t	sec_svc_inrootlist(int, caddr_t, int, caddr_t *);
-static void	*nfs_srv_zone_init(zoneid_t);
-static void	nfs_srv_zone_fini(zoneid_t, void *);
+static void	*nfs_server_zone_init(zoneid_t);
+static void	nfs_server_zone_fini(zoneid_t, void *);
+static void	nfs_server_zone_shutdown(zoneid_t, void *);
 
 #define	NFSLOG_COPY_NETBUF(exi, xprt, nb)	{		\
 	(nb)->maxlen = (xprt)->xp_rtaddr.maxlen;		\
@@ -265,6 +265,26 @@ int rfs4_dispatch(struct rpcdisp *, struct svc_req *, SVCXPRT *, char *,
 bool_t rfs4_minorvers_mismatch(struct svc_req *, SVCXPRT *, void *);
 
 /*
+ * Stash NFS zone globals in TSD to avoid some lock contention
+ * from frequent zone_getspecific calls.
+ */
+static uint_t nfs_server_tsd_key;
+
+nfs_globals_t *
+nfs_srv_getzg(void)
+{
+	nfs_globals_t *ng;
+
+	ng = tsd_get(nfs_server_tsd_key);
+	if (ng == NULL) {
+		ng = zone_getspecific(nfssrv_zone_key, curzone);
+		(void) tsd_set(nfs_server_tsd_key, ng);
+	}
+
+	return (ng);
+}
+
+/*
  * Will be called at the point the server pool is being unregistered
  * from the pool list. From that point onwards, the pool is waiting
  * to be drained and as such the server state is stale and pertains
@@ -275,7 +295,7 @@ nfs_srv_offline(void)
 {
 	nfs_globals_t *ng;
 
-	ng = zone_getspecific(nfssrv_zone_key, curzone);
+	ng = nfs_srv_getzg();
 
 	mutex_enter(&ng->nfs_server_upordown_lock);
 	if (ng->nfs_server_upordown == NFS_SERVER_RUNNING) {
@@ -312,7 +332,7 @@ nfs_srv_quiesce_all(void)
 static void
 nfs_srv_shutdown_all(int quiesce)
 {
-	nfs_globals_t *ng = zone_getspecific(nfssrv_zone_key, curzone);
+	nfs_globals_t *ng = nfs_srv_getzg();
 
 	mutex_enter(&ng->nfs_server_upordown_lock);
 	if (quiesce) {
@@ -427,13 +447,17 @@ nfs_svc(struct nfs_svc_args *arg, model_t model)
 	model = model;		/* STRUCT macros don't always refer to it */
 #endif
 
-	ng = zone_getspecific(nfssrv_zone_key, curzone);
+	ng = nfs_srv_getzg();
 	STRUCT_SET_HANDLE(uap, model, arg);
 
 	/* Check privileges in nfssys() */
 
 	if ((fp = getf(STRUCT_FGET(uap, fd))) == NULL)
 		return (EBADF);
+
+	/* Setup global file handle in nfs_export */
+	if ((error = nfs_export_get_rootfh(ng)) != 0)
+		return (error);
 
 	/*
 	 * Set read buffer size to rsize
@@ -553,7 +577,7 @@ rdma_start(struct rdma_svc_args *rsa)
 		rsa->nfs_versmax = NFS_VERSMAX_DEFAULT;
 	}
 
-	ng = zone_getspecific(nfssrv_zone_key, curzone);
+	ng = nfs_srv_getzg();
 	ng->nfs_versmin = rsa->nfs_versmin;
 	ng->nfs_versmax = rsa->nfs_versmax;
 
@@ -1318,13 +1342,13 @@ union rfs_res {
 static struct rpc_disptable rfs_disptable[] = {
 	{sizeof (rfsdisptab_v2) / sizeof (rfsdisptab_v2[0]),
 	    rfscallnames_v2,
-	    &rfsproccnt_v2_ptr, &rfsprocio_v2_ptr, rfsdisptab_v2},
+	    rfsdisptab_v2},
 	{sizeof (rfsdisptab_v3) / sizeof (rfsdisptab_v3[0]),
 	    rfscallnames_v3,
-	    &rfsproccnt_v3_ptr, &rfsprocio_v3_ptr, rfsdisptab_v3},
+	    rfsdisptab_v3},
 	{sizeof (rfsdisptab_v4) / sizeof (rfsdisptab_v4[0]),
 	    rfscallnames_v4,
-	    &rfsproccnt_v4_ptr, &rfsprocio_v4_ptr, rfsdisptab_v4},
+	    rfsdisptab_v4},
 };
 
 /*
@@ -1510,7 +1534,6 @@ auth_tooweak(struct svc_req *req, char *res)
 	return (FALSE);
 }
 
-
 static void
 common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
     rpcvers_t max_vers, char *pgmname, struct rpc_disptable *disptable)
@@ -1546,14 +1569,25 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 	char **procnames;
 	char cbuf[INET6_ADDRSTRLEN];	/* to hold both IPv4 and IPv6 addr */
 	bool_t ro = FALSE;
+	nfs_globals_t *ng = nfs_srv_getzg();
+	nfs_export_t *ne = ng->nfs_export;
+	kstat_named_t *svstat, *procstat;
+	kstat_t **prociop;
 	kstat_t *ksp = NULL;
 	kstat_t *exi_ksp = NULL;
 	size_t pos;			/* request size */
 	size_t rlen;			/* reply size */
 	bool_t rsent = FALSE;		/* reply was sent successfully */
-	nfs_export_t *ne = nfs_get_export();
+
+	ASSERT(req->rq_prog == NFS_PROGRAM || req->rq_prog == NFS_ACL_PROGRAM);
 
 	vers = req->rq_vers;
+
+	svstat = ng->svstat[req->rq_vers];
+	procstat = (req->rq_prog == NFS_PROGRAM) ?
+	    ng->rfsproccnt[vers] : ng->aclproccnt[vers];
+	prociop = (req->rq_prog == NFS_PROGRAM) ?
+	    ng->rfsprociop[vers] : NULL;
 
 	if (vers < min_vers || vers > max_vers) {
 		svcerr_progvers(req->rq_xprt, min_vers, max_vers);
@@ -1570,9 +1604,10 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 		goto done;
 	}
 
-	(*(disptable[(int)vers].dis_proccntp))[which].value.ui64++;
+	procstat[which].value.ui64++;
 
-	ksp = (*(disptable[(int)vers].dis_prociop))[which];
+	if (prociop != NULL)
+		ksp = prociop[which];
 	if (ksp != NULL) {
 		mutex_enter(ksp->ks_lock);
 		kstat_runq_enter(KSTAT_IO_PTR(ksp));
@@ -1706,6 +1741,8 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 		exi = checkexport(fsid, xfid);
 
 		if (exi != NULL) {
+			publicfh_ok = PUBLICFH_CHECK(ne, disp, exi, fsid, xfid);
+
 			rw_enter(&ne->exported_lock, RW_READER);
 			exi_ksp = NULL;
 
@@ -1732,7 +1769,6 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 			}
 			rw_exit(&ne->exported_lock);
 
-			publicfh_ok = PUBLICFH_CHECK(ne, disp, exi, fsid, xfid);
 			/*
 			 * Don't allow non-V4 clients access
 			 * to pseudo exports
@@ -1902,7 +1938,7 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 	if (logging_enabled) {
 		nfslog_write_record(nfslog_exi, req, args, (char *)&res_buf,
 		    cr, &nb, nfslog_rec_id, NFSLOG_ONE_BUFFER);
-		exi_rele(&nfslog_exi);
+		exi_rele(nfslog_exi);
 		kmem_free((&nb)->buf, (&nb)->len);
 	}
 
@@ -1951,7 +1987,7 @@ done:
 	}
 
 	if (exi != NULL)
-		exi_rele(&exi);
+		exi_rele(exi);
 
 	if (ksp != NULL) {
 		mutex_enter(ksp->ks_lock);
@@ -1965,9 +2001,8 @@ done:
 		mutex_exit(ksp->ks_lock);
 	}
 
-	global_svstat_ptr[req->rq_vers][NFS_BADCALLS].value.ui64 += error;
-
-	global_svstat_ptr[req->rq_vers][NFS_CALLS].value.ui64++;
+	svstat[NFS_BADCALLS].value.ui64 += error;
+	svstat[NFS_CALLS].value.ui64++;
 }
 
 static void
@@ -2090,10 +2125,10 @@ static struct rpcdisp acldisptab_v3[] = {
 static struct rpc_disptable acl_disptable[] = {
 	{sizeof (acldisptab_v2) / sizeof (acldisptab_v2[0]),
 		aclcallnames_v2,
-		&aclproccnt_v2_ptr, &aclprocio_v2_ptr, acldisptab_v2},
+		acldisptab_v2},
 	{sizeof (acldisptab_v3) / sizeof (acldisptab_v3[0]),
 		aclcallnames_v3,
-		&aclproccnt_v3_ptr, &aclprocio_v3_ptr, acldisptab_v3},
+		acldisptab_v3},
 };
 
 static void
@@ -2690,16 +2725,26 @@ client_addr(struct svc_req *req, char *buf)
 void
 nfs_srvinit(void)
 {
-	/* NFS server zone-specific global variables */
-	zone_key_create(&nfssrv_zone_key, nfs_srv_zone_init,
-	    NULL, nfs_srv_zone_fini);
 
+	/* Truly global stuff in this module (not per zone) */
+	rw_init(&nfssrv_globals_rwl, NULL, RW_DEFAULT, NULL);
+	list_create(&nfssrv_globals_list, sizeof (nfs_globals_t),
+	    offsetof(nfs_globals_t, nfs_g_link));
+	tsd_create(&nfs_server_tsd_key, NULL);
+
+	/* The order here is important */
 	nfs_exportinit();
 	rfs_srvrinit();
 	rfs3_srvrinit();
 	rfs4_srvrinit();
 	nfsauth_init();
-	mutex_init(&nfs_vsd_stats_mx, NULL, MUTEX_DEFAULT, NULL);
+
+	/*
+	 * NFS server zone-specific global variables
+	 * Note the zone_init is called for the GZ here.
+	 */
+	zone_key_create(&nfssrv_zone_key, nfs_server_zone_init,
+	    nfs_server_zone_shutdown, nfs_server_zone_fini);
 }
 
 /*
@@ -2710,6 +2755,14 @@ nfs_srvinit(void)
 void
 nfs_srvfini(void)
 {
+
+	/*
+	 * NFS server zone-specific global variables
+	 * Note the zone_fini is called for the GZ here.
+	 */
+	(void) zone_key_delete(nfssrv_zone_key);
+
+	/* The order here is important (reverse of init) */
 	nfsauth_fini();
 	rfs4_srvrfini();
 	rfs3_srvrfini();
@@ -2751,6 +2804,106 @@ nfs_srv_zone_fini(zoneid_t zoneid, void *data)
 	nfs_globals_t *ng;
 
 	ng = (nfs_globals_t *)data;
+	mutex_destroy(&ng->nfs_server_upordown_lock);
+	cv_destroy(&ng->nfs_server_upordown_cv);
+	mutex_destroy(&ng->rdma_wait_mutex);
+	cv_destroy(&ng->rdma_wait_cv);
+
+	/* Truly global stuff in this module (not per zone) */
+	tsd_destroy(&nfs_server_tsd_key);
+	list_destroy(&nfssrv_globals_list);
+	rw_destroy(&nfssrv_globals_rwl);
+}
+
+/*
+ * Zone init, shutdown, fini functions for the NFS server
+ *
+ * This design is careful to create the entire hierarhcy of
+ * NFS server "globals" (including those created by various
+ * per-module *_zone_init functions, etc.) so that all these
+ * objects have exactly the same lifetime.
+ *
+ * These objects are also kept on a list for two reasons:
+ * 1: It makes finding these in mdb _much_ easier.
+ * 2: It allows operating across all zone globals for
+ *    functions like nfs_auth.c:exi_cache_reclaim
+ */
+static void *
+nfs_server_zone_init(zoneid_t zoneid)
+{
+	nfs_globals_t *ng;
+
+	ng = kmem_zalloc(sizeof (*ng), KM_SLEEP);
+
+	ng->nfs_versmin = NFS_VERSMIN_DEFAULT;
+	ng->nfs_versmax = NFS_VERSMAX_DEFAULT;
+
+	/* Init the stuff to control start/stop */
+	ng->nfs_server_upordown = NFS_SERVER_STOPPED;
+	mutex_init(&ng->nfs_server_upordown_lock, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&ng->nfs_server_upordown_cv, NULL, CV_DEFAULT, NULL);
+	mutex_init(&ng->rdma_wait_mutex, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&ng->rdma_wait_cv, NULL, CV_DEFAULT, NULL);
+
+	ng->nfs_zoneid = zoneid;
+
+	/*
+	 * Order here is important.
+	 * export init must precede srv init calls.
+	 */
+	nfs_export_zone_init(ng);
+	rfs_stat_zone_init(ng);
+	rfs_srv_zone_init(ng);
+	rfs3_srv_zone_init(ng);
+	rfs4_srv_zone_init(ng);
+	nfsauth_zone_init(ng);
+
+	rw_enter(&nfssrv_globals_rwl, RW_WRITER);
+	list_insert_tail(&nfssrv_globals_list, ng);
+	rw_exit(&nfssrv_globals_rwl);
+
+	return (ng);
+}
+
+/* ARGSUSED */
+static void
+nfs_server_zone_shutdown(zoneid_t zoneid, void *data)
+{
+	nfs_globals_t *ng;
+
+	ng = (nfs_globals_t *)data;
+
+	/*
+	 * Order is like _fini, but only
+	 * some modules need this hook.
+	 */
+	nfsauth_zone_shutdown(ng);
+	nfs_export_zone_shutdown(ng);
+}
+
+/* ARGSUSED */
+static void
+nfs_server_zone_fini(zoneid_t zoneid, void *data)
+{
+	nfs_globals_t *ng;
+
+	ng = (nfs_globals_t *)data;
+
+	rw_enter(&nfssrv_globals_rwl, RW_WRITER);
+	list_remove(&nfssrv_globals_list, ng);
+	rw_exit(&nfssrv_globals_rwl);
+
+	/*
+	 * Order here is important.
+	 * reverse order from init
+	 */
+	nfsauth_zone_fini(ng);
+	rfs4_srv_zone_fini(ng);
+	rfs3_srv_zone_fini(ng);
+	rfs_srv_zone_fini(ng);
+	rfs_stat_zone_fini(ng);
+	nfs_export_zone_fini(ng);
+
 	mutex_destroy(&ng->nfs_server_upordown_lock);
 	cv_destroy(&ng->nfs_server_upordown_cv);
 	mutex_destroy(&ng->rdma_wait_mutex);
@@ -2998,12 +3151,14 @@ rfs_publicfh_mclookup(char *p, vnode_t *dvp, cred_t *cr, vnode_t **vpp,
 
 			/* Release the reference on the old exi value */
 			ASSERT(*exi != NULL);
-			exi_rele(exi);
+			exi_rele(*exi);
+			*exi = NULL;
 
 			if (error = nfs_check_vpexi(mc_dvp, *vpp, kcred, exi)) {
 				VN_RELE(*vpp);
 				goto publicfh_done;
 			}
+			/* Have a new *exi */
 		}
 	}
 
@@ -3029,6 +3184,8 @@ rfs_pathname(
 	char namebuf[TYPICALMAXPATHLEN];
 	struct pathname pn;
 	int error;
+
+	ASSERT3U(crgetzoneid(cr), ==, curzone->zone_id);
 
 	/*
 	 * If pathname starts with '/', then set startdvp to root.

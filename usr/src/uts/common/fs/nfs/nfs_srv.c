@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 1994, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 /*
@@ -29,9 +30,8 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2019 Nexenta by DDN Inc.  All rights reserved.
+ * Copyright 2020 Nexenta by DDN Inc.  All rights reserved.
  */
 
 #include <sys/param.h>
@@ -98,8 +98,6 @@ typedef struct nfs_srv {
 static int	sattr_to_vattr(struct nfssattr *, struct vattr *);
 static void	acl_perm(struct vnode *, struct exportinfo *, struct vattr *,
 			cred_t *);
-static void	*rfs_zone_init(zoneid_t zoneid);
-static void	rfs_zone_fini(zoneid_t zoneid, void *data);
 
 
 /*
@@ -112,7 +110,15 @@ static void	rfs_zone_fini(zoneid_t zoneid, void *data);
 #define	IFSOCK		0140000		/* socket */
 
 u_longlong_t nfs2_srv_caller_id;
-static zone_key_t rfs_zone_key;
+
+static nfs_srv_t *
+nfs_get_srv(void)
+{
+	nfs_globals_t *ng = nfs_srv_getzg();
+	nfs_srv_t *srv = ng->nfs_srv;
+	ASSERT(srv != NULL);
+	return (srv);
+}
 
 /*
  * Get file attributes.
@@ -385,11 +391,11 @@ rfs_cross_mnt(vnode_t **vpp, struct exportinfo **exip)
 		 * or "nohide" is not set
 		 */
 		if (exi != NULL)
-			exi_rele(&exi);
+			exi_rele(exi);
 		VN_RELE(vp);
 	} else {
 		/* go to submount */
-		exi_rele(exip);
+		exi_rele(*exip);
 		*exip = exi;
 
 		VN_RELE(*vpp);
@@ -409,18 +415,21 @@ rfs_climb_crossmnt(vnode_t **dvpp, struct exportinfo **exip, cred_t *cr)
 {
 	struct exportinfo *exi;
 	vnode_t *dvp = *dvpp;
+	vnode_t *zone_rootvp;
 
-	ASSERT(dvp->v_flag & VROOT);
+	zone_rootvp = (*exip)->exi_ne->exi_root->exi_vp;
+	ASSERT((dvp->v_flag & VROOT) || VN_CMP(zone_rootvp, dvp));
 
 	VN_HOLD(dvp);
-	dvp = untraverse(dvp);
+	dvp = untraverse(dvp, zone_rootvp);
 	exi = nfs_vptoexi(NULL, dvp, cr, NULL, NULL, FALSE);
 	if (exi == NULL) {
 		VN_RELE(dvp);
 		return (-1);
 	}
 
-	exi_rele(exip);
+	ASSERT3U(exi->exi_zoneid, ==, (*exip)->exi_zoneid);
+	exi_rele(*exip);
 	*exip = exi;
 	VN_RELE(*dvpp);
 	*dvpp = dvp;
@@ -480,6 +489,7 @@ rfs_lookup(struct nfsdiropargs *da, struct nfsdiropres *dr,
 	}
 
 	exi_hold(exi);
+	ASSERT3U(exi->exi_zoneid, ==, curzone->zone_id);
 
 	/*
 	 * Not allow lookup beyond root.
@@ -489,7 +499,7 @@ rfs_lookup(struct nfsdiropargs *da, struct nfsdiropres *dr,
 	if (strcmp(da->da_name, "..") == 0 &&
 	    EQFID(&exi->exi_fid, (fid_t *)&fhp->fh_len)) {
 		if ((exi->exi_export.ex_flags & EX_NOHIDE) &&
-		    (dvp->v_flag & VROOT)) {
+		    ((dvp->v_flag & VROOT) || VN_IS_CURZONEROOT(dvp))) {
 			/*
 			 * special case for ".." and 'nohide'exported root
 			 */
@@ -524,7 +534,8 @@ rfs_lookup(struct nfsdiropargs *da, struct nfsdiropres *dr,
 	if (PUBLIC_FH2(fhp)) {
 		publicfh_flag = TRUE;
 
-		exi_rele(&exi);
+		exi_rele(exi);
+		exi = NULL;
 
 		error = rfs_publicfh_mclookup(name, dvp, cr, &vp, &exi,
 		    &sec);
@@ -574,7 +585,7 @@ out:
 	VN_RELE(dvp);
 
 	if (exi != NULL)
-		exi_rele(&exi);
+		exi_rele(exi);
 
 	/*
 	 * If it's public fh, no 0x81, and client's flavor is
@@ -658,10 +669,12 @@ rfs_readlink(fhandle_t *fhp, struct nfsrdlnres *rl, struct exportinfo *exi,
 	if (is_referral) {
 		char *s;
 		size_t strsz;
+		kstat_named_t *stat =
+		    exi->exi_ne->ne_globals->svstat[NFS_VERSION];
 
 		/* Get an artificial symlink based on a referral */
 		s = build_symlink(vp, cr, &strsz);
-		global_svstat_ptr[2][NFS_REFERLINKS].value.ui64++;
+		stat[NFS_REFERLINKS].value.ui64++;
 		DTRACE_PROBE2(nfs2serv__func__referral__reflink,
 		    vnode_t *, vp, char *, s);
 		if (s == NULL)
@@ -1314,7 +1327,8 @@ rfs_write(struct nfswriteargs *wa, struct nfsattrstat *ns,
 	caller_context_t ct;
 	nfs_srv_t *nsrv;
 
-	nsrv = zone_getspecific(rfs_zone_key, curzone);
+	ASSERT(exi == NULL || exi->exi_zoneid == curzone->zone_id);
+	nsrv = nfs_get_srv();
 	if (!nsrv->write_async) {
 		rfs_write_sync(wa, ns, exi, req, cr, ro);
 		return;
@@ -2181,7 +2195,7 @@ rfs_rename(struct nfsrnmargs *args, enum nfsstat *status,
 		*status = NFSERR_ACCES;
 		return;
 	}
-	exi_rele(&to_exi);
+	exi_rele(to_exi);
 
 	if (to_exi != exi) {
 		VN_RELE(fromvp);
@@ -2334,7 +2348,7 @@ rfs_link(struct nfslinkargs *args, enum nfsstat *status,
 		*status = NFSERR_ACCES;
 		return;
 	}
-	exi_rele(&to_exi);
+	exi_rele(to_exi);
 
 	if (to_exi != exi) {
 		VN_RELE(fromvp);
@@ -3223,7 +3237,6 @@ void
 rfs_srvrinit(void)
 {
 	nfs2_srv_caller_id = fs_new_caller_id();
-	zone_key_create(&rfs_zone_key, rfs_zone_init, NULL, rfs_zone_fini);
 }
 
 void
@@ -3232,8 +3245,8 @@ rfs_srvrfini(void)
 }
 
 /* ARGSUSED */
-static void *
-rfs_zone_init(zoneid_t zoneid)
+void
+rfs_srv_zone_init(nfs_globals_t *ng)
 {
 	nfs_srv_t *ns;
 
@@ -3242,16 +3255,17 @@ rfs_zone_init(zoneid_t zoneid)
 	mutex_init(&ns->async_write_lock, NULL, MUTEX_DEFAULT, NULL);
 	ns->write_async = 1;
 
-	return (ns);
+	ng->nfs_srv = ns;
 }
 
 /* ARGSUSED */
-static void
-rfs_zone_fini(zoneid_t zoneid, void *data)
+void
+rfs_srv_zone_fini(nfs_globals_t *ng)
 {
-	nfs_srv_t *ns;
+	nfs_srv_t *ns = ng->nfs_srv;
 
-	ns = (nfs_srv_t *)data;
+	ng->nfs_srv = NULL;
+
 	mutex_destroy(&ns->async_write_lock);
 	kmem_free(ns, sizeof (*ns));
 }

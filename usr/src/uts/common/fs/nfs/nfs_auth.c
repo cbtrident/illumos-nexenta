@@ -26,6 +26,7 @@
 /*
  * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2015 Joyent, Inc.  All rights reserved.
  */
 
 #include <sys/param.h>
@@ -58,11 +59,10 @@
 static struct kmem_cache *exi_cache_handle;
 static struct kmem_cache *auditc_handle;
 static void exi_cache_reclaim(void *);
-static void audit_cache_reclaim(void *);
+static void exi_cache_reclaim_zone(nfs_globals_t *);
 static void exi_cache_trim(struct exportinfo *exi);
-static void *nfsauth_zone_init(zoneid_t);
-static void nfsauth_zone_shutdown(zoneid_t zoneid, void *data);
-static void nfsauth_zone_fini(zoneid_t, void *);
+static void audit_cache_reclaim(void *);
+static void audit_cache_reclaim_zone(nfs_globals_t *);
 
 void nfsauth_cache_free(avl_tree_t **);
 
@@ -75,6 +75,8 @@ volatile uint_t nfsauth_cache_refresh;
 volatile uint_t nfsauth_cache_reclaim;
 volatile uint_t exi_cache_auth_reclaim_failed;
 volatile uint_t exi_cache_clnt_reclaim_failed;
+volatile uint_t audit_cache_auth_reclaim_failed;
+volatile uint_t audit_cache_clnt_reclaim_failed;
 
 /*
  * The lifetime of an auth cache entry:
@@ -193,14 +195,24 @@ static int nfsaudit_cache_compar(const void *, const void *);
 
 static bool_t nfsauth_cache_getauditinfo(struct svc_req *, cred_t *,
     au_id_t *, au_mask_t *, au_asid_t *);
-static zone_key_t	nfsauth_zone_key;
+
+static void audit_cache_trim(nfsauth_globals_t *);
+
+static nfsauth_globals_t *
+nfsauth_get_zg(void)
+{
+	nfs_globals_t *ng = nfs_srv_getzg();
+	nfsauth_globals_t *nag = ng->nfs_auth;
+	ASSERT(nag != NULL);
+	return (nag);
+}
 
 void
 mountd_args(uint_t did)
 {
 	nfsauth_globals_t *nag;
 
-	nag = zone_getspecific(nfsauth_zone_key, curzone);
+	nag = nfsauth_get_zg();
 	mutex_enter(&nag->mountd_lock);
 	if (nag->mountd_dh != NULL)
 		door_ki_rele(nag->mountd_dh);
@@ -211,9 +223,6 @@ mountd_args(uint_t did)
 void
 nfsauth_init(void)
 {
-	zone_key_create(&nfsauth_zone_key, nfsauth_zone_init,
-	    nfsauth_zone_shutdown, nfsauth_zone_fini);
-
 	exi_cache_handle = kmem_cache_create("exi_cache_handle",
 	    sizeof (struct auth_cache), 0, NULL, NULL,
 	    exi_cache_reclaim, NULL, NULL, 0);
@@ -230,9 +239,8 @@ nfsauth_fini(void)
 	kmem_cache_destroy(auditc_handle);
 }
 
-/*ARGSUSED*/
-static void *
-nfsauth_zone_init(zoneid_t zoneid)
+void
+nfsauth_zone_init(nfs_globals_t *ng)
 {
 	nfsauth_globals_t *nag;
 	int i;
@@ -258,15 +266,14 @@ nfsauth_zone_init(zoneid_t zoneid)
 	}
 	rw_init(&nag->audit_lock, NULL, RW_DEFAULT, NULL);
 
-	return (nag);
+	ng->nfs_auth = nag;
 }
 
-/*ARGSUSED*/
-static void
-nfsauth_zone_shutdown(zoneid_t zoneid, void *data)
+void
+nfsauth_zone_shutdown(nfs_globals_t *ng)
 {
 	refreshq_exi_node_t	*ren;
-	nfsauth_globals_t	*nag = data;
+	nfsauth_globals_t	*nag = ng->nfs_auth;
 
 	/* Prevent the nfsauth_refresh_thread from getting new work */
 	mutex_enter(&nag->refreshq_lock);
@@ -303,17 +310,18 @@ nfsauth_zone_shutdown(zoneid_t zoneid, void *data)
 
 		list_destroy(&ren->ren_authlist);
 		if (ren->ren_exi != NULL)
-			exi_rele(&ren->ren_exi);
+			exi_rele(ren->ren_exi);
 		kmem_free(ren, sizeof (*ren));
 	}
 }
 
-/*ARGSUSED*/
-static void
-nfsauth_zone_fini(zoneid_t zoneid, void *data)
+void
+nfsauth_zone_fini(nfs_globals_t *ng)
 {
-	nfsauth_globals_t *nag = data;
+	nfsauth_globals_t *nag = ng->nfs_auth;
 	int i;
+
+	ng->nfs_auth = NULL;
 
 	nfsauth_cache_free(nag->audit_cache);
 	rw_destroy(&nag->audit_lock);
@@ -326,6 +334,11 @@ nfsauth_zone_fini(zoneid_t zoneid, void *data)
 	cv_destroy(&nag->refreshq_cv);
 	mutex_destroy(&nag->refreshq_lock);
 	mutex_destroy(&nag->mountd_lock);
+
+	/* Extra cleanup. */
+	if (nag->mountd_dh != NULL)
+		door_ki_rele(nag->mountd_dh);
+
 	kmem_free(nag, sizeof (*nag));
 }
 
@@ -994,8 +1007,8 @@ nfsauth_refresh_thread(nfsauth_globals_t *nag)
 		}
 
 		list_destroy(&ren->ren_authlist);
-		if (exi != NULL)
-			exi_rele(&ren->ren_exi);
+		if (ren->ren_exi != NULL)
+			exi_rele(ren->ren_exi);
 		kmem_free(ren, sizeof (refreshq_exi_node_t));
 	}
 
@@ -1106,8 +1119,12 @@ find_auth_clnt(struct exportinfo *exi, struct svc_req *req,
 
 	claddr = svc_getrpccaller(req->rq_xprt);
 	*addr = *claddr;
-	addr->buf = kmem_alloc(addr->maxlen, KM_SLEEP);
-	bcopy(claddr->buf, addr->buf, claddr->len);
+	if (claddr->len != 0) {
+		addr->buf = kmem_alloc(addr->maxlen, KM_SLEEP);
+		bcopy(claddr->buf, addr->buf, claddr->len);
+	} else {
+		addr->buf = NULL;
+	}
 
 	SVC_GETADDRMASK(req->rq_xprt, SVC_TATTR_ADDRMASK, (void **)&taddrmask);
 	ASSERT(taddrmask != NULL);
@@ -1202,8 +1219,8 @@ nfsauth_cache_get(struct exportinfo *exi, struct svc_req *req, int flavor,
 	avl_index_t		where;	/* used for avl_find()/avl_insert() */
 
 	ASSERT(cr != NULL);
-
-	nag = zone_getspecific(nfsauth_zone_key, curzone);
+	ASSERT3P(curzone->zone_id, ==, exi->exi_zoneid);
+	nag = nfsauth_get_zg();
 
 	if ((c = find_auth_clnt(exi, req, nag, &addr)) == NULL)
 		goto retrieve;
@@ -1509,7 +1526,7 @@ nfsauth_cache_getauditinfo(struct svc_req *req,
 
 	ASSERT(cr != NULL);
 
-	nag = zone_getspecific(nfsauth_zone_key, curzone);
+	nag = nfsauth_get_zg();
 
 	if ((c = find_auth_clnt(NULL, req, nag, &addr)) == NULL)
 		goto retrieve;
@@ -2013,18 +2030,41 @@ nfsauth_cache_free(avl_tree_t **cache)
 }
 
 /*
- * Called by the kernel memory allocator when
- * memory is low. Free unused cache entries.
- * If that's not enough, the VM system will
- * call again for some more.
+ * Called by the kernel memory allocator when memory is low.
+ * Free unused cache entries. If that's not enough, the VM system
+ * will call again for some more.
+ *
+ * This needs to operate on all zones, so we take a reader lock
+ * on the list of zones and walk the list.  This is OK here
+ * becuase exi_cache_trim doesn't block or cause new objects
+ * to be allocated (basically just frees lots of stuff).
+ * Use care if nfssrv_globals_rwl is taken as reader in any
+ * other cases because it will block nfs_server_zone_init
+ * and nfs_server_zone_fini, which enter as writer.
  */
 /*ARGSUSED*/
 void
 exi_cache_reclaim(void *cdrarg)
 {
+	nfs_globals_t *ng;
+
+	rw_enter(&nfssrv_globals_rwl, RW_READER);
+
+	ng = list_head(&nfssrv_globals_list);
+	while (ng != NULL) {
+		exi_cache_reclaim_zone(ng);
+		ng = list_next(&nfssrv_globals_list, ng);
+	}
+
+	rw_exit(&nfssrv_globals_rwl);
+}
+
+static void
+exi_cache_reclaim_zone(nfs_globals_t *ng)
+{
 	int i;
 	struct exportinfo *exi;
-	nfs_export_t *ne = nfs_get_export();
+	nfs_export_t *ne = ng->nfs_export;
 
 	rw_enter(&ne->exported_lock, RW_READER);
 
@@ -2038,85 +2078,21 @@ exi_cache_reclaim(void *cdrarg)
 	atomic_inc_uint(&nfsauth_cache_reclaim);
 }
 
-/*ARGSUSED*/
-void
-audit_cache_reclaim(void *cdrarg)
-{
-	exi_cache_trim(NULL);
-	atomic_inc_uint(&nfsauth_cache_reclaim);
-}
-
-static int
-exi_cache_trim_entry(kmutex_t *alock, time_t *atime, auth_state_t *astate,
-    avl_tree_t *atree, void *node, time_t *stale_time)
-{
-	ASSERT(*astate != NFS_AUTH_INVALID);
-
-	mutex_enter(alock);
-
-	/*
-	 * We won't trim recently used and/or WAITING
-	 * entries.
-	 */
-	if (*atime > *stale_time ||
-	    *astate == NFS_AUTH_WAITING) {
-		mutex_exit(alock);
-		return (0);
-	}
-
-	DTRACE_PROBE1(nfsauth__debug__trim__state,
-	    auth_state_t, *astate);
-
-	/*
-	 * STALE and REFRESHING entries needs to be
-	 * marked INVALID only because they are
-	 * referenced by some other structures or
-	 * threads.  They will be freed later.
-	 */
-	if (*astate == NFS_AUTH_STALE ||
-	    *astate == NFS_AUTH_REFRESHING) {
-		*astate = NFS_AUTH_INVALID;
-		mutex_exit(alock);
-
-		avl_remove(atree, node);
-		return (0);
-	} else {
-		mutex_exit(alock);
-
-		avl_remove(atree, node);
-		return (1);
-	}
-}
-
-void
+static void
 exi_cache_trim(struct exportinfo *exi)
 {
 	struct auth_cache_clnt *c;
 	struct auth_cache_clnt *nextc;
 	struct auth_cache *p;
 	struct auth_cache *next;
-	struct audit_cache *ap;
-	struct audit_cache *anext;
 	int i;
 	time_t stale_time;
 	avl_tree_t *tree;
-	avl_tree_t **cache;
-	krwlock_t *rwlock;
-
-	if (exi != NULL) {
-		cache = exi->exi_cache;
-		rwlock = &exi->exi_cache_lock;
-	} else {
-		nfsauth_globals_t *nag = zone_getspecific(nfsauth_zone_key,
-		    curzone);
-		cache = nag->audit_cache;
-		rwlock = &nag->audit_lock;
-	}
 
 	for (i = 0; i < AUTH_TABLESIZE; i++) {
-		tree = cache[i];
+		tree = exi->exi_cache[i];
 		stale_time = gethrestime_sec() - NFSAUTH_CACHE_TRIM;
-		rw_enter(rwlock, RW_READER);
+		rw_enter(&exi->exi_cache_lock, RW_READER);
 
 		/*
 		 * Free entries that have not been
@@ -2129,37 +2105,55 @@ exi_cache_trim(struct exportinfo *exi)
 			 */
 			if (rw_tryenter(&c->authc_lock, RW_WRITER) == 0) {
 				exi_cache_auth_reclaim_failed++;
-				rw_exit(rwlock);
+				rw_exit(&exi->exi_cache_lock);
 				return;
 			}
 
-			if (exi != NULL) {
-				for (p = avl_first(&c->authc_tree); p != NULL;
-				    p = next) {
-					next = AVL_NEXT(&c->authc_tree, p);
+			for (p = avl_first(&c->authc_tree); p != NULL;
+			    p = next) {
+				next = AVL_NEXT(&c->authc_tree, p);
 
-					if (exi_cache_trim_entry(&p->auth_lock,
-					    &p->auth_time, &p->auth_state,
-					    &c->authc_tree, p, &stale_time))
-						nfsauth_free_node(p);
+				ASSERT(p->auth_state != NFS_AUTH_INVALID);
+
+				mutex_enter(&p->auth_lock);
+
+				/*
+				 * We won't trim recently used and/or WAITING
+				 * entries.
+				 */
+				if (p->auth_time > stale_time ||
+				    p->auth_state == NFS_AUTH_WAITING) {
+					mutex_exit(&p->auth_lock);
+					continue;
 				}
-			} else {
-				for (ap = avl_first(&c->authc_tree); ap != NULL;
-				    ap = anext) {
-					anext = AVL_NEXT(&c->authc_tree, ap);
 
-					if (exi_cache_trim_entry(
-					    &ap->audit_lock, &ap->audit_time,
-					    &ap->audit_state, &c->authc_tree,
-					    ap, &stale_time))
-						nfsaudit_free_node(ap);
+				DTRACE_PROBE1(nfsauth__debug__trim__state,
+				    auth_state_t, p->auth_state);
+
+				/*
+				 * STALE and REFRESHING entries needs to be
+				 * marked INVALID only because they are
+				 * referenced by some other structures or
+				 * threads.  They will be freed later.
+				 */
+				if (p->auth_state == NFS_AUTH_STALE ||
+				    p->auth_state == NFS_AUTH_REFRESHING) {
+					p->auth_state = NFS_AUTH_INVALID;
+					mutex_exit(&p->auth_lock);
+
+					avl_remove(&c->authc_tree, p);
+				} else {
+					mutex_exit(&p->auth_lock);
+
+					avl_remove(&c->authc_tree, p);
+					nfsauth_free_node(p);
 				}
 			}
 			rw_exit(&c->authc_lock);
 		}
 
-		if (rw_tryupgrade(rwlock) == 0) {
-			rw_exit(rwlock);
+		if (rw_tryupgrade(&exi->exi_cache_lock) == 0) {
+			rw_exit(&exi->exi_cache_lock);
 			exi_cache_clnt_reclaim_failed++;
 			continue;
 		}
@@ -2175,6 +2169,133 @@ exi_cache_trim(struct exportinfo *exi)
 			nfsauth_free_clnt_node(c);
 		}
 
-		rw_exit(rwlock);
+		rw_exit(&exi->exi_cache_lock);
+	}
+}
+
+/*
+ * Like exi_cache_reclaim(), with similar restrictions about
+ * not assuming we're operating on the "current" zone.
+ */
+static void
+audit_cache_reclaim(void *cdrarg)
+{
+	nfs_globals_t *ng;
+
+	rw_enter(&nfssrv_globals_rwl, RW_READER);
+
+	ng = list_head(&nfssrv_globals_list);
+	while (ng != NULL) {
+		audit_cache_reclaim_zone(ng);
+		ng = list_next(&nfssrv_globals_list, ng);
+	}
+
+	rw_exit(&nfssrv_globals_rwl);
+}
+
+static void
+audit_cache_reclaim_zone(nfs_globals_t *ng)
+{
+	audit_cache_trim(ng->nfs_auth);
+	atomic_inc_uint(&nfsauth_cache_reclaim);
+}
+
+/*
+ * Note: this is called for ALL zones, and MUST NOT use
+ * zone_getspecific() or otherwise make any assumptions
+ * about what zone the calling thread belongs to.
+ */
+static void
+audit_cache_trim(nfsauth_globals_t *nag)
+{
+	struct auth_cache_clnt *c;
+	struct auth_cache_clnt *nextc;
+	struct audit_cache *p;
+	struct audit_cache *next;
+	int i;
+	time_t stale_time;
+	avl_tree_t *tree;
+
+	for (i = 0; i < AUTH_TABLESIZE; i++) {
+		tree = nag->audit_cache[i];
+		stale_time = gethrestime_sec() - NFSAUTH_CACHE_TRIM;
+		rw_enter(&nag->audit_lock, RW_READER);
+
+		/*
+		 * Free entries that have not been
+		 * used for NFSAUTH_CACHE_TRIM seconds.
+		 */
+		for (c = avl_first(tree); c != NULL; c = AVL_NEXT(tree, c)) {
+			/*
+			 * We are being called by the kmem subsystem to reclaim
+			 * memory so don't block if we can't get the lock.
+			 */
+			if (rw_tryenter(&c->authc_lock, RW_WRITER) == 0) {
+				audit_cache_auth_reclaim_failed++;
+				rw_exit(&nag->audit_lock);
+				return;
+			}
+
+			for (p = avl_first(&c->authc_tree); p != NULL;
+			    p = next) {
+				next = AVL_NEXT(&c->authc_tree, p);
+
+				ASSERT(p->audit_state != NFS_AUTH_INVALID);
+
+				mutex_enter(&p->audit_lock);
+
+				/*
+				 * We won't trim recently used and/or WAITING
+				 * entries.
+				 */
+				if (p->audit_time > stale_time ||
+				    p->audit_state == NFS_AUTH_WAITING) {
+					mutex_exit(&p->audit_lock);
+					continue;
+				}
+
+				DTRACE_PROBE1(nfsaudit__debug__trim__state,
+				    audit_state_t, p->audit_state);
+
+				/*
+				 * STALE and REFRESHING entries needs to be
+				 * marked INVALID only because they are
+				 * referenced by some other structures or
+				 * threads.  They will be freed later.
+				 */
+				if (p->audit_state == NFS_AUTH_STALE ||
+				    p->audit_state == NFS_AUTH_REFRESHING) {
+					p->audit_state = NFS_AUTH_INVALID;
+					mutex_exit(&p->audit_lock);
+
+					avl_remove(&c->authc_tree, p);
+				} else {
+					mutex_exit(&p->audit_lock);
+
+					avl_remove(&c->authc_tree, p);
+					nfsaudit_free_node(p);
+				}
+			}
+			rw_exit(&c->authc_lock);
+		}
+
+		if (rw_tryupgrade(&nag->audit_lock) == 0) {
+			rw_exit(&nag->audit_lock);
+			audit_cache_clnt_reclaim_failed++;
+			continue;
+		}
+
+		for (c = avl_first(tree); c != NULL; c = nextc) {
+			nextc = AVL_NEXT(tree, c);
+
+			if (avl_is_empty(&c->authc_tree) == B_FALSE)
+				continue;
+
+			avl_remove(tree, c);
+
+			nfsauth_free_clnt_node(c);
+		}
+
+		rw_exit(&nag->audit_lock);
 	}
 }
