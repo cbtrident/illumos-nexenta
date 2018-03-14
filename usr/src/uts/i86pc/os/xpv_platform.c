@@ -99,7 +99,6 @@ xen_hvm_init(void)
 	xen_capabilities_info_t caps;
 	pfn_t pfn;
 	uint64_t msrval, val;
-	extern int apix_enable;
 
 	if (xen_hvm_inited != 0)
 		return;
@@ -195,9 +194,7 @@ xen_hvm_init(void)
 
 	if (xen_bits < 0)
 		return;
-#ifdef __amd64
 	ASSERT(xen_bits == 64);
-#endif
 
 	/*
 	 * Allocate space for the shared_info page and tell Xen where it
@@ -218,9 +215,6 @@ xen_hvm_init(void)
 	 */
 	if (xen_major > 3 || (xen_major == 3 && xen_minor >= 3))
 		xen_hvm_features |= XEN_HVM_TLBFLUSH;
-
-	/* FIXME Disable apix for the time being */
-	apix_enable = 0;
 }
 
 /*

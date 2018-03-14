@@ -278,6 +278,7 @@ ddi_intr_alloc(dev_info_t *dip, ddi_intr_handle_t *h_array, int type, int inum,
 	tmp_hdl.ih_scratch1 = count;
 	tmp_hdl.ih_scratch2 = (void *)(uintptr_t)behavior;
 	tmp_hdl.ih_dip = dip;
+	tmp_hdl.ih_irq = -1;
 
 	if (i_ddi_intr_ops(dip, dip, DDI_INTROP_ALLOC,
 	    &tmp_hdl, (void *)actualp) != DDI_SUCCESS) {
@@ -324,10 +325,14 @@ ddi_intr_alloc(dev_info_t *dip, ddi_intr_handle_t *h_array, int type, int inum,
 		hdlp->ih_state = DDI_IHDL_STATE_ALLOC;
 		hdlp->ih_dip = dip;
 		hdlp->ih_inum = i;
+		hdlp->ih_irq = -1;
 		i_ddi_alloc_intr_phdl(hdlp);
-		if (type & DDI_INTR_TYPE_FIXED)
+		if (type & DDI_INTR_TYPE_FIXED) {
+			if (tmp_hdl.ih_irq != -1)
+				hdlp->ih_irq = tmp_hdl.ih_irq;
 			i_ddi_set_intr_handle(dip, hdlp->ih_inum,
 			    (ddi_intr_handle_t)hdlp);
+		}
 
 		DDI_INTR_APIDBG((CE_CONT, "ddi_intr_alloc: hdlp = 0x%p\n",
 		    (void *)h_array[i]));

@@ -950,6 +950,8 @@ pci_enable_intr(dev_info_t *pdip, dev_info_t *rdip,
 	    hdlp->ih_cb_arg2, &ihdl_plat_datap->ip_ticks, rdip))
 		return (DDI_FAILURE);
 
+	if (hdlp->ih_irq == -1)
+		hdlp->ih_irq = irq;
 	hdlp->ih_vector = irq;
 
 	return (DDI_SUCCESS);

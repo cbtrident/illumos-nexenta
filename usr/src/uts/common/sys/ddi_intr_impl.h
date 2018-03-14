@@ -79,6 +79,7 @@ typedef struct ddi_intr_handle_impl {
 	uint16_t		ih_type;	/* interrupt type being used */
 	ushort_t		ih_inum;	/* interrupt number */
 	uint32_t		ih_vector;	/* vector number */
+	int			ih_irq;		/* irq number */
 	uint16_t		ih_ver;		/* Version */
 	uint_t			ih_state;	/* interrupt handle state */
 	uint_t			ih_cap;		/* interrupt capabilities */

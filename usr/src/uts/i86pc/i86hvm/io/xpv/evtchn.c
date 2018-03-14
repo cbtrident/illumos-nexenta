@@ -375,7 +375,7 @@ ec_init(void)
 	}
 
 	/* Tell the hypervisor which interrupt we're waiting on. */
-	evtchn_callback_irq = ((ddi_intr_handle_impl_t *)*ihp)->ih_vector;
+	evtchn_callback_irq = ((ddi_intr_handle_impl_t *)*ihp)->ih_irq;
 
 	if (set_hvm_callback(evtchn_callback_irq) != 0) {
 		cmn_err(CE_WARN, "Couldn't register evtchn callback");

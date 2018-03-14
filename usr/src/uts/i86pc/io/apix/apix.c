@@ -114,7 +114,8 @@ static int apix_intx_get_shared(int irqno);
 static void apix_intx_set_shared(int irqno, int delta);
 static apix_vector_t *apix_intx_xlate_vector(dev_info_t *, int,
     struct intrspec *);
-static int apix_intx_alloc_vector(dev_info_t *, int, struct intrspec *);
+static int apix_intx_alloc_vector(dev_info_t *, ddi_intr_handle_impl_t *,
+    struct intrspec *);
 
 extern int apic_clkinit(int);
 
@@ -259,15 +260,6 @@ apix_probe()
 	int rval;
 
 	if (apix_enable == 0)
-		return (PSM_FAILURE);
-
-	/*
-	 * FIXME Temporarily disable apix module on Xen HVM platform due to
-	 * known hang during boot (see #3605).
-	 *
-	 * Please remove when/if the issue is resolved.
-	 */
-	if (get_hwenv() == HW_XEN_HVM)
 		return (PSM_FAILURE);
 
 	/* check for hw features if specified  */
@@ -1184,8 +1176,7 @@ apix_intr_ops(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp,
 				return (PSM_FAILURE);
 			}
 			ispec = ((ihdl_plat_t *)hdlp->ih_private)->ip_ispecp;
-			*result = apix_intx_alloc_vector(dip, hdlp->ih_inum,
-			    ispec);
+			*result = apix_intx_alloc_vector(dip, hdlp, ispec);
 			break;
 		default:
 			return (PSM_FAILURE);
@@ -2523,16 +2514,19 @@ done:
 }
 
 static int
-apix_intx_alloc_vector(dev_info_t *dip, int inum, struct intrspec *ispec)
+apix_intx_alloc_vector(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp,
+    struct intrspec *ispec)
 {
 	int irqno;
 	apix_vector_t *vecp;
 
-	if ((irqno = apix_intx_xlate_irq(dip, inum, ispec)) == -1)
+	if ((irqno = apix_intx_xlate_irq(dip, hdlp->ih_inum, ispec)) == -1)
 		return (0);
 
-	if ((vecp = apix_alloc_intx(dip, inum, irqno)) == NULL)
+	if ((vecp = apix_alloc_intx(dip, hdlp->ih_inum, irqno)) == NULL)
 		return (0);
+
+	hdlp->ih_irq = irqno;
 
 	DDI_INTR_IMPLDBG((CE_CONT, "apix_intx_alloc_vector: dip=0x%p name=%s "
 	    "irqno=0x%x cpuid=%d vector=0x%x\n",
