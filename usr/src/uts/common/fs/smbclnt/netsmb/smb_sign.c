@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -59,14 +59,17 @@
 int nsmb_signing_fudge = 0;
 #endif
 
-/* Mechanism definitions */
-static  smb_sign_mech_t smb_mech_md5;
-
-void
-smb_crypto_mech_init(void)
+int
+smb_sign_init(smb_vc_t *vcp)
 {
-	if (smb_md5_getmech(&smb_mech_md5) != 0)
-		cmn_err(CE_NOTE, "nsmb can't get md5 mech");
+	int rc;
+
+	rc = smb_md5_getmech(&vcp->vc_signmech);
+	if (rc != 0) {
+		cmn_err(CE_NOTE, "smb can't get signing mechanism");
+		return (EAUTH);
+	}
+	return (0);
 }
 
 
@@ -109,11 +112,10 @@ smb_compute_MAC(struct smb_vc *vcp, mblk_t *mp,
 		} s;
 	} smbhdr;
 
-	/* Later: check vcp->sign_mech == NULL */
 	if (vcp->vc_mackey == NULL)
 		return (-1);
 
-	if ((rc = smb_md5_init(&ctx, &smb_mech_md5)) != 0)
+	if ((rc = smb_md5_init(&ctx, &vcp->vc_signmech)) != 0)
 		return (rc);
 
 	/* Digest the MAC Key */

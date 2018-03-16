@@ -63,6 +63,7 @@ OBJ_LIB=\
 	ntlmssp.o \
 	print.o \
 	rcfile.o \
+	rc_scf.o \
 	spnego.o \
 	spnegoparse.o \
 	ssp.o \
@@ -91,7 +92,7 @@ CSTD=		$(CSTD_GNU99)
 C99MODE =       -xc99=%all
 C99LMODE =      -Xc99=%all
 
-LDLIBS += -lsocket -lnsl -lc -lmd -lpkcs11 -lkrb5 -lsec -lidmap
+LDLIBS += -lsocket -lnsl -lc -lmd -lpkcs11 -lkrb5 -lsec -lidmap -lscf -luuid
 
 # normal warnings...
 CFLAGS	+=	$(CCVERBOSE) 
