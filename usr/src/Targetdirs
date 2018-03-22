@@ -26,7 +26,7 @@
 # Copyright 2012 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2017 RackTop Systems.
 #
 
@@ -53,9 +53,7 @@ i386_DIRS=			\
 	/boot/grub		\
 	/boot/grub/bin		\
 	/platform/i86pc		\
-	/lib/libmvec		\
-	/usr/lib/xen		\
-	/usr/lib/xen/bin
+	/lib/libmvec
 
 sparc_DIRS=				\
 	/usr/lib/ldoms

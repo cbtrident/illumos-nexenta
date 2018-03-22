@@ -26,7 +26,7 @@
 # Copyright (c) 2013 DEY Storage Systems, Inc. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Toomas Soome <tsoome@me.com>
-# Copyright 2016 Nexenta Systems, Inc.
+# Copyright 2018 Nexenta Systems, Inc.
 #
 
 include ../Makefile.master
@@ -486,8 +486,7 @@ i386_SUBDIRS=		\
 	diskscan	\
 	nvmeadm		\
 	rtc		\
-	ucodeadm	\
-	xvm
+	ucodeadm
 
 sparc_SUBDIRS=		\
 	cvcd		\
