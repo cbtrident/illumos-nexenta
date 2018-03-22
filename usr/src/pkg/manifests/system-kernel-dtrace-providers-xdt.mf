@@ -23,29 +23,6 @@
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
 #
 
-#
-# The default for payload-bearing actions in this package is to appear in the
-# global zone only.  See the include file for greater detail, as well as
-# information about overriding the defaults.
-#
-<include global_zone_only_component>
 set name=pkg.fmri value=pkg:/system/kernel/dtrace/providers/xdt@$(PKGVERS)
-set name=pkg.description \
-    value="DTrace provider for tracing events in the xVM hypervisor"
-set name=pkg.summary value="xVM Hypervisor Dynamic Tracing (DTrace) Provider"
-set name=info.classification \
-    value=org.opensolaris.category.2008:Development/System
+set name=pkg.obsolete value=true
 set name=variant.arch value=i386
-dir path=platform group=sys
-dir path=platform/i86xpv group=sys
-dir path=platform/i86xpv/kernel group=sys
-dir path=platform/i86xpv/kernel/drv group=sys
-dir path=platform/i86xpv/kernel/drv/$(ARCH64) group=sys
-driver name=xdt
-file path=platform/i86xpv/kernel/drv/$(ARCH64)/xdt group=sys
-file path=platform/i86xpv/kernel/drv/xdt.conf group=sys
-legacy pkg=SUNWxdt \
-    desc="DTrace provider for tracing events in the xVM hypervisor" \
-    name="xVM Hypervisor Dynamic Tracing (DTrace) Provider"
-license cr_Sun license=cr_Sun
-license lic_CDDL license=lic_CDDL

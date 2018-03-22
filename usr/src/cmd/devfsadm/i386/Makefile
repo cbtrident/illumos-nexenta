@@ -18,16 +18,14 @@
 #
 # CDDL HEADER END
 #
+
 #
 # Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
 #
 
 LINK_OBJS_i386 = \
 	drm_link_i386.o \
-	misc_link_i386.o \
-	xen_link.o
-
-xen_link.o xen_link.ln xen_link.po := CPPFLAGS += -I$(UTSBASE)/i86xpv
+	misc_link_i386.o
 
 include ../Makefile.com
 

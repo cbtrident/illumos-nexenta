@@ -24,7 +24,7 @@
 # Copyright (c) 2013 Gary Mills
 # Copyright 2014 PALO, Richard. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2017 Toomas Soome <tsoome@me.com>
 #
 
@@ -925,7 +925,6 @@ file path=usr/lib/devfsadm/linkmod/SUNW_sgen_link.so group=sys
 file path=usr/lib/devfsadm/linkmod/SUNW_smp_link.so group=sys
 file path=usr/lib/devfsadm/linkmod/SUNW_tape_link.so group=sys
 file path=usr/lib/devfsadm/linkmod/SUNW_usb_link.so group=sys
-$(i386_ONLY)file path=usr/lib/devfsadm/linkmod/SUNW_xen_link.so group=sys
 file path=usr/lib/diffh mode=0555
 file path=usr/lib/expreserve mode=0555
 file path=usr/lib/exrecover mode=0555
@@ -1580,14 +1579,6 @@ hardlink path=usr/sbin/rolemod target=../../usr/sbin/usermod
 hardlink path=usr/sbin/share target=../../usr/sbin/sharemgr
 hardlink path=usr/sbin/tapes target=./devfsadm
 hardlink path=usr/sbin/unshare target=../../usr/sbin/sharemgr
-legacy pkg=SUNWcsr \
-    desc="core software for a specific instruction-set architecture" \
-    name="Core Solaris, (Root)"
-legacy pkg=SUNWcsu \
-    desc="core software for a specific instruction-set architecture" \
-    name="Core Solaris, (Usr)"
-legacy pkg=SUNWftpr desc="FTP Server Configuration Files" \
-    name="FTP Server, (Root)"
 license cr_ATT license=cr_ATT
 license cr_Sun license=cr_Sun
 license lic_CDDL license=lic_CDDL

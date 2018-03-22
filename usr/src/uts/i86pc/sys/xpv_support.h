@@ -38,8 +38,14 @@ extern "C" {
 #include <sys/types.h>
 #include <sys/inttypes.h>
 #include <sys/dditypes.h>
-#include <sys/xpv_impl.h>
-#include <sys/xen_mmu.h>
+
+/*
+ * XXX These originally were in retired xen_mmu.h and are likely to be not
+ * needed once all of the xpv related code is removed.
+ */
+typedef uint64_t maddr_t;
+typedef ulong_t mfn_t;
+#define	mfn_to_ma(mfn)	((maddr_t)(mfn) << MMU_PAGESHIFT)
 
 #define	IPL_DEBUG	15	/* domain debug interrupt */
 #define	IPL_CONS	9
@@ -75,7 +81,7 @@ extern long balloon_free_pages(uint_t, mfn_t *, caddr_t, pfn_t *);
 extern void xen_release_pfn(pfn_t);
 extern void reassign_pfn(pfn_t, mfn_t);
 
-extern shared_info_t *HYPERVISOR_shared_info;
+//extern shared_info_t *HYPERVISOR_shared_info;
 extern pfn_t xen_shared_info_frame;
 
 /*
