@@ -76,6 +76,7 @@ COMMON_MODULES_KVM = \
 	ip \
 	ipc \
 	ipp \
+	klmmod \
 	krtld \
 	lofs \
 	logindmux \
@@ -85,6 +86,7 @@ COMMON_MODULES_KVM = \
 	mpt_sas3 \
 	mr_sas \
 	nca \
+	nfs \
 	nsmb \
 	pmcs \
 	ptm \
