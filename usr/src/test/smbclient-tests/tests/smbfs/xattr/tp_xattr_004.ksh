@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -37,8 +38,7 @@
 #	4. Do the same in reverse.
 #
 
-function xattr_004 {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id=xattr_004
 tc_desc="Verify from local tmpfs with xattrs copied to mount point retain xattr info\
@@ -107,4 +107,3 @@ cti_execute_cmd "rm -rf $TDIR/*"
 
 smbmount_clean $TMNT
 cti_pass "$tc_id: PASS"
-}

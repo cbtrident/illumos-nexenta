@@ -24,13 +24,6 @@
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
-# Variable used to parse the output
-export stdout=/var/tmp/out
-export stderr=/var/tmp/err
-
-# Config of the test suite
-export CONFIGDIR=${CTI_SUITE}/config
-
 # testdir base
 export TESTDS=smbclnt
 export TBASEDIR=/var/tmp/$TESTDS
@@ -39,12 +32,13 @@ export TMNT2=$TBASEDIR/mnt2
 export TDIR=$TBASEDIR/test
 
 # Users for SMB client authentication testing
-export AUSER=a_share
+# Share names (public, a_share, b_share) are hard-coded in the tests.
+export AUSER=smbuser
 export AUSERUID=20002
-export APASS=A_nex_123
-export BUSER=b_share
+export APASS=C_nex_123
+export BUSER=smbuser1
 export BUSERUID=20003
-export BPASS=B_nex_123
+export BPASS=C_nex_123
 export TUSER=smbuser
 export TUSERUID=20000
 export TUSER1=smbuser1
@@ -64,14 +58,16 @@ export SHAREGRP=smbclient
 export EXPECT=${EXPECT:-"/usr/bin/expect"}
 
 # utility for set password for cifs user on the server side
-export PASSWDEXP=${PASSWDEXP:-"${CTI_SUITE}/bin/passwd.exp"}
+export PASSWDEXP=${PASSWDEXP:-"${STF_SUITE}/bin/passwd.exp"}
 
 # utility for create the keychain for the cifs user
-export SMBUTILEXP=${CTI_SUITE}/bin/smbutil.exp
+export SMBUTILEXP=${STF_SUITE}/bin/smbutil.exp
 
 # utility to truncate the file
-export FILETRUNC=${CTI_SUITE}/bin/file_trunc
+export FILETRUNC=${STF_SUITE}/bin/file_trunc
 
 # large data file (read-only) used for copy tests, etc.
 export REFFILE=/usr/lib/libc.so.1
 
+# avoid testruner timeouts (set by smbclienttest -f)
+# export STC_QUICK=1

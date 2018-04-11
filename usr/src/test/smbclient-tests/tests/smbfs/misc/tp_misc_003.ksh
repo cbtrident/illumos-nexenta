@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -36,8 +37,7 @@
 #	4. read the file (from step 2)
 #
 
-misc003() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="misc003"
 tc_desc=" Verify reconnect after connection loss."
@@ -91,7 +91,7 @@ sleep 2
 #	For now, just log the connection states here.
 #	Our connetion will show state "IDLE".
 
-cmd="echo '::nsmb_vc' |mdb -k"
+cmd="echo '::nsmb_vc' |sudo -n mdb -k"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: $cmd"
@@ -112,4 +112,3 @@ cti_execute_cmd "rm -rf $TMNT/*"
 
 smbmount_clean $TMNT
 cti_pass "$tc_id: PASS"
-}

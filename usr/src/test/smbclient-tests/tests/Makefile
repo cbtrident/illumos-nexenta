@@ -15,7 +15,7 @@
 
 .PARALLEL:	$(SUBDIRS)
 
-SUBDIRS=	configure	\
+SUBDIRS=	\
 		nsmbrc		\
 		performance	\
 		sharectl	\

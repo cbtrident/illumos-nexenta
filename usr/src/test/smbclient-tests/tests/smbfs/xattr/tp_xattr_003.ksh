@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -38,8 +39,7 @@
 #	4. Do the same in reverse.
 #
 
-function xattr_003 {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id=xattr_003
 tc_desc="Verify from local tmpfs with xattrs moved to mount point preserve/omit xattrs\
@@ -51,11 +51,6 @@ if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
 	[[ *:${STC_CIFS_CLIENT_DEBUG}:* == *:$tc_id:* ]]; then
     set -x
 fi
-
-# This case has a known failure until CR 6647734 is fixed.
-cti_report "Known failure, CR 6647734"
-cti_notinuse $tc_id
-return
 
 server=$(server_name) || return
 
@@ -120,7 +115,5 @@ else
 	 cti_report "PASS: after move the xattr has not changed as expected"
 fi
 
-
 smbmount_clean $TMNT
 cti_pass "$tc_id: PASS"
-}

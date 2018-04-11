@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -21,6 +22,7 @@
 
 #
 # Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -35,8 +37,7 @@
 #       3. password works fine
 #
 
-nsmbrc002() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="nsmbrc002"
 tc_desc="Verify password can work in nsmbrc"
@@ -49,11 +50,11 @@ fi
 
 server=$(server_name) || return
 
-rm -f ~root/.nsmbrc
+cti_execute_cmd "rm -f ~/.nsmbrc"
 pass=$(smbutil crypt $TPASS)
-echo "[default]" > ~root/.nsmbrc
-echo "password=$pass" >> ~root/.nsmbrc
-chmod 600 ~root/.nsmbrc
+echo "[default]" > ~/.nsmbrc
+echo "password=$pass" >> ~/.nsmbrc
+cti_execute_cmd chmod 600 ~/.nsmbrc
 
 cmd="smbutil view //$TUSER@$server"
 cti_execute -i '' FAIL $cmd
@@ -66,10 +67,10 @@ fi
 
 
 SERVER=$(echo $server | tr "[:lower:]" "[:upper:]")
-echo "[$SERVER]" > ~root/.nsmbrc
-echo "addr=$server" >> ~root/.nsmbrc
-echo "password=$pass" >> ~root/.nsmbrc
-chmod 600 ~root/.nsmbrc
+echo "[$SERVER]" > ~/.nsmbrc
+echo "addr=$server" >> ~/.nsmbrc
+echo "password=$pass" >> ~/.nsmbrc
+cti_execute_cmd chmod 600 ~/.nsmbrc
 
 cmd="smbutil view //$TUSER@$server"
 cti_execute -i '' FAIL $cmd
@@ -89,7 +90,6 @@ else
 	cti_report "PASS: password property works for user '$TUSER1'"
 fi
 
-rm -f ~root/.nsmbrc
+cti_execute_cmd "rm -f ~/.nsmbrc"
 
 cti_pass "${tc_id}: PASS"
-}
