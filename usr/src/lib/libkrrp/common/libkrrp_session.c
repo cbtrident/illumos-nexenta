@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <libintl.h>
@@ -453,6 +453,11 @@ krrp_sess_create_read_stream(libkrrp_handle_t *hdl, uuid_t sess_id,
 
 	if (krrp_sess_stream_flags & KRRP_STREAM_INCLUDE_ALL_SNAPS) {
 		(void) krrp_param_put(KRRP_PARAM_INCLUDE_ALL_SNAPSHOTS,
+		    params, NULL);
+	}
+
+	if (krrp_sess_stream_flags & KRRP_STREAM_EXCLUDE_CLONES) {
+		(void) krrp_param_put(KRRP_PARAM_STREAM_EXCLUDE_CLONES,
 		    params, NULL);
 	}
 

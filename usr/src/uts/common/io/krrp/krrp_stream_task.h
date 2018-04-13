@@ -60,7 +60,8 @@ typedef enum {
 	KRRP_STRMRF_EMBEDDED		= (1 << 3),
 	KRRP_STRMRF_ENABLE_CHKSUM	= (1 << 4),
 	KRRP_STRMRF_COMPRESSED		= (1 << 5),
-	KRRP_STRMRF_LARGE_BLOCKS	= (1 << 6)
+	KRRP_STRMRF_LARGE_BLOCKS	= (1 << 6),
+	KRRP_STRMRF_EXCLUDE_CLONES	= (1 << 7)
 } krrp_stream_read_flag_t;
 
 typedef enum {
@@ -96,6 +97,7 @@ typedef struct krrp_stream_te_s {
 	boolean_t				embedded;
 	boolean_t				compressed;
 	boolean_t				large_blocks;
+	boolean_t				exclude_clones;
 	nvlist_t				*ignore_props_list;
 	nvlist_t				*replace_props_list;
 

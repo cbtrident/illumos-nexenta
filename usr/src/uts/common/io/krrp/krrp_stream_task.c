@@ -141,6 +141,8 @@ krrp_stream_te_read_create(krrp_stream_te_t **result_te,
 	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_LARGE_BLOCKS);
 	task_engine->incremental_package =
 	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_SEND_ALL_SNAPS);
+	task_engine->exclude_clones =
+	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_EXCLUDE_CLONES);
 
 	task_engine->mem_check_cb = mem_check_cb;
 	task_engine->mem_check_cb_arg = mem_check_cb_arg;
@@ -475,6 +477,7 @@ krrp_stream_task_constructor(void *opaque_task,
 		task->zargs.embedok = task_engine->embedded;
 		task->zargs.compressok = task_engine->compressed;
 		task->zargs.large_block_ok = task_engine->large_blocks;
+		task->zargs.exclude_clones = task_engine->exclude_clones;
 
 		break;
 	case KRRP_STEM_WRITE:

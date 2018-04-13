@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/sdt.h>
@@ -789,6 +789,10 @@ krrp_fill_read_stream_flags(nvlist_t *params)
 	if (krrp_param_get(KRRP_PARAM_STREAM_LARGE_BLOCKS,
 	    params, (void *) &value) == 0 && value)
 		krrp_stream_set_read_flag(&flags, KRRP_STRMRF_LARGE_BLOCKS);
+
+	if (krrp_param_get(KRRP_PARAM_STREAM_EXCLUDE_CLONES,
+	    params, (void *) &value) == 0 && value)
+		krrp_stream_set_read_flag(&flags, KRRP_STRMRF_EXCLUDE_CLONES);
 
 	return (flags);
 }

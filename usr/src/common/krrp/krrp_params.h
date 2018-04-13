@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_KRRP_PARAMS_H_
@@ -75,6 +75,7 @@ extern "C" {
 	X(REPLACE_PROPS_LIST, NVLIST) \
 	X(RESUME_TOKEN, STRING) \
 	X(SKIP_SNAPS_MASK, STRING) \
+	X(STREAM_EXCLUDE_CLONES, BOOLEAN) \
 \
 	X(ONLY_ONCE, BOOLEAN) \
 	X(GRACEFUL_SHUTDOWN, BOOLEAN) \

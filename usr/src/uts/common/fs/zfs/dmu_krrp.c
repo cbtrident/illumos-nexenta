@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 #include <sys/autosnap.h>
 #include <sys/dmu_objset.h>
@@ -926,6 +926,128 @@ zfs_construct_ds_node(dsl_pool_t *dp, uint64_t ds_object,
 	return (0);
 }
 
+static void
+zfs_destroy_ds_node(zfs_ds_node_t *ds_node, void *owner)
+{
+	zfs_snap_avl_node_t *snap_node;
+	void *cookie = NULL;
+
+	while ((snap_node = avl_destroy_nodes(&ds_node->snapshots,
+	    &cookie)) != NULL) {
+		if (snap_node->origin) {
+			dsl_dataset_long_rele(snap_node->ds, ds_node);
+			dsl_dataset_rele(snap_node->ds, ds_node);
+		} else {
+			dsl_dataset_long_rele(snap_node->ds, owner);
+			dsl_dataset_rele(snap_node->ds, owner);
+		}
+
+		kmem_free(snap_node, sizeof (zfs_snap_avl_node_t));
+	}
+
+	dsl_dataset_long_rele(ds_node->ds, owner);
+	dsl_dataset_rele(ds_node->ds, owner);
+
+	kmem_free(ds_node, sizeof (zfs_ds_node_t));
+}
+
+/*
+ * Checks the passed ds_node and sets skip_result = B_TRUE if:
+ * - the origin snapshot is an intermediate snapshot and
+ *   incl_interim_snaps = B_FALSE
+ * - skip_mask is defined and the origin snapshot
+ *   partly matches skip_mask (checked only prop,
+ *   its value is not checked)
+ */
+static int
+zfs_skip_check_cloned_node(zfs_ds_node_t *ds_node,
+    dmu_krrp_task_t *krrp_task, boolean_t *skip_result)
+{
+	int err;
+	dsl_pool_t *dp;
+	dsl_dataset_t *origin_ds = NULL;
+	objset_t *mos;
+	char *origin_name = ds_node->origin_name;
+	char *from_snap = krrp_task->buffer_args.from_incr_base;
+	char *to_snap = krrp_task->buffer_args.from_snap;
+	const char *skip_mask_prop_name =
+	    krrp_task->buffer_args.skip_snaps_prop_name;
+	boolean_t incl_interim_snaps = krrp_task->buffer_args.do_all;
+	boolean_t origin_is_interim = B_TRUE;
+
+	*skip_result = B_FALSE;
+
+	if ((strcmp(to_snap, origin_name) == 0) ||
+	    (from_snap != NULL && (strcmp(from_snap, origin_name) == 0)))
+		origin_is_interim = B_FALSE;
+
+	/*
+	 * If origin is an interim snapshot and we don't replicate
+	 * interim snapshots, then the clone will not be replicated too
+	 */
+	if (!incl_interim_snaps && origin_is_interim) {
+		*skip_result = B_TRUE;
+		return (0);
+	}
+
+	/*
+	 * Skip-mask is not defined, so the given clone
+	 * will be included into the replication stream
+	 */
+	if (skip_mask_prop_name == NULL)
+		return (0);
+
+	dp = ds_node->ds->ds_dir->dd_pool;
+	mos = dp->dp_meta_objset;
+	err = dsl_dataset_hold(dp, origin_name, FTAG, &origin_ds);
+	if (err != 0)
+		return (err);
+
+	/*
+	 * Iterate parents of the clone to check skip_mask_prop_name
+	 */
+	for (;;) {
+		uint64_t oh_obj, zapobj;
+		uint64_t cnt = 0, el = 0;
+		dsl_dataset_t *ohds = NULL;
+
+		/*
+		 * This is origin head obj (parent of origin snapshot)
+		 */
+		oh_obj = dsl_dir_phys(origin_ds->ds_dir)->dd_head_dataset_obj;
+
+		zapobj = dsl_dataset_phys(origin_ds)->ds_props_obj;
+		dsl_dataset_rele(origin_ds, FTAG);
+		origin_ds = NULL;
+		if (zap_length(mos, zapobj, skip_mask_prop_name, &el, &cnt) == 0) {
+			*skip_result = B_TRUE;
+			return (0);
+		}
+
+		err = dsl_dataset_hold_obj(dp, oh_obj, FTAG, &ohds);
+		if (err != 0)
+			return (err);
+
+		if (!dsl_dir_is_clone(ohds->ds_dir)) {
+			dsl_dataset_rele(ohds, FTAG);
+			break;
+		}
+
+		/*
+		 * Parent of origin snapshot is a clone,
+		 * so try to hold its origin
+		 */
+		err = dsl_dataset_hold_obj(dp,
+		    dsl_dir_phys(ohds->ds_dir)->dd_origin_obj,
+		    FTAG, &origin_ds);
+		dsl_dataset_rele(ohds, FTAG);
+		if (err != 0)
+			return (err);
+	}
+
+	return (0);
+}
+
 /*
  * This function walks only next-level children (depth = 1)
  * and puts them into the given list.
@@ -964,6 +1086,32 @@ zfs_collect_children(dmu_krrp_task_t *krrp_task, dsl_pool_t *dp,
 			break;
 		}
 
+		if (node->is_clone) {
+			boolean_t skip = B_FALSE;
+
+			/*
+			 * clones is NULL if exclude_clones is requested
+			 */
+			if (clones == NULL) {
+				zfs_destroy_ds_node(node, krrp_task);
+				(void) zap_cursor_advance(&zc);
+				continue;
+			}
+
+			err = zfs_skip_check_cloned_node(node,
+			    krrp_task, &skip);
+			if (err != 0) {
+				zfs_destroy_ds_node(node, krrp_task);
+				break;
+			}
+
+			if (skip) {
+				zfs_destroy_ds_node(node, krrp_task);
+				(void) zap_cursor_advance(&zc);
+				continue;
+			}
+		}
+
 		list_insert_tail(ds_list, node);
 		if (node->is_clone)
 			avl_add(clones, node);
@@ -992,13 +1140,14 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 	uint64_t root_ds_object;
 	zfs_ds_node_t *clone_node, *node, *parent_node;
 	void *cookie = NULL;
-	avl_tree_t clones;
+	avl_tree_t clones, *clones_ptr = NULL;
 
 	char *from_ds = krrp_task->buffer_args.from_ds;
 	char *from_snap = krrp_task->buffer_args.from_incr_base;
 	char *to_snap = krrp_task->buffer_args.from_snap;
 	boolean_t incl_interim_snaps = krrp_task->buffer_args.do_all;
 	boolean_t recursive = krrp_task->buffer_args.recursive;
+	boolean_t exclude_clones = krrp_task->buffer_args.exclude_clones;
 
 	dp = spa_get_dsl(spa);
 
@@ -1027,6 +1176,9 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 	avl_create(&clones, zfs_cloned_ds_compare,
 	    sizeof (zfs_ds_node_t), offsetof(zfs_ds_node_t, avl_node));
 
+	if (!exclude_clones)
+		clones_ptr = &clones;
+
 	if (recursive) {
 		/*
 		 * The following loop walk over the list,
@@ -1036,7 +1188,7 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 		 */
 		while (node != NULL) {
 			err = zfs_collect_children(krrp_task,
-			    dp, node, ds_list, &clones);
+			    dp, node, ds_list, clones_ptr);
 			if (err != 0)
 				break;
 
@@ -1077,6 +1229,17 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 			panic("zfs_lookup_origin_node() fails: [%p] [%p] [%p]",
 			    (void *)clone_node, (void *)&clones, (void *)ds_list);
 #endif
+
+			while ((node = avl_destroy_nodes(&clones, &cookie)) != NULL);
+			avl_destroy(&clones);
+
+			/*
+			 * The node was removed from the list,
+			 * that will be cleaned up later.
+			 * So we need to free it here, to avoid memleak.
+			 */
+			zfs_destroy_ds_node(clone_node, krrp_task);
+
 			return (SET_ERROR(ENOLINK));
 		}
 
@@ -1573,33 +1736,13 @@ zfs_send_ds(dmu_krrp_task_t *krrp_task, list_t *ds_to_send)
 }
 
 static void
-zfs_cleanup_send_list(dmu_krrp_task_t *krrp_task, list_t *ds_list)
+zfs_cleanup_send_list(void *owner, list_t *ds_list)
 {
-	zfs_ds_node_t *fs_el;
+	zfs_ds_node_t *ds_node;
 
 	/* Walk over all collected FSs and their SNAPs to cleanup */
-	while ((fs_el = list_remove_head(ds_list)) != NULL) {
-		zfs_snap_avl_node_t *snap_el;
-		void *cookie = NULL;
-
-		while ((snap_el = avl_destroy_nodes(&fs_el->snapshots,
-		    &cookie)) != NULL) {
-			if (snap_el->origin) {
-				dsl_dataset_long_rele(snap_el->ds, fs_el);
-				dsl_dataset_rele(snap_el->ds, fs_el);
-			} else {
-				dsl_dataset_long_rele(snap_el->ds, krrp_task);
-				dsl_dataset_rele(snap_el->ds, krrp_task);
-			}
-
-			kmem_free(snap_el, sizeof (zfs_snap_avl_node_t));
-		}
-
-		dsl_dataset_long_rele(fs_el->ds, krrp_task);
-		dsl_dataset_rele(fs_el->ds, krrp_task);
-
-		kmem_free(fs_el, sizeof (zfs_ds_node_t));
-	}
+	while ((ds_node = list_remove_head(ds_list)) != NULL)
+		zfs_destroy_ds_node(ds_node, owner);
 }
 
 /*
