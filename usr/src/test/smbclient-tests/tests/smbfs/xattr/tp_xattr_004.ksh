@@ -98,7 +98,7 @@ cti_execute_cmd "cp -@ $TMNT/test_file1 $TDIR/test_file2"
 cti_execute_cmd "runat $TDIR/test_file2 diff passwd /etc/passwd"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: file xattr not retain when it copy from mount point to local tmpfs"
-       	return
+	return
 else
 	cti_report "PASS: file xattr retain when it copy from mount point to local tmpfs"
 fi

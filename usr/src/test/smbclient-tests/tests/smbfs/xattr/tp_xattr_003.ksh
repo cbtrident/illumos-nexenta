@@ -84,14 +84,14 @@ if [[ $? != 0 ]]; then
 "
 	 return
 else
-    	 cti_report "PASS: can move the file with xattr from local to mount point as expected"
+	 cti_report "PASS: can move the file with xattr from local to mount point as expected"
 fi
 cti_execute FAIL "runat $TMNT/test_file diff passwd /etc/passwd"
 if [[ $? != 0 ]]; then
 	 cti_fail "FAIL: after move the xattr has changed unexpectedly"
 	 return
 else
-    	 cti_report "PASS: after move the xattr has not changed as expected"
+	 cti_report "PASS: after move the xattr has not changed as expected"
 fi
 cti_execute_cmd "rm -rf $TDIR/*"
 cti_execute_cmd "rm -rf $TMNT/*"
@@ -103,7 +103,7 @@ create_xattr $TMNT/test_file passwd /etc/passwd
 cti_execute_cmd "mv $TMNT/test_file $TDIR/test_file"
 if [[ $? != 0 ]]; then
 	 cti_fail "FAIL: can't move the file with xattr from mount point to local unexpectedly"
-       	 return
+	 return
 else
 	 cti_report "PASS: can move the file with xattr from mount point to local as expected"
 fi

@@ -59,7 +59,6 @@ if [[ $? != 0 ]]; then
 	return
 else
 	cti_report "PASS: sharectl set password in SERVER section succeeded"
-	
 fi
 
 # get rid of our connection first

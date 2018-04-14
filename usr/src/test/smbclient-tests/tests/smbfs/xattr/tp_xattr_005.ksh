@@ -99,7 +99,7 @@ if [[ $? != 0 ]]; then
 else
         cti_report "PASS: special . dirs work as expected for xattrs"
 fi
-	
+
 # list the directory .. expecting one file
 
 OUTPUT=$(runat $TMNT/test_file ls ..)

@@ -99,7 +99,7 @@ cti_execute_cmd "(cd $TMNT; cpio -iu -I $cpio_xattr)"
 cti_execute_cmd "runat $TMNT/cpio_test cat passwd"
 if [[ $? == 0 ]]
 then
-    	cti_fail "Fail: we have xattr here unexpectedly"
+	cti_fail "Fail: we have xattr here unexpectedly"
 	return
 fi
 cti_execute_cmd "rm -rf $TMNT/cpio_test"

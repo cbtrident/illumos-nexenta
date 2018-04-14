@@ -348,7 +348,7 @@ function cti_pathtrace
 	: $((pathok += 1))
 }
 
-# 
+#
 # cti_checkpath() - check path tracing and register a PASS result.
 #
 # Usage: cti_checkpath expected-path-count
@@ -511,7 +511,7 @@ function cti_appendfile
 #
 # Options:
 #	-c out|err	Check standard output/error. If anything is written to
-# 			the specified output channel, a result code of `result' 
+#			the specified output channel, a result code of `result'
 #			is registered and the output written to the journal.
 #			May have multiple -c options.
 #	-i input	Use -i as an input line to the command.
@@ -644,7 +644,7 @@ function cti_execute
 		[[ $cti_lv_rv = 0 ]] && cti_lv_rv=1
 	fi
 
-	return $cti_lv_rv 
+	return $cti_lv_rv
 }
 
 #
@@ -669,7 +669,7 @@ typeset -ri CTI_EXP_RV_OK=3
 # The following expect functions are available:
 #
 #	startcritical	Indicates that failures from this point onwards
-# 			constitute a test failure. In that case the
+#			constitute a test failure. In that case the
 #			``failtext'' argument is used to report the error
 #			message.
 #	endcritical	Indicates the end of the test failure section begun by

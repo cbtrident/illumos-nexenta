@@ -55,7 +55,6 @@ if [[ $? != 0 ]]; then
 	cti_fail "smbutil can't view shares"
 	return
 else
-	
 	cti_report "smbutil can view shares"
 fi
 

@@ -37,7 +37,7 @@
 #	2. run "smbutil view user@server and get the failure"
 #	3. create a .nsmbrc file include server section minauth=kerberos
 #	4. run "smbutil view user@server and get the failure"
-#	
+#
 
 . $STF_SUITE/include/libtest.ksh
 
