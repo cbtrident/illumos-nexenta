@@ -1225,22 +1225,14 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 		    zfs_lookup_origin_node(ds_list, clone_node);
 
 		if (clone_node->origin == NULL) {
-#ifdef ZFS_DEBUG
-			panic("zfs_lookup_origin_node() fails: [%p] [%p] [%p]",
-			    (void *)clone_node, (void *)&clones, (void *)ds_list);
-#endif
-
-			while ((node = avl_destroy_nodes(&clones, &cookie)) != NULL);
-			avl_destroy(&clones);
-
 			/*
-			 * The node was removed from the list,
-			 * that will be cleaned up later.
-			 * So we need to free it here, to avoid memleak.
+			 * It seems the origin is outside
+			 * of replication tree and in this case doesn't
+			 * matter where this node will be in the list
 			 */
-			zfs_destroy_ds_node(clone_node, krrp_task);
 
-			return (SET_ERROR(ENOLINK));
+			list_insert_tail(ds_list, clone_node);
+			continue;
 		}
 
 		/*
