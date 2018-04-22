@@ -23,7 +23,7 @@
 #include <sys/disk.h>
 #include <sys/reboot.h>
 #include <sys/queue.h>
-#include <multiboot.h>
+#include <sys/multiboot.h>
 
 #include <machine/bootinfo.h>
 #include <machine/elf.h>
@@ -613,7 +613,9 @@ probe_partition(void *arg, const char *partname,
 		table = ptable_open(&pa, part->end - part->start + 1,
 		    ppa->secsz, parttblread);
 		if (table != NULL) {
-			if (ptable_gettype(table) == PTABLE_VTOC8) {
+			enum ptable_type pt = ptable_gettype(table);
+
+			if (pt == PTABLE_VTOC8 || pt == PTABLE_VTOC) {
 				ret = ptable_iterate(table, &pa,
 				    probe_partition);
 				ptable_close(table);
