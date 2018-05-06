@@ -196,7 +196,7 @@ main(void)
 	env_nounset);
 
     /* Process configuration file */
-    setenv("LINES", "24", 1);
+    setenv("screen-#rows", "24", 1);
     auto_boot = 1;
 
     fd = open(PATH_CONFIG, O_RDONLY);
@@ -713,6 +713,8 @@ i386_zfs_probe(void)
 	for (unit = 0; unit < MAXBDDEV; unit++) {
 		if (bd_unit2bios(unit) == -1)
 			break;
+		if (bd_unit2bios(unit) < 0x80)
+			continue;
 
 		sprintf(devname, "disk%d:", unit);
 		/* If this is not boot disk, use generic probe. */
