@@ -1211,3 +1211,23 @@ lzc_channel_program_nosync(const char *pool, const char *program,
 	return (lzc_channel_program_impl(pool, program, B_FALSE, timeout,
 	    memlimit, argnvl, outnvl));
 }
+
+/*
+ *
+ * The format of 'dss_props' nvlist as follows:
+ * <full dataset name A> -> {
+ *     <name of property A> -> <value>
+ *     <name of property B> -> <value>
+ *     <name of property C> -> <value>
+ *  }
+ * <full dataset name B> -> {
+ *     <name of property A> -> <value>
+ *     <name of property F> -> <value>
+ *     <name of property B> -> <value>
+ *  }
+ */
+int
+lzc_set_props_mds(const char *pool, nvlist_t *dss_props, nvlist_t **outnvl)
+{
+	return lzc_ioctl(ZFS_IOC_SET_PROPS_MDS, pool, dss_props, outnvl);
+}

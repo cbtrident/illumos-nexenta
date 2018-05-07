@@ -105,6 +105,8 @@ int lzc_channel_program_nosync(const char *, const char *, uint64_t,
 int lzc_bulk_list(const char *, uint32_t, uint32_t, boolean_t, boolean_t,
     uint64_t *, nvlist_t **);
 
+int lzc_set_props_mds(const char *pool, nvlist_t *, nvlist_t **);
+
 #ifdef	__cplusplus
 }
 #endif
