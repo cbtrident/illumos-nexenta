@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <libintl.h>
@@ -292,6 +292,7 @@ static size_t unix_errnos_sz = sizeof (unix_errnos) / sizeof (unix_errnos[0]);
 	X(SNAPFAIL, ENAMETOOLONG, LIBKRRP_EMSG_DSNAMETOOLONG) \
 	X(SNAPFAIL, 0, LIBKRRP_EMSG_SNAPFAIL, \
 	    krrp_unix_errno_to_str(unix_errno)) \
+	X(NOMEM, 0, LIBKRRP_EMSG_NOMEM) \
 
 #define	LIBKRRP_ERRDESCR_SESS_STATUS_ERROR_MAP(X) \
 	LIBKRRP_ERRDESCR_SESS_ERROR_MAP(X) \

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_LIBKRRP_ERROR_H
@@ -72,7 +72,7 @@ typedef enum {
 #define	LIBKRRP_EMSG_UNEXPEND "Connection unexpectedly ended"
 #define	LIBKRRP_EMSG_AUTH_NOENT "Authentication data not specified"
 #define	LIBKRRP_EMSG_BADRESP "Unexpected response has been received"
-#define	LIBKRRP_EMSG_NOMEM "Not enough space"
+#define	LIBKRRP_EMSG_NOMEM "Not enough system memory"
 #define	LIBKRRP_EMSG_BIGPAYLOAD "Payload is too big"
 #define	LIBKRRP_EMSG_SESS_PDUENGINE_ALREADY "PDU engine already exists"
 #define	LIBKRRP_EMSG_DBLKSZ_NOENT "dblk size not specified"
