@@ -21,7 +21,7 @@ VERS=.$(MAJOR).$(MINOR)
 OBJECTS= dictionary.o system.o fileaccess.o float.o double.o prefix.o search.o \
 	softcore.o stack.o tools.o vm.o primitives.o unix.o utility.o \
 	hash.o callback.o word.o loader.o pager.o extras.o \
-	loader_emu.o gfx_fb.o pnglite.o lz4.o
+	loader_emu.o lz4.o
 
 include $(SRC)/lib/Makefile.lib
 
@@ -29,19 +29,17 @@ LIBS=	$(DYNLIB) $(LINTLIB)
 
 FICLDIR=	$(SRC)/common/ficl
 CSTD=	$(CSTD_GNU99)
-PNGLITE=	$(SRC)/common/pnglite
-CPPFLAGS +=	-I.. -I$(FICLDIR) -I$(FICLDIR)/emu -D_LARGEFILE64_SOURCE=1
-CPPFLAGS +=	-I$(PNGLITE)
+CPPFLAGS +=	-I.. -I$(FICLDIR) -D_LARGEFILE64_SOURCE=1
 
 # As variable "count" is marked volatile, gcc 4.4.4 will complain about
 # function argument. So we switch this warning off
 # for time being, till gcc 4.4.4 will be replaced.
 pics/vm.o := CERRWARN += -_gcc=-Wno-clobbered
 
-LDLIBS +=	-luuid -lz -lc -lm -lumem
+LDLIBS +=	-luuid -lc -lm -lumem
 
 HEADERS= $(FICLDIR)/ficl.h $(FICLDIR)/ficltokens.h ../ficllocal.h \
-	$(FICLDIR)/ficlplatform/unix.h $(PNGLITE)/pnglite.h
+	$(FICLDIR)/ficlplatform/unix.h
 
 pics/%.o:	../softcore/%.c $(HEADERS)
 	$(COMPILE.c) -o $@ $<
@@ -60,10 +58,6 @@ pics/%.o:	$(FICLDIR)/emu/%.c $(HEADERS)
 	$(POST_PROCESS_O)
 
 pics/%.o:	$(FICLDIR)/softcore/%.c $(HEADERS)
-	$(COMPILE.c) -o $@ $<
-	$(POST_PROCESS_O)
-
-pics/%.o:	$(PNGLITE)/%.c $(HEADERS)
 	$(COMPILE.c) -o $@ $<
 	$(POST_PROCESS_O)
 
