@@ -59,7 +59,7 @@ echo "[default]
 minauth=kerberos" > ~/.nsmbrc
 
 # kill any existing session first
-cti_execute_cmd "smbutil discon //$TUSER:$TPASS@$server"
+cti_execute_cmd "smbutil discon //$TUSER@$server"
 sleep 1
 
 # this should fail

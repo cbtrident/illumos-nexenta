@@ -75,11 +75,10 @@ if [[ $? != 0 ]]; then
 fi
 
 #	3. force the connection to drop
-#	(SMB uses ports: 139, 445)
+#	(SMB uses port: 445)
 
-cmd="abort_conn -p 139 $server ;\
-     abort_conn -p 445 $server "
-cti_execute_cmd $cmd
+cmd="abort_conn -p 445 $server "
+cti_execute_cmd sudo -n $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: $cmd"
 	return

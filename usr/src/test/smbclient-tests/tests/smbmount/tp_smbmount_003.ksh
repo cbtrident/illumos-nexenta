@@ -61,10 +61,10 @@ cmd="mount -F smbfs -o noprompt //$AUSER:badpass@$server/a_share $TMNT"
 cti_execute -i '' PASS $cmd
 if [[ $? == 0 ]]; then
 	cti_execute_cmd "echo '::nsmb_vc' |sudo -n mdb -k"
-	cti_fail "FAIL: smbmount can mount the share $AUSER with wrong passwd"
+	cti_fail "FAIL: smbmount can mount the share a_share with wrong passwd"
 	return
 else
-	cti_report "PASS: smbmount can't mount the share $AUSER with wrong passwd"
+	cti_report "PASS: smbmount can't mount the share a_share with wrong passwd"
 fi
 
 smbmount_clean $TMNT

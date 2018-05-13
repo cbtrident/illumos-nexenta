@@ -58,7 +58,7 @@ echo "addr=$server" >> ~/.nsmbrc
 echo "minauth=kerberos" >> ~/.nsmbrc
 
 # get rid of our connection
-cti_execute_cmd "smbutil discon //$TUSER:$TPASS@$server"
+cti_execute_cmd "smbutil discon //$TUSER@$server"
 sleep 1
 
 cti_report "expect failure next"

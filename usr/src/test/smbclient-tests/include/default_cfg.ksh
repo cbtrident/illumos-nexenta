@@ -33,17 +33,18 @@ export TDIR=$TBASEDIR/test
 
 # Users for SMB client authentication testing
 # Share names (public, a_share, b_share) are hard-coded in the tests.
-export AUSER=smbuser
-export AUSERUID=20002
-export APASS=C_nex_123
-export BUSER=smbuser1
-export BUSERUID=20003
-export BPASS=C_nex_123
-export TUSER=smbuser
-export TUSERUID=20000
-export TUSER1=smbuser1
-export TUSER1UID=20001
+export AUSER=smbusera
+export AUSERUID=20100
+export APASS=A_nex_123
+export BUSER=smbuserb
+export BUSERUID=20101
+export BPASS=B_nex_123
+export TUSER=smbuserc
+export TUSERUID=20102
 export TPASS=C_nex_123
+
+# Should replace this in the few tests that use $TUSER1
+export TUSER1=$BUSER
 
 # User groups
 export SMBGRP=smbgrp

@@ -53,7 +53,6 @@ server=$(server_name) || return
 testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
-CDIR=$(pwd)
 
 cmd="mount -F smbfs //$TUSER:$TPASS@$server/public $TMNT"
 cti_execute -i '' FAIL $cmd
@@ -77,19 +76,20 @@ cti_execute_cmd "rm -f $TMNT/test_file"
 cti_execute_cmd "touch $TMNT/test_file"
 typeset -i i=0
 typeset -i j=100
-while  [ $i -lt $j ]; do
+while [[ $i -lt $j ]]; do
   create_xattr $TMNT/test_file passwd$i /etc/passwd
-  i=$i+1
+  i=$((i+1))
 done
+
 #create the expected output then compare them with xattrs in the test_file
 
 i=0
 cp /dev/null temp_file
 echo SUNWattr_ro >> temp_file
 echo SUNWattr_rw >> temp_file
-while  [ $i -lt $j ]; do
+while [[ $i -lt $j ]]; do
   echo passwd$i >> temp_file
-  i=$i+1
+  i=$((i+1))
 done
 cti_execute_cmd "sort temp_file > expected_file"
 

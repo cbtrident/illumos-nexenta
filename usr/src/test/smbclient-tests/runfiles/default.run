@@ -38,7 +38,7 @@ tests = ['tp_acl_001', 'tp_acl_002', 'tp_acl_003', 'tp_acl_004', 'tp_acl_005']
 tests = ['tp_cptest_001', 'tp_cptest_002', 'tp_cptest_003', 'tp_cptest_004',
 	'tp_cptest_005', 'tp_cptest_006', 'tp_cptest_007', 'tp_cptest_008',
 	'tp_cptest_009']
-timeout = 300
+timeout = 600
 
 [/opt/smbclient-tests/tests/smbfs/create]
 tests = ['tp_create_001', 'tp_create_002', 'tp_create_003', 'tp_create_004',

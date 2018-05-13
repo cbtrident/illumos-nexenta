@@ -58,10 +58,10 @@ sudo -n chown $AUSER $TMNT
 cmd="mount -F smbfs -o noprompt //$AUSER:$APASS@$server/a_share $TMNT"
 cti_execute -i '' FAIL sudo -n -u $AUSER "$cmd"
 if [[ $? != 0 ]]; then
-	cti_fail "FAIL: the normal user can't mount the share $AUSER"
+	cti_fail "FAIL: the normal user can't mount the share a_share"
 	return
 else
-	cti_report "PASS: the normal user can mount the share $AUSER"
+	cti_report "PASS: the normal user can mount the share a_share"
 fi
 
 smbmount_check $TMNT || return

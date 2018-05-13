@@ -56,6 +56,10 @@ echo "[default]" > ~/.nsmbrc
 echo "password=$pass" >> ~/.nsmbrc
 cti_execute_cmd chmod 600 ~/.nsmbrc
 
+# kill any existing session first
+cti_execute_cmd "smbutil discon //$TUSER@$server"
+sleep 1
+
 cmd="smbutil view //$TUSER@$server"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
@@ -72,6 +76,10 @@ echo "addr=$server" >> ~/.nsmbrc
 echo "password=$pass" >> ~/.nsmbrc
 cti_execute_cmd chmod 600 ~/.nsmbrc
 
+# kill any existing session first
+cti_execute_cmd "smbutil discon //$TUSER@$server"
+sleep 1
+
 cmd="smbutil view //$TUSER@$server"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
@@ -79,15 +87,6 @@ if [[ $? != 0 ]]; then
 	return
 else
 	cti_report "PASS: password property in SERVER section works"
-fi
-
-cmd="smbutil view //$TUSER1@$server"
-cti_execute -i '' FAIL $cmd
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: password property doesn't work for user '$TUSER1'"
-	return
-else
-	cti_report "PASS: password property works for user '$TUSER1'"
 fi
 
 cti_execute_cmd "rm -f ~/.nsmbrc"

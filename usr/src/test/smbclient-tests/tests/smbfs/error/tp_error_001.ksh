@@ -90,7 +90,7 @@ else
 fi
 cti_execute_cmd "rm $TMNT/file"
 
-cti_execute_cmd "mkdir dir"
+cti_execute_cmd "mkdir $TMNT/dir"
 if [[ $? != 0 ]]; then
 	cti_fail "mkdir dir failed on smbfs"
 	return
