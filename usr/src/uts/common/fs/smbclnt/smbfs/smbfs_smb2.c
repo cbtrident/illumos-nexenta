@@ -885,6 +885,7 @@ smbfs_smb2_setsec(struct smb_share *ssp, smb2fid_t *fid,
 
 	ASSERT(*mp != NULL);
 	mb_initm(mbp, *mp);
+	*mp = NULL; /* consumed */
 
 	error = smbfs_smb2_set_info(ssp, fid, mbp,
 	    SMB2_0_INFO_SECURITY, 0, selector, scrp);
