@@ -423,6 +423,21 @@ again:
 	if (ctx->f_nmlen == 0)
 		goto again;
 
+	/*
+	 * When called by lookup, we'll have the "single" flag,
+	 * and a name with no wildcards.  We need to filter here
+	 * because smbfs_xa_get_streaminfo() gets ALL the names
+	 * (not just those matching our pattern).
+	 */
+	if (ctx->f_flags & SMBFS_RDD_FINDSINGLE) {
+		if (ctx->f_wclen != ctx->f_nmlen)
+			goto again;
+		if (u8_strcmp(ctx->f_wildcard, ctx->f_name,
+		    ctx->f_nmlen, U8_STRCMP_CI_LOWER,
+		    U8_UNICODE_LATEST, &error) || error)
+			goto again;
+	}
+
 	return (0);
 }
 

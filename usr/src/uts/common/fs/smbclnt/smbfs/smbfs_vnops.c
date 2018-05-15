@@ -2214,6 +2214,14 @@ smbfs_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, struct pathname *pnp,
 
 	smbfs_rw_exit(&dnp->r_rwlock);
 
+	/*
+	 * If the caller passes an invalid name here, we'll have
+	 * error == EINVAL but want to return ENOENT.  This is
+	 * common with things like "ls foo*" with no matches.
+	 */
+	if (error == EINVAL)
+		error = ENOENT;
+
 	return (error);
 }
 
