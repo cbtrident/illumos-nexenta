@@ -505,7 +505,6 @@ dnode_sync_free(dnode_t *dn, dmu_tx_t *tx)
 
 	dnode_undirty_dbufs(&dn->dn_dirty_records[txgoff]);
 	dnode_evict_dbufs(dn, DBUF_EVICT_ALL);
-	ASSERT(avl_is_empty(&dn->dn_dbufs));
 
 	/*
 	 * XXX - It would be nice to assert this, but we may still
