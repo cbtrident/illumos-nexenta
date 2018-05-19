@@ -25,7 +25,7 @@ static void smb2_tq_work(void *);
 static void smb2sr_run_postwork(smb_request_t *);
 static int smb3_decrypt_msg(smb_request_t *);
 
-static const smb_disp_entry_t const
+static const smb_disp_entry_t
 smb2_disp_table[SMB2__NCMDS] = {
 
 	/* text-name, pre, func, post, cmd-code, dialect, flags */

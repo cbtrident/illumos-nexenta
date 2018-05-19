@@ -11,7 +11,7 @@
 
 #
 # Copyright 2017 Nexenta Systems, Inc.
-# Copyright 2017 Joyent, Inc.
+# Copyright 2018 Joyent, Inc.
 #
 
 CMDDIR=		$(SRC)/cmd/mandoc
@@ -25,9 +25,10 @@ OBJS +=		fts.o \
 		recallocarray.o \
 		strtonum.o
 
+CPPFLAGS +=	-_gcc=-nostdinc
 CPPFLAGS +=	-I. -include fts.h
-CPPFLAGS +=	-I$(NATIVE_ADJUNCT)/include
-LDFLAGS +=	-L$(NATIVE_ADJUNCT)/lib -R$(NATIVE_ADJUNCT)/lib
+CPPFLAGS +=	-I$(NATIVE_ADJUNCT)/usr/include
+LDFLAGS +=	-L$(NATIVE_ADJUNCT)/usr/lib -R$(NATIVE_ADJUNCT)/usr/lib
 
 .KEEP_STATE:
 

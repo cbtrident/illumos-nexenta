@@ -27,6 +27,7 @@
 # Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 # Copyright (c) 2017 by Delphix. All rights reserved.
 # Copyright 2018 Joyent, Inc.
+# Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
 #
 # Based on the nightly script from the integration folks,
 # Mostly modified and owned by mike_s.
@@ -1665,7 +1666,7 @@ if [[ ! -f $SRC/Makefile ]]; then
 fi
 
 ( cd $SRC
-  for target in cc-version cc64-version java-version; do
+  for target in cc-version cc64-version java-version openssl-version; do
 	echo
 	#
 	# Put statefile somewhere we know we can write to rather than trip

@@ -50,6 +50,7 @@ COMMON_SUBDIRS= \
 	ips2deb \
 	lintdump \
 	make \
+	makesoftcore \
 	ndrgen \
 	onbld \
 	protocmp \

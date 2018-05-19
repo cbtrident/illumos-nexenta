@@ -1,4 +1,4 @@
-/*-
+/*
  * Copyright (c) 1998 Michael Smith <msmith@freebsd.org>
  * Copyright (c) 2012 Andrey V. Elsukov <ae@FreeBSD.org>
  * All rights reserved.
@@ -95,7 +95,7 @@ static struct bdinfo
 } bdinfo [MAXBDDEV];
 static int nbdinfo = 0;
 
-#define	BD(dev)		(bdinfo[(dev)->d_unit])
+#define	BD(dev)		(bdinfo[(dev)->dd.d_unit])
 
 static int bd_io(struct disk_devdesc *, daddr_t, int, caddr_t, int);
 static int bd_int13probe(struct bdinfo *bd);
@@ -414,8 +414,8 @@ bd_print(int verbose)
 		if (ret != 0)
 			return (ret);
 
-		dev.d_dev = &biosdisk;
-		dev.d_unit = i;
+		dev.dd.d_dev = &biosdisk;
+		dev.dd.d_unit = i;
 		dev.d_slice = -1;
 		dev.d_partition = -1;
 		if (disk_open(&dev,
@@ -454,7 +454,7 @@ bd_open(struct open_file *f, ...)
 	dev = va_arg(ap, struct disk_devdesc *);
 	va_end(ap);
 
-	if (dev->d_unit < 0 || dev->d_unit >= nbdinfo)
+	if (dev->dd.d_unit < 0 || dev->dd.d_unit >= nbdinfo)
 		return (EIO);
 
 	if ((BD(dev).bd_flags & BD_NO_MEDIA) == BD_NO_MEDIA) {
@@ -472,10 +472,9 @@ bd_open(struct open_file *f, ...)
 	 * During bd_probe() we tested if the mulitplication of bd_sectors
 	 * would overflow so it should be safe to perform here.
 	 */
-	disk.d_dev = dev->d_dev;
-	disk.d_type = dev->d_type;
-	disk.d_unit = dev->d_unit;
-	disk.d_opendata = NULL;
+	disk.dd.d_dev = dev->dd.d_dev;
+	disk.dd.d_type = dev->dd.d_type;
+	disk.dd.d_unit = dev->dd.d_unit;
 	disk.d_slice = -1;
 	disk.d_partition = -1;
 	disk.d_offset = 0;
@@ -808,12 +807,14 @@ bd_io(struct disk_devdesc *dev, daddr_t dblk, int blks, caddr_t dest,
 	if (result != 0 && (BD(dev).bd_flags & BD_NO_MEDIA) == 0) {
 		if (dowrite != 0) {
 			printf("%s%d: Write %d sector(s) from %p (0x%x) "
-			    "to %lld: 0x%x\n", dev->d_dev->dv_name, dev->d_unit,
-			    blks, dest, VTOP(dest), dblk, result);
+			    "to %lld: 0x%x\n", dev->dd.d_dev->dv_name,
+			    dev->dd.d_unit, blks, dest, VTOP(dest), dblk,
+			    result);
 		} else {
 			printf("%s%d: Read %d sector(s) from %lld to %p "
-			    "(0x%x): 0x%x\n", dev->d_dev->dv_name, dev->d_unit,
-			    blks, dblk, dest, VTOP(dest), result);
+			    "(0x%x): 0x%x\n", dev->dd.d_dev->dv_name,
+			    dev->dd.d_unit, blks, dblk, dest, VTOP(dest),
+			    result);
 		}
 	}
 
@@ -866,8 +867,8 @@ bd_getdev(struct i386_devdesc *d)
     int				i, unit;
 
     dev = (struct disk_devdesc *)d;
-    biosdev = bd_unit2bios(dev->d_unit);
-    DEBUG("unit %d BIOS device %d", dev->d_unit, biosdev);
+    biosdev = bd_unit2bios(dev->dd.d_unit);
+    DEBUG("unit %d BIOS device %d", dev->dd.d_unit, biosdev);
     if (biosdev == -1)				/* not a BIOS device */
 	return(-1);
     if (disk_open(dev, BD(dev).bd_sectors * BD(dev).bd_sectorsize,
@@ -878,7 +879,7 @@ bd_getdev(struct i386_devdesc *d)
 
     if (biosdev < 0x80) {
 	/* floppy (or emulated floppy) or ATAPI device */
-	if (bdinfo[dev->d_unit].bd_type == DT_ATAPI) {
+	if (bdinfo[dev->dd.d_unit].bd_type == DT_ATAPI) {
 	    /* is an ATAPI disk */
 	    major = WFDMAJOR;
 	} else {

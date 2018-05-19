@@ -30,31 +30,18 @@
 
 /*
  * i386 fully-qualified device descriptor.
- * Note, this must match the 'struct devdesc' declaration
- * in bootstrap.h and also with struct zfs_devdesc for zfs
- * support.
+ * Note, this must match struct zfs_devdesc for zfs support.
  */
-struct i386_devdesc
-{
-    struct devsw	*d_dev;
-    int			d_type;
-    int			d_unit;
-    union 
-    {
-	struct 
-	{
-	    void	*data;
+/* Note: Must match the 'struct devdesc' in stand.h */
+struct i386_devdesc {
+    struct devdesc	dd;
+    union {
+	struct {
 	    int		slice;
 	    int		partition;
 	    off_t	offset;
 	} biosdisk;
-	struct
-	{
-	    void	*data;
-	} bioscd;
-	struct
-	{
-	    void	*data;
+	struct {
 	    uint64_t	pool_guid;
 	    uint64_t	root_guid;
 	} zfs;

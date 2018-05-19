@@ -8447,6 +8447,7 @@ free_derived_key:
 					error = CRYPTO_TEMPLATE_INCONSISTENT;
 					break;
 				}
+				break;
 			default:
 				error = CRYPTO_MECHANISM_INVALID;
 			}

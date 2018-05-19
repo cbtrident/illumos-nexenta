@@ -691,8 +691,8 @@ zfs_parsedev(struct zfs_devdesc *dev, const char *devspec, const char **path)
 		return (rv);
 	if (path != NULL)
 		*path = (*end == '\0') ? end : end + 1;
-	dev->d_dev = &zfs_dev;
-	dev->d_type = zfs_dev.dv_type;
+	dev->dd.d_dev = &zfs_dev;
+	dev->dd.d_type = zfs_dev.dv_type;
 	return (0);
 }
 
@@ -704,12 +704,10 @@ zfs_bootfs(void *zdev)
 	struct zfs_devdesc	*dev = (struct zfs_devdesc *)zdev;
 	uint64_t		objnum;
 	spa_t			*spa;
-	vdev_t			*vdev;
-	vdev_t			*kid;
 	int			n;
 
 	buf[0] = '\0';
-	if (dev->d_type != DEVT_ZFS)
+	if (dev->dd.d_type != DEVT_ZFS)
 		return (buf);
 
 	spa = spa_find_by_guid(dev->pool_guid);
@@ -726,37 +724,14 @@ zfs_bootfs(void *zdev)
 		return (buf);
 	}
 
-	STAILQ_FOREACH(vdev, &spa->spa_vdevs, v_childlink) {
-		STAILQ_FOREACH(kid, &vdev->v_children, v_childlink) {
-			/* use this kid? */
-			if (kid->v_state == VDEV_STATE_HEALTHY &&
-			    kid->v_phys_path != NULL) {
-				break;
-			}
-		}
-		if (kid != NULL) {
-			vdev = kid;
-			break;
-		}
-		if (vdev->v_state == VDEV_STATE_HEALTHY &&
-		    vdev->v_phys_path != NULL) {
-			break;
-		}
-	}
-
-	/*
-	 * since this pool was used to read in the kernel and boot archive,
-	 * there has to be at least one healthy vdev, therefore vdev
-	 * can not be NULL.
-	 */
 	/* Set the environment. */
 	snprintf(buf, sizeof (buf), "%s/%llu", spa->spa_name,
 	    (unsigned long long)objnum);
 	setenv("zfs-bootfs", buf, 1);
-	if (vdev->v_phys_path != NULL)
-		setenv("bootpath", vdev->v_phys_path, 1);
-	if (vdev->v_devid != NULL)
-		setenv("diskdevid", vdev->v_devid, 1);
+	if (spa->spa_boot_vdev->v_phys_path != NULL)
+		setenv("bootpath", spa->spa_boot_vdev->v_phys_path, 1);
+	if (spa->spa_boot_vdev->v_devid != NULL)
+		setenv("diskdevid", spa->spa_boot_vdev->v_devid, 1);
 
 	/*
 	 * Build the command line string. Once our kernel will read
@@ -766,14 +741,14 @@ zfs_bootfs(void *zdev)
 	snprintf(buf, sizeof(buf), "zfs-bootfs=%s/%llu", spa->spa_name,
 	    (unsigned long long)objnum);
 	n = strlen(buf);
-	if (vdev->v_phys_path != NULL) {
+	if (spa->spa_boot_vdev->v_phys_path != NULL) {
 		snprintf(buf+n, sizeof (buf) - n, ",bootpath=\"%s\"",
-		    vdev->v_phys_path);
+		    spa->spa_boot_vdev->v_phys_path);
 		n = strlen(buf);
 	}
-	if (vdev->v_devid != NULL) {
+	if (spa->spa_boot_vdev->v_devid != NULL) {
 		snprintf(buf+n, sizeof (buf) - n, ",diskdevid=\"%s\"",
-		    vdev->v_devid);
+		    spa->spa_boot_vdev->v_devid);
 	}
 	return (buf);
 }
@@ -787,7 +762,7 @@ zfs_fmtdev(void *vdev)
 	spa_t			*spa;
 
 	buf[0] = '\0';
-	if (dev->d_type != DEVT_ZFS)
+	if (dev->dd.d_type != DEVT_ZFS)
 		return (buf);
 
 	if (dev->pool_guid == 0) {
@@ -809,9 +784,9 @@ zfs_fmtdev(void *vdev)
 	}
 
 	if (rootname[0] == '\0')
-		sprintf(buf, "%s:%s:", dev->d_dev->dv_name, spa->spa_name);
+		sprintf(buf, "%s:%s:", dev->dd.d_dev->dv_name, spa->spa_name);
 	else
-		sprintf(buf, "%s:%s/%s:", dev->d_dev->dv_name, spa->spa_name,
+		sprintf(buf, "%s:%s/%s:", dev->dd.d_dev->dv_name, spa->spa_name,
 		    rootname);
 	return (buf);
 }

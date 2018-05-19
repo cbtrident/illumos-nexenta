@@ -147,7 +147,7 @@ efiblk_pdinfo_count(pdinfo_list_t *pdi)
 	return (i);
 }
 
-static int
+int
 efipart_inithandles(void)
 {
 	UINTN sz;
@@ -175,6 +175,10 @@ efipart_inithandles(void)
 
 	efipart_handles = hin;
 	efipart_nhandles = sz;
+#ifdef EFIPART_DEBUG
+	printf("%s: Got %d BLOCK IO MEDIA handle(s)\n", __func__,
+	    efipart_nhandles);
+#endif
 	return (0);
 }
 
@@ -318,11 +322,7 @@ efipart_updatefd(void)
 static int
 efipart_initfd(void)
 {
-	int rv;
 
-	rv = efipart_inithandles();
-	if (rv != 0)
-		return (rv);
 	STAILQ_INIT(&fdinfo);
 
 	efipart_updatefd();
@@ -438,11 +438,7 @@ efipart_updatecd(void)
 static int
 efipart_initcd(void)
 {
-	int rv;
 
-	rv = efipart_inithandles();
-	if (rv != 0)
-		return (rv);
 	STAILQ_INIT(&cdinfo);
 
 	efipart_updatecd();
@@ -684,11 +680,7 @@ efipart_updatehd(void)
 static int
 efipart_inithd(void)
 {
-	int rv;
 
-	rv = efipart_inithandles();
-	if (rv != 0)
-		return (rv);
 	STAILQ_INIT(&hdinfo);
 
 	efipart_updatehd();
@@ -751,11 +743,10 @@ efipart_print_common(struct devsw *dev, pdinfo_list_t *pdlist, int verbose)
 				continue;
 
 			pd->pd_blkio = blkio;
-			pd_dev.d_dev = dev;
-			pd_dev.d_unit = pd->pd_unit;
+			pd_dev.dd.d_dev = dev;
+			pd_dev.dd.d_unit = pd->pd_unit;
 			pd_dev.d_slice = -1;
 			pd_dev.d_partition = -1;
-			pd_dev.d_opendata = blkio;
 			ret = disk_open(&pd_dev, blkio->Media->BlockSize *
 			    (blkio->Media->LastBlock + 1),
 			    blkio->Media->BlockSize);
@@ -828,7 +819,7 @@ efipart_open(struct open_file *f, ...)
 	if (pd->pd_bcache == NULL)
 		pd->pd_bcache = bcache_allocate();
 
-	if (dev->d_dev->dv_type == DEVT_DISK) {
+	if (dev->dd.d_dev->dv_type == DEVT_DISK) {
 		int rc;
 
 		rc = disk_open(dev,
@@ -867,7 +858,7 @@ efipart_close(struct open_file *f)
 		bcache_free(pd->pd_bcache);
 		pd->pd_bcache = NULL;
 	}
-	if (dev->d_dev->dv_type == DEVT_DISK)
+	if (dev->dd.d_dev->dv_type == DEVT_DISK)
 		return (disk_close(dev));
 	return (0);
 }
@@ -887,7 +878,7 @@ efipart_ioctl(struct open_file *f, u_long cmd, void *data)
 	if (pd == NULL)
 		return (EINVAL);
 
-	if (dev->d_dev->dv_type == DEVT_DISK) {
+	if (dev->dd.d_dev->dv_type == DEVT_DISK) {
 		rc = disk_ioctl(dev, cmd, data);
 		if (rc != ENOTTY)
 			return (rc);
@@ -974,7 +965,7 @@ efipart_strategy(void *devdata, int rw, daddr_t blk, size_t size,
 	bcd.dv_devdata = devdata;
 	bcd.dv_cache = pd->pd_bcache;
 
-	if (dev->d_dev->dv_type == DEVT_DISK) {
+	if (dev->dd.d_dev->dv_type == DEVT_DISK) {
 		daddr_t offset;
 
 		offset = dev->d_offset * pd->pd_blkio->Media->BlockSize;
@@ -1018,7 +1009,7 @@ efipart_realstrategy(void *devdata, int rw, daddr_t blk, size_t size,
 	 * partition.
 	 */
 	disk_blocks = 0;
-	if (dev->d_dev->dv_type == DEVT_DISK) {
+	if (dev->dd.d_dev->dv_type == DEVT_DISK) {
 		if (disk_ioctl(dev, DIOCGMEDIASIZE, &disk_blocks) == 0) {
 			/* DIOCGMEDIASIZE does return bytes. */
 			disk_blocks /= blkio->Media->BlockSize;

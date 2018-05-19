@@ -475,6 +475,7 @@ serial_adjust_prop(void)
 		break;
 	case '8':
 		++p;
+		/* FALLTHROUGH */
 	default:
 		lcr |= BITS8;
 		break;
@@ -493,6 +494,7 @@ serial_adjust_prop(void)
 		break;
 	case 'e':
 		++p;
+		/* FALLTHROUGH */
 	default:
 		lcr |= PARITY_EVEN;
 		break;
