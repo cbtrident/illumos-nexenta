@@ -36,6 +36,10 @@
  * kTLI variant of t_optmgmt(3NSL)
  * Returns 0 on success or an errno value.
  * Similar to libnsl t_optmgmt.c
+ *
+ * Note: This expects the caller's struct t_optmgmt to contain the
+ * XTI version of struct T_opthdr (used with T_OPTMGMT_REQ == 27)
+ * not the old "struct opthdr" (used with T_SVR4_OPTMGMT_REQ == 9)
  */
 
 #include <sys/param.h>
@@ -49,6 +53,7 @@
 #include <sys/ioctl.h>
 #include <sys/stropts.h>
 #include <sys/strsubr.h>
+#define	_SUN_TPI_VERSION 2
 #include <sys/tihdr.h>
 #include <sys/timod.h>
 #include <sys/tiuser.h>

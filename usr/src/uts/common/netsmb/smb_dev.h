@@ -254,13 +254,12 @@ typedef struct smbioc_tcon {
  */
 struct smbioc_ssn_work {
 	uint32_t	wk_out_state;	/* out-only */
-	uint32_t	wk_u_maclen;	/* MAC key length */
-	lptr_t		wk_u_mackey;	/* user-space ptr! */
+	uint32_t	wk_u_ssnkey_len; /* ssn key length */
+	lptr_t		wk_u_ssnkey_buf; /* user-space ptr! */
 	uint32_t	wk_u_auth_rlen;	/* recv auth tok len */
 	uint32_t	wk_u_auth_wlen;	/* send auth tok len */
 	lptr_t		wk_u_auth_rbuf;	/* recv auth tok buf */
 	lptr_t		wk_u_auth_wbuf;	/* send auth tok buf */
-	uint8_t		wk_ssn_key[SMBIOC_HASH_SZ]; /* session key */
 	uint8_t		wk_cl_guid[16];	/* client GUID */
 };
 typedef struct smbioc_ssn_work smbioc_ssn_work_t;

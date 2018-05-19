@@ -72,13 +72,13 @@ smbioc_tcon
 
 smbioc_ssn_work
 	wk_out_state
-	wk_u_maclen
-	wk_u_mackey
+	wk_u_ssnkey_len
+	wk_u_ssnkey_buf
 	wk_u_auth_rlen
 	wk_u_auth_wlen
 	wk_u_auth_rbuf
 	wk_u_auth_wbuf
-	wk_ssn_key
+	wk_cl_guid
 
 smbioc_rw	SIZEOF_SMBIOC_RW
 	ioc_cnt

@@ -57,18 +57,39 @@
 /*
  * smb2_sign_init
  *
- * Get the mechanism info.
+ * Get the mechanism info and initilize SMB2 signing.
  */
 int
 smb2_sign_init(smb_vc_t *vcp)
 {
+	uint_t copysize;
 	int rc;
+
+	ASSERT(vcp->vc_ssnkey != NULL);
+	ASSERT(vcp->vc_mackey == NULL);
 
 	rc = smb2_hmac_getmech(&vcp->vc_signmech);
 	if (rc != 0) {
 		cmn_err(CE_NOTE, "smb2 can't get signing mechanism");
 		return (EAUTH);
 	}
+
+	/*
+	 * Convert the session key to the MAC key.
+	 *
+	 * For SMB2, the signing key is just the first 16 bytes
+	 * of the session key (truncated or padded with zeros).
+	 * [MS-SMB2] 3.2.5.3.1
+	 *
+	 * SMB3 would do KDF here.
+	 */
+	vcp->vc_mackeylen = SMB2_SIG_LEN;
+	vcp->vc_mackey = kmem_zalloc(vcp->vc_mackeylen, KM_SLEEP);
+	copysize = vcp->vc_ssnkeylen;
+	if (copysize > vcp->vc_mackeylen)
+		copysize = vcp->vc_mackeylen;
+	bcopy(vcp->vc_ssnkey, vcp->vc_mackey, copysize);
+
 	return (0);
 }
 

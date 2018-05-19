@@ -440,9 +440,9 @@ smb_ctx_done(struct smb_ctx *ctx)
 		free(ctx->ct_rpath);
 		ctx->ct_rpath = NULL;
 	}
-	if (ctx->ct_mackey) {
-		free(ctx->ct_mackey);
-		ctx->ct_mackey = NULL;
+	if (ctx->ct_ssnkey_buf) {
+		free(ctx->ct_ssnkey_buf);
+		ctx->ct_ssnkey_buf = NULL;
 	}
 }
 

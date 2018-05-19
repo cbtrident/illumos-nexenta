@@ -182,8 +182,10 @@ smb_rq_new(struct smb_rq *rqp, uchar_t cmd)
 		rqp->sr2_creditsrequested = 1;
 		rqp->sr_pid = 0xFEFF;	/* Made up, just like Windows */
 		rqp->sr2_rqflags = 0;
-		if (vcp->vc_flags & SMBV_SIGNING)
+		if ((vcp->vc_flags & SMBV_SIGNING) != 0 &&
+		    vcp->vc_mackey != NULL) {
 			rqp->sr2_rqflags |= SMB2_FLAGS_SIGNED;
+		}
 
 		/*
 		 * The SMB2 header is filled in later by

@@ -221,8 +221,10 @@ typedef struct smb_vc {
 	uid_t			vc_owner;	/* Unix owner */
 	int			vc_genid;	/* "generation" ID */
 
-	int			vc_mackeylen;	/* length of MAC key */
-	uint8_t			*vc_mackey;	/* MAC key */
+	int			vc_mackeylen;	/* MAC key length */
+	int			vc_ssnkeylen;	/* session key length */
+	uint8_t			*vc_mackey;	/* MAC key buffer */
+	uint8_t			*vc_ssnkey;	/* session key buffer */
 	smb_sign_mech_t		vc_signmech;
 
 	struct smb_tran_desc	*vc_tdesc;	/* transport ops. vector */
@@ -244,6 +246,7 @@ typedef struct smb_vc {
 	uint_t			iod_muxcnt;	/* num. active requests */
 	uint_t			iod_muxwant;	/* waiting to be active */
 	kcondvar_t		iod_muxwait;
+	boolean_t		iod_noresp;	/* Logged "not responding" */
 
 	smb_iods_t		vc_iods;
 	smb_sopt_t		vc_sopt;
@@ -269,9 +272,6 @@ typedef struct smb_vc {
 #define	vc_username	vc_ssn.ssn_id.id_user
 
 /* defines for members in vc_work */
-#define	vc_u_mackey	vc_work.wk_u_mackey
-#define	vc_u_maclen	vc_work.wk_u_maclen
-#define	vc_ssn_key	vc_work.wk_ssn_key
 #define	vc_cl_guid	vc_work.wk_cl_guid
 
 /* defines for members in vc_sopt ? */
@@ -365,16 +365,13 @@ typedef struct smb_fh {
  * Call-back operations vector, so the netsmb module
  * can notify smbfs about events affecting mounts.
  * Installed in netsmb after smbfs loads.
+ * Note: smbfs only uses the fscb_discon hook.
  */
 typedef struct smb_fscb {
 	/* Called when the VC has disconnected. */
 	void (*fscb_disconn)(smb_share_t *);
 	/* Called when the VC has reconnected. */
 	void (*fscb_connect)(smb_share_t *);
-	/* Called when the server becomes unresponsive. */
-	void (*fscb_down)(smb_share_t *);
-	/* Called when the server is responding again. */
-	void (*fscb_up)(smb_share_t *);
 } smb_fscb_t;
 /* Install the above vector, or pass NULL to clear it. */
 void smb_fscb_set(smb_fscb_t *);
@@ -454,7 +451,7 @@ void smb_iod_shutdown_share(smb_share_t *ssp);
 void smb_iod_sendall(smb_vc_t *);
 int smb_iod_recvall(smb_vc_t *, boolean_t);
 
-int nsmb_iod_connect(smb_vc_t *vcp);
+int nsmb_iod_connect(smb_vc_t *vcp, cred_t *cr);
 int nsmb_iod_negotiate(smb_vc_t *vcp, cred_t *cr);
 int nsmb_iod_ssnsetup(smb_vc_t *vcp, cred_t *cr);
 int smb_iod_vc_work(smb_vc_t *, int, cred_t *);

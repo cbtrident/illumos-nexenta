@@ -600,11 +600,12 @@ smbfs_smb_findopen(struct smbnode *dnp, const char *wild, int wlen,
 	}
 
 out:
-	if (error)
-		(void) smbfs_smb_findclose(ctx, scrp);
-	else
+	ctx->f_scred = NULL;
+	if (error) {
+		kmem_free(ctx, sizeof (*ctx));
+	} else {
 		*ctxpp = ctx;
-	ctx->f_scred = scrp;
+	}
 
 	return (error);
 }

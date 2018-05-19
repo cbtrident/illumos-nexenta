@@ -59,16 +59,35 @@
 int nsmb_signing_fudge = 0;
 #endif
 
+/*
+ * This is called just after session setup completes,
+ * at the top of smb_iod_vc_work().  Initialize signing.
+ */
 int
 smb_sign_init(smb_vc_t *vcp)
 {
 	int rc;
+
+	ASSERT(vcp->vc_ssnkey != NULL);
+	ASSERT(vcp->vc_mackey == NULL);
 
 	rc = smb_md5_getmech(&vcp->vc_signmech);
 	if (rc != 0) {
 		cmn_err(CE_NOTE, "smb can't get signing mechanism");
 		return (EAUTH);
 	}
+
+	/*
+	 * Convert the session key to the MAC key.
+	 * SMB1 uses the whole session key.
+	 */
+	vcp->vc_mackeylen = vcp->vc_ssnkeylen;
+	vcp->vc_mackey = kmem_zalloc(vcp->vc_mackeylen, KM_SLEEP);
+	bcopy(vcp->vc_ssnkey, vcp->vc_mackey, vcp->vc_mackeylen);
+
+	/* The initial sequence number is two. */
+	vcp->vc_next_seq = 2;
+
 	return (0);
 }
 

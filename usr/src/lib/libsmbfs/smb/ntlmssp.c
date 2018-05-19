@@ -74,6 +74,7 @@ typedef struct ntlmssp_state {
 	uint32_t ss_flags;
 	char *ss_target_name;	/* Primary domain or server name */
 	struct mbuf *ss_target_info;
+	uchar_t	ss_ssnkey[NTLM_HASH_SZ];
 	uchar_t	ss_kxkey[NTLM_HASH_SZ];
 } ntlmssp_state_t;
 
@@ -90,8 +91,7 @@ struct sec_buf {
 static const char ntlmssp_id[ID_SZ] = "NTLMSSP";
 
 static int
-ntlm_rand_ssn_key(struct smb_ctx *ctx,
-	ntlmssp_state_t *ssp_st, struct mbdata *ek_mbp);
+ntlm_rand_ssn_key(ntlmssp_state_t *ssp_st, struct mbdata *ek_mbp);
 
 /*
  * Get a "security buffer" (header part)
@@ -457,6 +457,7 @@ ntlmssp_put_type3(struct ssp_ctx *sp, struct mbdata *out_mb)
 		hdr.h_flags = ssp_st->ss_flags;
 		err = 0;
 		/* KeyExchangeKey = SessionBaseKey = (zeros) */
+		memset(ssp_st->ss_ssnkey, 0, NTLM_HASH_SZ);
 		memset(ssp_st->ss_kxkey, 0, NTLM_HASH_SZ);
 	} else if (ctx->ct_authflags & SMB_AT_NTLM2) {
 		/*
@@ -467,35 +468,36 @@ ntlmssp_put_type3(struct ssp_ctx *sp, struct mbdata *out_mb)
 		if (err)
 			goto out;
 		err = ntlm_put_v2_responses(ctx, &ti_mbc,
-		    &lm_mbc, &nt_mbc);
+		    &lm_mbc, &nt_mbc, ssp_st->ss_ssnkey);
 		if (err)
 			goto out;
 		/* KeyExchangeKey = SessionBaseKey (v2) */
-		memcpy(ssp_st->ss_kxkey, ctx->ct_ssn_key, NTLM_HASH_SZ);
+		memcpy(ssp_st->ss_kxkey, ssp_st->ss_ssnkey, NTLM_HASH_SZ);
 	} else if (ssp_st->ss_flags & NTLMSSP_NEGOTIATE_ESS) {
 		/*
 		 * Doing NTLM ("v1x") which is NTLM with
 		 * "Extended Session Security"
 		 */
 		err = ntlm_put_v1x_responses(ctx,
-		    &lm_mbc, &nt_mbc);
+		    &lm_mbc, &nt_mbc, ssp_st->ss_ssnkey);
 		if (err)
 			goto out;
 		/*
 		 * "v1x computes the KeyExchangeKey from both the
 		 * server and client nonce and (v1) SessionBaseKey.
 		 */
-		ntlm2_kxkey(ctx, &lm_mbc, ssp_st->ss_kxkey);
+		ntlm2_kxkey(ctx, &lm_mbc, ssp_st->ss_ssnkey,
+		    ssp_st->ss_kxkey);
 	} else {
 		/*
 		 * Doing plain old NTLM (and LM if enabled)
 		 */
 		err = ntlm_put_v1_responses(ctx,
-		    &lm_mbc, &nt_mbc);
+		    &lm_mbc, &nt_mbc, ssp_st->ss_ssnkey);
 		if (err)
 			goto out;
 		/* KeyExchangeKey = SessionBaseKey (v1) */
-		memcpy(ssp_st->ss_kxkey, ctx->ct_ssn_key, NTLM_HASH_SZ);
+		memcpy(ssp_st->ss_kxkey, ssp_st->ss_ssnkey, NTLM_HASH_SZ);
 	}
 
 	/*
@@ -503,12 +505,12 @@ ntlmssp_put_type3(struct ssp_ctx *sp, struct mbdata *out_mb)
 	 * "EncryptedRandomSesionKey". [MS-NLMP 3.1.5.1.2]
 	 */
 	if (ssp_st->ss_flags & NTLMSSP_NEGOTIATE_KEY_EXCH) {
-		err = ntlm_rand_ssn_key(ctx, ssp_st, &ek_mbc);
+		err = ntlm_rand_ssn_key(ssp_st, &ek_mbc);
 		if (err)
 			goto out;
 	} else {
 		/* ExportedSessionKey is the KeyExchangeKey */
-		memcpy(ctx->ct_ssn_key, ssp_st->ss_kxkey, NTLM_HASH_SZ);
+		memcpy(ssp_st->ss_ssnkey, ssp_st->ss_kxkey, NTLM_HASH_SZ);
 		/* EncryptedRandomSessionKey remains NULL */
 	}
 
@@ -593,7 +595,6 @@ out:
  */
 static int
 ntlm_rand_ssn_key(
-	struct smb_ctx *ctx,
 	ntlmssp_state_t *ssp_st,
 	struct mbdata *ek_mbp)
 {
@@ -606,12 +607,12 @@ ntlm_rand_ssn_key(
 	encr_ssn_key = mb_reserve(ek_mbp, NTLM_HASH_SZ);
 
 	/* Set "ExportedSessionKey to NONCE(16) */
-	(void) smb_get_urandom(ctx->ct_ssn_key, NTLM_HASH_SZ);
+	(void) smb_get_urandom(ssp_st->ss_ssnkey, NTLM_HASH_SZ);
 
 	/* Set "EncryptedRandomSessionKey" to RC4(...) */
 	err = smb_encrypt_RC4(encr_ssn_key, NTLM_HASH_SZ,
 	    ssp_st->ss_kxkey, NTLM_HASH_SZ,
-	    ctx->ct_ssn_key, NTLM_HASH_SZ);
+	    ssp_st->ss_ssnkey, NTLM_HASH_SZ);
 
 	return (err);
 }
@@ -620,28 +621,29 @@ ntlm_rand_ssn_key(
  * ntlmssp_final
  *
  * Called after successful authentication.
- * Setup the MAC key for signing.
+ * Save the session key.
  */
 int
 ntlmssp_final(struct ssp_ctx *sp)
 {
 	struct smb_ctx *ctx = sp->smb_ctx;
+	ntlmssp_state_t *ssp_st = sp->sp_private;
 	int err = 0;
 
 	/*
-	 * MAC_key is just the session key, but
-	 * Only on the first successful auth.
+	 * Update/save the session key.
 	 */
-	if (ctx->ct_mackey == NULL) {
-		ctx->ct_mackeylen = NTLM_HASH_SZ;
-		ctx->ct_mackey = malloc(ctx->ct_mackeylen);
-		if (ctx->ct_mackey == NULL) {
-			ctx->ct_mackeylen = 0;
-			err = ENOMEM;
-			goto out;
-		}
-		memcpy(ctx->ct_mackey, ctx->ct_ssn_key, NTLM_HASH_SZ);
+	if (ctx->ct_ssnkey_buf != NULL) {
+		free(ctx->ct_ssnkey_buf);
+		ctx->ct_ssnkey_buf = NULL;
 	}
+	ctx->ct_ssnkey_buf = malloc(NTLM_HASH_SZ);
+	if (ctx->ct_ssnkey_buf == NULL) {
+		err = ENOMEM;
+		goto out;
+	}
+	ctx->ct_ssnkey_len = NTLM_HASH_SZ;
+	memcpy(ctx->ct_ssnkey_buf, ssp_st->ss_ssnkey, NTLM_HASH_SZ);
 
 out:
 	return (err);

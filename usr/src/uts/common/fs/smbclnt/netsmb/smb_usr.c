@@ -85,7 +85,10 @@ smb_usr_get_ssnkey(smb_dev_t *sdp, intptr_t arg, int flags)
 	/*
 	 * Return the session key.
 	 */
-	if (ddi_copyout(vcp->vc_ssn_key, (void *)arg,
+	if (vcp->vc_ssnkey == NULL ||
+	    vcp->vc_ssnkeylen < SMBIOC_HASH_SZ)
+		return (EINVAL);
+	if (ddi_copyout(vcp->vc_ssnkey, (void *)arg,
 	    SMBIOC_HASH_SZ, flags))
 		return (EFAULT);
 
@@ -763,7 +766,7 @@ smb_usr_iod_ioctl(smb_dev_t *sdp, int cmd, intptr_t arg, int flags, cred_t *cr)
 	switch (cmd) {
 
 	case SMBIOC_IOD_CONNECT:
-		err = nsmb_iod_connect(vcp);
+		err = nsmb_iod_connect(vcp, cr);
 		break;
 
 	case SMBIOC_IOD_NEGOTIATE:

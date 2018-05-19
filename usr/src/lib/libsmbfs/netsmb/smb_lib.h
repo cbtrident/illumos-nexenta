@@ -138,9 +138,8 @@ struct smb_ctx {
 #define	ct_lmhash	ct_iod_ssn.iod_lmhash
 
 #define	ct_vcflags	ct_work.wk_vcflags
-#define	ct_mackeylen	ct_work.wk_u_maclen
-#define	ct_mackey	ct_work.wk_u_mackey.lp_ptr
-#define	ct_ssn_key	ct_work.wk_ssn_key
+#define	ct_ssnkey_len	ct_work.wk_u_ssnkey_len
+#define	ct_ssnkey_buf	ct_work.wk_u_ssnkey_buf.lp_ptr
 
 
 /*

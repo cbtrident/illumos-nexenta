@@ -381,7 +381,7 @@ krb5ssp_final(struct ssp_ctx *sp)
 	struct smb_ctx *ctx = sp->smb_ctx;
 	krb5ssp_state_t *ss = sp->sp_private;
 	krb5_keyblock	*ssn_key = NULL;
-	int err, len;
+	int err;
 
 	/*
 	 * Save the session key, used for SMB signing
@@ -396,29 +396,32 @@ krb5ssp_final(struct ssp_ctx *sp)
 			err = EAUTH;
 		goto out;
 	}
-	memset(ctx->ct_ssn_key, 0, SMBIOC_HASH_SZ);
-	if ((len = ssn_key->length) > SMBIOC_HASH_SZ)
-		len = SMBIOC_HASH_SZ;
-	memcpy(ctx->ct_ssn_key, ssn_key->contents, len);
+
+	/* Sanity check the length */
+	if (ssn_key->length > 1024) {
+		DPRINT("session key too long");
+		err = EAUTH;
+		goto out;
+	}
 
 	/*
-	 * Set the MAC key on the first successful auth.
+	 * Update/save the session key.
 	 */
-	if (ctx->ct_mackey == NULL) {
-		ctx->ct_mackeylen = ssn_key->length;
-		ctx->ct_mackey = malloc(ctx->ct_mackeylen);
-		if (ctx->ct_mackey == NULL) {
-			ctx->ct_mackeylen = 0;
-			err = ENOMEM;
-			goto out;
-		}
-		memcpy(ctx->ct_mackey, ssn_key->contents,
-		    ctx->ct_mackeylen);
+	if (ctx->ct_ssnkey_buf != NULL) {
+		free(ctx->ct_ssnkey_buf);
+		ctx->ct_ssnkey_buf = NULL;
 	}
+	ctx->ct_ssnkey_buf = malloc(ssn_key->length);
+	if (ctx->ct_ssnkey_buf == NULL) {
+		err = ENOMEM;
+		goto out;
+	}
+	ctx->ct_ssnkey_len = ssn_key->length;
+	memcpy(ctx->ct_ssnkey_buf, ssn_key->contents, ctx->ct_ssnkey_len);
 	err = 0;
 
 out:
-	if (ssn_key)
+	if (ssn_key != NULL)
 		krb5_free_keyblock(ss->ss_krb5ctx, ssn_key);
 
 	return (err);

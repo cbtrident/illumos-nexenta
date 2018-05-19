@@ -187,6 +187,16 @@ smb_co_rele(struct smb_connobj *co)
 	int old_flags;
 
 	SMB_CO_LOCK(co);
+
+	/*
+	 * When VC usecount goes from 2 to 1, signal the iod_idle CV.
+	 * It's unfortunate to have object type-specific logic here,
+	 * but it's hard to do this anywhere else.
+	 */
+	if (co->co_level == SMBL_VC && co->co_usecount == 2) {
+		smb_vc_t *vcp = CPTOVC(co);
+		cv_signal(&vcp->iod_idle);
+	}
 	if (co->co_usecount > 1) {
 		co->co_usecount--;
 		SMB_CO_UNLOCK(co);
@@ -371,6 +381,8 @@ smb_vc_free(struct smb_connobj *cp)
 
 	if (vcp->vc_mackey != NULL)
 		kmem_free(vcp->vc_mackey, vcp->vc_mackeylen);
+	if (vcp->vc_ssnkey != NULL)
+		kmem_free(vcp->vc_ssnkey, vcp->vc_ssnkeylen);
 
 	cv_destroy(&vcp->iod_muxwait);
 	cv_destroy(&vcp->iod_idle);

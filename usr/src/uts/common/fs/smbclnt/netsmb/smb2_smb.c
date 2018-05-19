@@ -1294,3 +1294,32 @@ out:
 	smb_rq_done(rqp);
 	return (error);
 }
+
+/*
+ * Note: the IOD calls this, so this request must not wait for
+ * connection state changes, etc. (uses smb2_rq_internal)
+ */
+int
+smb2_smb_echo(struct smb_vc *vcp, struct smb_cred *scred, int timo)
+{
+	struct smb_rq *rqp;
+	struct mbchain *mbp;
+	int error;
+
+	error = smb_rq_alloc(VCTOCP(vcp), SMB2_ECHO, scred, &rqp);
+	if (error)
+		return (error);
+
+	/*
+	 * Build the SMB 2 Echo Request
+	 */
+	smb_rq_getrequest(rqp, &mbp);
+	mb_put_uint16le(mbp, 4);		/* Struct size */
+	mb_put_uint16le(mbp, 0);		/* Reserved */
+
+	rqp->sr_flags |= SMBR_NORECONNECT;
+	error = smb2_rq_internal(rqp, timo);
+
+	smb_rq_done(rqp);
+	return (error);
+}

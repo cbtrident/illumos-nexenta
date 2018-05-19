@@ -86,6 +86,14 @@ smb_credrele(struct smb_cred *scred)
 	}
 }
 
+#ifndef	_KERNEL
+/* ARGSUSED */
+void
+smb_debugmsg(const char *func, char *msg)
+{
+}
+#endif	/* _KERNEL */
+
 /*
  * Helper for the SMBERROR macro, etc.
  * This is also a good place for a breakpoint
@@ -108,6 +116,9 @@ smb_errmsg(int cel, const char *func_name, const char *fmt, ...)
 		DTRACE_PROBE2(debugmsg2,
 		    (char *), func_name,
 		    (char *), buf);
+#ifndef	_KERNEL
+		smb_debugmsg(func_name, buf);
+#endif
 	} else {
 		/*
 		 * This is one of our xxxERROR macros.
