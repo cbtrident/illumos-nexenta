@@ -126,6 +126,14 @@ smbfs_fullpath(struct mbchain *mbp, struct smb_vc *vcp, struct smbnode *dnp,
 			return (error);
 	}
 
+	/* SMB1 wants NULL termination. */
+	if (((vcp)->vc_flags & SMBV_SMB2) == 0) {
+		if (unicode)
+			error = mb_put_uint16le(mbp, 0);
+		else
+			error = mb_put_uint8(mbp, 0);
+	}
+
 	return (error);
 }
 
