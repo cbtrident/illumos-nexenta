@@ -1154,8 +1154,12 @@ smb_ctx_resolve(struct smb_ctx *ctx)
 		 * If we don't have a p/w yet,
 		 * try the keychain.
 		 */
-		if (ctx->ct_password[0] == '\0')
-			(void) smb_get_keychain(ctx);
+		if (ctx->ct_password[0] == '\0' &&
+		    smb_get_keychain(ctx) == 0) {
+			strlcpy(ctx->ct_password, "$HASH",
+			    sizeof (ctx->ct_password));
+		}
+
 		/*
 		 * Mask out disallowed auth types.
 		 */
