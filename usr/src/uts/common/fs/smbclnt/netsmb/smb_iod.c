@@ -892,7 +892,7 @@ smb_iod_send_echo(smb_vc_t *vcp, cred_t *cr)
 }
 
 /*
- * Helper for smb_iod_addrq, smb2_iod_addrq
+ * Helper for smb1_iod_addrq, smb2_iod_addrq
  * Returns zero if interrupted, else 1.
  */
 static int
@@ -924,7 +924,7 @@ smb_iod_muxwait(smb_vc_t *vcp, boolean_t sig_ok)
  * SMB1 and SMB2.  With SMB1 it's a simple counter ioc_muxcnt.
  */
 int
-smb_iod_addrq(struct smb_rq *rqp)
+smb1_iod_addrq(struct smb_rq *rqp)
 {
 	struct smb_vc *vcp = rqp->sr_vc;
 	uint16_t need;
@@ -1108,11 +1108,11 @@ recheck:
 /*
  * Mark an SMBR_MULTIPACKET request as
  * needing another send.  Similar to the
- * "normal" part of smb_iod_addrq.
+ * "normal" part of smb1_iod_addrq.
  * Only used by SMB1
  */
 int
-smb_iod_multirq(struct smb_rq *rqp)
+smb1_iod_multirq(struct smb_rq *rqp)
 {
 	struct smb_vc *vcp = rqp->sr_vc;
 

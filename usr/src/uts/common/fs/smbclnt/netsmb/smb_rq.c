@@ -353,7 +353,7 @@ smb_rq_enqueue(struct smb_rq *rqp)
 ok_out:
 	rqp->sr_rquid = vcp->vc_smbuid;
 	rqp->sr_rqtid = ssp ? ssp->ss_tid : SMB_TID_UNKNOWN;
-	error = smb_iod_addrq(rqp);
+	error = smb1_iod_addrq(rqp);
 
 	return (error);
 }
@@ -382,7 +382,7 @@ smb_rq_internal(struct smb_rq *rqp, int timeout)
 	rqp->sr_rquid = vcp->vc_smbuid;
 	rqp->sr_rqtid = SMB_TID_UNKNOWN;
 	rqp->sr_flags |= SMBR_INTERNAL;
-	error = smb_iod_addrq(rqp);
+	error = smb1_iod_addrq(rqp);
 	if (error != 0)
 		return (error);
 
@@ -1255,7 +1255,7 @@ smb_t2_request_int(struct smb_t2rq *t2p)
 			mb_put_mbuf(mbp, m);
 		}
 		smb_rq_bend(rqp);
-		error = smb_iod_multirq(rqp);
+		error = smb1_iod_multirq(rqp);
 		if (error)
 			goto bad;
 	}	/* while left params or data */
@@ -1466,7 +1466,7 @@ smb_nt_request_int(struct smb_ntrq *ntp)
 			mb_put_mbuf(mbp, m);
 		}
 		smb_rq_bend(rqp);
-		error = smb_iod_multirq(rqp);
+		error = smb1_iod_multirq(rqp);
 		if (error)
 			goto bad;
 	}	/* while left params or data */
