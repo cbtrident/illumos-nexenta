@@ -420,7 +420,11 @@ top:
  * There's usually a good chance connections will be reused,
  * so the default is to keep such connections for 5 min.
  */
+#ifdef	DEBUG
+int smb_iod_idle_keep_time = 60;	/* seconds */
+#else
 int smb_iod_idle_keep_time = 300;	/* seconds */
+#endif
 
 /*
  * Process incoming packets
