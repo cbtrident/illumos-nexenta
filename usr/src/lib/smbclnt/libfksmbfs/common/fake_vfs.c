@@ -24,8 +24,8 @@
  * Copyright 2016 Joyent, Inc.
  * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.
  * Copyright 2017 RackTop Systems.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -105,8 +105,7 @@ static void vfs_freecancelopt(char **);
  * VFS global data.
  */
 vnode_t *rootdir;		/* pointer to root inode vnode. */
-static struct vfs root;
-struct vfs *rootvfs = &root;	/* pointer to root vfs; head of VFS list. */
+struct vfs *rootvfs = NULL;	/* pointer to root vfs; head of VFS list. */
 static krwlock_t vfslist;
 struct vfs	*zone_vfslist;	/* list of FS's mounted in zone */
 
@@ -546,6 +545,12 @@ fake_domount(char *fsname, struct mounta *uap, struct vfs **vfspp)
 	int		optlen = uap->optlen;
 
 	credp = CRED();
+
+	/*
+	 * Test jig specific: mount on rootdir
+	 */
+	if (rootvfs != NULL)
+		return (EBUSY);
 	vp = rootdir;
 
 	/*
@@ -643,16 +648,10 @@ fake_domount(char *fsname, struct mounta *uap, struct vfs **vfspp)
 	}
 
 	/*
-	 * If this is a remount, we don't want to create a new VFS.
-	 * Instead, we pass the existing one with a remount flag.
-	 * (always remount=0 here)
+	 * If this is a remount, ... (never here)
 	 */
-	{
-		// vfsp = vfs_alloc(KM_SLEEP);
-		// Don't vfs_free() in here!
-		vfsp = rootvfs;
-		VFS_INIT(vfsp, vfsops, NULL);
-	}
+	vfsp = vfs_alloc(KM_SLEEP);
+	VFS_INIT(vfsp, vfsops, NULL);
 
 	VFS_HOLD(vfsp);
 
@@ -672,7 +671,7 @@ fake_domount(char *fsname, struct mounta *uap, struct vfs **vfspp)
 	 * Lock the vfs...
 	 */
 	if ((error = vfs_lock(vfsp)) != 0) {
-		// vfs_free(vfsp);
+		vfs_free(vfsp);
 		vfsp = NULL;
 		goto errout;
 	}
@@ -722,7 +721,7 @@ fake_domount(char *fsname, struct mounta *uap, struct vfs **vfspp)
 		// (remount == 0)
 		vfs_unlock(vfsp);
 		// vfs_freemnttab(vfsp);
-		// vfs_free(vfsp);
+		vfs_free(vfsp);
 		vfsp = NULL;
 	} else {
 		/*
@@ -730,15 +729,19 @@ fake_domount(char *fsname, struct mounta *uap, struct vfs **vfspp)
 		 */
 		// vfsp->vfs_mtime = ddi_get_time();
 		// if (remount) ...
-		{
-			/*
-			 * Hold the reference to file system which is
-			 * not linked into the name space.
-			 */
-			vfsp->vfs_zone = NULL;
-			VFS_HOLD(vfsp);
-			vfsp->vfs_vnodecovered = NULL;
-		}
+		// else if (splice) vfs_add(vp, vfsp, flags)
+		// else VFS_HOLD(vfsp);
+
+		/*
+		 * Test jig specific:
+		 * Do sort of like vfs_add for vp=rootdir
+		 * Already have hold on vp.
+		 */
+		vfsp->vfs_vnodecovered = vp;
+		vfsp->vfs_flag |= (VFS_NOSETUID|VFS_NODEVICES);
+		VFS_HOLD(vfsp);
+		rootvfs = vfsp;
+
 		/*
 		 * Set flags for global options encountered
 		 */
@@ -800,7 +803,6 @@ fake_domount(char *fsname, struct mounta *uap, struct vfs **vfspp)
 		 * Test jig specicific:
 		 * Replace rootdir with the mounted root.
 		 */
-		vfsp->vfs_vnodecovered = rootdir;
 		error = VFS_ROOT(vfsp, &rootdir);
 		if (error != 0) {
 			panic("fake_domount, get root %d\n", error);
@@ -813,6 +815,7 @@ fake_domount(char *fsname, struct mounta *uap, struct vfs **vfspp)
 	//	vn_vfsunlock(vp);
 
 	if ((error == 0) && (copyout_error == 0)) {
+		/* get_vskstat_anchor() */
 		/* Return vfsp to caller. */
 		*vfspp = vfsp;
 	}
@@ -1586,16 +1589,20 @@ fake_dounmount(struct vfs *vfsp, int flag)
 	 */
 	coveredvp = vfsp->vfs_vnodecovered;
 
-	/*
-	 * Test-jig specific: We called VFS_ROOT to set rootdir.
-	 * Need to release that hold (and restore rootdir below).
-	 */
-	if (coveredvp != NULL && rootdir != NULL)
-		VN_RELE(rootdir);
-
 	/* For forcible umount, skip VFS_SYNC() since it may hang */
 	if ((flag & MS_FORCE) == 0)
 		(void) VFS_SYNC(vfsp, 0, cr);
+
+	/*
+	 * Test-jig specific:
+	 * Need to release rootdir before unmount or VFS_UNMOUNT
+	 * may fail due to that node being active.
+	 */
+	if (rootdir != NULL) {
+		ASSERT(rootdir != coveredvp);
+		VN_RELE(rootdir);
+		rootdir = NULL;
+	}
 
 	/*
 	 * Lock the vfs to maintain fs status quo during unmount.  This
@@ -1605,18 +1612,33 @@ fake_dounmount(struct vfs *vfsp, int flag)
 	vfs_lock_wait(vfsp);
 
 	if ((error = VFS_UNMOUNT(vfsp, flag, cr)) != 0) {
+		int err2;
 		vfs_unlock(vfsp);
+		/* Get rootdir back */
+		err2 = VFS_ROOT(vfsp, &rootdir);
+		if (err2 != 0) {
+			panic("fake_dounmount, get root %d\n", err2);
+		}
 	} else {
+		/*
+		 * Real dounmount does vfs_remove.
+		 *
+		 * Test-jig specific:
+		 * Restore the covered rootdir,
+		 * release the rootvfs hold and clear.
+		 */
 		if (coveredvp != NULL) {
-			/*
-			 * Real dounmount does vfs_remove.
-			 * We just put back the covered rootdir
-			 */
+			// vfs_list_remove(vfsp);
+			vfsp->vfs_vnodecovered = NULL;
 			rootdir = coveredvp;
 		}
+		if (rootvfs == vfsp) {
+			VFS_RELE(vfsp);
+			rootvfs = NULL;
+		}
+
 		/*
-		 * Release the reference to vfs that is not linked
-		 * into the name space.
+		 * Release the (final) reference to vfs
 		 */
 		vfs_unlock(vfsp);
 		VFS_RELE(vfsp);

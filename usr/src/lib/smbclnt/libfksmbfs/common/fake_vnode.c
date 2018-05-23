@@ -22,8 +22,8 @@
 /*
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2017, Joyent, Inc.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -580,13 +580,14 @@ vn_freevnodeops(vnodeops_t *vnops)
 static int
 vn_cache_constructor(void *buf, void *cdrarg, int kmflags)
 {
-	struct vnode *vp;
+	struct vnode *vp = buf;
 
-	vp = buf;
-
+	bzero(vp, sizeof (*vp));
 	mutex_init(&vp->v_lock, NULL, MUTEX_DEFAULT, NULL);
 	rw_init(&vp->v_nbllock, NULL, RW_DEFAULT, NULL);
 	vp->v_path = vn_vpath_empty;
+	vp->v_fd = -1;
+	vp->v_st_dev = NODEV;
 
 	return (0);
 }
@@ -694,6 +695,8 @@ vn_alloc(int kmflag)
 void
 vn_free(vnode_t *vp)
 {
+	extern vnode_t *rootdir;
+	ASSERT(vp != rootdir);
 
 	/*
 	 * Some file systems call vn_free() with v_count of zero,
