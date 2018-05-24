@@ -2021,7 +2021,9 @@ zfs_recv_one_ds(spa_t *spa, char *ds, dmu_replay_record_t *drr,
 	uint64_t sz = 0;
 	char *tosnap;
 	char origin[ZFS_MAX_DATASET_NAME_LEN];
+#ifdef _KERNEL
 	char *originp = NULL;
+#endif
 	struct drr_begin *drrb = &drr->drr_u.drr_begin;
 
 	if (krrp_task->buffer_args.to_snap[0]) {
@@ -2043,8 +2045,9 @@ zfs_recv_one_ds(spa_t *spa, char *ds, dmu_replay_record_t *drr,
 
 			return (SET_ERROR(ENOLINK));
 		}
-
+#ifdef _KERNEL
 		originp = origin;
+#endif
 	}
 
 	zfs_recv_alter_props(fs_props,
@@ -2058,7 +2061,7 @@ zfs_recv_one_ds(spa_t *spa, char *ds, dmu_replay_record_t *drr,
 		    ds, tosnap);
 	}
 
-	/* hack to avoid adding the symnol to the libzpool export list */
+	/* hack to avoid adding the symbol to the libzpool export list */
 #ifdef _KERNEL
 	err = dmu_recv_impl(NULL, ds, tosnap, originp, drr, B_TRUE, fs_props,
 	    NULL, &errf, -1, &ahdl, &sz, krrp_task->buffer_args.force,
