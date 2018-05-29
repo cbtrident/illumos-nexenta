@@ -339,7 +339,8 @@ krrp_stream_read_task_init(krrp_stream_te_t *task_engine, uint64_t txg,
 {
 	ASSERT(task_engine->mode == KRRP_STEM_READ);
 
-	ASSERT(src_snap != NULL && strlen(src_snap) != 0);
+	VERIFY(resume_info == NULL ||
+	    (src_snap == NULL && src_inc_snap == NULL));
 
 	krrp_stream_task_t *task;
 
@@ -347,16 +348,22 @@ krrp_stream_read_task_init(krrp_stream_te_t *task_engine, uint64_t txg,
 
 	task->txg = txg;
 
-	(void) strlcpy(task->zargs.from_snap, src_snap,
-	    sizeof (task->zargs.from_snap));
-	if (src_inc_snap != NULL)
-		(void) strlcpy(task->zargs.from_incr_base, src_inc_snap,
-		    sizeof (task->zargs.from_incr_base));
-	else
-		task->zargs.from_incr_base[0] = '\0';
-
 	task->zargs.resume_info =
 	    resume_info != NULL ? fnvlist_dup(resume_info) : NULL;
+
+	if (src_snap != NULL) {
+		(void) strlcpy(task->zargs.from_snap, src_snap,
+		    sizeof (task->zargs.from_snap));
+	} else {
+		task->zargs.from_snap[0] = '\0';
+	}
+
+	if (src_inc_snap != NULL) {
+		(void) strlcpy(task->zargs.from_incr_base, src_inc_snap,
+		    sizeof (task->zargs.from_incr_base));
+	} else {
+		task->zargs.from_incr_base[0] = '\0';
+	}
 
 	task->init_hrtime = gethrtime();
 
@@ -383,7 +390,7 @@ krrp_stream_fake_read_task_init(krrp_stream_te_t *task_engine,
 
 void
 krrp_stream_write_task_init(krrp_stream_te_t *task_engine, uint64_t txg,
-    krrp_stream_task_t **result_task, nvlist_t *resume_info)
+    krrp_stream_task_t **result_task)
 {
 	ASSERT(task_engine->mode == KRRP_STEM_WRITE);
 
@@ -395,9 +402,6 @@ krrp_stream_write_task_init(krrp_stream_te_t *task_engine, uint64_t txg,
 
 	task->txg_start = UINT64_MAX;
 	task->txg_end = UINT64_MAX;
-
-	task->zargs.resume_info =
-	    resume_info != NULL ? fnvlist_dup(resume_info) : NULL;
 
 	if (!task_engine->fake_mode)
 		task->zfs_ctx = dmu_krrp_init_recv_task(&task->zargs);

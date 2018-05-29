@@ -123,6 +123,10 @@ krrp_stream_read_create(krrp_stream_t **result_stream,
 		goto err;
 	}
 
+	VERIFY(resume_token == NULL || (base_snap_name == NULL &&
+	    incr_snap_name == NULL && skip_snaps_mask == NULL &&
+	    !stream->recursive));
+
 	/* Source and Common snapshots must not be equal */
 	if (base_snap_name != NULL && incr_snap_name != NULL &&
 	    strcmp(base_snap_name, incr_snap_name) == 0) {
@@ -143,15 +147,17 @@ krrp_stream_read_create(krrp_stream_t **result_stream,
 			krrp_error_set(error, KRRP_ERRNO_SRCSNAP, EINVAL);
 			goto err;
 		}
+	}
 
-		if (resume_token != NULL) {
-			rc = dmu_krrp_decode_resume_token(resume_token,
-			    &stream->resume_info);
-			if (rc != 0) {
-				krrp_error_set(error,
-				    KRRP_ERRNO_RESUMETOKEN, rc);
-				goto err;
-			}
+	if (resume_token != NULL) {
+		stream->non_continuous = B_TRUE;
+
+		rc = dmu_krrp_decode_resume_token(resume_token,
+		    &stream->resume_info);
+		if (rc != 0) {
+			krrp_error_set(error,
+			    KRRP_ERRNO_RESUMETOKEN, rc);
+			goto err;
 		}
 	}
 
@@ -185,8 +191,8 @@ err:
 
 int
 krrp_stream_write_create(krrp_stream_t **result_stream,
-    size_t keep_snaps, const char *dataset, const char *incr_snap_name,
-    const char *resume_token, krrp_stream_write_flag_t flags,
+    size_t keep_snaps, const char *dataset,
+    krrp_stream_write_flag_t flags,
     nvlist_t *ignore_props_list, nvlist_t *replace_props_list,
     krrp_error_t *error)
 {
@@ -205,25 +211,6 @@ krrp_stream_write_create(krrp_stream_t **result_stream,
 	if (rc != 0 || is_str_empty(dataset)) {
 		krrp_error_set(error, KRRP_ERRNO_DSTDS, EINVAL);
 		goto err;
-	}
-
-	if (resume_token != NULL) {
-		rc = dmu_krrp_decode_resume_token(resume_token,
-		    &stream->resume_info);
-		if (rc != 0) {
-			krrp_error_set(error,
-			    KRRP_ERRNO_RESUMETOKEN, rc);
-			goto err;
-		}
-	}
-
-	if (incr_snap_name != NULL) {
-		rc = copy_str(stream->incr_snap_name, incr_snap_name,
-		    sizeof (stream->incr_snap_name));
-		if (rc != 0 || is_str_empty(incr_snap_name)) {
-			krrp_error_set(error, KRRP_ERRNO_CMNSNAP, EINVAL);
-			goto err;
-		}
 	}
 
 	rc = krrp_stream_te_write_create(&stream->task_engine,
@@ -475,42 +462,28 @@ static int
 krrp_stream_validate_run(krrp_stream_t *stream, krrp_error_t *error)
 {
 	int rc = -1;
+	char ds[ZFS_MAX_DATASET_NAME_LEN];
+
+	(void) strlcpy(ds, stream->dataset, sizeof (ds));
 
 	/*
-	 * The SOURCE datasets must exist always
+	 * The SOURCE datasets must exist
 	 *
-	 * The DESTINATION dataset may not exist, that is allowed,
-	 * but if incr_snap_name is defined therefore this replication
-	 * is incremental and destination dataset must exist, exclude
-	 * the cases if the destination dataset is a ZFS pool (the name
-	 * does not contain '/'). For all other cases the parent of
-	 * the destination dataset must exist.
+	 * The parent of DESTINATION dataset must exist.
 	 */
-	if (dsl_dataset_creation_txg(stream->dataset) == UINT64_MAX) {
-		if (stream->mode == KRRP_STRMM_READ) {
+	if (stream->mode == KRRP_STRMM_WRITE) {
+		char *ls = strrchr(ds, '/');
+		if (ls != NULL)
+			*ls = '\0';
+	}
+
+	if (dsl_dataset_creation_txg(ds) == UINT64_MAX) {
+		if (stream->mode == KRRP_STRMM_READ)
 			krrp_error_set(error, KRRP_ERRNO_SRCDS, ENOENT);
-			goto out;
-		} else {
-			char *p;
-			boolean_t parent_exists = B_TRUE;
-			boolean_t dst_is_pool = B_TRUE;
+		else
+			krrp_error_set(error, KRRP_ERRNO_DSTDS, ENOENT);
 
-			p = strrchr(stream->dataset, '/');
-			if (p != NULL) {
-				*p = '\0';
-				parent_exists =
-				    dsl_dataset_creation_txg(stream->dataset) !=
-				    UINT64_MAX;
-				*p = '/';
-				dst_is_pool = B_FALSE;
-			}
-
-			if (dst_is_pool || !parent_exists ||
-			    strlen(stream->incr_snap_name) != 0) {
-				krrp_error_set(error, KRRP_ERRNO_DSTDS, ENOENT);
-				goto out;
-			}
-		}
+		goto out;
 	}
 
 	rc = 0;
@@ -563,21 +536,26 @@ krrp_stream_activate_autosnap(krrp_stream_t *stream,
 			 */
 			krrp_autosnap_create_snapshot(stream->autosnap);
 		} else {
-			uint64_t base_snap_txg;
+			uint64_t base_snap_txg = UINT64_MAX;
+			char *base_snap = NULL;
+			char *incr_snap = NULL;
 
-			VERIFY(stream->base_snap_name[0] != '\0');
+			if (stream->resume_info == NULL) {
+				base_snap_txg = krrp_stream_get_snap_txg(stream,
+				    stream->base_snap_name);
+				if (base_snap_txg == UINT64_MAX) {
+					krrp_error_set(error,
+					    KRRP_ERRNO_SRCSNAP, ENOENT);
+					goto out;
+				}
 
-			base_snap_txg = krrp_stream_get_snap_txg(stream,
-			    stream->base_snap_name);
-			if (base_snap_txg == UINT64_MAX) {
-				krrp_error_set(error,
-				    KRRP_ERRNO_SRCSNAP, ENOENT);
-				goto out;
+				base_snap = stream->base_snap_name;
+				incr_snap = stream->incr_snap_name;
 			}
 
 			krrp_stream_read_task_init(stream->task_engine,
-			    base_snap_txg, stream->base_snap_name,
-			    stream->incr_snap_name, stream->resume_info);
+			    base_snap_txg, base_snap, incr_snap,
+			    stream->resume_info);
 
 			/*
 			 * Non-continuous replication sends only one snapshot.
@@ -656,7 +634,9 @@ krrp_stream_txg_confirmed(krrp_stream_t *stream, uint64_t txg,
 		krrp_stream_calc_avg_rpo(stream, task, B_TRUE);
 		krrp_stream_task_fini(task);
 
-		if (stream->notify_txg == txg) {
+		if (stream->notify_txg == txg ||
+		    (stream->notify_txg == UINT64_MAX &&
+		    stream->resume_info != NULL)) {
 			krrp_stream_callback(stream,
 			    KRRP_STREAM_SEND_DONE, NULL);
 		}
@@ -1004,16 +984,7 @@ krrp_stream_write(void *arg)
 			VERIFY(stream_task == NULL);
 
 			krrp_stream_write_task_init(stream->task_engine,
-			    pdu->txg, &stream_task, stream->resume_info);
-
-			/*
-			 * Cookies are required only for
-			 * the first received task
-			 */
-			if (stream->resume_info != NULL) {
-				fnvlist_free(stream->resume_info);
-				stream->resume_info = NULL;
-			}
+			    pdu->txg, &stream_task);
 
 			stream->cur_task = stream_task;
 			stream->cur_recv_txg = pdu->txg;

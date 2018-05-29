@@ -161,7 +161,7 @@ void krrp_stream_fake_read_task_init(krrp_stream_te_t *, uint64_t);
 void krrp_stream_read_task_init(krrp_stream_te_t *, uint64_t,
     const char *, const char *, nvlist_t *);
 void krrp_stream_write_task_init(krrp_stream_te_t *, uint64_t,
-    krrp_stream_task_t **, nvlist_t *);
+    krrp_stream_task_t **);
 void krrp_stream_task_fini(krrp_stream_task_t *);
 
 hrtime_t krrp_stream_task_calc_rpo(krrp_stream_task_t *);

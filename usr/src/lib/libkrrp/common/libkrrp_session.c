@@ -332,9 +332,8 @@ krrp_sess_create_stream_common(libkrrp_handle_t *hdl, nvlist_t *params,
 
 int
 krrp_sess_create_write_stream(libkrrp_handle_t *hdl, uuid_t sess_id,
-    const char *dataset, const char *common_snap,
-    krrp_sess_stream_flags_t krrp_sess_stream_flags, nvlist_t *ignore_props,
-    nvlist_t *replace_props, const char *resume_token, uint32_t keep_snaps)
+    const char *dataset, krrp_sess_stream_flags_t krrp_sess_stream_flags,
+	nvlist_t *ignore_props, nvlist_t *replace_props, uint32_t keep_snaps)
 {
 	nvlist_t *replace_props_copy = NULL;
 	nvlist_t *params = NULL;
@@ -374,8 +373,8 @@ krrp_sess_create_write_stream(libkrrp_handle_t *hdl, uuid_t sess_id,
 
 	params = fnvlist_alloc();
 
-	krrp_sess_create_stream_common(hdl, params, sess_id, common_snap,
-	    krrp_sess_stream_flags, resume_token, keep_snaps);
+	krrp_sess_create_stream_common(hdl, params, sess_id, NULL,
+	    krrp_sess_stream_flags, NULL, keep_snaps);
 
 	(void) krrp_param_put(KRRP_PARAM_DST_DATASET, params,
 	    (void *)dataset);

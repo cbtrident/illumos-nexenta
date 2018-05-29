@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _KRRP_STREAM_H
@@ -127,8 +127,8 @@ int krrp_stream_read_create(krrp_stream_t **result_stream,
 	krrp_stream_read_flag_t flags, const char *skip_snaps_mask,
     krrp_error_t *error);
 int krrp_stream_write_create(krrp_stream_t **result_stream,
-    size_t keep_snaps, const char *dataset, const char *incr_snap_name,
-    const char *resume_token, krrp_stream_write_flag_t flags,
+    size_t keep_snaps, const char *dataset,
+    krrp_stream_write_flag_t flags,
     nvlist_t *ignore_props_list, nvlist_t *replace_props_list,
     krrp_error_t *error);
 int krrp_stream_fake_read_create(krrp_stream_t **result_stream,

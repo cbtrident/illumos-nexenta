@@ -591,6 +591,27 @@ krrp_ioctl_sess_create_read_stream(krrp_stream_t **result_stream,
 
 	flags = krrp_fill_read_stream_flags(params);
 
+	if (resume_token != NULL) {
+		boolean_t recursion =
+		    krrp_stream_is_read_flag_set(flags,
+		    KRRP_STRMRF_RECURSIVE);
+		boolean_t send_all_snaps =
+		    krrp_stream_is_read_flag_set(flags,
+		    KRRP_STRMRF_SEND_ALL_SNAPS);
+		if (recursion || send_all_snaps) {
+			krrp_error_set(error,
+			    KRRP_ERRNO_RESUMETOKEN, EBADRQC);
+			return (-1);
+		}
+
+		if (base_snap_name != NULL || common_snap_name != NULL ||
+		    skip_snaps_mask != NULL) {
+			krrp_error_set(error,
+			    KRRP_ERRNO_RESUMETOKEN, ENOTEMPTY);
+			return (-1);
+		}
+	}
+
 	return (krrp_stream_read_create(result_stream, keep_snaps, dataset,
 	    base_snap_name, common_snap_name, resume_token, flags,
 	    skip_snaps_mask, error));
@@ -601,8 +622,7 @@ krrp_ioctl_sess_create_write_stream(krrp_stream_t **result_stream,
     nvlist_t *params, krrp_error_t *error)
 {
 	int rc;
-	const char *dataset = NULL, *common_snap_name = NULL,
-	    *resume_token = NULL;
+	const char *dataset = NULL;
 	nvlist_t *ignore_props_list = NULL, *replace_props_list = NULL;
 	uint32_t keep_snaps;
 	krrp_stream_write_flag_t flags;
@@ -614,16 +634,10 @@ krrp_ioctl_sess_create_write_stream(krrp_stream_t **result_stream,
 		return (-1);
 	}
 
-	(void) krrp_param_get(KRRP_PARAM_RESUME_TOKEN,
-	    params, (void *) &resume_token);
-
 	(void) krrp_param_get(KRRP_PARAM_IGNORE_PROPS_LIST,
 	    params, (void *) &ignore_props_list);
 	(void) krrp_param_get(KRRP_PARAM_REPLACE_PROPS_LIST,
 	    params, (void *) &replace_props_list);
-
-	(void) krrp_param_get(KRRP_PARAM_COMMON_SNAPSHOT,
-	    params, (void *) &common_snap_name);
 
 	rc = krrp_param_get(KRRP_PARAM_STREAM_KEEP_SNAPS,
 	    params, (void *) &keep_snaps);
@@ -639,8 +653,7 @@ krrp_ioctl_sess_create_write_stream(krrp_stream_t **result_stream,
 	flags = krrp_fill_write_stream_flags(params);
 
 	return (krrp_stream_write_create(result_stream, keep_snaps,
-	    dataset, common_snap_name, resume_token, flags,
-	    ignore_props_list, replace_props_list, error));
+	    dataset, flags, ignore_props_list, replace_props_list, error));
 }
 
 static int

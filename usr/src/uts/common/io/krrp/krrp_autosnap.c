@@ -137,6 +137,30 @@ krrp_autosnap_destroy(krrp_autosnap_t *autosnap)
 	kmem_free(autosnap, sizeof (krrp_autosnap_t));
 }
 
+static void
+krrp_autosnap_activate_write_side(krrp_autosnap_t *autosnap)
+{
+	nvlist_t *snaps;
+	nvpair_t *snap_nvp;
+
+	snaps = autosnap_get_owned_snapshots(autosnap->zfs_ctx);
+
+	snap_nvp = nvlist_next_nvpair(snaps, NULL);
+	while (snap_nvp != NULL) {
+		uint64_t snap_txg;
+
+		snap_txg = krrp_get_txg_from_snap_nvp(snap_nvp);
+		krrp_autosnap_txg_rele(autosnap, snap_txg, AUTOSNAP_NO_SNAP);
+		snap_nvp = nvlist_next_nvpair(snaps, snap_nvp);
+	}
+
+	fnvlist_free(snaps);
+
+	krrp_autosnap_lock(autosnap);
+	autosnap->state = KRRP_AUTOSNAP_STATE_ACTIVE;
+	krrp_autosnap_unlock(autosnap);
+}
+
 int
 krrp_autosnap_activate(krrp_autosnap_t *autosnap, uint64_t incr_snap_txg,
     autosnap_confirm_cb confirm_cb, autosnap_notify_created_cb notify_cb,
@@ -161,6 +185,11 @@ krrp_autosnap_activate(krrp_autosnap_t *autosnap, uint64_t incr_snap_txg,
 	krrp_autosnap_lock(autosnap);
 	autosnap->state = KRRP_AUTOSNAP_STATE_REGISTERED;
 	krrp_autosnap_unlock(autosnap);
+
+	if (!read_side) {
+		krrp_autosnap_activate_write_side(autosnap);
+		return (0);
+	}
 
 	snaps = autosnap_get_owned_snapshots(autosnap->zfs_ctx);
 
@@ -208,7 +237,7 @@ krrp_autosnap_activate(krrp_autosnap_t *autosnap, uint64_t incr_snap_txg,
 		snap_nvp = nvlist_next_nvpair(snaps, snap_nvp);
 	}
 
-	if (read_side && incr_snap_txg == UINT64_MAX &&
+	if (incr_snap_txg == UINT64_MAX &&
 	    target_snap_txg != UINT64_MAX) {
 		/*
 		 * On start we always create snapshot,

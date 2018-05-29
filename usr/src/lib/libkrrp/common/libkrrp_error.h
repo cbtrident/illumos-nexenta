@@ -121,7 +121,9 @@ typedef enum {
 #define	LIBKRRP_EMSG_SESSPINGTIMEOUT "Session ping timeout"
 #define	LIBKRRP_EMSG_OK "No error"
 #define	LIBKRRP_EMSG_UNKNOWN "Unknown error"
-#define	LIBKRRP_EMSG_NOORIGIN "Destination does not have origin snapshot"
+#define	LIBKRRP_EMSG_NOORIGIN "Origin snapshot does not exist"
+#define	LIBKRRP_EMSG_NOINCRSNAP "Incremental snapshot does not exist"
+#define	LIBKRRP_EMSG_NOBASESNAP "Source snapshot does not exist"
 #define	LIBKRRP_EMSG_WRITEFAIL "Session write stream error (%s)"
 #define	LIBKRRP_EMSG_SNAPMISMATCH "Most recent snapshot does not match " \
 	    "incremental source"
@@ -167,6 +169,12 @@ typedef enum {
 	    "Resume token is corrupt (decompression failed)"
 #define	LIBKRRP_EMSG_RESUMETOKEN_ENODATA \
 	    "Resume token is corrupt (nvlist_unpack failed)"
+#define LIBKRRP_EMSG_RESUMETOKEN_EBADRQC \
+	    "Recursion and send_all_snap flags should not be " \
+	    "defined together with resume token"
+#define LIBKRRP_EMSG_RESUMETOKEN_ENOTEMPTY \
+	    "Source snapshot, incremental snapshot and skip mask " \
+	    "should not be defined together with resume token"
 
 #define	LIBKRRP_EMSG_SKIP_SNAPS_MASK_EINVAL \
 	    "Skip snapshots mask is invalid"

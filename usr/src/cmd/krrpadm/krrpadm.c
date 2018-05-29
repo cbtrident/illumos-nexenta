@@ -268,8 +268,7 @@ krrp_usage_sess(int rc, krrp_cmd_t *cmd, boolean_t use_return)
 		fprintf_msg("Usage: %s sess-create-write-stream "
 		    "-s <sess_id> -d <dst dataset> [-c <common snapshot>] "
 		    "[-F] [-k] [-l | -x] [-i <prop_name>] "
-		    "[-o <prop_name=value>] [-t <resume_token>] "
-		    "[-n <keep snaps>]\n", tool_name);
+		    "[-o <prop_name=value>] [-n <keep snaps>]\n", tool_name);
 		break;
 	case KRRP_CMD_SESS_CREATE_PDU_ENGINE:
 		fprintf_msg("Usage: %s sess-create-pdu-engine "
@@ -1045,7 +1044,7 @@ krrp_do_sess_create_write_stream(int argc, char **argv, krrp_cmd_t *cmd)
 	int c, i, rc = 0;
 	uuid_t sess_id;
 	nvlist_t *ignore_props_list, *replace_props_list;
-	char *dataset = NULL, *common_snap = NULL, *resume_token = NULL;
+	char *dataset = NULL;
 	krrp_sess_stream_flags_t flags = 0;
 	uint32_t keep_snaps = 0;
 
@@ -1054,7 +1053,7 @@ krrp_do_sess_create_write_stream(int argc, char **argv, krrp_cmd_t *cmd)
 
 	uuid_clear(sess_id);
 
-	while ((c = getopt(argc, argv, "hs:d:c:Fki:o:t:n:lx")) != -1) {
+	while ((c = getopt(argc, argv, "hs:d:Fki:o:n:lx")) != -1) {
 		switch (c) {
 		case 's':
 			if (krrp_parse_and_check_sess_id(optarg, sess_id) != 0)
@@ -1068,14 +1067,6 @@ krrp_do_sess_create_write_stream(int argc, char **argv, krrp_cmd_t *cmd)
 			}
 
 			dataset = optarg;
-			break;
-		case 'c':
-			if (common_snap != NULL) {
-				krrp_print_err_already_defined("c");
-				exit(1);
-			}
-
-			common_snap = optarg;
 			break;
 		case 'i':
 			if (nvlist_exists(ignore_props_list, optarg)) {
@@ -1126,14 +1117,6 @@ krrp_do_sess_create_write_stream(int argc, char **argv, krrp_cmd_t *cmd)
 			}
 
 			flags |= KRRP_STREAM_ZFS_CHKSUM;
-			break;
-		case 't':
-			if (resume_token != NULL) {
-				krrp_print_err_already_defined("t");
-				exit(1);
-			}
-
-			resume_token = optarg;
 			break;
 		case 'n':
 			if (keep_snaps != 0) {
@@ -1211,8 +1194,8 @@ krrp_do_sess_create_write_stream(int argc, char **argv, krrp_cmd_t *cmd)
 		keep_snaps = UINT32_MAX;
 
 	rc = krrp_sess_create_write_stream(libkrrp_hdl, sess_id,
-	    dataset, common_snap, flags, ignore_props_list,
-	    replace_props_list, resume_token, keep_snaps);
+	    dataset, flags, ignore_props_list,
+	    replace_props_list, keep_snaps);
 	if (rc != 0) {
 		fprintf_err("Failed to create write stream\n");
 		krrp_print_libkrrp_error();

@@ -225,8 +225,8 @@ int krrp_sess_create_read_stream(libkrrp_handle_t *, uuid_t, const char *,
     const char *, const char *, uint64_t, krrp_sess_stream_flags_t,
     const char *, uint32_t, const char *);
 int krrp_sess_create_write_stream(libkrrp_handle_t *, uuid_t, const char *,
-    const char *, krrp_sess_stream_flags_t, nvlist_t *ignore_props,
-    nvlist_t *replace_props, const char *, uint32_t);
+    krrp_sess_stream_flags_t, nvlist_t *ignore_props,
+    nvlist_t *replace_props, uint32_t);
 
 int krrp_sess_run(libkrrp_handle_t *, uuid_t, boolean_t);
 int krrp_sess_send_stop(libkrrp_handle_t *, uuid_t);
