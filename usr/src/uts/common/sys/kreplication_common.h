@@ -30,7 +30,7 @@ extern "C" {
  * zero-copy ARC-read or regular ARC-read
  */
 typedef boolean_t krrp_check_enough_mem(size_t, void *);
-typedef int (*arc_bypass_io_func)(void *, int, void *);
+typedef int (*arc_bypass_io_func)(void *, boolean_t, void *);
 
 
 typedef struct kreplication_buffer_s {

@@ -1036,8 +1036,8 @@ typedef struct l1arc_buf_hdr {
 	void			*b_thawed;
 #endif
 
-	/* number of krrp tasks using this buffer */
-	uint64_t		b_krrp;
+	/* number of short-holds using this buffer */
+	uint64_t		b_short_holders;
 
 	arc_buf_t		*b_buf;
 	uint32_t		b_bufcnt;
@@ -1864,11 +1864,15 @@ retry:
 	}
 }
 
-/* wait until krrp releases the buffer */
+/*
+ * Short holders are the consumers, that hold the buf for
+ * a short period of time to copy its data to somewhere
+ * For now only WBC uses the functionality.
+ */
 static inline void
-arc_wait_for_krrp(arc_buf_hdr_t *hdr)
+arc_wait_for_short_holders(arc_buf_hdr_t *hdr)
 {
-	while (HDR_HAS_L1HDR(hdr) && hdr->b_l1hdr.b_krrp != 0)
+	while (HDR_HAS_L1HDR(hdr) && hdr->b_l1hdr.b_short_holders != 0)
 		cv_wait(&hdr->b_l1hdr.b_cv, HDR_LOCK(hdr));
 }
 
@@ -2672,8 +2676,8 @@ arc_change_state(arc_state_t *new_state, arc_buf_hdr_t *hdr,
 
 	ASSERT(!HDR_EMPTY(hdr));
 	if (new_state == arc_anon && HDR_IN_HASH_TABLE(hdr)) {
-		arc_wait_for_krrp(hdr);
 		buf_hash_remove(hdr);
+		arc_wait_for_short_holders(hdr);
 	}
 
 	/* adjust state sizes (ignore arc_l2c_only) */
@@ -3727,7 +3731,9 @@ arc_evict_hdr(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 	ASSERT(MUTEX_HELD(hash_lock));
 	ASSERT(HDR_HAS_L1HDR(hdr));
 
-	arc_wait_for_krrp(hdr);
+	/* No reason to wait for holders */
+	if (hdr->b_l1hdr.b_short_holders != 0)
+		return (0);
 
 	state = hdr->b_l1hdr.b_state;
 	if (GHOST_STATE(state)) {
@@ -5512,9 +5518,9 @@ arc_read_done(zio_t *zio)
 		if (hdr->b_l1hdr.b_state != arc_anon)
 			arc_change_state(arc_anon, hdr, hash_lock);
 		if (HDR_IN_HASH_TABLE(hdr)) {
-			if (hash_lock)
-				arc_wait_for_krrp(hdr);
 			buf_hash_remove(hdr);
+			if (hash_lock)
+				arc_wait_for_short_holders(hdr);
 		}
 		freeable = refcount_is_zero(&hdr->b_l1hdr.b_refcnt);
 	}
@@ -5572,8 +5578,7 @@ arc_io_bypass(spa_t *spa, const blkptr_t *bp,
 
 top:
 	hdr = buf_hash_find(guid, bp, &hash_lock);
-	if (hdr && HDR_HAS_L1HDR(hdr) && hdr->b_l1hdr.b_bufcnt > 0 &&
-	    hdr->b_l1hdr.b_buf->b_data) {
+	if (hdr != NULL && HDR_HAS_L1HDR(hdr) && hdr->b_l1hdr.b_pabd != NULL) {
 		if (HDR_IO_IN_PROGRESS(hdr)) {
 			cv_wait(&hdr->b_l1hdr.b_cv, hash_lock);
 			mutex_exit(hash_lock);
@@ -5585,16 +5590,17 @@ top:
 		 * As the func is an arbitrary callback, which can block, lock
 		 * should be released not to block other threads from
 		 * performing. A counter is used to hold a reference to block
-		 * which are held by krrp.
+		 * which are held by caller.
 		 */
 
-		hdr->b_l1hdr.b_krrp++;
+		hdr->b_l1hdr.b_short_holders++;
 		mutex_exit(hash_lock);
 
-		error = func(hdr->b_l1hdr.b_buf->b_data, hdr->b_lsize, arg);
+		error = func(hdr->b_l1hdr.b_pabd,
+		    HDR_GET_COMPRESS(hdr) != ZIO_COMPRESS_OFF, arg);
 
 		mutex_enter(hash_lock);
-		hdr->b_l1hdr.b_krrp--;
+		hdr->b_l1hdr.b_short_holders--;
 		cv_broadcast(&hdr->b_l1hdr.b_cv);
 		mutex_exit(hash_lock);
 
@@ -5602,6 +5608,7 @@ top:
 	} else {
 		if (hash_lock)
 			mutex_exit(hash_lock);
+
 		return (ENODATA);
 	}
 }
@@ -6209,7 +6216,7 @@ arc_release(arc_buf_t *buf, void *tag)
 		nhdr->b_l1hdr.b_buf = buf;
 		nhdr->b_l1hdr.b_bufcnt = 1;
 		(void) refcount_add(&nhdr->b_l1hdr.b_refcnt, tag);
-		nhdr->b_l1hdr.b_krrp = 0;
+		nhdr->b_l1hdr.b_short_holders = 0;
 
 		buf->b_hdr = nhdr;
 
@@ -6421,7 +6428,7 @@ arc_write_done(zio_t *zio)
 				ASSERT(refcount_is_zero(
 				    &exists->b_l1hdr.b_refcnt));
 				arc_change_state(arc_anon, exists, hash_lock);
-				arc_wait_for_krrp(exists);
+				arc_wait_for_short_holders(exists);
 				mutex_exit(hash_lock);
 				arc_hdr_destroy(exists);
 				exists = buf_hash_insert(hdr, &hash_lock);

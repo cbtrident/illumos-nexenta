@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -542,28 +542,56 @@ wbc_thread(wbc_data_t *wbc_data)
 
 static uint64_t wbc_fault_limit = 10;
 
+#ifdef ZFS_DEBUG
+static boolean_t wbc_panic_on_compression_diff = B_TRUE;
+#endif
+
 typedef struct {
-	void *buf;
-	int len;
+	wbc_block_t *block;
+	abd_t *data;
 } wbc_arc_bypass_t;
 
 static int
-wbc_arc_bypass_cb(void *buf, int len, void *arg)
+wbc_arc_bypass_cb(void *void_abd, boolean_t abd_compressed, void *arg)
 {
+	abd_t *s_abd = void_abd;
+	size_t len = s_abd->abd_size;
 	wbc_arc_bypass_t *bypass = arg;
+	wbc_block_t *block = bypass->block;
+	boolean_t block_compressed =
+	    WBCBP_GET_COMPRESS(block) != ZIO_COMPRESS_OFF;
+	void *buf = NULL;
 
-	bypass->len = len;
+	bypass->data = abd_alloc_linear(WBCBP_GET_PSIZE(bypass->block), B_FALSE);
+	buf = abd_to_buf(bypass->data);
 
-	(void) memcpy(bypass->buf, buf, len);
+	/* if COMPRESSED_ARC is disabled, then need to compress data from ARC */
+	if (block_compressed && !abd_compressed) {
+		size_t c_size = zio_compress_data(WBCBP_GET_COMPRESS(block),
+		    s_abd, buf, len);
+		size_t rounded = P2ROUNDUP(c_size, (size_t)SPA_MINBLOCKSIZE);
+		if (rounded != WBCBP_GET_PSIZE(block)) {
+#ifdef ZFS_DEBUG
+			if (wbc_panic_on_compression_diff) {
+				panic("WBC: rounded (%llu) != psize (%llu)",
+				    (longlong_t)rounded,
+				    (longlong_t)WBCBP_GET_PSIZE(block));
+			}
+#endif
+
+			return (SET_ERROR(ENODATA));
+		} else if (rounded > c_size) {
+			bzero((char *)buf + c_size, rounded - c_size);
+		}
+	} else {
+		ASSERT3U(WBCBP_GET_PSIZE(block), ==, len);
+		abd_copy_to_buf_off(buf, s_abd, 0, len);
+	}
 
 	return (0);
 }
 
-/*
- * FIXME: Temporary disabled because this logic
- * needs to be adjusted according to ARC-Compression changes
- */
-uint64_t wbc_arc_enabled = 0;
+uint64_t wbc_arc_enabled = 1;
 
 /*
  * Moves blocks from a special device to other devices in a pool.
@@ -619,7 +647,7 @@ wbc_move_block(void *arg)
 static int
 wbc_move_block_impl(wbc_block_t *block)
 {
-	abd_t *buf;
+	abd_t *io_abd = NULL;
 	int err = 0;
 	wbc_data_t *wbc_data = block->data;
 	spa_t *spa = wbc_data->wbc_spa;
@@ -629,82 +657,38 @@ wbc_move_block_impl(wbc_block_t *block)
 
 	spa_config_enter(spa, SCL_VDEV | SCL_STATE_ALL, FTAG, RW_READER);
 
-	buf = abd_alloc_for_io(WBCBP_GET_PSIZE(block), B_FALSE);
-
-	/* FIXME: This needs to be fixed as part of NEX-14168 */
-#if 0
 	if (wbc_arc_enabled) {
 		blkptr_t pseudo_bp = { 0 };
 		wbc_arc_bypass_t bypass = { 0 };
-		void *dbuf = NULL;
-
-		if (WBCBP_GET_COMPRESS(block) != ZIO_COMPRESS_OFF) {
-			dbuf = zio_data_buf_alloc(WBCBP_GET_LSIZE(block));
-			bypass.buf = dbuf;
-		} else {
-			bypass.buf = buf;
-		}
 
 		pseudo_bp.blk_dva[0] = block->dva[0];
 		pseudo_bp.blk_dva[1] = block->dva[1];
 		BP_SET_BIRTH(&pseudo_bp, block->btxg, block->btxg);
 
 		mutex_enter(&block->lock);
-		if (WBCBP_IS_DELETED(block)) {
-			if (WBCBP_GET_COMPRESS(block) != ZIO_COMPRESS_OFF)
-				zio_data_buf_free(dbuf, WBCBP_GET_LSIZE(block));
-
+		if (WBCBP_IS_DELETED(block))
 			goto out;
-		}
 
+		bypass.block = block;
 		err = arc_io_bypass(spa, &pseudo_bp,
 		    wbc_arc_bypass_cb, &bypass);
-
-		if (!err && WBCBP_GET_COMPRESS(block) != ZIO_COMPRESS_OFF) {
-			size_t size = zio_compress_data(
-			    (enum zio_compress)WBCBP_GET_COMPRESS(block),
-			    dbuf, buf, bypass.len);
-			size_t rounded =
-			    P2ROUNDUP(size, (size_t)SPA_MINBLOCKSIZE);
-			if (rounded != WBCBP_GET_PSIZE(block)) {
-				/* random error to get to slow path */
-				err = ERANGE;
-				cmn_err(CE_WARN, "WBC WARN: ARC COMPRESSION "
-				    "FAILED: %u %u %u",
-				    (unsigned)size,
-				    (unsigned)WBCBP_GET_PSIZE(block),
-				    (unsigned)WBCBP_GET_COMPRESS(block));
-			} else if (rounded > size) {
-				bzero((char *)buf + size, rounded - size);
-			}
-		}
-
-		if (WBCBP_GET_COMPRESS(block) != ZIO_COMPRESS_OFF)
-			zio_data_buf_free(dbuf, WBCBP_GET_LSIZE(block));
-
+		if (err == 0)
+			io_abd = bypass.data;
 	} else {
 		err = ENOTSUP;
 		mutex_enter(&block->lock);
 		if (WBCBP_IS_DELETED(block))
 			goto out;
 	}
-#endif
-	/*
-	 * This code should be removed after
-	 * uncomment the above "if 0 - endif"
-	 */
-	err = ENOTSUP;
-	mutex_enter(&block->lock);
-	if (WBCBP_IS_DELETED(block))
-		goto out;
-
 
 	/*
 	 * Any error means that arc read failed and block is being moved via
 	 * slow path
 	 */
 	if (err != 0) {
-		err = wbc_io(WBC_READ_FROM_SPECIAL, block, buf);
+		ASSERT3P(io_abd, ==, NULL);
+		io_abd = abd_alloc_for_io(WBCBP_GET_PSIZE(block), B_FALSE);
+		err = wbc_io(WBC_READ_FROM_SPECIAL, block, io_abd);
 		if (err != 0) {
 			cmn_err(CE_WARN, "WBC: move task has failed to read:"
 			    " error [%d]", err);
@@ -716,8 +700,8 @@ wbc_move_block_impl(wbc_block_t *block)
 		DTRACE_PROBE(wbc_move_from_arc);
 	}
 
-	err = wbc_io(WBC_WRITE_TO_NORMAL, block, buf);
-	if (err) {
+	err = wbc_io(WBC_WRITE_TO_NORMAL, block, io_abd);
+	if (err != 0) {
 		cmn_err(CE_WARN, "WBC: move task has failed to write: "
 		    "error [%d]", err);
 		goto out;
@@ -734,7 +718,8 @@ wbc_move_block_impl(wbc_block_t *block)
 
 out:
 	mutex_exit(&block->lock);
-	abd_free(buf);
+
+	abd_free(io_abd);
 
 	spa_config_exit(spa, SCL_VDEV | SCL_STATE_ALL, FTAG);
 
@@ -1014,7 +999,7 @@ out:
  * which will allow not to store the whole `moving` tree in-core
  * (persistent move bookmark, for example)
  */
-int
+static int
 wbc_collect_special_blocks(dsl_pool_t *dp)
 {
 	spa_t *spa = dp->dp_spa;
