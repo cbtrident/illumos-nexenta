@@ -14,11 +14,15 @@
 # Copyright 2019 Joyent, Inc.
 #
 
-SUBDIRS=	consfonts \
+COMMON_SUBDIRS=	consfonts \
 		hwdata \
 		locale \
 		terminfo \
 		zoneinfo
+
+i386_SUBDIRS=	ucode
+
+SUBDIRS = $(COMMON_SUBDIRS) $($(MACH)_SUBDIRS)
 
 # XXX Remove me
 SUBDIRS +=	bootcompat
