@@ -473,7 +473,6 @@ bd_open(struct open_file *f, ...)
 	 * would overflow so it should be safe to perform here.
 	 */
 	disk.dd.d_dev = dev->dd.d_dev;
-	disk.dd.d_type = dev->dd.d_type;
 	disk.dd.d_unit = dev->dd.d_unit;
 	disk.d_slice = -1;
 	disk.d_partition = -1;
@@ -861,7 +860,7 @@ bd_getdev(struct i386_devdesc *d)
 {
     struct disk_devdesc		*dev;
     int				biosdev;
-    int 			major;
+    int				major;
     int				rootdev;
     char			*nip, *cp;
     int				i, unit;

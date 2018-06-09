@@ -19,9 +19,23 @@ CC=     $(GCC_ROOT)/bin/gcc
 
 install:
 
-SRCS +=	delay.c devicename.c devpath.c efi_console.c efi_driver_utils.c \
-	efichar.c efinet.c efipart.c efizfs.c env.c errno.c gfx_fb.c handles.c \
-	libefi.c pnglite.c wchar.c
+SRCS +=	delay.c \
+	devicename.c \
+	devpath.c \
+	efi_console.c \
+	efi_driver_utils.c \
+	efichar.c \
+	efienv.c \
+	efinet.c \
+	efipart.c \
+	efizfs.c \
+	env.c \
+	errno.c \
+	gfx_fb.c \
+	handles.c \
+	libefi.c \
+	pnglite.c \
+	wchar.c
 
 OBJS=	$(SRCS:%.c=%.o)
 
