@@ -28,7 +28,7 @@
  */
 /*
  * Copyright 2018 Joyent, Inc.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
@@ -719,45 +719,31 @@ msr_warning(cpu_t *cp, const char *rw, uint_t msr, int error)
 }
 
 /*
- * Determine the number of nodes in a Hammer / Greyhound / Griffin family
- * system.
+ * Determine the number of nodes in a system.
+ *
+ * This routine uses a PCI config space based mechanism
+ * for retrieving the number of nodes in the system.
+ *
+ * Current processor families that support this mechanism are
+ * 0xf, 0x10, 0x11, and 0x15.
  */
 static uint_t
 opteron_get_nnodes(void)
 {
 	static uint_t nnodes = 0;
 
-	if (nnodes == 0) {
-#ifdef	DEBUG
-		uint_t family;
-
-		/*
-		 * This routine uses a PCI config space based mechanism
-		 * for retrieving the number of nodes in the system.
-		 * Device 24, function 0, offset 0x60 as used here is not
-		 * AMD processor architectural, and may not work on processor
-		 * families other than those listed below.
-		 *
-		 * Callers of this routine must ensure that we're running on
-		 * a processor which supports this mechanism.
-		 * The assertion below is meant to catch calls on unsupported
-		 * processors.
-		 */
-		family = cpuid_getfamily(CPU);
-		ASSERT(family == 0xf || family == 0x10 || family == 0x11);
-#endif	/* DEBUG */
-
-		/*
-		 * Obtain the number of nodes in the system from
-		 * bits [6:4] of the Node ID register on node 0.
-		 *
-		 * The actual node count is NodeID[6:4] + 1
-		 *
-		 * The Node ID register is accessed via function 0,
-		 * offset 0x60. Node 0 is device 24.
-		 */
+	/*
+	 * Obtain the number of nodes in the system from
+	 * bits [6:4] of the Node ID register on node 0.
+	 *
+	 * The actual node count is NodeID[6:4] + 1
+	 *
+	 * The Node ID register is accessed via function 0,
+	 * offset 0x60. Node 0 is device 24.
+	 */
+	if (nnodes == 0)
 		nnodes = ((pci_getl_func(0, 24, 0, 0x60) & 0x70) >> 4) + 1;
-	}
+
 	return (nnodes);
 }
 
