@@ -10,13 +10,13 @@
 #
 
 #
-# Copyright 2018 Nexenta Systems, Inc.
+# Copyright (c) 2018 Joyent, Inc.
 #
 
 <include global_zone_only_component>
 set name=pkg.fmri value=pkg:/driver/network/qede@$(PKGVERS)
-set name=pkg.description value="QLogic QL41000/45000 Ethernet Driver"
-set name=pkg.summary value="QLogic QL41000/45000 Ethernet Driver"
+set name=pkg.description value="QLogic FastLinQ QL45xxx Ethernet Driver"
+set name=pkg.summary value="QLogic FastLinQ QL45xxx Ethernet Driver"
 set name=info.classification \
     value=org.opensolaris.category.2008:Drivers/Networking
 set name=variant.arch value=i386

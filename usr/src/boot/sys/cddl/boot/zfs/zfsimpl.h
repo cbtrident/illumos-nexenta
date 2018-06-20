@@ -1071,6 +1071,8 @@ typedef enum dmu_objset_type {
 	DMU_OST_NUMTYPES
 } dmu_objset_type_t;
 
+#define	ZAP_MAXVALUELEN	(1024 * 8)
+
 /*
  * header for all bonus and spill buffers.
  * The header has a fixed portion with a variable number

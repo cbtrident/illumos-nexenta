@@ -48,6 +48,14 @@
 #else
 #include <sys/param.h>		/* get endianness selection */
 #define	_ALIGNMENT_REQUIRED	1
+
+/*
+ * The STANDALONE build is using endian.h logic, where we have defined
+ * macros _BIG_ENDIAN and _LITTLE_ENDIAN, and the current endian is set
+ * in _BYTE_ORDER. To keep the changes minimal, we need to #undef the
+ * other. Once we have kernel version of endian.h, we can have further
+ * clean up.
+ */
 #if (_BYTE_ORDER == _LITTLE_ENDIAN)
 #undef _BIG_ENDIAN
 #else

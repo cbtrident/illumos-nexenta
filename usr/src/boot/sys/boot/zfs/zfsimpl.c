@@ -1519,6 +1519,26 @@ fzap_leaf_array(const zap_leaf_t *zl, const zap_leaf_chunk_t *zc,
 	}
 }
 
+static int
+fzap_check_size(uint64_t integer_size, uint64_t num_integers)
+{
+
+	switch (integer_size) {
+	case 1:
+	case 2:
+	case 4:
+	case 8:
+		break;
+	default:
+		return (EINVAL);
+	}
+
+	if (integer_size * num_integers > ZAP_MAXVALUELEN)
+		return (E2BIG);
+
+	return (0);
+}
+
 /*
  * Lookup a value in a fatzap directory. Assumes that the zap scratch
  * buffer contains the directory header.
@@ -1536,6 +1556,9 @@ fzap_lookup(const spa_t *spa, const dnode_phys_t *dnode, const char *name,
 
 	if (zh.zap_magic != ZAP_MAGIC)
 		return (EIO);
+
+	if ((rc = fzap_check_size(integer_size, num_integers)) != 0)
+		return (rc);
 
 	z.zap_block_shift = ilog2(bsize);
 	z.zap_phys = (zap_phys_t *) zap_scratch;
@@ -1592,9 +1615,9 @@ fzap_lookup(const spa_t *spa, const dnode_phys_t *dnode, const char *name,
 		zc = &ZAP_LEAF_CHUNK(&zl, zc->l_entry.le_next);
 	}
 	if (fzap_name_equal(&zl, zc, name)) {
-		if (zc->l_entry.le_value_intlen * zc->l_entry.le_value_numints >
-		    integer_size * num_integers)
-			return (E2BIG);
+		if (zc->l_entry.le_value_intlen > integer_size)
+			return (EINVAL);
+
 		fzap_leaf_array(&zl, zc, integer_size, num_integers, value);
 		return (0);
 	}
