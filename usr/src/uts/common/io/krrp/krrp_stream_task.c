@@ -464,10 +464,15 @@ krrp_stream_task_constructor(void *opaque_task,
 			task->start = &krrp_stream_task_read_start;
 			task->shutdown = &krrp_stream_task_common_stop;
 
-			task->zargs.skip_snaps_prop_name =
-			    task_engine->skip_snaps_prop_name;
-			task->zargs.skip_snaps_prop_val =
-			    task_engine->skip_snaps_prop_val;
+			if (task_engine->skip_snaps_prop_name[0] != '\0') {
+				task->zargs.skip_snaps_prop_name =
+				    task_engine->skip_snaps_prop_name;
+			}
+
+			if (task_engine->skip_snaps_prop_val[0] != '\0') {
+				task->zargs.skip_snaps_prop_val =
+				    task_engine->skip_snaps_prop_val;
+			}
 
 			task->zargs.mem_check_cb =
 			    task_engine->mem_check_cb;

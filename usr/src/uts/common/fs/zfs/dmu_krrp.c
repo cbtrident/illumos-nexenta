@@ -77,7 +77,6 @@ struct zfs_ds_node {
 	dsl_dataset_t *ds;
 
 	list_node_t list_node;
-	avl_node_t avl_node;
 
 	avl_tree_t snapshots;
 };
@@ -933,27 +932,27 @@ zfs_construct_ds_node(dsl_pool_t *dp, uint64_t ds_object,
 	return (0);
 }
 
+/*
+ * The function walks a list of snapshots and then releases
+ * the snapshot appropriately and once all these are released
+ * the dataset under which these hang is also released.
+ */
 static void
-zfs_destroy_ds_node(zfs_ds_node_t *ds_node, void *owner)
+zfs_destroy_ds_node(zfs_ds_node_t *ds_node, void *ds_owner)
 {
 	zfs_snap_avl_node_t *snap_node;
-	void *cookie = NULL;
+	void *cookie = NULL, *snap_owner;
 
 	while ((snap_node = avl_destroy_nodes(&ds_node->snapshots,
 	    &cookie)) != NULL) {
-		if (snap_node->origin) {
-			dsl_dataset_long_rele(snap_node->ds, ds_node);
-			dsl_dataset_rele(snap_node->ds, ds_node);
-		} else {
-			dsl_dataset_long_rele(snap_node->ds, owner);
-			dsl_dataset_rele(snap_node->ds, owner);
-		}
-
+		snap_owner = snap_node->origin ? ds_node : ds_owner;
+		dsl_dataset_long_rele(snap_node->ds, snap_owner);
+		dsl_dataset_rele(snap_node->ds, snap_owner);
 		kmem_free(snap_node, sizeof (zfs_snap_avl_node_t));
 	}
 
-	dsl_dataset_long_rele(ds_node->ds, owner);
-	dsl_dataset_rele(ds_node->ds, owner);
+	dsl_dataset_long_rele(ds_node->ds, ds_owner);
+	dsl_dataset_rele(ds_node->ds, ds_owner);
 
 	kmem_free(ds_node, sizeof (zfs_ds_node_t));
 }
@@ -974,16 +973,22 @@ zfs_skip_check_cloned_node(zfs_ds_node_t *ds_node,
 	dsl_pool_t *dp;
 	dsl_dataset_t *origin_ds = NULL;
 	objset_t *mos;
-	char *origin_name = ds_node->origin_name;
-	char *from_snap = krrp_task->buffer_args.from_incr_base;
-	char *to_snap = krrp_task->buffer_args.from_snap;
-	const char *skip_mask_prop_name =
-	    krrp_task->buffer_args.skip_snaps_prop_name;
-	boolean_t incl_interim_snaps = krrp_task->buffer_args.do_all;
-	boolean_t origin_is_interim = B_TRUE;
+	char *origin_name, *from_snap, *to_snap;
+	const char *skip_mask_prop_name;
+	boolean_t incl_interim_snaps, origin_is_interim;
 
-	*skip_result = B_FALSE;
 
+	origin_name = ds_node->origin_name;
+	from_snap = krrp_task->buffer_args.from_incr_base;
+	to_snap = krrp_task->buffer_args.from_snap;
+	origin_is_interim = B_TRUE;
+
+	/*
+	 * Initially need to determine the origin snapshot is
+	 * an interim snapshot or not. Later the result will
+	 * be used to decide whether to include it in the
+	 * replication stream or not.
+	 */
 	if ((strcmp(to_snap, origin_name) == 0) ||
 	    (from_snap != NULL && (strcmp(from_snap, origin_name) == 0)))
 		origin_is_interim = B_FALSE;
@@ -992,15 +997,19 @@ zfs_skip_check_cloned_node(zfs_ds_node_t *ds_node,
 	 * If origin is an interim snapshot and we don't replicate
 	 * interim snapshots, then the clone will not be replicated too
 	 */
+	*skip_result = B_FALSE;
+	incl_interim_snaps = krrp_task->buffer_args.do_all;
 	if (!incl_interim_snaps && origin_is_interim) {
 		*skip_result = B_TRUE;
 		return (0);
 	}
 
 	/*
-	 * Skip-mask is not defined, so the given clone
+	 * If skip-mask is not defined, then the given clone
 	 * will be included into the replication stream
 	 */
+	skip_mask_prop_name =
+	    krrp_task->buffer_args.skip_snaps_prop_name;
 	if (skip_mask_prop_name == NULL)
 		return (0);
 
@@ -1015,7 +1024,6 @@ zfs_skip_check_cloned_node(zfs_ds_node_t *ds_node,
 	 */
 	for (;;) {
 		uint64_t oh_obj, zapobj;
-		uint64_t cnt = 0, el = 0;
 		dsl_dataset_t *ohds = NULL;
 
 		/*
@@ -1026,7 +1034,16 @@ zfs_skip_check_cloned_node(zfs_ds_node_t *ds_node,
 		zapobj = dsl_dataset_phys(origin_ds)->ds_props_obj;
 		dsl_dataset_rele(origin_ds, FTAG);
 		origin_ds = NULL;
-		if (zap_length(mos, zapobj, skip_mask_prop_name, &el, &cnt) == 0) {
+
+		/*
+		 * "zapobj == 0" means the snapshot doesn't have
+		 * any properties
+		 * if the origin snapshot has skip_mask_prop_name
+		 * property then its clones should not be included
+		 * in the replication stream
+		 */
+		if (zapobj != 0 && zap_contains(mos, zapobj,
+		    skip_mask_prop_name) == 0) {
 			*skip_result = B_TRUE;
 			return (0);
 		}
@@ -1062,7 +1079,7 @@ zfs_skip_check_cloned_node(zfs_ds_node_t *ds_node,
  */
 static int
 zfs_collect_children(dmu_krrp_task_t *krrp_task, dsl_pool_t *dp,
-    zfs_ds_node_t *parent_node, list_t *ds_list, avl_tree_t *clones)
+    zfs_ds_node_t *parent_node, list_t *ds_list, boolean_t skip_clones)
 {
 	zap_cursor_t zc;
 	zap_attribute_t attr;
@@ -1096,10 +1113,7 @@ zfs_collect_children(dmu_krrp_task_t *krrp_task, dsl_pool_t *dp,
 		if (node->is_clone) {
 			boolean_t skip = B_FALSE;
 
-			/*
-			 * clones is NULL if exclude_clones is requested
-			 */
-			if (clones == NULL) {
+			if (skip_clones) {
 				zfs_destroy_ds_node(node, krrp_task);
 				(void) zap_cursor_advance(&zc);
 				continue;
@@ -1120,8 +1134,6 @@ zfs_collect_children(dmu_krrp_task_t *krrp_task, dsl_pool_t *dp,
 		}
 
 		list_insert_tail(ds_list, node);
-		if (node->is_clone)
-			avl_add(clones, node);
 
 		(void) zap_cursor_advance(&zc);
 	}
@@ -1196,9 +1208,11 @@ zfs_collect_ds_resume(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 	char ds_name[ZFS_MAX_DATASET_NAME_LEN];
 	uint64_t to_guid = 0;
 	uint64_t from_guid = 0;
-	nvlist_t *resume_info = krrp_task->buffer_args.resume_info;
-	char *from_ds = krrp_task->buffer_args.from_ds;
+	nvlist_t *resume_info;
+	char *from_ds;
 
+
+	resume_info = krrp_task->buffer_args.resume_info;
 	ASSERT(resume_info != NULL);
 
 	err = nvlist_lookup_uint64(resume_info, "toguid", &to_guid);
@@ -1210,6 +1224,7 @@ zfs_collect_ds_resume(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 
 	dsl_pool_config_enter(dp, FTAG);
 
+	from_ds = krrp_task->buffer_args.from_ds;
 	err = dsl_dataset_hold(dp, from_ds, FTAG, &ds);
 	if (err != 0) {
 		dsl_pool_config_exit(dp, FTAG);
@@ -1382,9 +1397,8 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 	dsl_pool_t *dp;
 	dsl_dataset_t *ds = NULL;
 	uint64_t root_ds_object;
-	zfs_ds_node_t *clone_node, *node, *parent_node;
-	void *cookie = NULL;
-	avl_tree_t clones, *clones_ptr = NULL;
+	zfs_ds_node_t *node, *parent_node;
+	list_t ds_collect_list;
 
 	char *from_ds = krrp_task->buffer_args.from_ds;
 	char *from_snap = krrp_task->buffer_args.from_incr_base;
@@ -1393,7 +1407,8 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 	boolean_t recursive = krrp_task->buffer_args.recursive;
 	boolean_t exclude_clones = krrp_task->buffer_args.exclude_clones;
 
-	ASSERT(krrp_task->buffer_args.resume_info == NULL);
+	list_create(&ds_collect_list, sizeof (zfs_ds_node_t),
+	    offsetof(zfs_ds_node_t, list_node));
 
 	dp = spa_get_dsl(spa);
 
@@ -1417,13 +1432,7 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 	}
 
 	node->is_root = B_TRUE;
-	list_insert_head(ds_list, node);
-
-	avl_create(&clones, zfs_cloned_ds_compare,
-	    sizeof (zfs_ds_node_t), offsetof(zfs_ds_node_t, avl_node));
-
-	if (!exclude_clones)
-		clones_ptr = &clones;
+	list_insert_head(&ds_collect_list, node);
 
 	if (recursive) {
 		/*
@@ -1434,73 +1443,84 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 		 */
 		while (node != NULL) {
 			err = zfs_collect_children(krrp_task,
-			    dp, node, ds_list, clones_ptr);
+			    dp, node, &ds_collect_list, exclude_clones);
 			if (err != 0)
 				break;
 
-			node = list_next(ds_list, node);
+			node = list_next(&ds_collect_list, node);
 		}
 	}
 
 	dsl_pool_config_exit(dp, FTAG);
 
-	if (err != 0) {
-		while ((node = avl_destroy_nodes(&clones, &cookie)) != NULL);
-		avl_destroy(&clones);
+	if (err != 0)
 		return (err);
-	}
 
 	/*
-	 * We've collected all required datasets.
-	 *
-	 * Now need to do additional resort to place cloned datasets
-	 * to the correct position. And there are 2 cases:
+	 * root-node is not required any processing
+	 * just move it to the final list
+	 */
+	list_insert_tail(ds_list,
+	    list_remove_head(&ds_collect_list));
+
+	/*
+	 * Now need to move items from initial list to the final list
+	 * to place cloned datasets to the correct position.
+	 * And there are 2 cases:
 	 *  (1) parent is located before the origin DS
 	 *  (2) parent is located after the origin DS
 	 * In the first case need to place clone rigth after origin,
-	 * in the second after parent.
-	 *
-	 * avl_destroy_nodes() cannot be used here, because it
-	 * travels AVL from the end.
+	 * in the second case after parent.
 	 */
-	while ((clone_node = avl_last(&clones)) != NULL) {
-		avl_remove(&clones, clone_node);
-		list_remove(ds_list, clone_node);
+	while (!list_is_empty(&ds_collect_list)) {
+		node = list_remove_head(&ds_collect_list);
+		if (!node->is_clone) {
+			list_insert_tail(ds_list, node);
+			continue;
+		}
 
-		clone_node->origin =
-		    zfs_lookup_origin_node(ds_list, clone_node);
+		if (zfs_lookup_origin_node(&ds_collect_list,
+		    node) != NULL) {
+			/*
+			 * if the origin for the cloned dataset
+			 * is still on the initial list, then
+			 * we return the cloned dataset back to
+			 * the initial list to process it later
+			 */
+			list_insert_tail(&ds_collect_list, node);
+			continue;
+		}
 
-		if (clone_node->origin == NULL) {
+		node->origin = zfs_lookup_origin_node(ds_list, node);
+		if (node->origin == NULL) {
 			/*
 			 * It seems the origin is outside
 			 * of replication tree and in this case doesn't
 			 * matter where this node will be in the list
 			 */
 
-			list_insert_tail(ds_list, clone_node);
+			list_insert_tail(ds_list, node);
 			continue;
 		}
 
 		/*
-		 * We are looking for parent starting from origin,
-		 * because cannot place clone before its origin.
+		 * We are looking for the parent starting from origin,
+		 * because cannot place the clone before its origin.
 		 *
 		 * parent_node == NULL means that it is located
 		 * in the list before origin, so we can just put
 		 * it rigth after the origin.
 		 */
 		parent_node = zfs_lookup_parent_node(ds_list,
-		    clone_node, clone_node->origin);
+		    node, node->origin);
 		if (parent_node == NULL) {
-			list_insert_after(ds_list,
-			    clone_node->origin, clone_node);
+			list_insert_after(ds_list, node->origin, node);
 		} else {
-			list_insert_after(ds_list,
-			    parent_node, clone_node);
+			list_insert_after(ds_list, parent_node, node);
 		}
 	}
 
-	avl_destroy(&clones);
+	list_destroy(&ds_collect_list);
 
 	node = list_head(ds_list);
 
