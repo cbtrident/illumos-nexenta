@@ -33,7 +33,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 /*
@@ -333,7 +333,6 @@ mover_listen_core(ndmp_error error,
 	ndmp_mover_mode mode, ndmp_addr_type addr_type,
 		void **tcpObj, FILE * outfile, conn_handle * conn)
 {
-	void *obj = NULL;
 	ndmp_mover_listen_reply *reply_mem = NULL;
 	ndmp_mover_listen_request *request = NULL;
 	/*
@@ -383,10 +382,8 @@ mover_listen_core(ndmp_error error,
 						reply_mem)->error) {
 			ndmp_mover_listen_reply_print(outfile,
 				((ndmp_mover_listen_reply *) reply_mem));
-			if (addr_type == NDMP_ADDR_TCP) {
-				obj = &(reply_mem->connect_addr);
-				tcpObj = &obj;
-			}
+			if (tcpObj != NULL && addr_type == NDMP_ADDR_TCP)
+				*tcpObj = &(reply_mem->connect_addr);
 			return (SUCCESS);
 		}
 	}
