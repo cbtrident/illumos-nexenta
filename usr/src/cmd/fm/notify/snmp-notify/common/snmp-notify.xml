@@ -1,8 +1,6 @@
 <?xml version="1.0"?>
 <!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
 <!--
- Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
-
  CDDL HEADER START
 
  The contents of this file are subject to the terms of the
@@ -21,6 +19,9 @@
  information: Portions Copyright [yyyy] [name of copyright owner]
 
  CDDL HEADER END
+
+ Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ Copyright 2018 Nexenta Systems, Inc.
 
 	NOTE:  This service manifest is not editable; its contents will
 	be overwritten by package or patch operations, including
@@ -60,7 +61,6 @@
 	    type='service'>
 		<service_fmri value='svc:/milestone/multi-user:default' />
 		<service_fmri value='svc:/system/fmd:default' />
-		<service_fmri value='svc:/application/management/net-snmp:default' />
 	</dependency>
 
 	<exec_method
@@ -75,30 +75,30 @@
 	    exec=':kill'
 	    timeout_seconds='60' />
 
-        <exec_method
-                type='method'
-                name='refresh'
-                exec=':kill -HUP'
-                timeout_seconds='30'>
-                <method_context>
-                        <method_credential user='root' group='root' />
-                </method_context>
-        </exec_method>
+	<exec_method
+	    type='method'
+	    name='refresh'
+	    exec=':kill -HUP'
+	    timeout_seconds='30'>
+		<method_context>
+			<method_credential user='root' group='root' />
+		</method_context>
+	</exec_method>
 
 	<property_group name="general" type="framework">
 		<propval name='action_authorization' type='astring'
-                    value='solaris.smf.manage.snmp-notify' />
+		    value='solaris.smf.manage.snmp-notify' />
 		<propval name='value_authorization' type='astring'
-                    value='solaris.smf.value.snmp-notify' />
+		    value='solaris.smf.value.snmp-notify' />
 	</property_group>
 
 	<property_group name="config" type="application">
 		<propval name="debug" type="boolean" value="false"/>
 		<propval name="rootdir" type="astring" value="/"/>
 		<propval name='action_authorization' type='astring'
-                    value='solaris.smf.manage.snmp-notify' />
+		    value='solaris.smf.manage.snmp-notify' />
 		<propval name='value_authorization' type='astring'
-                    value='solaris.smf.value.snmp-notify' />
+		    value='solaris.smf.value.snmp-notify' />
 	</property_group>
 
 	<stability value='Evolving' />
@@ -106,7 +106,7 @@
 	<template>
 	    	<common_name>
 		    	<loctext xml:lang='C'>
-				Solaris SNMP Event Notification Agent
+				Fault Manager SNMP Event Notification Agent
 			</loctext>
 		</common_name>
 		<documentation>
@@ -135,7 +135,7 @@ The root directory that will be used for all pathnames evaluated by snmp-notify
 				<visibility value='readwrite'/>
 				<cardinality min='1' max='1'/>
 			</prop_pattern>
-		</pg_pattern>	 
+		</pg_pattern>
 	</template>
 </service>
 
