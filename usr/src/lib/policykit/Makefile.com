@@ -29,6 +29,7 @@ include $(SRC)/lib/policykit/Makefile.policykit
 CPPFLAGS =	$(POLICYKIT_DBUS_CPPFLAGS) $(POLICYKIT_GLIB_CPPFLAGS) $(CPPFLAGS.master)
 
 CERRWARN +=	-_gcc=-Wno-unused-variable
+CERRWARN +=	-_gcc=-Wno-unused-function
 CERRWARN +=	-_cc=-errhdr=no%$(ADJUNCT_PROTO)/usr/include/glib-2.0
 
 CSTD =	$(CSTD_GNU99)
