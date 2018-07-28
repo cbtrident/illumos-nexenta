@@ -159,7 +159,7 @@ pqi_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 	}
 
 	if ((d = pqi_find_target_dev(s, lun)) == NULL)
-		return (DDI_NOT_WELL_FORMED);
+		return (DDI_FAILURE);
 
 	scsi_device_hba_private_set(sd, d);
 
@@ -170,7 +170,7 @@ pqi_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 		if ((pip = (mdi_pathinfo_t *)sd->sd_private) == NULL)
 			return (DDI_NOT_WELL_FORMED);
 
-		(void) snprintf(wwid_str, sizeof (wwid_str), "%lx",
+		(void) snprintf(wwid_str, sizeof (wwid_str), "%" PRIx64,
 		    d->pd_sas_address);
 		(void) mdi_prop_update_string(pip, SCSI_ADDR_PROP_TARGET_PORT,
 		    wwid_str);
@@ -205,7 +205,7 @@ pqi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 	ASSERT3P(cmd->pc_pkt, ==, pkt);
 	ASSERT3P(cmd->pc_softc, ==, s);
 
-	if (pqi_is_offline(s))
+	if (pqi_is_offline(s) || !cmd->pc_device->pd_online)
 		return (TRAN_FATAL_ERROR);
 
 	/*
@@ -553,7 +553,7 @@ handle_dma_cookies:
 		if (cmd->pc_dmaccount >
 		    (s->s_sg_chain_buf_length / sizeof (pqi_sg_entry_t))) {
 			dev_err(s->s_dip, CE_WARN,
-			    "Cookie(0x%x) verses SG(0x%lx) mismatch",
+			    "Cookie(0x%x) verses SG(0x%" PRIx64 ") mismatch",
 			    cmd->pc_dmaccount,
 			    s->s_sg_chain_buf_length / sizeof (pqi_sg_entry_t));
 			goto out;
@@ -697,13 +697,6 @@ pqi_unquiesce(dev_info_t *dip)
 	return (0);
 }
 
-/*
- * Yuck! Internal knowledge of MPxIO, but since this variable is required
- * to use MPxIO and there's no public API it must be declared here. Both
- * the iSCSI Initiator and MPT SAS drivers do the same thing.
- */
-extern dev_info_t *scsi_vhci_dip;
-
 /*ARGSUSED*/
 static int
 pqi_bus_config(dev_info_t *pdip, uint_t flag,
@@ -763,7 +756,7 @@ pqi_find_target_dev(pqi_state_t s, int target)
 	 */
 	for (d = list_head(&s->s_devnodes); d != NULL;
 	    d = list_next(&s->s_devnodes, d)) {
-		if (d->pd_target == target)
+		if (d->pd_target == target && d->pd_online)
 			break;
 	}
 	return (d);
@@ -774,9 +767,27 @@ pqi_config_all(dev_info_t *pdip, pqi_state_t s)
 {
 	pqi_device_t d;
 
+	/*
+	 * Make sure we bring the available devices into play first. These
+	 * might be brand new devices just hotplugged into the system or
+	 * they could be devices previously offlined because either they
+	 * were pulled from an enclosure or a cable to the enclosure was
+	 * pulled.
+	 */
+	for (d = list_head(&s->s_devnodes); d != NULL;
+	     d = list_next(&s->s_devnodes, d)) {
+		if (d->pd_online)
+			(void) config_one(pdip, s, d, NULL);
+	}
+
+	/*
+	 * Now deal with devices that we had previously known about, but are
+	 * no longer available.
+	 */
 	for (d = list_head(&s->s_devnodes); d != NULL;
 	    d = list_next(&s->s_devnodes, d)) {
-		(void) config_one(pdip, s, d, NULL);
+		if (!d->pd_online)
+			(void) config_one(pdip, s, d, NULL);
 	}
 
 	return (NDI_SUCCESS);
@@ -991,7 +1002,8 @@ create_virt_lun(pqi_state_t s, pqi_device_t d, struct scsi_inquiry *inq,
 	if (d->pd_guid != NULL) {
 		guid_ptr = d->pd_guid;
 	} else {
-		(void) snprintf(wwid_str, sizeof (wwid_str), "%lx", d->pd_wwid);
+		(void) snprintf(wwid_str, sizeof (wwid_str), "%" PRIx64,
+		    d->pd_wwid);
 		guid_ptr = wwid_str;
 	}
 	(void) snprintf(tgt_str, sizeof (tgt_str), "%x", d->pd_target);
@@ -1064,7 +1076,8 @@ config_one(dev_info_t *pdip, pqi_state_t s, pqi_device_t d,
 		return (NDI_FAILURE);
 
 	/* ---- Inquiry target ---- */
-	if (pqi_scsi_inquiry(s, d, 0, &inq, sizeof (inq)) == B_FALSE) {
+	if (!d->pd_online ||
+	    pqi_scsi_inquiry(s, d, 0, &inq, sizeof (inq)) == B_FALSE) {
 		pqi_fail_drive_cmds(d);
 
 		if (d->pd_dip != NULL) {
@@ -1134,8 +1147,6 @@ cmd_ext_alloc(pqi_cmd_t cmd, int kf)
 			goto out;
 		pkt->pkt_scbp = buf;
 		cmd->pc_flags |= PQI_FLAG_SCB_EXT;
-		cmd->pc_cmd_rqslen = (cmd->pc_statuslen -
-		    sizeof (cmd->pc_cmd_scb));
 	}
 
 	if (cmd->pc_tgtlen > sizeof (cmd->pc_tgt_priv)) {
