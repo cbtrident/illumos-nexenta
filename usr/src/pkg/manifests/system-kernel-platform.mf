@@ -1223,6 +1223,10 @@ $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000206A7-02 group=sys \
     mode=0444
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000206A7-10 group=sys \
     mode=0444
+$(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000206C2-01 group=sys \
+    mode=0444
+$(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000206C2-02 group=sys \
+    mode=0444
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000206D6-01 group=sys \
     mode=0444
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000206D6-04 group=sys \
@@ -1242,6 +1246,8 @@ $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000206D7-08 group=sys \
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000206D7-20 group=sys \
     mode=0444
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000206D7-40 group=sys \
+    mode=0444
+$(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000206E6-04 group=sys \
     mode=0444
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000206F2-01 group=sys \
     mode=0444
@@ -1377,9 +1383,15 @@ $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/00050664-10 group=sys \
     mode=0444
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/00050665-10 group=sys \
     mode=0444
+$(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000506C2-01 group=sys \
+    mode=0444
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000506C9-01 group=sys \
     mode=0444
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000506C9-02 group=sys \
+    mode=0444
+$(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000506CA-01 group=sys \
+    mode=0444
+$(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000506CA-02 group=sys \
     mode=0444
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000506E3-02 group=sys \
     mode=0444
@@ -1388,6 +1400,8 @@ $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000506E3-04 group=sys \
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000506E3-10 group=sys \
     mode=0444
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000506E3-20 group=sys \
+    mode=0444
+$(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000506F1-01 group=sys \
     mode=0444
 $(i386_ONLY)file path=platform/i86pc/ucode/GenuineIntel/000706A1-01 group=sys \
     mode=0444
