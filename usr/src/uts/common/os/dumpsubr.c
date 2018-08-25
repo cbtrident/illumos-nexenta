@@ -414,10 +414,11 @@ typedef struct dumpbuf {
 dumpbuf_t dumpbuf;		/* I/O buffer */
 
 /*
- * DUMP_HELPER_MAX_WAIT
  * For parallel dump, defines maximum time main task thread will wait
  * for at least one helper to register in dumpcfg.helpermap, before
  * assuming there are no helpers and falling back to serial mode.
+ * Value is chosen arbitrary and provides *really* long wait for any
+ * available helper to register.
  */
 #define	DUMP_HELPER_MAX_WAIT	1000	/* millisec */
 
@@ -2029,7 +2030,8 @@ dumpsys_main_task(void *arg)
 	 * dumpcfg.helpermap must contain at least one member.
 	 *
 	 * It is possible that the helpers haven't registered
-	 * in helpermap yet; wait up to DUMP_HELPER_MAX_WAIT.
+	 * in helpermap yet; wait up to DUMP_HELPER_MAX_WAIT for
+	 * at least one helper to register.
 	 */
 	if (dump_ncpu_low != 0 && dumpcfg.clevel != DUMP_CLEVEL_SERIAL) {
 		boolean_t dumpserial = B_TRUE;
@@ -2049,7 +2051,7 @@ dumpsys_main_task(void *arg)
 				break;
 			}
 
-			ht_pause();
+			SMT_PAUSE();
 		}
 
 		if (dumpserial) {

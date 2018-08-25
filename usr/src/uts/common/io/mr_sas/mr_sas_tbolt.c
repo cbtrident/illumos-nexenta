@@ -52,7 +52,7 @@ extern uint32_t mrsas_tbolt_max_cap_maxxfer;
 extern struct ddi_device_acc_attr endian_attr;
 extern int	debug_level_g;
 extern unsigned int	enable_fp;
-volatile int dump_io_wait_time = 90;
+volatile int dump_io_wait_time = 900;
 extern volatile int  debug_timeout_g;
 extern int	mrsas_issue_pending_cmds(struct mrsas_instance *);
 extern int mrsas_complete_pending_cmds(struct mrsas_instance *instance);

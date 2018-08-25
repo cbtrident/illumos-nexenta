@@ -29,9 +29,7 @@ CPPFLAGS +=	-D_STANDALONE
 
 CFLAGS =	-Os -fPIC -ffreestanding -Wformat
 CFLAGS +=	-mno-mmx -mno-3dnow -mno-sse -mno-sse2 -mno-sse3 -msoft-float
-CFLAGS +=	-Wno-pointer-sign -Wno-empty-body -Wno-unused-value \
-		-Wno-unused-function -Wno-switch \
-		-Wno-switch-enum -Wno-parentheses
+CFLAGS +=	-Wall -Werror
 
 $(LIBRARY): $(SRCS) $(OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJS)

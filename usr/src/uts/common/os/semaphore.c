@@ -331,8 +331,8 @@ sema_p_sig(ksema_t *sp)
 void
 sema_v(ksema_t *sp)
 {
-	sema_impl_t 	*s;
-	kthread_t 	*sq, *tp;
+	sema_impl_t	*s;
+	kthread_t	*sq, *tp;
 	disp_lock_t	*sqlp;
 
 	/* no-op during panic */
