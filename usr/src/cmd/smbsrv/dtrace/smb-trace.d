@@ -1,3 +1,4 @@
+#!/usr/sbin/dtrace -s
 /*
  * This file and its contents are supplied under the terms of the
  * Common Development and Distribution License ("CDDL"), version 1.0.
@@ -10,7 +11,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -24,6 +25,14 @@
  *	args[2]  smb_name_args_t
  *	args[2]  smb_open_args_t
  *	args[2]  smb_rw_args_t
+ *
+ * Usage: smb-trace.d [<client ip>|all [<share path>|all] [<zone id>]]]
+ *
+ * example: smb_trace.d 192.168.012.001 mypool_fs1  0
+ *
+ * It is valid to specify <client ip> or <share path> as "all" to
+ * print data for all clients and/or all shares.
+ * Ommitting <zone id> will print data for all zones.
  */
 
 /*
@@ -38,6 +47,24 @@
  * Not clear why listing them all is necessary,
  * but that works.
  */
+
+#pragma D option defaultargs
+
+dtrace:::BEGIN
+{
+	all_clients = (($$1 == NULL) || ($$1 == "all")) ? 1 : 0;
+	all_shares = (($$2 == NULL) || ($$2 == "all")) ? 1 : 0;
+	all_zones = ($$3 == NULL) ? 1 : 0;
+
+	client = $$1;
+	share = $$2;
+	zoneid = $3;
+
+	printf("%Y - client=%s share=%s zone=%s)\n", walltimestamp,
+	    (all_clients) ? "all" : client,
+	    (all_shares) ? "all" : share,
+	    (all_zones) ? "all" : $$3);
+}
 
 smb:::op-CheckDirectory-start,
 smb:::op-Close-start,
@@ -99,6 +126,9 @@ smb:::op-WriteAndUnlock-start,
 smb:::op-WritePrintFile-start,
 smb:::op-WriteRaw-start,
 smb:::op-WriteX-start
+/ ((all_clients) || (args[0]->ci_remote == client)) &&
+   ((all_shares) || (args[1]->soi_share == share)) &&
+   ((all_zones) || (args[1]->soi_zoneid == zoneid)) /
 {
 	printf("clnt=%s mid=0x%x uid=0x%x tid=0x%x\n",
 	       args[0]->ci_remote,
@@ -168,9 +198,16 @@ smb:::op-WriteAndUnlock-done,
 smb:::op-WritePrintFile-done,
 smb:::op-WriteRaw-done,
 smb:::op-WriteX-done
+/ ((all_clients) || (args[0]->ci_remote == client)) &&
+   ((all_shares) || (args[1]->soi_share == share)) &&
+   ((all_zones) || (args[1]->soi_zoneid == zoneid)) /
 {
 	printf("clnt=%s mid=0x%x status=0x%x\n",
 	       args[0]->ci_remote,
 	       args[1]->soi_mid,
 	       args[1]->soi_status);
+}
+
+dtrace:::END
+{
 }
