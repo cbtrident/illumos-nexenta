@@ -200,9 +200,9 @@ export ONLY_LINT_DEFS=-I${SPRO_ROOT}/sunstudio12.1/prod/include/lint
 # Causes GCC to be used as the main compiler
 export __GNUC=""
 
-# Check for customized GCC location and set GCC_ROOT accordingly.
+# Check for customized GCC location and set GNUC_ROOT accordingly.
 if [ -d /opt/gcc-4.4.4 ] ; then
-	export GCC_ROOT=/opt/gcc-4.4.4
+	export GNUC_ROOT=/opt/gcc-4.4.4
 fi
 
 # Turns off shadow compiler when set to 1
@@ -227,11 +227,8 @@ export CW_NO_SHADOW=1
 # nightly(1) for interactions between environment variables and this command.
 #POST_NIGHTLY=
 
-# Uncomment this to disable support for SMB printing.
+# Comment this to enable support for SMB printing.
 export ENABLE_SMB_PRINTING='#'
-
-# Uncomment this to disable support for IPP printing.
-export ENABLE_IPP_PRINTING='#'
 
 # Detect the values to match the perl version used for building.
 # This code can be avoided by setting the variables here.

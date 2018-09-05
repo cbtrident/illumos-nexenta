@@ -830,6 +830,7 @@ multiboot2_exec(struct preloaded_file *fp)
 	}
 #endif
 
+	mbi = NULL;
 	error = EINVAL;
 	if (rootdev == NULL) {
 		printf("can't determine root device\n");

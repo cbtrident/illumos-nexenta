@@ -27,6 +27,7 @@
 # Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2017 Toomas Soome <tsoome@me.com>
 # Copyright 2017 RackTop Systems.
+# Copyright 2018, Joyent, Inc.
 #
 
 #
@@ -1024,3 +1025,15 @@ usr/lib/sparcv9/llib-lsff.ln		sparc
 usr/lib/libsff.so
 usr/lib/llib-lsff
 usr/lib/llib-lsff.ln
+
+#
+# libcustr is private
+#
+usr/include/libcustr.h
+lib/amd64/libcustr.so		i386
+lib/amd64/llib-lcustr.ln	i386
+lib/sparcv9/libcustr.so		sparc
+lib/sparcv9/llib-lcustr.ln	sparc
+lib/libcustr.so
+lib/llib-lcustr
+lib/llib-lcustr.ln

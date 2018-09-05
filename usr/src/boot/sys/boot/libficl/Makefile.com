@@ -14,7 +14,7 @@
 #
 
 
-CC=		$(GCC_ROOT)/bin/gcc
+CC=		$(GNUC_ROOT)/bin/gcc
 FICLDIR=	$(SRC)/common/ficl
 PNGLITE=	$(SRC)/common/pnglite
 
