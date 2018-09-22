@@ -215,7 +215,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	strfree;
 
 	system_taskq;
-	system_taskq_fini;	
+	system_taskq_fini;
 	system_taskq_init;
 	taskq_create;
 	taskq_create_proc;
@@ -237,10 +237,12 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	tsd_destroy;
 
 	tick_per_msec;
+	timeout;
 	ts2hrt;
 	tsignal;
 	uiomove;
 	uioskip;
+	untimeout;
 	usec_per_tick;
 	vcmn_err;
 	vmem_qcache_reap;
