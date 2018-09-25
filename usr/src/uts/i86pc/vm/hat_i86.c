@@ -26,7 +26,7 @@
  * All rights reserved.
  */
 /*
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2018 Joyent, Inc.  All rights reserved.
  * Copyright (c) 2014, 2015 by Delphix. All rights reserved.
  */
@@ -3056,32 +3056,17 @@ hat_unload_callback(
 }
 
 /*
- * Invalidate a virtual address translation on a slave CPU during
- * panic() dumps.
+ * Flush the TLB for the local CPU
+ * Invoked from a slave CPU during panic() dumps.
  */
 void
-hat_flush_range(hat_t *hat, caddr_t va, size_t size)
+hat_flush(void)
 {
-	ssize_t sz;
-	caddr_t endva = va + size;
-
-	while (va < endva) {
-		sz = hat_getpagesize(hat, va);
-		if (sz < 0) {
 #ifdef __xpv
 			xen_flush_tlb();
 #else
 			mmu_flush_tlb(FLUSH_TLB_ALL, NULL);
 #endif
-			break;
-		}
-#ifdef __xpv
-		xen_flush_va(va);
-#else
-		mmu_flush_tlb_kpage((uintptr_t)va);
-#endif
-		va += sz;
-	}
 }
 
 /*
