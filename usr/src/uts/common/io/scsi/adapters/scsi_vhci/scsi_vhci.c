@@ -6256,12 +6256,14 @@ vhci_devctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		}
 		svp = (scsi_vhci_priv_t *)mdi_pi_get_vhci_private(pip);
 
-		VHCI_DEBUG(2, (CE_NOTE, "Reset %s@%s on all availabe paths",
+		VHCI_DEBUG(2, (CE_NOTE, NULL,
+		    "!reset %s@%s on all available paths",
 		    ndi_dc_getname(dcp), ndi_dc_getaddr(dcp)));
 
 		if (vhci_scsi_reset_all_paths(&svp->svp_psd->sd_address) != 0) {
-			VHCI_DEBUG(2, (CE_WARN, "!vhci_ioctl(pip:%p): "
-			    "reset failed\n", (void *)pip));
+			VHCI_DEBUG(2, (CE_WARN, NULL,
+			    "!vhci_ioctl(pip:%p): reset failed\n",
+			    (void *)pip));
 			rv = ENXIO;
 		}
 		mdi_rele_path(pip);
