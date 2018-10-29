@@ -1749,7 +1749,7 @@ vhci_scsi_reset_all_paths(struct scsi_address *ap)
 	if (cdip == NULL || (vdip = ddi_get_parent(cdip)) == NULL ||
 	    (vhci = ddi_get_soft_state(vhci_softstate,
 		ddi_get_instance(vdip))) == NULL) {
-		VHCI_DEBUG(2, (CE_WARN, NULL, "!%s: ",
+		VHCI_DEBUG(2, (CE_WARN, NULL, "!%s: "
 		    "Child info pointer NULL, cdip 0x%p",
 		    __func__, (void *)cdip));
 		return (0);
@@ -1757,7 +1757,7 @@ vhci_scsi_reset_all_paths(struct scsi_address *ap)
 
 	rval = mdi_select_path(cdip, NULL, MDI_SELECT_ONLINE_PATH, NULL, &pip);
 	if ((rval != MDI_SUCCESS) || (pip == NULL)) {
-		VHCI_DEBUG(2, (CE_WARN, NULL, "!%s: ",
+		VHCI_DEBUG(2, (CE_WARN, NULL, "!%s: "
 		    "Unable to get a path, dip 0x%p",
 		    __func__, (void *)cdip));
 		return (0);
@@ -1766,7 +1766,7 @@ again:
 	svp = (scsi_vhci_priv_t *)mdi_pi_get_vhci_private(pip);
 
 	if (svp == NULL || svp->svp_psd == NULL) {
-		VHCI_DEBUG(2, (CE_WARN, NULL, "!%s: ",
+		VHCI_DEBUG(2, (CE_WARN, NULL, "!%s: "
 		    "private data is NULL, pip 0x%p",
 		    __func__, (void *)pip));
 		mdi_rele_path(pip);
