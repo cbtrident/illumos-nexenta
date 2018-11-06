@@ -9,7 +9,7 @@
 #
 
 #
-# Copyright 2010 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2012 Garrett D'Amore <garrett@damore.org>. All rights reserved.
 #
 
