@@ -312,7 +312,8 @@ locdata_get(int category, const char *locname)
 		locname = scratch;
 	}
 
-	if ((strcmp(locname, "C") == 0) || (strcmp(locname, "POSIX") == 0))
+	if (strcmp(locname, "C") == 0 || strcmp(locname, "POSIX") == 0 ||
+	    (category != LC_CTYPE && strncmp(locname, "C.", 2) == 0))
 		return (posix_locale.locdata[category]);
 
 	return (locdata_get_cache(category, locname));

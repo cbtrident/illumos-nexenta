@@ -91,8 +91,8 @@ locale/%/$(DTIME): locale/%/stamp
 
 $(ROOTDATA):	$(ROOTLOCDIRS) $(ROOTCATDIRS) $(DATA)
 		$(RM) $@
-		$(CP) $(@:$(ROOTLIB)/%=%) $@
-		$(CHMOD) 0444 $@
+		-$(CP) $(@:$(ROOTLIB)/%=%) $@
+		$(CHMOD) -f 0444 $@
 
 %.mo:		%.po
 		$(MSGFMT) -o $@ $<
