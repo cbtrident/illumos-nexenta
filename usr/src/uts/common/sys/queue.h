@@ -36,6 +36,7 @@
 #ifndef	_SYS_QUEUE_H
 #define	_SYS_QUEUE_H
 
+#include <sys/containerof.h>
 #include <sys/note.h>
 #include <sys/stddef.h>
 
@@ -377,7 +378,7 @@ struct {								\
 
 #define	STAILQ_LAST(head, type, field)					\
 	(STAILQ_EMPTY((head)) ? NULL :					\
-	    container_of((head)->stqh_last,				\
+	    __containerof((head)->stqh_last,				\
 	    QUEUE_TYPEOF(type), field.stqe_next))
 
 #define	STAILQ_REMOVE_HEAD(head, field) do {				\
@@ -459,7 +460,7 @@ struct {								\
 #define	LIST_NEXT(elm, field)		((elm)->field.le_next)
 #define	LIST_PREV(elm, head, type, field)				\
 	((elm)->field.le_prev == &LIST_FIRST((head)) ? NULL :		\
-	container_of((elm)->field.le_prev, type, field.le_next))
+	__containerof((elm)->field.le_prev, type, field.le_next))
 
 #define	LIST_FOREACH(var, head, field)					\
 	for ((var) = LIST_FIRST((head));				\
