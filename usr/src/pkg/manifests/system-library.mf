@@ -76,6 +76,8 @@
 <include system-library.man5.inc>
 <include system-library.man7p.inc>
 set name=pkg.fmri value=pkg:/system/library@$(PKGVERS)
+set name=pkg.debug.depend.bypassed value=lib/libcrypto.so.1.0.0 \
+    value=usr/lib/libcrypto.so.1.0.0
 set name=pkg.description \
     value="core shared libraries for a specific instruction-set architecture"
 set name=pkg.summary value="Core Solaris, (Shared Libs)"
@@ -254,11 +256,13 @@ file path=lib/$(ARCH64)/nss_user.so.1
 file path=lib/c_synonyms.so.1
 file path=lib/crypto/$(ARCH64)/kmf_mapper_cn.so.1
 file path=lib/crypto/$(ARCH64)/kmf_nss.so.1
-file path=lib/crypto/$(ARCH64)/kmf_openssl.so.1
+file path=lib/crypto/$(ARCH64)/kmf_openssl.so.1 \
+    pkg.depend.bypass-generate=.*/libcrypto.so.1.0.0
 file path=lib/crypto/$(ARCH64)/kmf_pkcs11.so.1
 file path=lib/crypto/kmf_mapper_cn.so.1
 file path=lib/crypto/kmf_nss.so.1
-file path=lib/crypto/kmf_openssl.so.1
+file path=lib/crypto/kmf_openssl.so.1 \
+    pkg.depend.bypass-generate=.*/libcrypto.so.1.0.0
 file path=lib/crypto/kmf_pkcs11.so.1
 file path=lib/ld.so.1
 file path=lib/libadm.so.1
@@ -520,7 +524,8 @@ file path=usr/lib/security/$(ARCH64)/pam_unix_cred.so.1
 file path=usr/lib/security/$(ARCH64)/pam_unix_session.so.1
 file path=usr/lib/security/$(ARCH64)/pkcs11_kernel.so.1
 file path=usr/lib/security/$(ARCH64)/pkcs11_softtoken.so.1
-file path=usr/lib/security/$(ARCH64)/pkcs11_tpm.so.1
+file path=usr/lib/security/$(ARCH64)/pkcs11_tpm.so.1 \
+    pkg.depend.bypass-generate=.*/libcrypto.so.1.0.0
 file path=usr/lib/security/audit_binfile.so.1
 file path=usr/lib/security/audit_remote.so.1
 file path=usr/lib/security/audit_syslog.so.1
@@ -550,7 +555,8 @@ file path=usr/lib/security/pam_unix_cred.so.1
 file path=usr/lib/security/pam_unix_session.so.1
 file path=usr/lib/security/pkcs11_kernel.so.1
 file path=usr/lib/security/pkcs11_softtoken.so.1
-file path=usr/lib/security/pkcs11_tpm.so.1
+file path=usr/lib/security/pkcs11_tpm.so.1 \
+    pkg.depend.bypass-generate=.*/libcrypto.so.1.0.0
 file path=usr/lib/straddr.so.2
 file path=usr/lib/watchmalloc.so.1
 # XXX: Obsoleted by open i18n?
@@ -1289,7 +1295,8 @@ link path=usr/lib/security/$(ARCH64)/pkcs11_kernel.so \
     target=./pkcs11_kernel.so.1
 link path=usr/lib/security/$(ARCH64)/pkcs11_softtoken.so \
     target=./pkcs11_softtoken.so.1
-link path=usr/lib/security/$(ARCH64)/pkcs11_tpm.so target=./pkcs11_tpm.so.1
+link path=usr/lib/security/$(ARCH64)/pkcs11_tpm.so \
+    pkg.depend.bypass-generate=.*/libcrypto.so.1.0.0 target=./pkcs11_tpm.so.1
 link path=usr/lib/security/64 target=$(ARCH64)
 link path=usr/lib/security/audit_binfile.so target=./audit_binfile.so.1
 link path=usr/lib/security/audit_remote.so target=./audit_remote.so.1
@@ -1322,11 +1329,13 @@ link path=usr/lib/security/pam_unix_cred.so target=./pam_unix_cred.so.1
 link path=usr/lib/security/pam_unix_session.so target=./pam_unix_session.so.1
 link path=usr/lib/security/pkcs11_kernel.so target=./pkcs11_kernel.so.1
 link path=usr/lib/security/pkcs11_softtoken.so target=./pkcs11_softtoken.so.1
-link path=usr/lib/security/pkcs11_tpm.so target=./pkcs11_tpm.so.1
+link path=usr/lib/security/pkcs11_tpm.so \
+    pkg.depend.bypass-generate=.*/libcrypto.so.1.0.0 target=./pkcs11_tpm.so.1
 link path=usr/lib/straddr.so target=./straddr.so.2
 link path=usr/xpg4/lib/$(ARCH64)/libcurses.so target=libcurses.so.2
 link path=usr/xpg4/lib/64 target=$(ARCH64)
 link path=usr/xpg4/lib/libcurses.so target=./libcurses.so.2
+depend fmri=library/security/openssl type=require
 #
 # libses.so needs to dlopen(3C) plugins from usr/lib/scsi/plugins/ses/vendor/,
 # a dependency which cannot be automatically derived
