@@ -210,11 +210,12 @@ static char *topologies[] = { "Unknown", "Direct Pt-to-Pt", "Private Loop",
 				"Unknown", "Unknown", "Fabric Pt-to-Pt",
 				"Public Loop" };
 
-void
-fct_li_to_txt(fct_link_info_t *li, char *topology, char *speed)
+static void
+fct_li_to_txt(fct_link_info_t *li, char *topology, char *speed, int len)
 {
 	uint8_t s = li->port_speed;
 
+	ASSERT(len >= 4);
 	if (li->port_topology > PORT_TOPOLOGY_PUBLIC_LOOP) {
 		(void) sprintf(topology, "Invalid %02x", li->port_topology);
 	} else {
@@ -223,15 +224,42 @@ fct_li_to_txt(fct_link_info_t *li, char *topology, char *speed)
 
 	if ((s == 0) || ((s & 0xf00) != 0) || !ISP2(s)) {
 		speed[0] = '?';
-	} else if (s == PORT_SPEED_10G) {
-		speed[0] = '1';
-		speed[1] = '0';
-		speed[2] = 'G';
-		speed[3] = 0;
+		speed[1] = '\0';
 	} else {
-		speed[0] = '0' + li->port_speed;
-		speed[1] = 'G';
-		speed[2] = 0;
+		/*
+		 * The CONSTANTS for 1,2,4, and 8, match their numerical
+		 * equivalent so the code can just use a snprintf to create
+		 * the string. Unfortunately, the CONSTANTS for 10 is a power
+		 * of 2 which breaks that easy mapping for not only 10G, but 16G
+		 * and 32G as well.
+		 * strlcpy is used in the three fixed cases of 32G, 16G, and 10G
+		 * to deal with buffer overflow and only copying the correct
+		 * amount of data into the buffer speed.
+		 */
+		switch (s) {
+			case PORT_SPEED_32G:
+				(void) strlcpy(speed, "32G", len);
+				break;
+
+			case PORT_SPEED_16G:
+				(void) strlcpy(speed, "16G", len);
+				break;
+
+			case PORT_SPEED_10G:
+				(void) strlcpy(speed, "10G", len);
+				break;
+
+			case PORT_SPEED_8G:
+			case PORT_SPEED_4G:
+			case PORT_SPEED_2G:
+			case PORT_SPEED_1G:
+				(void) snprintf(speed, len, "%dG", s);
+				break;
+
+			default:
+				(void) strlcpy(speed, "??G", len);
+				break;
+		}
 	}
 }
 
@@ -567,7 +595,7 @@ check_state_again:
 		break;
 
 	case LI_STATE_FINI_TOPOLOGY:
-		fct_li_to_txt(li, topo, speed);
+		fct_li_to_txt(li, topo, speed, sizeof (speed));
 		cmn_err(CE_NOTE, "%s LINK UP, portid %x, topology %s,"
 		    "speed %s", iport->iport_alias, li->portid,
 		    topo, speed);
