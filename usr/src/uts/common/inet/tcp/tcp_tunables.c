@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Joyent, Inc.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 /* Copyright (c) 1990 Mentat Inc. */
@@ -395,7 +395,7 @@ mod_prop_info_t tcp_propinfo_tbl[] = {
 
 	{ "max_buf", MOD_PROTO_TCP,
 	    mod_set_uint32, mod_get_uint32,
-	    {8192, ULP_MAX_BUF, 1024*1024}, {1024*1024} },
+	    {8192, ULP_MAX_BUF, TCP_MAX_BUF_DEF}, TCP_MAX_BUF_DEF },
 
 	{ "_strong_iss", MOD_PROTO_TCP,
 	    mod_set_uint32, mod_get_uint32,

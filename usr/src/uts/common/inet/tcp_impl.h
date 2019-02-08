@@ -23,6 +23,7 @@
  * Copyright 2016 Joyent, Inc.
  * Copyright (c) 2013, OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright (c) 2013, 2014 by Delphix. All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.
  */
 
 #ifndef	_INET_TCP_IMPL_H
@@ -61,9 +62,10 @@ extern sock_downcalls_t sock_tcp_downcalls;
  * by setting it to 0.
  */
 #define	TCP_XMIT_LOWATER	4096
-#define	TCP_XMIT_HIWATER	49152
+#define	TCP_XMIT_HIWATER	1048576
 #define	TCP_RECV_LOWATER	2048
-#define	TCP_RECV_HIWATER	128000
+#define	TCP_RECV_HIWATER	1048576
+#define	TCP_MAX_BUF_DEF		(1024 * 1024 * 16)
 
 /*
  * Bind hash list size and has function.  It has to be a power of 2 for
