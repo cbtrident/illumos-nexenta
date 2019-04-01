@@ -44,7 +44,7 @@
 # - This script is only interpreted by ksh93 and explicitly allows the
 #   use of ksh93 language extensions.
 #
-export NIGHTLY_OPTIONS='-FCDlnprt'
+export NIGHTLY_OPTIONS='-FCDnmprt'
 
 # CODEMGR_WS - where is your workspace (or what should nightly name it)
 export CODEMGR_WS=`git rev-parse --show-toplevel`
@@ -117,9 +117,8 @@ export MULTI_PROTO="no"
 # With modern SCM systems like git, one typically wants the
 # change set ID (hash) in the version sring.
 GIT_REV=`git rev-parse --short=10 HEAD`
-export VERSION="${GATE}:${GIT_REV}"
-export ONNV_BUILDNUM=152
-
+GIT_BRANCH=`git rev-parse --abbrev-ref HEAD`
+export VERSION="${GIT_BRANCH}:${GATE}:${GIT_REV}"
 if [ -x /usr/bin/dpkg ]; then
     export PKGTYPE=deb
     export DEB_VERSION=`dpkg -l sunwcs | awk '/sunwcs/ {
@@ -261,3 +260,20 @@ if [ -z "$PERL_ARCH" ] ; then
 		fi
 	done
 fi
+#
+# The following variables are used to generate ips pkg with correct FMRI.build
+# Typically only PKGPUBLISHER_REDIST needs to be set.
+#
+# To publish pkgs with specific a FMRI, NEXENTA_RELEASE, ONNV_BUILDNUM,
+# PKGVERS_BRANCH need to be set.
+#
+# Set NEXENTA_RELEASE to appropriate release. For master, use the highest
+# active release.
+#export NEXENTA_RELEASE=5.3.0
+# ONNV_BUILDNUM is the build number. 
+#export ONNV_BUILDNUM=100
+# Name of the pkg publisher. Publisher names must not have "-" 
+export PKGPUBLISHER_REDIST=nza-nightly
+#
+# PKGVERS_BRANCH is the complete BRANCH VERSION FMRI
+#export PKGVERS_BRANCH="${NEXENTA_RELEASE}.${ONNV_BUILDNUM}"
