@@ -109,7 +109,6 @@ smb_rq_alloc(struct smb_connobj *layer, uchar_t cmd, struct smb_cred *scred,
 	struct smb_rq *rqp;
 	int error;
 
-	// XXX kmem cache?
 	rqp = (struct smb_rq *)kmem_alloc(sizeof (struct smb_rq), KM_SLEEP);
 	if (rqp == NULL)
 		return (ENOMEM);

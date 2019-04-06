@@ -41,10 +41,7 @@ ROOTLIBDIR64 =	$(ROOT)/usr/lib/smbfs/$(MACH64)
 SRCDIR=		../common
 LIBS=		$(DYNLIB) $(LINTLIB)
 
-# Do this both ways, for now...
 CSTD =		$(CSTD_GNU99)
-C99MODE =       -xc99=%all
-C99LMODE =      -Xc99=%all
 
 CPPFLAGS +=	-I$(SRCDIR) -I.
 LDLIBS32 +=	-L$(ROOT)/usr/lib/smbfs

@@ -56,7 +56,7 @@
 #define	SMBR_NOINTR_RECV	0x0200	/* no interrupt in recv wait */
 #define	SMBR_SENDWAIT		0x0400	/* waiting for send to complete */
 #define	SMBR_NORECONNECT	0x0800	/* do not reconnect for this */
-/* 	SMBR_VCREF		0x4000	 * took vc reference (obsolete) */
+/*	SMBR_VCREF		0x4000	 * took vc reference (obsolete) */
 #define	SMBR_MOREDATA		0x8000	/* our buffer was too small */
 #define	SMBR_COMPOUND_RQ	0x10000	/* SMB 2/3 compound request */
 #define	SMBR_ASYNC		0x20000	/* got async response */
@@ -70,7 +70,7 @@
 #define	SMBT2_NORESTART		0x0010
 #define	SMBT2_MOREDATA		0x8000	/* our buffer was too small */
 
-#define	SMBRQ_LOCK(rqp) 	mutex_enter(&(rqp)->sr_lock)
+#define	SMBRQ_LOCK(rqp)		mutex_enter(&(rqp)->sr_lock)
 #define	SMBRQ_UNLOCK(rqp)	mutex_exit(&(rqp)->sr_lock)
 
 enum smbrq_state {
@@ -89,7 +89,7 @@ struct smb_rq {
 	enum smbrq_state	sr_state;
 	struct smb_vc		*sr_vc;
 	struct smb_share	*sr_share;
-	struct _kthread 	*sr_owner;
+	struct _kthread		*sr_owner;
 	uint32_t		sr_seqno;	/* Seq. no. of request */
 	uint32_t		sr_rseqno;	/* Seq. no. of reply */
 	struct mbchain		sr_rq;
@@ -124,7 +124,7 @@ struct smb_rq {
 	int			sr_timo;
 	int			sr_rexmit; /* how many more retries.  dflt 0 */
 	int			sr_sendcnt;
-	struct timespec 	sr_timesent;
+	struct timespec		sr_timesent;
 	int			sr_lerror;
 	uint8_t			sr_errclass;
 	uint16_t		sr_serror;

@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
@@ -45,86 +45,17 @@
 #include <sys/vtrace.h>
 #include <sys/ftrace.h>
 #include <sys/ontrap.h>
-#include <sys/multidata.h>
-#include <sys/multidata_impl.h>
 #include <sys/sdt.h>
 #include <sys/strft.h>
 
-#if defined(_KERNEL) && defined(DEBUG)
-#include <sys/kmem_impl.h>
-#endif
-
 /*
- * This file contains those functions from io/stream.c
+ * This file contains selected functions from io/stream.c
  * needed by this library, mostly unmodified.
  */
 
 /*
  * STREAMS message allocator: principles of operation
- *
- * The streams message allocator consists of all the routines that
- * allocate, dup and free streams messages: allocb(), [d]esballoc[a],
- * dupb(), freeb() and freemsg().  What follows is a high-level view
- * of how the allocator works.
- *
- * Every streams message consists of one or more mblks, a dblk, and data.
- * All mblks for all types of messages come from a common mblk_cache.
- * The dblk and data come in several flavors, depending on how the
- * message is allocated:
- *
- * (1) mblks up to DBLK_MAX_CACHE size are allocated from a collection of
- *     fixed-size dblk/data caches. For message sizes that are multiples of
- *     PAGESIZE, dblks are allocated separately from the buffer.
- *     The associated buffer is allocated by the constructor using kmem_alloc().
- *     For all other message sizes, dblk and its associated data is allocated
- *     as a single contiguous chunk of memory.
- *     Objects in these caches consist of a dblk plus its associated data.
- *     allocb() determines the nearest-size cache by table lookup:
- *     the dblk_cache[] array provides the mapping from size to dblk cache.
- *
- * (2) Large messages (size > DBLK_MAX_CACHE) are constructed by
- *     kmem_alloc()'ing a buffer for the data and supplying that
- *     buffer to gesballoc(), described below.
- *
- * (3) The four flavors of [d]esballoc[a] are all implemented by a
- *     common routine, gesballoc() ("generic esballoc").  gesballoc()
- *     allocates a dblk from the global dblk_esb_cache and sets db_base,
- *     db_lim and db_frtnp to describe the caller-supplied buffer.
- *
- * While there are several routines to allocate messages, there is only
- * one routine to free messages: freeb().  freeb() simply invokes the
- * dblk's free method, dbp->db_free(), which is set at allocation time.
- *
- * dupb() creates a new reference to a message by allocating a new mblk,
- * incrementing the dblk reference count and setting the dblk's free
- * method to dblk_decref().  The dblk's original free method is retained
- * in db_lastfree.  dblk_decref() decrements the reference count on each
- * freeb().  If this is not the last reference it just frees the mblk;
- * if this *is* the last reference, it restores db_free to db_lastfree,
- * sets db_mblk to the current mblk (see below), and invokes db_lastfree.
- *
- * The implementation makes aggressive use of kmem object caching for
- * maximum performance.  This makes the code simple and compact, but
- * also a bit abstruse in some places.  The invariants that constitute a
- * message's constructed state, described below, are more subtle than usual.
- *
- * Every dblk has an "attached mblk" as part of its constructed state.
- * The mblk is allocated by the dblk's constructor and remains attached
- * until the message is either dup'ed or pulled up.  In the dupb() case
- * the mblk association doesn't matter until the last free, at which time
- * dblk_decref() attaches the last mblk to the dblk.  pullupmsg() affects
- * the mblk association because it swaps the leading mblks of two messages,
- * so it is responsible for swapping their db_mblk pointers accordingly.
- * From a constructed-state viewpoint it doesn't matter that a dblk's
- * attached mblk can change while the message is allocated; all that
- * matters is that the dblk has *some* attached mblk when it's freed.
- *
- * The sizes of the allocb() small-message caches are not magical.
- * They represent a good trade-off between internal and external
- * fragmentation for current workloads.  They should be reevaluated
- * periodically, especially if allocations larger than DBLK_MAX_CACHE
- * become common.  We use 64-byte alignment so that dblks don't
- * straddle cache lines unnecessarily.
+ * (See usr/src/uts/common/io/stream.c)
  */
 #define	DBLK_MAX_CACHE		73728
 #define	DBLK_CACHE_ALIGN	64
@@ -164,10 +95,6 @@ static size_t dblk_sizes[] = {
 static struct kmem_cache *dblk_cache[DBLK_MAX_CACHE / DBLK_MIN_SIZE];
 static struct kmem_cache *mblk_cache;
 static struct kmem_cache *dblk_esb_cache;
-#ifdef	_KERNEL
-static struct kmem_cache *fthdr_cache;
-static struct kmem_cache *ftblk_cache;
-#endif	/* _KERNEL */
 
 static void dblk_lastfree(mblk_t *mp, dblk_t *dbp);
 static mblk_t *allocb_oversize(size_t size, int flags);
@@ -175,11 +102,6 @@ static int allocb_tryhard_fails;
 static void frnop_func(void *arg);
 frtn_t frnop = { frnop_func };
 static void bcache_dblk_lastfree(mblk_t *mp, dblk_t *dbp);
-
-#ifdef	_KERNEL
-static boolean_t rwnext_enter(queue_t *qp);
-static void rwnext_exit(queue_t *qp);
-#endif	/* _KERNEL */
 
 /*
  * Patchable mblk/dblk kmem_cache flags.
@@ -305,59 +227,6 @@ bcache_dblk_destructor(void *buf, void *cdrarg)
 	kmem_cache_free(mblk_cache, dbp->db_mblk);
 }
 
-#ifdef	_KERNEL
-
-/* ARGSUSED */
-static int
-ftblk_constructor(void *buf, void *cdrarg, int kmflags)
-{
-	ftblk_t *fbp = buf;
-	int i;
-
-	bzero(fbp, sizeof (ftblk_t));
-	if (str_ftstack != 0) {
-		for (i = 0; i < FTBLK_EVNTS; i++)
-			fbp->ev[i].stk = kmem_alloc(sizeof (ftstk_t), kmflags);
-	}
-
-	return (0);
-}
-
-/* ARGSUSED */
-static void
-ftblk_destructor(void *buf, void *cdrarg)
-{
-	ftblk_t *fbp = buf;
-	int i;
-
-	if (str_ftstack != 0) {
-		for (i = 0; i < FTBLK_EVNTS; i++) {
-			if (fbp->ev[i].stk != NULL) {
-				kmem_free(fbp->ev[i].stk, sizeof (ftstk_t));
-				fbp->ev[i].stk = NULL;
-			}
-		}
-	}
-}
-
-static int
-fthdr_constructor(void *buf, void *cdrarg, int kmflags)
-{
-	fthdr_t *fhp = buf;
-
-	return (ftblk_constructor(&fhp->first, cdrarg, kmflags));
-}
-
-static void
-fthdr_destructor(void *buf, void *cdrarg)
-{
-	fthdr_t *fhp = buf;
-
-	ftblk_destructor(&fhp->first, cdrarg);
-}
-
-#endif	/* _KERNEL */
-
 /* Needed in the ASSERT below */
 #ifdef	DEBUG
 #ifdef	_KERNEL
@@ -418,18 +287,8 @@ streams_msg_init(void)
 	dblk_esb_cache = kmem_cache_create("streams_dblk_esb", sizeof (dblk_t),
 	    DBLK_CACHE_ALIGN, dblk_esb_constructor, dblk_destructor, NULL,
 	    (void *)sizeof (dblk_t), NULL, dblk_kmem_flags);
-#ifdef	_KERNEL
-	fthdr_cache = kmem_cache_create("streams_fthdr", sizeof (fthdr_t), 32,
-	    fthdr_constructor, fthdr_destructor, NULL, NULL, NULL, 0);
-	ftblk_cache = kmem_cache_create("streams_ftblk", sizeof (ftblk_t), 32,
-	    ftblk_constructor, ftblk_destructor, NULL, NULL, NULL, 0);
 
-	/* Initialize Multidata caches */
-	mmd_init();
-
-	/* initialize throttling queue for esballoc */
-	esballoc_queue_init();
-#endif	/* _KERNEL */
+	/* fthdr_cache, ftblk_cache, mmd_init... */
 }
 
 /*ARGSUSED*/
@@ -533,8 +392,6 @@ cred_t *
 msg_getcred(const mblk_t *mp, pid_t *cpidp)
 {
 	cred_t *cr = NULL;
-	cred_t *cr2;
-	mblk_t *mp2;
 
 	while (mp != NULL) {
 		dblk_t *dbp = mp->b_datap;
@@ -547,32 +404,7 @@ msg_getcred(const mblk_t *mp, pid_t *cpidp)
 		if (cpidp != NULL)
 			*cpidp = dbp->db_cpid;
 
-#ifdef DEBUG
-		/*
-		 * Normally there should at most one db_credp in a message.
-		 * But if there are multiple (as in the case of some M_IOC*
-		 * and some internal messages in TCP/IP bind logic) then
-		 * they must be identical in the normal case.
-		 * However, a socket can be shared between different uids
-		 * in which case data queued in TCP would be from different
-		 * creds. Thus we can only assert for the zoneid being the
-		 * same. Due to Multi-level Level Ports for TX, some
-		 * cred_t can have a NULL cr_zone, and we skip the comparison
-		 * in that case.
-		 */
-		mp2 = mp->b_cont;
-		while (mp2 != NULL) {
-			cr2 = DB_CRED(mp2);
-			if (cr2 != NULL) {
-				DTRACE_PROBE2(msg__getcred,
-				    cred_t *, cr, cred_t *, cr2);
-				ASSERT(crgetzoneid(cr) == crgetzoneid(cr2) ||
-				    crgetzone(cr) == NULL ||
-				    crgetzone(cr2) == NULL);
-			}
-			mp2 = mp2->b_cont;
-		}
-#endif
+		/* DEBUG check for only one db_credp */
 		return (cr);
 	}
 	if (cpidp != NULL)
@@ -595,8 +427,6 @@ cred_t *
 msg_extractcred(mblk_t *mp, pid_t *cpidp)
 {
 	cred_t *cr = NULL;
-	cred_t *cr2;
-	mblk_t *mp2;
 
 	while (mp != NULL) {
 		dblk_t *dbp = mp->b_datap;
@@ -610,54 +440,14 @@ msg_extractcred(mblk_t *mp, pid_t *cpidp)
 		dbp->db_credp = NULL;
 		if (cpidp != NULL)
 			*cpidp = dbp->db_cpid;
-#ifdef DEBUG
-		/*
-		 * Normally there should at most one db_credp in a message.
-		 * But if there are multiple (as in the case of some M_IOC*
-		 * and some internal messages in TCP/IP bind logic) then
-		 * they must be identical in the normal case.
-		 * However, a socket can be shared between different uids
-		 * in which case data queued in TCP would be from different
-		 * creds. Thus we can only assert for the zoneid being the
-		 * same. Due to Multi-level Level Ports for TX, some
-		 * cred_t can have a NULL cr_zone, and we skip the comparison
-		 * in that case.
-		 */
-		mp2 = mp->b_cont;
-		while (mp2 != NULL) {
-			cr2 = DB_CRED(mp2);
-			if (cr2 != NULL) {
-				DTRACE_PROBE2(msg__extractcred,
-				    cred_t *, cr, cred_t *, cr2);
-				ASSERT(crgetzoneid(cr) == crgetzoneid(cr2) ||
-				    crgetzone(cr) == NULL ||
-				    crgetzone(cr2) == NULL);
-			}
-			mp2 = mp2->b_cont;
-		}
-#endif
+
+		/* DEBUG check for only one db_credp */
 		return (cr);
 	}
 	return (NULL);
 }
 
-#ifdef	_KERNEL
-/*
- * Get the label for a message. Uses the first mblk in the message
- * which has a non-NULL db_credp.
- * Returns NULL if there is no credp.
- */
-extern struct ts_label_s *
-msg_getlabel(const mblk_t *mp)
-{
-	cred_t *cr = msg_getcred(mp, NULL);
-
-	if (cr == NULL)
-		return (NULL);
-
-	return (crgetlabel(cr));
-}
-#endif	/* _KERNEL */
+/* _KERNEL msg_getlabel() */
 
 void
 freeb(mblk_t *mp)
@@ -830,28 +620,6 @@ out:
 	return (new_mp);
 }
 
-static void
-dblk_lastfree_desb(mblk_t *mp, dblk_t *dbp)
-{
-	frtn_t *frp = dbp->db_frtnp;
-
-	ASSERT(dbp->db_mblk == mp);
-	frp->free_func(frp->free_arg);
-	if (dbp->db_fthdr != NULL)
-		str_ftfree(dbp);
-
-	/* set credp and projid to be 'unspecified' before returning to cache */
-	if (dbp->db_credp != NULL) {
-		crfree(dbp->db_credp);
-		dbp->db_credp = NULL;
-	}
-	dbp->db_cpid = -1;
-	dbp->db_struioflag = 0;
-	dbp->db_struioun.cksum.flags = 0;
-
-	kmem_cache_free(dbp->db_cache, dbp);
-}
-
 /*ARGSUSED*/
 static void
 frnop_func(void *arg)
@@ -860,6 +628,7 @@ frnop_func(void *arg)
 
 /*
  * Generic esballoc used to implement the four flavors: [d]esballoc[a].
+ * and allocb_oversize
  */
 static mblk_t *
 gesballoc(unsigned char *base, size_t size, uint32_t db_rtfu, frtn_t *frp,
@@ -889,128 +658,6 @@ gesballoc(unsigned char *base, size_t size, uint32_t db_rtfu, frtn_t *frp,
 out:
 	FTRACE_1("gesballoc(): mp=0x%lx", (uintptr_t)mp);
 	return (mp);
-}
-
-/*ARGSUSED*/
-mblk_t *
-esballoc(unsigned char *base, size_t size, uint_t pri, frtn_t *frp)
-{
-	mblk_t *mp;
-
-	/*
-	 * Note that this is structured to allow the common case (i.e.
-	 * STREAMS flowtracing disabled) to call gesballoc() with tail
-	 * call optimization.
-	 */
-	if (!str_ftnever) {
-		mp = gesballoc(base, size, DBLK_RTFU(1, M_DATA, 0, 0),
-		    frp, freebs_enqueue, KM_NOSLEEP);
-
-		if (mp != NULL)
-			STR_FTALLOC(&DB_FTHDR(mp), FTEV_ESBALLOC, size);
-		return (mp);
-	}
-
-	return (gesballoc(base, size, DBLK_RTFU(1, M_DATA, 0, 0),
-	    frp, freebs_enqueue, KM_NOSLEEP));
-}
-
-/*
- * Same as esballoc() but sleeps waiting for memory.
- */
-/*ARGSUSED*/
-mblk_t *
-esballoc_wait(unsigned char *base, size_t size, uint_t pri, frtn_t *frp)
-{
-	mblk_t *mp;
-
-	/*
-	 * Note that this is structured to allow the common case (i.e.
-	 * STREAMS flowtracing disabled) to call gesballoc() with tail
-	 * call optimization.
-	 */
-	if (!str_ftnever) {
-		mp = gesballoc(base, size, DBLK_RTFU(1, M_DATA, 0, 0),
-		    frp, freebs_enqueue, KM_SLEEP);
-
-		STR_FTALLOC(&DB_FTHDR(mp), FTEV_ESBALLOC, size);
-		return (mp);
-	}
-
-	return (gesballoc(base, size, DBLK_RTFU(1, M_DATA, 0, 0),
-	    frp, freebs_enqueue, KM_SLEEP));
-}
-
-/*ARGSUSED*/
-mblk_t *
-desballoc(unsigned char *base, size_t size, uint_t pri, frtn_t *frp)
-{
-	mblk_t *mp;
-
-	/*
-	 * Note that this is structured to allow the common case (i.e.
-	 * STREAMS flowtracing disabled) to call gesballoc() with tail
-	 * call optimization.
-	 */
-	if (!str_ftnever) {
-		mp = gesballoc(base, size, DBLK_RTFU(1, M_DATA, 0, 0),
-		    frp, dblk_lastfree_desb, KM_NOSLEEP);
-
-		if (mp != NULL)
-			STR_FTALLOC(&DB_FTHDR(mp), FTEV_DESBALLOC, size);
-		return (mp);
-	}
-
-	return (gesballoc(base, size, DBLK_RTFU(1, M_DATA, 0, 0),
-	    frp, dblk_lastfree_desb, KM_NOSLEEP));
-}
-
-/*ARGSUSED*/
-mblk_t *
-esballoca(unsigned char *base, size_t size, uint_t pri, frtn_t *frp)
-{
-	mblk_t *mp;
-
-	/*
-	 * Note that this is structured to allow the common case (i.e.
-	 * STREAMS flowtracing disabled) to call gesballoc() with tail
-	 * call optimization.
-	 */
-	if (!str_ftnever) {
-		mp = gesballoc(base, size, DBLK_RTFU(2, M_DATA, 0, 0),
-		    frp, freebs_enqueue, KM_NOSLEEP);
-
-		if (mp != NULL)
-			STR_FTALLOC(&DB_FTHDR(mp), FTEV_ESBALLOCA, size);
-		return (mp);
-	}
-
-	return (gesballoc(base, size, DBLK_RTFU(2, M_DATA, 0, 0),
-	    frp, freebs_enqueue, KM_NOSLEEP));
-}
-
-/*ARGSUSED*/
-mblk_t *
-desballoca(unsigned char *base, size_t size, uint_t pri, frtn_t *frp)
-{
-	mblk_t *mp;
-
-	/*
-	 * Note that this is structured to allow the common case (i.e.
-	 * STREAMS flowtracing disabled) to call gesballoc() with tail
-	 * call optimization.
-	 */
-	if (!str_ftnever) {
-		mp = gesballoc(base, size, DBLK_RTFU(2, M_DATA, 0, 0),
-		    frp, dblk_lastfree_desb, KM_NOSLEEP);
-
-		if (mp != NULL)
-			STR_FTALLOC(&DB_FTHDR(mp), FTEV_DESBALLOCA, size);
-		return (mp);
-	}
-
-	return (gesballoc(base, size, DBLK_RTFU(2, M_DATA, 0, 0),
-	    frp, dblk_lastfree_desb, KM_NOSLEEP));
 }
 
 static void
@@ -1289,91 +936,7 @@ testb(size_t size, uint_t pri)
 	return ((size + sizeof (dblk_t)) <= kmem_avail());
 }
 
-#ifdef	_KERNEL
-
-/*
- * Call function 'func' with argument 'arg' when there is a reasonably
- * good chance that a block of size 'size' can be allocated.
- * 'pri' is no longer used, but is retained for compatibility.
- */
-/* ARGSUSED */
-bufcall_id_t
-bufcall(size_t size, uint_t pri, void (*func)(void *), void *arg)
-{
-	static long bid = 1;	/* always odd to save checking for zero */
-	bufcall_id_t bc_id;
-	struct strbufcall *bcp;
-
-	if ((bcp = kmem_alloc(sizeof (strbufcall_t), KM_NOSLEEP)) == NULL)
-		return (0);
-
-	bcp->bc_func = func;
-	bcp->bc_arg = arg;
-	bcp->bc_size = size;
-	bcp->bc_next = NULL;
-	bcp->bc_executor = NULL;
-
-	mutex_enter(&strbcall_lock);
-	/*
-	 * After bcp is linked into strbcalls and strbcall_lock is dropped there
-	 * should be no references to bcp since it may be freed by
-	 * runbufcalls(). Since bcp_id field is returned, we save its value in
-	 * the local var.
-	 */
-	bc_id = bcp->bc_id = (bufcall_id_t)(bid += 2);	/* keep it odd */
-
-	/*
-	 * add newly allocated stream event to existing
-	 * linked list of events.
-	 */
-	if (strbcalls.bc_head == NULL) {
-		strbcalls.bc_head = strbcalls.bc_tail = bcp;
-	} else {
-		strbcalls.bc_tail->bc_next = bcp;
-		strbcalls.bc_tail = bcp;
-	}
-
-	cv_signal(&strbcall_cv);
-	mutex_exit(&strbcall_lock);
-	return (bc_id);
-}
-
-/*
- * Cancel a bufcall request.
- */
-void
-unbufcall(bufcall_id_t id)
-{
-	strbufcall_t *bcp, *pbcp;
-
-	mutex_enter(&strbcall_lock);
-again:
-	pbcp = NULL;
-	for (bcp = strbcalls.bc_head; bcp; bcp = bcp->bc_next) {
-		if (id == bcp->bc_id)
-			break;
-		pbcp = bcp;
-	}
-	if (bcp) {
-		if (bcp->bc_executor != NULL) {
-			if (bcp->bc_executor != curthread) {
-				cv_wait(&bcall_cv, &strbcall_lock);
-				goto again;
-			}
-		} else {
-			if (pbcp)
-				pbcp->bc_next = bcp->bc_next;
-			else
-				strbcalls.bc_head = bcp->bc_next;
-			if (bcp == strbcalls.bc_tail)
-				strbcalls.bc_tail = pbcp;
-			kmem_free(bcp, sizeof (strbufcall_t));
-		}
-	}
-	mutex_exit(&strbcall_lock);
-}
-
-#endif	/* _KERNEL */
+/* _KERNEL: bufcall, unbufcall */
 
 /*
  * Duplicate a message block by block (uses dupb), returning
@@ -1450,28 +1013,8 @@ copyb(mblk_t *bp)
 	 * removed once a copy-callback routine is made available.
 	 */
 	if (dp->db_type == M_MULTIDATA) {
-#ifdef	_KERNEL
-		cred_t *cr;
-
-		if ((nbp = mmd_copy(bp, KM_NOSLEEP)) == NULL)
-			return (NULL);
-
-		nbp->b_flag = bp->b_flag;
-		nbp->b_band = bp->b_band;
-		ndp = nbp->b_datap;
-
-		/* See comments below on potential issues. */
-		STR_FTEVENT_MBLK(nbp, caller(), FTEV_COPYB, 1);
-
-		ASSERT(ndp->db_type == dp->db_type);
-		cr = dp->db_credp;
-		if (cr != NULL)
-			crhold(ndp->db_credp = cr);
-		ndp->db_cpid = dp->db_cpid;
-		return (nbp);
-#else	/* _KERNEL */
+		/* _KERNEL mmd_copy stuff */
 		return (NULL);
-#endif	/* _KERNEL */
 	}
 
 	size = dp->db_lim - dp->db_base;

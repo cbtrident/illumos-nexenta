@@ -43,13 +43,13 @@
 #include <sys/vnode.h>
 #include <sys/vfs.h>
 
-#else	/* _KERNEL */
+#else	/* _KERNEL || _FAKE_KERNEL */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
 
-#endif	/* _KERNEL */
+#endif	/* _KERNEL || _FAKE_KERNEL */
 
 #ifdef _KERNEL
 #include <sys/kidmap.h>

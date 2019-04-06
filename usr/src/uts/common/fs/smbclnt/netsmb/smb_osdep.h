@@ -85,7 +85,7 @@ typedef uint16_t u_int16_t;
 typedef uint8_t u_int8_t;
 
 typedef const char *c_caddr_t;
-typedef uint64_t 	user_addr_t;
+typedef uint64_t	user_addr_t;
 typedef ssize_t		user_ssize_t;
 typedef size_t		user_size_t;
 
@@ -100,7 +100,7 @@ typedef size_t		user_size_t;
 /* BEGIN CSTYLED */
 #define	timespeccmp(tvp, uvp, cmp)                                      \
 	(((tvp)->tv_sec == (uvp)->tv_sec) ?                             \
-	((tvp)->tv_nsec cmp (uvp)->tv_nsec) :		               	\
+	((tvp)->tv_nsec cmp (uvp)->tv_nsec) :				\
 	((tvp)->tv_sec cmp (uvp)->tv_sec))
 /* END CSTYLED */
 

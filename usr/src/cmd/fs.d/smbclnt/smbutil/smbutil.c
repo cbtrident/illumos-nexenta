@@ -185,7 +185,8 @@ main(int argc, char *argv[])
 }
 
 static void
-help(void) {
+help(void)
+{
 	printf("\n");
 	printf(gettext("usage: %s [-hv] subcommand [args]\n"), __progname);
 	printf(gettext("where subcommands are:\n"
@@ -204,7 +205,8 @@ help(void) {
 }
 
 void
-help_usage(void) {
+help_usage(void)
+{
 	printf(gettext("usage: smbutil help command\n"));
 	exit(1);
 }

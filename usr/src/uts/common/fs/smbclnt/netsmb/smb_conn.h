@@ -169,7 +169,7 @@ struct smb_sopt {
 	uchar_t		sv_sm;		/* security mode */
 	int16_t		sv_tz;		/* offset in min relative to UTC */
 	uint16_t	sv_maxmux;	/* max number of outstanding rq's */
-	uint16_t 	sv_maxvcs;	/* max number of VCs */
+	uint16_t	sv_maxvcs;	/* max number of VCs */
 	uint16_t	sv_rawmode;
 	uint32_t	sv_maxtx;	/* maximum transmit buf size */
 	uint32_t	sv_maxraw;	/* maximum raw-buffer size */
@@ -192,7 +192,7 @@ typedef struct smb_sopt smb_sopt_t;
  * SMB1 I/O Deamon state
  */
 struct smb_iods {
-	uint8_t 	is_hflags;	/* SMB header flags */
+	uint8_t		is_hflags;	/* SMB header flags */
 	uint16_t	is_hflags2;	/* SMB header flags2 */
 	uint16_t	is_smbuid;	/* SMB header UID */
 	uint16_t	is_next_mid;	/* SMB header MID */
@@ -238,10 +238,10 @@ typedef struct smb_vc {
 	uint64_t	vc2_prev_session_id;	/* for reconnect */
 	uint32_t	vc2_lease_key;		/* lease key gen */
 
-	kcondvar_t		iod_idle; 	/* IOD thread idle CV */
+	kcondvar_t		iod_idle;	/* IOD thread idle CV */
 	krwlock_t		iod_rqlock;	/* iod_rqlist */
 	struct smb_rqhead	iod_rqlist;	/* list of active reqs */
-	struct _kthread 	*iod_thr;	/* the IOD (reader) thread */
+	struct _kthread		*iod_thr;	/* the IOD (reader) thread */
 	int			iod_flags;	/* see SMBIOD_* below */
 	uint_t			iod_muxcnt;	/* num. active requests */
 	uint_t			iod_muxwant;	/* waiting to be active */
@@ -263,9 +263,9 @@ typedef struct smb_vc {
 
 /* defines for members in vc_ssn */
 #define	vc_owner	vc_ssn.ssn_owner
-#define	vc_vopt 	vc_ssn.ssn_vopt
-#define	vc_minver 	vc_ssn.ssn_minver
-#define	vc_maxver 	vc_ssn.ssn_maxver
+#define	vc_vopt		vc_ssn.ssn_vopt
+#define	vc_minver	vc_ssn.ssn_minver
+#define	vc_maxver	vc_ssn.ssn_maxver
 #define	vc_srvname	vc_ssn.ssn_srvname
 #define	vc_srvaddr	vc_ssn.ssn_id.id_srvaddr
 #define	vc_domain	vc_ssn.ssn_id.id_domain

@@ -76,7 +76,6 @@ smb_iod_open_door(int *fdp)
 int
 smb_iod_start(smb_ctx_t *ctx)
 {
-
 	return (0);
 }
 

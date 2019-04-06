@@ -39,7 +39,7 @@
  * NTLM_HASH_SZ: 16 bytes (see smb_lib.h)
  * NTLM_CHAL_SZ:  8 bytes (see smb_lib.h)
  */
-#define	NTLM_V1_RESP_SZ 	24	/* response size */
+#define	NTLM_V1_RESP_SZ		24	/* response size */
 
 #define	NAMETYPE_EOL		0x0000	/* end of list of names */
 #define	NAMETYPE_MACHINE_NB	0x0001	/* NetBIOS machine name */

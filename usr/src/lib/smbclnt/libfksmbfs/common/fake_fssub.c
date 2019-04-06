@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 
 /*
@@ -389,8 +389,8 @@ cleanshares(struct vnode *vp, pid_t pid)
 int
 convoff(struct vnode *vp, struct flock64 *lckdat, int whence, offset_t offset)
 {
-	int 		error;
-	struct vattr 	vattr;
+	int		error;
+	struct vattr	vattr;
 
 	if ((lckdat->l_whence == 2) || (whence == 2)) {
 		vattr.va_mask = AT_SIZE;

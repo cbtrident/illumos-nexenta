@@ -72,10 +72,10 @@
 #else	/* (BYTE_ORDER == LITTLE_ENDIAN) */
 
 /* little-endian values on big-endian (swap) */
-#define	letohs(x) 	BSWAP_16(x)
-#define	htoles(x) 	BSWAP_16(x)
-#define	letohl(x) 	BSWAP_32(x)
-#define	htolel(x) 	BSWAP_32(x)
+#define	letohs(x)	BSWAP_16(x)
+#define	htoles(x)	BSWAP_16(x)
+#define	letohl(x)	BSWAP_32(x)
+#define	htolel(x)	BSWAP_32(x)
 #define	letohq(x)	BSWAP_64(x)
 #define	htoleq(x)	BSWAP_64(x)
 
@@ -115,9 +115,9 @@ typedef mblk_t mbuf_t;
  *   m_data ... (m_data + m_len)
  * In Unix STREAMS, the mblk payload is:
  *   b_rptr ... b_wptr
- * 
+ *
  * Here are some handy conversion notes:
- * 
+ *
  * struct mbuf                     struct mblk
  *   m->m_next                       m->b_cont
  *   m->m_nextpkt                    m->b_next
@@ -127,7 +127,7 @@ typedef mblk_t mbuf_t;
  *   &m->m_dat[MLEN]                 m->b_datap->db_lim
  *   M_TRAILINGSPACE(m)              MBLKTAIL(m)
  *   m_freem(m)                      freemsg(m)
- * 
+ *
  * Note that mbufs chains also have a special "packet" header,
  * which has the length of the whole message.  In STREAMS one
  * typically just calls msgdsize(m) to get that.

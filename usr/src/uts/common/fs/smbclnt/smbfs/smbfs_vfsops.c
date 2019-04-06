@@ -140,7 +140,7 @@ static mntopt_t mntopts[] = {
 	{ MNTOPT_NOXATTR,	noxattr_cancel, NULL,	0,	0 },
 #ifndef	_KERNEL
 	/* See vfs_optionisset MNTOPT_NOAC below. */
-	{ MNTOPT_NOAC,		NULL,		NULL,	0, 	0 },
+	{ MNTOPT_NOAC,		NULL,		NULL,	0,	0 },
 #endif	/* !_KERNEL */
 };
 

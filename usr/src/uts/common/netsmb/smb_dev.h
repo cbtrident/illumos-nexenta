@@ -85,7 +85,7 @@
  * EAUTH is used for CIFS authentication errors.
  */
 #ifndef EBADRPC
-#define	EBADRPC 	113
+#define	EBADRPC		113
 #endif
 #ifndef EAUTH
 #define	EAUTH		114
@@ -324,7 +324,7 @@ typedef struct smbioc_pk {
  * Keep GETVERS first and use it to verify
  * driver compatibility with the library.
  */
-#define	SMBIOC_BASE 	((('n' << 8) | 's') << 8)
+#define	SMBIOC_BASE	((('n' << 8) | 's') << 8)
 typedef enum nsmb_ioc {
 	SMBIOC_GETVERS = SMBIOC_BASE,	/* keep first */
 	SMBIOC_FLAGS2,		/* obsolete */

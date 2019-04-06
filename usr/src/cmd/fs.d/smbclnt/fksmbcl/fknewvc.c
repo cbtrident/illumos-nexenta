@@ -126,7 +126,7 @@ smb_ctx_newvc(struct smb_ctx *ctx)
 		case AF_NETBIOS:
 			err = fknewvc(ctx, ai);
 			if (err == 0)
-				goto OK;
+				return (0);
 			break;
 
 		default:
@@ -140,7 +140,4 @@ smb_ctx_newvc(struct smb_ctx *ctx)
 	 * Error return will close in smb_ctx_done.
 	 */
 	return (err);
-
-OK:
-	return (0);
 }

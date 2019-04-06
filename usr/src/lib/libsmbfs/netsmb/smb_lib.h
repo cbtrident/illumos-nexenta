@@ -131,8 +131,8 @@ struct smb_ctx {
 #define	ct_owner	ct_iod_ssn.iod_ossn.ssn_owner
 #define	ct_srvaddr	ct_iod_ssn.iod_ossn.ssn_srvaddr
 #define	ct_domain	ct_iod_ssn.iod_ossn.ssn_domain
-#define	ct_user 	ct_iod_ssn.iod_ossn.ssn_user
-#define	ct_srvname 	ct_iod_ssn.iod_ossn.ssn_srvname
+#define	ct_user		ct_iod_ssn.iod_ossn.ssn_user
+#define	ct_srvname	ct_iod_ssn.iod_ossn.ssn_srvname
 #define	ct_authflags	ct_iod_ssn.iod_authflags
 #define	ct_nthash	ct_iod_ssn.iod_nthash
 #define	ct_lmhash	ct_iod_ssn.iod_lmhash

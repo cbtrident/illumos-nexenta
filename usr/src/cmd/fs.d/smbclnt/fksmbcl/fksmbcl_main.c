@@ -507,8 +507,7 @@ show_dents(vnode_t *dvp, offset_t *offp, char *buf, int cnt)
 
 	p = buf;
 	while (p < (buf + cnt)) {
-		/* LINTED E_BAD_PTR_CAST_ALIGN */
-		d = (dirent_t *)p;
+		d = (dirent_t *)(void *)p;
 		p += d->d_reclen;
 		offset = d->d_off;
 

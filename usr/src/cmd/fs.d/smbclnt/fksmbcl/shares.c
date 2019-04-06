@@ -237,7 +237,7 @@ do_enum(char *server, int fid)
 
 	/*
 	 * Just dump strings found in the response data.
-	 * Skip the irst 0x90 (RPC wrappers).
+	 * Skip the first 0x90 (RPC wrappers).
 	 */
 	printf("enum strings\n");
 	pstrings(recvbuf + 0x90, rlen - 0x90);

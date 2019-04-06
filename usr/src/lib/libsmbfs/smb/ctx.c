@@ -931,7 +931,7 @@ sectype_table[] = {
 	{ "ntlm",	SMB_AT_NTLM1 },
 	{ "ntlm2",	SMB_AT_NTLM2 },
 	{ "krb5",	SMB_AT_KRB5 },
-	{ NULL, 	0 },
+	{ NULL,		0 },
 };
 int
 smb_parse_secopts(struct smb_ctx *ctx, const char *arg)

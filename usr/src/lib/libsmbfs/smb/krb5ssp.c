@@ -91,7 +91,7 @@ extern MECH_OID g_stcMechOIDList [];
 typedef struct krb5ssp_state {
 	/* Filled in by krb5ssp_init_client */
 	krb5_context ss_krb5ctx;	/* krb5 context (ptr) */
-	krb5_ccache ss_krb5cc; 		/* credentials cache (ptr) */
+	krb5_ccache ss_krb5cc;		/* credentials cache (ptr) */
 	krb5_principal ss_krb5clp;	/* client principal (ptr) */
 	/* Filled in by krb5ssp_get_tkt */
 	krb5_auth_context ss_auth;	/* auth ctx. w/ server (ptr) */
@@ -108,8 +108,8 @@ krb5ssp_tkt2gtok(uchar_t *tkt, ulong_t tktlen,
 	ulong_t		len;
 	ulong_t		bloblen = tktlen;
 	uchar_t		krbapreq[2] = {	KRB_AP_REQ, 0 };
-	uchar_t 	*blob = NULL;		/* result */
-	uchar_t 	*b;
+	uchar_t		*blob = NULL;		/* result */
+	uchar_t		*b;
 
 	bloblen += sizeof (krbapreq);
 	bloblen += g_stcMechOIDList[spnego_mech_oid_Kerberos_V5].iLen;
@@ -169,7 +169,7 @@ krb5ssp_get_tkt(krb5ssp_state_t *ss, char *server,
 	krb5_data	outdata = {0};
 	krb5_error_code	kerr = 0;
 	const char	*fn = NULL;
-	uchar_t 	*tkt;
+	uchar_t		*tkt;
 
 	/* Should have these from krb5ssp_init_client. */
 	if (kctx == NULL || kcc == NULL) {
@@ -253,9 +253,9 @@ krb5ssp_put_request(struct ssp_ctx *sp, struct mbdata *out_mb)
 	int err;
 	struct smb_ctx *ctx = sp->smb_ctx;
 	krb5ssp_state_t *ss = sp->sp_private;
-	uchar_t 	*tkt = NULL;
+	uchar_t		*tkt = NULL;
 	ulong_t		tktlen;
-	uchar_t 	*gtok = NULL;		/* gssapi token */
+	uchar_t		*gtok = NULL;		/* gssapi token */
 	ulong_t		gtoklen;		/* gssapi token length */
 	char		*prin = ctx->ct_srvname;
 
@@ -503,7 +503,7 @@ krb5ssp_init_client(struct ssp_ctx *sp)
 	krb5ssp_state_t *ss;
 	krb5_error_code	kerr;
 	krb5_context	kctx = NULL;
-	krb5_ccache 	kcc = NULL;
+	krb5_ccache	kcc = NULL;
 	krb5_principal	kprin = NULL;
 
 	if ((sp->smb_ctx->ct_authflags & SMB_AT_KRB5) == 0) {

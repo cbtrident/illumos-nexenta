@@ -51,9 +51,9 @@ cf_get_client_uuid(void)
 	char *ret = NULL;
 
 	scf_handle_t		*h = NULL;
-	scf_service_t 		*svc = NULL;
-	scf_propertygroup_t 	*pg = NULL;
-	scf_property_t 		*prop = NULL;
+	scf_service_t		*svc = NULL;
+	scf_propertygroup_t	*pg = NULL;
+	scf_property_t		*prop = NULL;
 	scf_value_t		*val = NULL;
 
 	if ((h = _scf_handle_create_and_bind(SCF_VERSION)) == NULL)
@@ -110,10 +110,10 @@ rc_scf_get_sharectl(FILE *fp)
 	char val_buf[1024];
 
 	scf_handle_t		*h = NULL;
-	scf_service_t 		*svc = NULL;
-	scf_instance_t 		*inst = NULL;
-	scf_propertygroup_t 	*pg = NULL;
-	scf_property_t 		*prop = NULL;
+	scf_service_t		*svc = NULL;
+	scf_instance_t		*inst = NULL;
+	scf_propertygroup_t	*pg = NULL;
+	scf_property_t		*prop = NULL;
 	scf_value_t		*val = NULL;
 	scf_iter_t		*pgiter = NULL;
 	scf_iter_t		*propiter = NULL;

@@ -41,7 +41,7 @@ include ../../../Makefile.ctf
 # Force SOURCEDEBUG
 CSOURCEDEBUGFLAGS	= -g
 CCSOURCEDEBUGFLAGS	= -g
-STRIP_STABS 	= :
+STRIP_STABS	= :
 
 # Note: need our sys includes _before_ ENVCPPFLAGS, proto etc.
 # Also, like Makefile.uts, reset CPPFLAGS
@@ -68,10 +68,7 @@ CPPFLAGS += -DFKSMBCL
 # Always want DEBUG here
 CPPFLAGS += -DDEBUG
 
-# Do this both ways, for now...
 CSTD=		$(CSTD_GNU99)
-C99MODE=	-xc99=%all
-C99LMODE=	-Xc99=%all
 
 CFLAGS += $(CCVERBOSE)
 CFLAGS64 += $(CCVERBOSE)

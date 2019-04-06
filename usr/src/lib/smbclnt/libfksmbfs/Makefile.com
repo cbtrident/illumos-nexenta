@@ -82,7 +82,7 @@ include ../../Makefile.lib
 # Force SOURCEDEBUG
 CSOURCEDEBUGFLAGS	= -g
 CCSOURCEDEBUGFLAGS	= -g
-STRIP_STABS 	= :
+STRIP_STABS	= :
 
 # Note: need our sys includes _before_ ENVCPPFLAGS, proto etc.
 # Also, like Makefile.uts, reset CPPFLAGS
@@ -104,9 +104,6 @@ CPPFLAGS += -DDEBUG
 CERRWARN += -_gcc=-Wno-switch
 CERRWARN += -_gcc=-Wno-parentheses
 
-# Lots of stub functions that ignore args.
-LINTCHECKFLAGS += -erroff=E_FUNC_ARG_UNUSED
-
 LDLIBS +=	$(MACH_LDLIBS)
 LDLIBS +=	-lfknsmb -lfakekernel -lidmap -lcmdutils -lavl -lc
 
@@ -115,11 +112,6 @@ CMN_SMBFS_DIR=$(SRC)/common/smbclnt
 SRCS=   $(OBJS_LOCAL:%.o=$(SRCDIR)/%.c) \
 	$(OBJS_FS_SMBFS:%.o=$(FS_SMBFS_DIR)/%.c) \
 	$(OBJS_CMN_SMBFS:%.o=$(CMN_SMBFS_DIR)/%.c)
-
-# Filter out the less important lint.
-# See lgrep.awk
-LGREP =	$(AWK) -f $(SRCDIR)/lgrep.awk
-LTAIL	+=	2>&1 | $(LGREP)
 
 all:
 
@@ -145,7 +137,3 @@ pics/acl_common.o:	   $(SRC)/common/acl/acl_common.c
 
 include ../../Makefile.targ
 include ../../../Makefile.targ
-
-# Variant of lintcheck that adds LTAIL
-lintcheck_t: $$(SRCS)
-	$(LINT.c) $(LINTCHECKFLAGS) $(SRCS) $(LDLIBS) $(LTAIL)

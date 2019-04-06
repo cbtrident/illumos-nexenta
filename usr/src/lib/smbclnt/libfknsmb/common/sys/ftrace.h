@@ -54,7 +54,7 @@ extern "C" {
 
 #define	FTRACE_0(fmt)						\
 	DTRACE_PROBE1(ftrace0, char *, fmt)
-#define	FTRACE_1(fmt, d1) 					\
+#define	FTRACE_1(fmt, d1)					\
 	DTRACE_PROBE2(ftrace1, char *, fmt, uintptr_t, d1)
 
 // #define	FTRACE_START()	ftrace_start()

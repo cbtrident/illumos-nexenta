@@ -26,7 +26,7 @@
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 /*
  * University Copyright- Copyright (c) 1982, 1986, 1988
@@ -734,9 +734,9 @@ typedef enum vnevent	{
 	VE_REMOVE	= 3,	/* Remove of vnode's name */
 	VE_RMDIR	= 4,	/* Remove of directory vnode's name */
 	VE_CREATE	= 5,	/* Create with vnode's name which exists */
-	VE_LINK		= 6, 	/* Link with vnode's name as source */
-	VE_RENAME_DEST_DIR	= 7, 	/* Rename with vnode as target dir */
-	VE_MOUNTEDOVER	= 8, 	/* File or Filesystem got mounted over vnode */
+	VE_LINK		= 6,	/* Link with vnode's name as source */
+	VE_RENAME_DEST_DIR	= 7,	/* Rename with vnode as target dir */
+	VE_MOUNTEDOVER	= 8,	/* File or Filesystem got mounted over vnode */
 	VE_TRUNCATE = 9		/* Truncate */
 } vnevent_t;
 
@@ -1212,9 +1212,9 @@ void	vn_recycle(vnode_t *);
 void	vn_free(vnode_t *);
 
 int	vn_is_readonly(vnode_t *);
-int   	vn_is_opened(vnode_t *, v_mode_t);
-int   	vn_is_mapped(vnode_t *, v_mode_t);
-int   	vn_has_other_opens(vnode_t *, v_mode_t);
+int	vn_is_opened(vnode_t *, v_mode_t);
+int	vn_is_mapped(vnode_t *, v_mode_t);
+int	vn_has_other_opens(vnode_t *, v_mode_t);
 void	vn_open_upgrade(vnode_t *, int);
 void	vn_open_downgrade(vnode_t *, int);
 
@@ -1369,7 +1369,7 @@ extern uint_t pvn_vmodsort_supported;
 #define	VN_CMP(VP1, VP2) \
 	(((VP1) == (VP2)) ? 1 : VOP_CMP(VP1, VP2, NULL))
 #else
-#define	VN_CMP(VP1, VP2)	((VP1) == (VP2) ? 1 : 	\
+#define	VN_CMP(VP1, VP2)	((VP1) == (VP2) ? 1 :	\
 	((VP1) && (VP2) && (vn_getops(VP1) == vn_getops(VP2)) ? \
 	VOP_CMP(VP1, VP2, NULL) : 0))
 #endif

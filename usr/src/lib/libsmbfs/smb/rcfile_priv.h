@@ -49,7 +49,7 @@ extern "C" {
 
 struct rckey {
 	SLIST_ENTRY(rckey)	rk_next;
-	char 			*rk_name;
+	char			*rk_name;
 	char			*rk_value;
 };
 

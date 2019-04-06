@@ -450,7 +450,7 @@ typedef struct vfs_impl {
 	vopstats_t	*vi_fstypevsp;		/* ptr to per-fstype vopstats */
 	vopstats_t	vi_vopstats;		/* per-mount vnode op stats */
 
-	timespec_t	vi_hrctime; 		/* High-res creation time */
+	timespec_t	vi_hrctime;		/* High-res creation time */
 
 	zone_ref_t	vi_zone_ref;		/* reference to zone */
 } vfs_impl_t;

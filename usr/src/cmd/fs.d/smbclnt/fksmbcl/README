@@ -19,7 +19,7 @@ into a user-level process.  The result is not a fully functional
 SMB client but is very useful for some kinds of development work.
 
 The architecture of this roughly parallels the in-kernel version,
-where the kernel modules are build as libraries including:
+where the kernel modules are built as libraries including:
   libfksmbfs, libfknsmb
 
 Just as with the kernel code, there are mdb modules that know
@@ -43,6 +43,57 @@ Run these like:  dtrace -s Watch-all.d -p $PID -o output
 These two (from over in ../dtrace) also work with fksmbcl:
 	dtrace -s fksmbcl.d -p `pgrep fksmbcl`  -o output
 
-Here are a couple simple, handy tests you can try:
+Here is the help output:
 
-[todo]
+	> help
+	Commands:
+	help
+	exit
+	logon [user [dom [pass]]]
+	logoff [close-driver]
+	shares
+	mount {share} [optstr]
+	umount
+	unmount
+	statfs
+	dir {rdir} [lfile]
+	dirx {rdir} [lfile]
+	get {rfile} [lfile]
+	put {lfile} [rfile]
+	mv {from} {to}
+	rm {rfile}
+	mkdir {rfile}
+	rmdir {rfile}
+	opt {option}
+
+
+Here is an example of how to connect, mount, and list a directory:
+
+	$ ./Run.sh //myserver
+	# Start with:
+	> logon [user [dom [pw]]]
+	> shares
+	> mount {share}
+
+	> logon test test test
+	> shares
+	open pipe: /srvsvc
+	enum strings
+	junk
+	c$
+	Default Share
+	test1
+	ipc$
+	Remote IPC
+	test
+	> mount test
+	> dir
+	    1224750917    .
+	    1224750917    ..
+	     900818955    test9.dat
+	    3908265151    lock1.txt
+	    2452346625    test_dir
+	> umount
+	> logoff
+	> exit
+	$

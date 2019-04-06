@@ -330,10 +330,8 @@ smb_ssnsetup_spnego(struct smb_ctx *ctx, struct mbdata *hint_mb)
 	(void) ssp_ctx_next_token(ctx, &recv_mb, NULL);
 
 	/*
-	 * The signing key is in ctx->ct_mackey
-	 * (a.k.a. ct_work.wk_iods.is_u_mackey)
-	 * and session key is in ctx->ct_ssn_key
-	 * (a.k.a. ct_work.wk_iods.is_ssn_key)
+	 * The session key is in ctx->ct_ssnkey_buf
+	 * (a.k.a. ct_work.wk_u_ssn_key_buf)
 	 */
 
 out:

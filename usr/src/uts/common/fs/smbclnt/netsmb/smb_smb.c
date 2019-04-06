@@ -65,7 +65,7 @@
 
 struct smb_dialect {
 	int		d_id;
-	const char 	*d_name;
+	const char	*d_name;
 };
 
 static struct smb_dialect smb_dialects[3] = {

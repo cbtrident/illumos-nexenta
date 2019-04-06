@@ -529,7 +529,7 @@ rc_parse(struct rcfile *rcp)
 		set_value(rcp, rsp, rkp, buf);
 		state = stNewLine;
 		rkp = NULL;
-	} 	/* while */
+	}	/* while */
 	if (c == EOF && state == stGetValue) {
 		*next = 0;
 		set_value(rcp, rsp, rkp, buf);

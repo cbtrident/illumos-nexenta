@@ -46,8 +46,8 @@ typedef struct smb_passid {
 	zoneid_t	zoneid;		/* Future Use */
 	char		*srvdom;	/* Windows Domain (or server) */
 	char		*username;	/* Windows User name */
-	uchar_t 	lmhash[SMBIOC_HASH_SZ];
-	uchar_t 	nthash[SMBIOC_HASH_SZ];
+	uchar_t		lmhash[SMBIOC_HASH_SZ];
+	uchar_t		nthash[SMBIOC_HASH_SZ];
 } smb_passid_t;
 
 /* Called from smb_dev.c */

@@ -64,9 +64,9 @@
  *   m_data ... (m_data + m_len)
  * In Unix STREAMS, the mblk payload is:
  *   b_rptr ... b_wptr
- * 
+ *
  * Here are some handy conversion notes:
- * 
+ *
  * struct mbuf                     struct mblk
  *   m->m_next                       m->b_cont
  *   m->m_nextpkt                    m->b_next
@@ -76,7 +76,7 @@
  *   &m->m_dat[MLEN]                 m->b_datap->db_lim
  *   M_TRAILINGSPACE(m)              MBLKTAIL(m)
  *   m_freem(m)                      freemsg(m)
- * 
+ *
  * Note that mbufs chains also have a special "packet" header,
  * which has the length of the whole message.  In STREAMS one
  * typically just calls msgdsize(m) to get that.

@@ -37,7 +37,7 @@ pics/%.o:	$(SRC)/common/smbclnt/%.c
 
 all: $(LIBS)
 
-lint: lintcheck_t
+lint: # skip
 
 $(ROOTLIBS): $(ROOTLIBDIR)
 
