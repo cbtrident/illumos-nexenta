@@ -1337,6 +1337,7 @@ LUA_OBJS +=			\
 
 ZFS_COMMON_OBJS +=		\
 	abd.o			\
+	aggsum.o		\
 	arc.o			\
 	autosnap.o		\
 	blkptr.o		\
@@ -1344,6 +1345,7 @@ ZFS_COMMON_OBJS +=		\
 	bpobj.o			\
 	bptree.o		\
 	bqueue.o		\
+	cityhash.o		\
 	dbuf.o			\
 	ddt.o			\
 	ddt_zap.o		\
