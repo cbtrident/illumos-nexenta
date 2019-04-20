@@ -1646,9 +1646,9 @@ idmap_cfg_load_smf(idmap_cfg_handles_t *handles, idmap_pg_config_t *pgcfg,
 		    pgcfg->domain_name[0] == '\0') {
 			free(pgcfg->domain_name);
 			pgcfg->domain_name = NULL;
-		} else {
-			pgcfg->domain_name_auto_disc = B_FALSE;
 		}
+		if (pgcfg->domain_name != NULL)
+			pgcfg->domain_name_auto_disc = B_FALSE;
 		(void) ad_disc_set_DomainName(handles->ad_ctx,
 		    pgcfg->domain_name);
 	}
@@ -1747,9 +1747,9 @@ idmap_cfg_load_smf(idmap_cfg_handles_t *handles, idmap_pg_config_t *pgcfg,
 		    pgcfg->forest_name[0] == '\0') {
 			free(pgcfg->forest_name);
 			pgcfg->forest_name = NULL;
-		} else {
-			pgcfg->forest_name_auto_disc = B_FALSE;
 		}
+		if (pgcfg->forest_name != NULL)
+			pgcfg->forest_name_auto_disc = B_FALSE;
 		(void) ad_disc_set_ForestName(handles->ad_ctx,
 		    pgcfg->forest_name);
 	}
@@ -1762,9 +1762,9 @@ idmap_cfg_load_smf(idmap_cfg_handles_t *handles, idmap_pg_config_t *pgcfg,
 		    pgcfg->site_name[0] == '\0') {
 			free(pgcfg->site_name);
 			pgcfg->site_name = NULL;
-		} else {
-			pgcfg->site_name_auto_disc = B_FALSE;
 		}
+		if (pgcfg->site_name != NULL)
+			pgcfg->site_name_auto_disc = B_FALSE;
 		(void) ad_disc_set_SiteName(handles->ad_ctx, pgcfg->site_name);
 	}
 
