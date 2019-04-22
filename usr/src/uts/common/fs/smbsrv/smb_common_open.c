@@ -588,6 +588,13 @@ smb_common_open(smb_request_t *sr)
 			}
 		}
 
+		/* Dataset roots can't be deleted, so don't set DOC */
+		if ((op->create_options & FILE_DELETE_ON_CLOSE) != 0 &&
+		    (fnode->flags & NODE_FLAGS_VFSROOT) != 0) {
+			status = NT_STATUS_CANNOT_DELETE;
+			goto errout;
+		}
+
 		do_audit = smb_audit_init(sr);
 		status = smb_fsop_access(sr, sr->user_cr, fnode,
 		    op->desired_access);
