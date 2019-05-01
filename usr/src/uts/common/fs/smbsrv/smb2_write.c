@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -25,6 +25,7 @@ boolean_t smb_allow_unbuffered = B_TRUE;
 smb_sdrc_t
 smb2_write(smb_request_t *sr)
 {
+	smb_rw_param_t *param = NULL;
 	smb_ofile_t *of = NULL;
 	smb_vdb_t *vdb = NULL;
 	uint16_t StructSize;
@@ -67,6 +68,16 @@ smb2_write(smb_request_t *sr)
 		return (SDRC_ERROR);
 
 	/*
+	 * Setup an smb_rw_param_t which contains the VDB we need.
+	 * This is automatically free'd.
+	 */
+	param = smb_srm_zalloc(sr, sizeof (*param));
+	param->rw_offset = Offset;
+	param->rw_count = Length;
+	/* Note that the dtrace provider uses sr->arg.rw */
+	sr->arg.rw = param;
+
+	/*
 	 * Skip any padding before the write data.
 	 */
 	data_chain_off = sr->smb2_cmd_hdr + DataOff;
@@ -78,11 +89,10 @@ smb2_write(smb_request_t *sr)
 
 	/*
 	 * Decode the write data (payload)
-	 * This is automatically free'd.
 	 */
 	if (Length > smb2_max_rwsize)
 		return (SDRC_ERROR);
-	vdb = smb_srm_zalloc(sr, sizeof (*vdb));
+	vdb = &param->rw_vdb;
 	rc = smb_mbc_decodef(&sr->smb_data, "#B", Length, vdb);
 	if (rc != 0 || vdb->vdb_len != Length)
 		return (SDRC_ERROR);

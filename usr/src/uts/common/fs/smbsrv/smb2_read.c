@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -25,6 +25,7 @@ extern boolean_t smb_allow_unbuffered;
 smb_sdrc_t
 smb2_read(smb_request_t *sr)
 {
+	smb_rw_param_t *param = NULL;
 	smb_ofile_t *of = NULL;
 	smb_vdb_t *vdb = NULL;
 	struct mbuf *m = NULL;
@@ -70,6 +71,16 @@ smb2_read(smb_request_t *sr)
 		return (SDRC_ERROR);
 
 	/*
+	 * Setup an smb_rw_param_t which contains the VDB we need.
+	 * This is automatically free'd.
+	 */
+	param = smb_srm_zalloc(sr, sizeof (*param));
+	param->rw_offset = Offset;
+	param->rw_count = Length;
+	/* Note that the dtrace provider uses sr->arg.rw */
+	sr->arg.rw = param;
+
+	/*
 	 * Want FID lookup before the start probe.
 	 */
 	status = smb2sr_lookup_fid(sr, &smb2fid);
@@ -87,8 +98,7 @@ smb2_read(smb_request_t *sr)
 	if (MinCount > Length)
 		MinCount = Length;
 
-	/* This is automatically free'd. */
-	vdb = smb_srm_zalloc(sr, sizeof (*vdb));
+	vdb = &param->rw_vdb;
 	vdb->vdb_tag = 0;
 	vdb->vdb_uio.uio_iov = &vdb->vdb_iovec[0];
 	vdb->vdb_uio.uio_iovcnt = MAX_IOVEC;
