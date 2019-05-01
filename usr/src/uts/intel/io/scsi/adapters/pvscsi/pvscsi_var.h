@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta Systems, Inc.
  */
 
 #ifndef	_PVSCSI_VAR_H_
@@ -225,7 +225,7 @@ typedef struct pvscsi_device {
 #define	SENSE_BUFFER_SIZE	SENSE_LENGTH
 #define	USECS_TO_WAIT		1000
 
-#define	PVSCSI_MAXTGTS	16
+#define	PVSCSI_MAXTGTS	64
 
 #define	PAGE_SIZE	4096
 #define	PAGE_SHIFT	12
