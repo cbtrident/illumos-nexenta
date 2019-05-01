@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -69,8 +69,8 @@ struct str_val {
 #define	IDMAP_SITE_NAME			"site_name"
 #define	IDMAP_PG_NAME			"config"
 
-#define	SMB_SECMODE_WORKGRP_STR 	"workgroup"
-#define	SMB_SECMODE_DOMAIN_STR  	"domain"
+#define	SMB_SECMODE_WORKGRP_STR		"workgroup"
+#define	SMB_SECMODE_DOMAIN_STR		"domain"
 
 #define	SMB_ENC_LEN	1024
 #define	SMB_DEC_LEN	256
@@ -1238,9 +1238,9 @@ smb_config_get_max_protocol(void)
 }
 
 /*
- * This should eventually be SMB_VERS_2_BASE
+ * See comment above max_protocol_default
  */
-uint32_t min_protocol_default = SMB_VERS_1;
+uint32_t min_protocol_default = SMB_VERS_2_1;
 
 uint32_t
 smb_config_get_min_protocol(void)
