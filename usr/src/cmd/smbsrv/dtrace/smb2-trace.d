@@ -11,7 +11,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -34,19 +34,6 @@
  * Ommitting <zone id> will print data for all zones.
  */
 
-/*
- * Unfortunately, trying to write this as:
- *	smb2:::op-*-start {}
- *	smb2:::op-*-done {}
- * fails to compile with this complaint:
- *	dtrace: failed to compile script smb2-trace.d: line 41:
- *	args[ ] may not be referenced because probe description
- *	smb2:::op-*-start matches an unstable set of probes
- *
- * Not clear why listing them all is necessary,
- * but that works.
- */
-
 #pragma D option defaultargs
 
 dtrace:::BEGIN
@@ -65,25 +52,7 @@ dtrace:::BEGIN
 	    (all_zones) ? "all" : $$3);
 }
 
-smb2:::op-Cancel-start,
-smb2:::op-ChangeNotify-start,
-smb2:::op-Close-start,
-smb2:::op-Create-start,
-smb2:::op-Echo-start,
-smb2:::op-Flush-start,
-smb2:::op-Ioctl-start,
-smb2:::op-Lock-start,
-smb2:::op-Logoff-start,
-smb2:::op-Negotiate-start,
-smb2:::op-OplockBreak-start,
-smb2:::op-QueryDirectory-start,
-smb2:::op-QueryInfo-start,
-smb2:::op-Read-start,
-smb2:::op-SessionSetup-start,
-smb2:::op-SetInfo-start,
-smb2:::op-TreeConnect-start,
-smb2:::op-TreeDisconnect-start,
-smb2:::op-Write-start
+smb2:::op-*-start
 / ((all_clients == 1) || (args[0]->ci_remote == client)) &&
    ((all_shares == 1) || (args[1]->soi_share == share)) &&
    ((all_zones == 1) || (args[1]->soi_zoneid == zoneid)) /
@@ -95,25 +64,7 @@ smb2:::op-Write-start
 	       args[1]->soi_tid);
 }
 
-smb2:::op-Cancel-done,
-smb2:::op-ChangeNotify-done,
-smb2:::op-Close-done,
-smb2:::op-Create-done,
-smb2:::op-Echo-done,
-smb2:::op-Flush-done,
-smb2:::op-Ioctl-done,
-smb2:::op-Lock-done,
-smb2:::op-Logoff-done,
-smb2:::op-Negotiate-done,
-smb2:::op-OplockBreak-done,
-smb2:::op-QueryDirectory-done,
-smb2:::op-QueryInfo-done,
-smb2:::op-Read-done,
-smb2:::op-SessionSetup-done,
-smb2:::op-SetInfo-done,
-smb2:::op-TreeConnect-done,
-smb2:::op-TreeDisconnect-done,
-smb2:::op-Write-done
+smb2:::op-*-done
 / ((all_clients == 1) || (args[0]->ci_remote == client)) &&
    ((all_shares == 1) || (args[1]->soi_share == share)) &&
    ((all_zones == 1) || (args[1]->soi_zoneid == zoneid)) /

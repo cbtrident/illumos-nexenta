@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/sdt_impl.h>
@@ -106,6 +106,14 @@ static dtrace_pattr_t nfs_attr = {
 { DTRACE_STABILITY_EVOLVING, DTRACE_STABILITY_EVOLVING, DTRACE_CLASS_ISA },
 };
 
+static dtrace_pattr_t smb_attr = {
+{ DTRACE_STABILITY_EVOLVING, DTRACE_STABILITY_EVOLVING, DTRACE_CLASS_ISA },
+{ DTRACE_STABILITY_PRIVATE, DTRACE_STABILITY_PRIVATE, DTRACE_CLASS_UNKNOWN },
+{ DTRACE_STABILITY_PRIVATE, DTRACE_STABILITY_PRIVATE, DTRACE_CLASS_UNKNOWN },
+{ DTRACE_STABILITY_PRIVATE, DTRACE_STABILITY_PRIVATE, DTRACE_CLASS_ISA },
+{ DTRACE_STABILITY_EVOLVING, DTRACE_STABILITY_EVOLVING, DTRACE_CLASS_ISA },
+};
+
 sdt_provider_t sdt_providers[] = {
 	{ "vtrace", "__vtrace_", &vtrace_attr },
 	{ "sysinfo", "__cpu_sysinfo_", &info_attr, DTRACE_PRIV_USER },
@@ -122,8 +130,8 @@ sdt_provider_t sdt_providers[] = {
 	{ "iscsi", "__iscsi_", &iscsi_attr },
 	{ "nfsv3", "__nfsv3_", &nfs_attr },
 	{ "nfsv4", "__nfsv4_", &nfs_attr },
-	{ "smb", "__smb_", &stab_attr },
-	{ "smb2", "__smb2_", &stab_attr },
+	{ "smb", "__smb_", &smb_attr },
+	{ "smb2", "__smb2_", &smb_attr },
 	{ "xpv", "__xpv_", &xpv_attr },
 	{ "fc", "__fc_", &fc_attr },
 	{ "srp", "__srp_", &fc_attr },
@@ -1089,8 +1097,6 @@ sdt_argdesc_t sdt_args[] = {
 	{ "smb2", "op-ChangeNotify-start", 1, 0, "smb_request_t *", "smb2opinfo_t *" },
 	{ "smb2", "op-ChangeNotify-done", 0, 0, "smb_request_t *", "conninfo_t *" },
 	{ "smb2", "op-ChangeNotify-done", 1, 0, "smb_request_t *", "smb2opinfo_t *" },
-	{ "smb2", "op-ChangeNotify-done2", 0, 0, "smb_request_t *", "conninfo_t *" },
-	{ "smb2", "op-ChangeNotify-done2", 1, 0, "smb_request_t *", "smb2opinfo_t *" },
 
 	{ "smb2", "op-Close-start", 0, 0, "smb_request_t *", "conninfo_t *" },
 	{ "smb2", "op-Close-start", 1, 0, "smb_request_t *", "smb2opinfo_t *" },
@@ -1122,8 +1128,6 @@ sdt_argdesc_t sdt_args[] = {
 	{ "smb2", "op-Lock-start", 1, 0, "smb_request_t *", "smb2opinfo_t *" },
 	{ "smb2", "op-Lock-done", 0, 0, "smb_request_t *", "conninfo_t *" },
 	{ "smb2", "op-Lock-done", 1, 0, "smb_request_t *", "smb2opinfo_t *" },
-	{ "smb2", "op-Lock-done2", 0, 0, "smb_request_t *", "conninfo_t *" },
-	{ "smb2", "op-Lock-done2", 1, 0, "smb_request_t *", "smb2opinfo_t *" },
 
 	{ "smb2", "op-Logoff-start", 0, 0, "smb_request_t *", "conninfo_t *" },
 	{ "smb2", "op-Logoff-start", 1, 0, "smb_request_t *", "smb2opinfo_t *" },
