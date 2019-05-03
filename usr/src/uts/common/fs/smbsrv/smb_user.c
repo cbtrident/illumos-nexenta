@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -284,6 +284,7 @@ smb_user_logon(
     uint32_t		audit_sid)
 {
 	ksocket_t authsock = NULL;
+	timeout_id_t tmo = NULL;
 
 	ASSERT(user->u_magic == SMB_USER_MAGIC);
 	ASSERT(cr);
@@ -303,10 +304,8 @@ smb_user_logon(
 	 */
 	authsock = user->u_authsock;
 	user->u_authsock = NULL;
-	if (user->u_auth_tmo != NULL) {
-		(void) untimeout(user->u_auth_tmo);
-		user->u_auth_tmo = NULL;
-	}
+	tmo = user->u_auth_tmo;
+	user->u_auth_tmo = NULL;
 
 	user->u_state = SMB_USER_STATE_LOGGED_ON;
 	user->u_flags = flags;
@@ -319,6 +318,10 @@ smb_user_logon(
 	smb_user_setcred(user, cr, privileges);
 
 	mutex_exit(&user->u_mutex);
+
+	/* Timeout callback takes u_mutex. See untimeout(9f) */
+	if (tmo != NULL)
+		(void) untimeout(tmo);
 
 	/* This close can block, so not under the mutex. */
 	if (authsock != NULL)
@@ -341,6 +344,7 @@ smb_user_logoff(
     smb_user_t		*user)
 {
 	ksocket_t authsock = NULL;
+	timeout_id_t tmo = NULL;
 
 	ASSERT(user->u_magic == SMB_USER_MAGIC);
 
@@ -350,12 +354,15 @@ smb_user_logoff(
 	case SMB_USER_STATE_LOGGING_ON:
 		authsock = user->u_authsock;
 		user->u_authsock = NULL;
-		if (user->u_auth_tmo != NULL) {
-			(void) untimeout(user->u_auth_tmo);
-			user->u_auth_tmo = NULL;
-		}
+		tmo = user->u_auth_tmo;
+		user->u_auth_tmo = NULL;
 		user->u_state = SMB_USER_STATE_LOGGING_OFF;
 		mutex_exit(&user->u_mutex);
+
+		/* Timeout callback takes u_mutex. See untimeout(9f) */
+		if (tmo != NULL)
+			(void) untimeout(tmo);
+
 		/* This close can block, so not under the mutex. */
 		if (authsock != NULL) {
 			smb_authsock_close(user, authsock);
