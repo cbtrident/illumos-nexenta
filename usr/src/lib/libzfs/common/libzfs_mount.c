@@ -94,6 +94,8 @@
 #include <sys/systeminfo.h>
 #define	MAXISALEN	257	/* based on sysinfo(2) man page */
 
+#define	IGNORE_NO_SUCH_PATH	B_TRUE
+
 static int zfs_share_proto(zfs_handle_t *, zfs_share_proto_t *);
 zfs_share_type_t zfs_is_shared_proto(zfs_handle_t *, char **,
     zfs_share_proto_t);
@@ -425,10 +427,13 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
  * Unmount a single filesystem.
  */
 static int
-unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags)
+unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags,
+    boolean_t ignore_no_such_path)
 {
-	int ret = umount2(mountpoint, flags);
-	if (ret != 0) {
+	if (umount2(mountpoint, flags) != 0) {
+		if (ignore_no_such_path && (errno == ENOENT || errno == EINVAL))
+			return (0);
+
 		zfs_error_aux(hdl, strerror(errno));
 		return (zfs_error_fmt(hdl, EZFS_UMOUNTFAILED,
 		    dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),
@@ -468,7 +473,7 @@ zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
 		if (zfs_unshare_proto(zhp, mntpt, share_all_proto) != 0)
 			return (-1);
 
-		if (unmount_one(hdl, mntpt, flags) != 0) {
+		if (unmount_one(hdl, mntpt, flags, !IGNORE_NO_SUCH_PATH) != 0) {
 			free(mntpt);
 			(void) zfs_shareall(zhp);
 			return (-1);
@@ -911,7 +916,7 @@ zfs_shareall(zfs_handle_t *zhp)
  */
 static int
 unshare_one(libzfs_handle_t *hdl, const char *name, const char *mountpoint,
-    zfs_share_proto_t proto)
+    zfs_share_proto_t proto, boolean_t ignore_no_such_path)
 {
 	sa_share_t share;
 	int err;
@@ -952,12 +957,15 @@ unshare_one(libzfs_handle_t *hdl, const char *name, const char *mountpoint,
 	if (share != NULL) {
 		err = zfs_sa_disable_share(share, proto_table[proto].p_name);
 		if (err != SA_OK) {
+			if (err == SA_NO_SUCH_PATH && ignore_no_such_path)
+				return (0);
+
 			return (zfs_error_fmt(hdl,
 			    proto_table[proto].p_unshare_err,
 			    dgettext(TEXT_DOMAIN, "cannot unshare '%s': %s"),
 			    name, _sa_errorstr(err)));
 		}
-	} else {
+	} else if (!ignore_no_such_path) {
 		return (zfs_error_fmt(hdl, proto_table[proto].p_unshare_err,
 		    dgettext(TEXT_DOMAIN, "cannot unshare '%s': not found"),
 		    name));
@@ -993,7 +1001,7 @@ zfs_unshare_proto(zfs_handle_t *zhp, const char *mountpoint,
 
 			if (is_shared(hdl, mntpt, *curr_proto) &&
 			    unshare_one(hdl, zhp->zfs_name,
-			    mntpt, *curr_proto) != 0) {
+			    mntpt, *curr_proto, !IGNORE_NO_SUCH_PATH) != 0) {
 				if (mntpt != NULL)
 					free(mntpt);
 				return (-1);
@@ -1434,6 +1442,14 @@ unmounter(void *arg)
 
 		umount_err = umount2(task->mp, flags);
 		q_error = errno;
+		/*
+		 * It is possible someone has destroyed this dataset and
+		 * this case needs to be ignored
+		 */
+		if (umount_err != 0 && (q_error == ENOENT || q_error == EINVAL)) {
+			umount_err = 0;
+			q_error = 0;
+		}
 
 		if ((error = pthread_mutex_lock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
@@ -1861,7 +1877,7 @@ zpool_disable_datasets_ex(zpool_handle_t *zhp, boolean_t force, int n_threads)
 		    curr_proto++) {
 			if (is_shared(hdl, mountpoints[i], *curr_proto) &&
 			    unshare_one(hdl, mountpoints[i], mountpoints[i],
-			    *curr_proto) != 0)
+			    *curr_proto, IGNORE_NO_SUCH_PATH) != 0)
 				goto out;
 		}
 	}
@@ -1872,7 +1888,7 @@ zpool_disable_datasets_ex(zpool_handle_t *zhp, boolean_t force, int n_threads)
 	 */
 	if (n_threads < 2) {
 		for (i = 0; i < used; i++) {
-			if (unmount_one(hdl, mountpoints[i], flags) != 0)
+			if (unmount_one(hdl, mountpoints[i], flags, IGNORE_NO_SUCH_PATH) != 0)
 				goto out;
 		}
 	} else {
