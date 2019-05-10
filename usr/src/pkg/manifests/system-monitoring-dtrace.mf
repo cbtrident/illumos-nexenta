@@ -29,6 +29,7 @@ file path=usr/nexenta/dtrace/nfsio mode=0555
 file path=usr/nexenta/dtrace/nfssvrtop mode=0555
 file path=usr/nexenta/dtrace/nfsutil mode=0555
 file path=usr/nexenta/dtrace/nfswizard mode=0555
+file path=usr/nexenta/dtrace/rspmon mode=0555
 file path=usr/nexenta/dtrace/stackcollapse mode=0555
 file path=usr/nexenta/dtrace/zfs-prefetch mode=0555
 file path=usr/nexenta/dtrace/zilstat mode=0555
@@ -44,6 +45,7 @@ link path=usr/bin/nfsio target=../nexenta/dtrace/nfsio
 link path=usr/bin/nfssvrtop target=../nexenta/dtrace/nfssvrtop
 link path=usr/bin/nfsutil target=../nexenta/dtrace/nfsutil
 link path=usr/bin/nfswizard target=../nexenta/dtrace/nfswizard
+link path=usr/bin/rspmon target=../nexenta/dtrace/rspmon
 link path=usr/bin/stackcollapse target=../nexenta/dtrace/stackcollapse
 link path=usr/bin/zfs-prefetch target=../nexenta/dtrace/zfs-prefetch
 link path=usr/bin/zilstat target=../nexenta/dtrace/zilstat

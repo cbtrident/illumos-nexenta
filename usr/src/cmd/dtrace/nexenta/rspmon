@@ -1,0 +1,154 @@
+#!/usr/sbin/dtrace -s
+
+/*
+ * This file and its contents are supplied under the terms of the
+ * Common Development and Distribution License ("CDDL"), version 1.0.
+ * You may only use this file in accordance with the terms of version
+ * 1.0 of the CDDL.
+ *
+ * A full copy of the text of the CDDL should have accompanied this
+ * source.  A copy of the CDDL is also available via the Internet at
+ * http://www.illumos.org/license/CDDL.
+ */
+
+/*
+ * Copyright 2019, Nexenta Systems, Inc. All rights reserved.
+ */
+
+#pragma D option defaultargs
+#pragma D option quiet
+
+/*
+ * Every second, check if any response times have exceeded the specified
+ * threshold (ms).
+ *
+ * - If not already in a trace period and a slow response has occured in the
+ *   past second, start trace period.
+ *
+ * - if already in a trace period and no slow responses have occured in the
+ *   past second, end the trace period.
+ *
+ * If the trace period exceeds the specified interval, it will be ended and a
+ * new one will start. The start time will be indented to indicate that this
+ * is a continuation of the previous period.
+ *
+ * Usage: rspmon <threshold millisec> <interval sec>
+ */
+
+
+dtrace:::BEGIN
+{
+	/* check threshold (milliseconds) parameter specified */
+	if ($1 == 0 || $2 == 0) {
+		printf("Usage: rspmon <threshold ms> <interval sec>\n");
+		exit(0);
+	}
+
+	ns_in_sec = 1000000000;
+
+	threshold_ms = $1;
+	interval = $2;
+
+	starttime = 0;		/* start time of trace period */
+	ticks = 0;			/* interval timer */
+	slow = 0;			/* set when slow response received */
+	cont = 0;			/* continuing previous trace period */
+
+
+	/* request counts - during trace period */
+	reqs = 0;
+	slow_reqs = 0;
+
+	printf("Tracing periods of NFS I/O where response times exceed %d ms\n",
+	    threshold_ms);
+
+	printf("%-30s%-12s%-12s%-12s%-12s%-12s\n",
+	   "Start", "Duration", "SlowReqs", "MaxRsp", "AvgRsp", "TotalReqs");
+	printf("%-30s%-12s%-12s%-12s%-12s%-12s\n",
+	    " ", "(sec)", " ", "(ms)", "(ms)", " ");
+}
+
+nfsv3:::op-read-start,
+nfsv3:::op-write-start,
+nfsv4:::op-read-start,
+nfsv4:::op-write-start
+{
+	self->ts = timestamp;
+}
+
+nfsv3:::op-read-done,
+nfsv3:::op-write-done,
+nfsv4:::op-read-done,
+nfsv4:::op-write-done
+/ self->ts /
+{
+	elapsed = (timestamp - self->ts);
+
+	/* count slow requests and set slow flag */
+	if (elapsed / 1000000 > threshold_ms) {
+		slow = 1;
+		slow_reqs += 1;
+	}
+
+	/* collect stats for all requests during a trace period */
+	if (slow == 1) {
+		reqs += 1;
+		@max_rsp  = max(elapsed);
+		@avg_rsp  = avg(elapsed);
+	}
+
+	self->ts = 0;
+}
+
+tick-1s
+{
+	/* decrement time by 1 sec, since we monitored over the past second */
+	start = walltimestamp - ns_in_sec;
+
+	ticks += 1;
+
+	if (starttime == 0 && slow != 0) {
+		/* start trace period */
+		starttime = start;
+		if (cont) {
+			printf("\n  %-28Y", start); /* indent continuation */
+		} else {
+			printf("\n%-30Y", start);
+		}
+		ticks = 1;
+	} else if (starttime != 0 && (slow == 0 || ticks == interval)) {
+		/* end trace period */
+		normalize(@max_rsp, 1000000);
+		normalize(@avg_rsp, 1000000);
+		printf("%-12d%-12d", (slow == 0) ? ticks - 1 : ticks, slow_reqs);
+		printa("%-12@d%-12@d", @max_rsp, @avg_rsp);
+		printf("%-12d", reqs);
+
+		cont = (slow != 0);
+		starttime = 0;
+		reqs = 0;
+		slow_reqs = 0;
+		trunc(@max_rsp);
+		trunc(@avg_rsp);
+	} else {
+		cont = 0;
+	}
+
+	if (ticks == interval)
+		ticks = 0;
+	slow = 0;
+}
+
+dtrace:::END
+{
+	if (starttime != 0) {
+		normalize(@max_rsp, 1000000);
+		normalize(@avg_rsp, 1000000);
+
+		printf("%30s%-12s%-12d", " ", "ongoing...", slow_reqs);
+		printa("%-12@d%-12@d", @max_rsp, @avg_rsp);
+		printf("%-12d", reqs);
+	}
+	clear(@max_rsp);
+	clear(@avg_rsp);
+}

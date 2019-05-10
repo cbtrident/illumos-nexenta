@@ -28,6 +28,7 @@ BINFILES = \
 	nfssvrtop \
 	nfsutil \
 	nfswizard \
+	rspmon \
 	stackcollapse \
 	zfs-prefetch \
 	zilstat \
