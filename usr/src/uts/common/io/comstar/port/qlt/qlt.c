@@ -311,6 +311,66 @@ static ddi_dma_attr_t qlt_queue_dma_attr_mq_rsp1 = {
 	0			/* DMA transfer flags */
 };
 
+/* Based on the defines in qlc/qla2x00 code */
+static struct {
+	uint16_t	code;
+	const char	*desc;
+} _qlt_async_desc[] = {
+	{ 0x8000, "asynchronous event" },
+	{ 0x8001, "reset detected" },
+	{ 0x8002, "system error" },
+	{ 0x8003, "request transfer error" },
+	{ 0x8004, "response transfer error" },
+	{ 0x8005, "request queue wake-up" },
+	{ 0x800F, "menlo alert notification." },
+	{ 0x8010, "LIP occurred" },
+	{ 0x8011, "FC loop up" },
+	{ 0x8012, "FC loop down" },
+	{ 0x8013, "LIP reset occurred" },
+	{ 0x8014, "port database update" },
+	{ 0x8015, "state change registration" },
+	{ 0x8016, "received LIP F8" },
+	{ 0x8017, "loop initialization error" },
+	{ 0x8018, "login reject reason" },
+	{ 0x801B, "FC-SP security update" },
+	{ 0x8020, "SCSI command complete" },
+	{ 0x8021, "CTIO complete" },
+	{ 0x8022, "IP transmit command complete" },
+	{ 0x8023, "IP received" },
+	{ 0x8024, "IP broadcast received" },
+	{ 0x8025, "IP low watermark reached" },
+	{ 0x8026, "IP receive buffer queue empty" },
+	{ 0x8027, "IP header/data splitting feature used" },
+	{ 0x8029, "error logging disabled" },
+	{ 0x8030, "point-to-point mode" },
+	{ 0x8031, "completion 1 16bit IOSB" },
+	{ 0x8032, "completion 2 16bit IOSB" },
+	{ 0x8033, "completion 3 16bit IOSB" },
+	{ 0x8034, "completion 4 16bit IOSB" },
+	{ 0x8035, "completion 5 16bit IOSB" },
+	{ 0x8036, "change in connection mode" },
+	{ 0x8040, "ZIO response queue update" },
+	{ 0x8042, "completion 2 32bit IOSB" },
+	{ 0x8043, "auto bypass notification" },
+	{ 0x8048, "discard RND frame due to error" },
+	{ 0x8049, "rejected FCP_CMD" },
+	{ 0x8050, "firmware not started" },
+	{ 0x8051, "firmware starting" },
+	{ 0x805F, "VDC message event" },
+	{ 0x8060, "firmware restart complete" },
+	{ 0x8061, "initialization required" },
+	{ 0x8062, "shutdown requested" },
+	{ 0x8070, "temperature alert" },
+	{ 0x8080, "D_Port diagnostics" },
+	{ 0x8100, "inter-driver communication complete" },
+	{ 0x8101, "inter-driver communication notification" },
+	{ 0x8102, "inter-driver communication time extended" },
+	{ 0x8130, "transceiver insertion" },
+	{ 0x8131, "transceiver removal" },
+	{ 0x8200, "NIC firmware state change" },
+	{ 0x8400, "autoload fw init complete" },
+	{ 0x8401, "autoload fw init failure" },
+};
 
 /* qlogic logging */
 int enable_extended_logging = 0;
@@ -3907,6 +3967,19 @@ qlt_msix_resp_handler(caddr_t arg, caddr_t arg2)
 	return (DDI_INTR_CLAIMED);
 }
 
+static const char *
+qlt_async_desc(uint16_t code)
+{
+	size_t	i;
+
+	for (i = 0; i < sizeof (_qlt_async_desc) / sizeof (_qlt_async_desc[0]);
+	    i++) {
+		if (code == _qlt_async_desc[i].code)
+			return (_qlt_async_desc[i].desc);
+	}
+
+	return ("unknown");
+}
 
 /*
  * **SHOULD ONLY BE CALLED FROM INTERRUPT CONTEXT. DO NOT CALL ELSEWHERE**
@@ -4050,15 +4123,10 @@ qlt_msix_default_handler(caddr_t arg, caddr_t arg2)
 		mbox6 = REG_RD16(qlt, REG_MBOX(6));
 
 		REG_WR32(qlt, REG_HCCR, HCCR_CMD(CLEAR_RISC_TO_PCI_INTR));
-		EL(qlt, "Async event: %x mb1=%x mb2=%x,"
-		    " mb3=%x, mb4=%x, mb5=%x, mb6=%x", code, mbox1, mbox2,
-		    mbox3, mbox4, mbox5, mbox6);
-		stmf_trace(qlt->qlt_port_alias, "Async event: %x mb1=%x mb2=%x,"
-		    " mb3=%x, mb4=%x, mb5=%x, mb6=%x", code, mbox1, mbox2,
-		    mbox3, mbox4, mbox5, mbox6);
-		cmn_err(CE_NOTE, "!qlt(%d): Async event %x mb1=%x mb2=%x,"
-		    " mb3=%x, mb4=%x,  mb5=%x, mb6=%x", qlt->instance, code,
-		    mbox1, mbox2, mbox3, mbox4, mbox5, mbox6);
+		cmn_err(CE_NOTE, "!qlt%d: %s (code=%x mb1=%x mb2=%x mb3=%x "
+		    "mb4=%x mb5=%x mb6=%x)", qlt->instance,
+		    qlt_async_desc(code), code, mbox1, mbox2, mbox3, mbox4,
+		    mbox5, mbox6);
 
 		if ((code == 0x8030) || (code == 0x8010) || (code == 0x8013)) {
 			if (qlt->qlt_link_up) {
@@ -4378,15 +4446,10 @@ intr_again:;
 		uint16_t mbox6 = REG_RD16(qlt, REG_MBOX(6));
 
 		REG_WR32(qlt, REG_HCCR, HCCR_CMD(CLEAR_RISC_TO_PCI_INTR));
-		EL(qlt, "Async event %x mb1=%x, mb2=%x, mb3=%x, mb4=%x, "
-		    "mb5=%x, mb6=%x\n", code, mbox1, mbox2, mbox3, mbox4,
+		cmn_err(CE_NOTE, "!qlt%d: %s (code=%x mb1=%x mb2=%x mb3=%x "
+		    "mb4=%x mb5=%x mb6=%x)", qlt->instance,
+		    qlt_async_desc(code), code, mbox1, mbox2, mbox3, mbox4,
 		    mbox5, mbox6);
-		stmf_trace(qlt->qlt_port_alias, "Async event %x mb1=%x mb2=%x,"
-		    " mb3=%x, mb4=%x, mb5=%x, mb6=%x", code, mbox1, mbox2,
-		    mbox3, mbox4, mbox5, mbox6);
-		cmn_err(CE_NOTE, "!qlt(%d): Async event %x mb1=%x mb2=%x,"
-		    " mb3=%x, mb4=%x, mb5=%x, mb6=%x", qlt->instance, code,
-		    mbox1, mbox2, mbox3, mbox4, mbox5, mbox6);
 
 		if ((code == 0x8030) || (code == 0x8010) || (code == 0x8013)) {
 			if (qlt->qlt_link_up) {
