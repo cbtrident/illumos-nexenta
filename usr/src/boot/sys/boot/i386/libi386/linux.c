@@ -196,7 +196,7 @@ linux_loadkernel(char *filename, uint64_t dest, struct preloaded_file **result)
 		error = EFBIG;
 		goto end;
 	}
-	printf("   [Linux-%s, setup=0x%x, size=0x%x]\n",
+	printf("   [Linux-%s, setup=0x%lx, size=0x%lx]\n",
 	    (linux_big ? "bzImage" : "zImage"), data, text);
 
 	/* copy real mode part to place */
@@ -293,7 +293,7 @@ linux_exec(struct preloaded_file *fp)
 
 	i386_getdev((void **)(&rootdev), fp->f_name, NULL);
 	if (rootdev != NULL)
-		relocator_edx = bd_unit2bios(rootdev->dd.d_unit);
+		relocator_edx = bd_unit2bios(rootdev);
 
 	/*
 	 * command line

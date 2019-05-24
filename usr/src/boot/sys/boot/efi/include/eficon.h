@@ -263,30 +263,56 @@ typedef struct {
 // Scan codes for base line keys
 //
 
-#define SCAN_NULL                       0x0000
-#define SCAN_UP                         0x0001
-#define SCAN_DOWN                       0x0002
-#define SCAN_RIGHT                      0x0003
-#define SCAN_LEFT                       0x0004
-#define SCAN_HOME                       0x0005
-#define SCAN_END                        0x0006
-#define SCAN_INSERT                     0x0007
-#define SCAN_DELETE                     0x0008
-#define SCAN_PAGE_UP                    0x0009
-#define SCAN_PAGE_DOWN                  0x000A
-#define SCAN_F1                         0x000B
-#define SCAN_F2                         0x000C
-#define SCAN_F3                         0x000D
-#define SCAN_F4                         0x000E
-#define SCAN_F5                         0x000F
-#define SCAN_F6                         0x0010
-#define SCAN_F7                         0x0011
-#define SCAN_F8                         0x0012
-#define SCAN_F9                         0x0013
-#define SCAN_F10                        0x0014
-#define SCAN_F11                        0x0015
-#define SCAN_F12                        0x0016
-#define SCAN_ESC                        0x0017
+#define SCAN_NULL		0x0000
+#define SCAN_UP			0x0001
+#define SCAN_DOWN		0x0002
+#define SCAN_RIGHT		0x0003
+#define SCAN_LEFT		0x0004
+#define SCAN_HOME		0x0005
+#define SCAN_END		0x0006
+#define SCAN_INSERT		0x0007
+#define SCAN_DELETE		0x0008
+#define SCAN_PAGE_UP		0x0009
+#define SCAN_PAGE_DOWN		0x000A
+#define SCAN_F1			0x000B
+#define SCAN_F2			0x000C
+#define SCAN_F3			0x000D
+#define SCAN_F4			0x000E
+#define SCAN_F5			0x000F
+#define SCAN_F6			0x0010
+#define SCAN_F7			0x0011
+#define SCAN_F8			0x0012
+#define SCAN_F9			0x0013
+#define SCAN_F10		0x0014
+#define SCAN_ESC		0x0017
+
+//
+// EFI Scan code Ex
+//
+#define SCAN_F11		0x0015
+#define SCAN_F12		0x0016
+#define SCAN_F13		0x0068
+#define SCAN_F14		0x0069
+#define SCAN_F15		0x006A
+#define SCAN_F16		0x006B
+#define SCAN_F17		0x006C
+#define SCAN_F18		0x006D
+#define SCAN_F19		0x006E
+#define SCAN_F20		0x006F
+#define SCAN_F21		0x0070
+#define SCAN_F22		0x0071
+#define SCAN_F23		0x0072
+#define SCAN_F24		0x0073
+#define SCAN_MUTE		0x007F
+#define SCAN_VOLUME_UP		0x0080
+#define SCAN_VOLUME_DOWN	0x0081
+#define SCAN_BRIGHTNESS_UP	0x0100
+#define SCAN_BRIGHTNESS_DOWN	0x0101
+#define SCAN_SUSPEND		0x0102
+#define SCAN_HIBERNATE		0x0103
+#define SCAN_TOGGLE_DISPLAY	0x0104
+#define SCAN_RECOVERY		0x0105
+#define SCAN_EJECT		0x0106
 
 typedef
 EFI_STATUS
@@ -352,32 +378,6 @@ typedef struct {
 #define EFI_SCROLL_LOCK_ACTIVE    0x01
 #define EFI_NUM_LOCK_ACTIVE       0x02
 #define EFI_CAPS_LOCK_ACTIVE      0x04
-
-//
-// EFI Scan codes
-//
-#define SCAN_F13                  0x0068
-#define SCAN_F14                  0x0069
-#define SCAN_F15                  0x006A
-#define SCAN_F16                  0x006B
-#define SCAN_F17                  0x006C
-#define SCAN_F18                  0x006D
-#define SCAN_F19                  0x006E
-#define SCAN_F20                  0x006F
-#define SCAN_F21                  0x0070
-#define SCAN_F22                  0x0071
-#define SCAN_F23                  0x0072
-#define SCAN_F24                  0x0073
-#define SCAN_MUTE                 0x007F
-#define SCAN_VOLUME_UP            0x0080
-#define SCAN_VOLUME_DOWN          0x0081
-#define SCAN_BRIGHTNESS_UP        0x0100
-#define SCAN_BRIGHTNESS_DOWN      0x0101
-#define SCAN_SUSPEND              0x0102
-#define SCAN_HIBERNATE            0x0103
-#define SCAN_TOGGLE_DISPLAY       0x0104
-#define SCAN_RECOVERY             0x0105
-#define SCAN_EJECT                0x0106
 
 //
 // EFI Key Notfication Function

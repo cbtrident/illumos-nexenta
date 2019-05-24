@@ -54,7 +54,7 @@ only forth definitions
   if 7 fg 4 bg then
   ." Booting..."
   if me then
-  cr
+  clear
 ;
 
 : try-menu-unset
@@ -589,6 +589,12 @@ only forth definitions also support-functions
 \	Show loading information about a module.
 
 : show-module ( <module> -- ) find-module ?dup if show-one-module then ;
+
+: set-module-path ( addr len <module> -- )
+  find-module ?dup if
+    module.loadname string=
+  then
+;
 
 \ Words to be used inside configuration files
 

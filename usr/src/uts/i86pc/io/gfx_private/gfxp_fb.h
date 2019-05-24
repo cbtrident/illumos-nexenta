@@ -29,9 +29,6 @@ extern "C" {
 #include <sys/vgasubr.h>
 #include <sys/gfx_private.h>
 
-#define	TEXT_ROWS		25
-#define	TEXT_COLS		80
-
 #define	GFXP_FLAG_CONSOLE	0x00000001
 #define	GFXP_IS_CONSOLE(softc)	((softc)->flags & GFXP_FLAG_CONSOLE)
 
@@ -65,7 +62,7 @@ struct gfx_vga {
 	off_t fb_size;
 	int fb_regno;
 	caddr_t	 text_base;	/* hardware text base */
-	char shadow[TEXT_ROWS*TEXT_COLS*2];
+	char shadow[VGA_TEXT_ROWS * VGA_TEXT_COLS * 2];
 	caddr_t current_base;	/* hardware or shadow */
 	char vga_fontslot;
 	struct vgareg vga_reg;
@@ -103,12 +100,11 @@ struct gfxp_fb_softc {
 };
 
 /* function definitions */
-int gfxp_bm_attach(dev_info_t *, ddi_attach_cmd_t, struct gfxp_fb_softc *);
-int gfxp_bm_detach(dev_info_t *, ddi_detach_cmd_t, struct gfxp_fb_softc *);
+int gfxp_bm_attach(dev_info_t *, struct gfxp_fb_softc *);
+int gfxp_bm_detach(dev_info_t *, struct gfxp_fb_softc *);
 
-int gfxp_vga_attach(dev_info_t *, ddi_attach_cmd_t, struct gfxp_fb_softc *);
-int gfxp_vga_detach(dev_info_t *, ddi_detach_cmd_t, struct gfxp_fb_softc *);
-int gfxp_vga_scrnmap(int, intptr_t, int, struct gfxp_fb_softc *);
+int gfxp_vga_attach(dev_info_t *, struct gfxp_fb_softc *);
+int gfxp_vga_detach(dev_info_t *, struct gfxp_fb_softc *);
 
 #ifdef __cplusplus
 }

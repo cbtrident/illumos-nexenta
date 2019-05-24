@@ -4,7 +4,7 @@
  * Author: Maksym Sobolyev <sobomax@sippysoft.com>
  * Copyright (c) 2009 Sippy Software, Inc.
  * All rights reserved.
- * 
+ *
  * Subject to the following obligations and disclaimer of warranty, use and
  * redistribution of this software, in source or object code forms, with or
  * without modifications are expressly permitted by Whistle Communications;
@@ -15,7 +15,7 @@
  *    Communications, Inc. trademarks, including the mark "WHISTLE
  *    COMMUNICATIONS" on advertising, endorsements, or otherwise except as
  *    such appears in the above copyright notice or in the software.
- * 
+ *
  * THIS SOFTWARE IS BEING PROVIDED BY WHISTLE COMMUNICATIONS "AS IS", AND
  * TO THE MAXIMUM EXTENT PERMITTED BY LAW, WHISTLE COMMUNICATIONS MAKES NO
  * REPRESENTATIONS OR WARRANTIES, EXPRESS OR IMPLIED, REGARDING THIS SOFTWARE,
@@ -46,6 +46,7 @@ static int	spinc_init(struct console *cp, int arg);
 static void	spinc_putchar(struct console *cp, int c);
 static int	spinc_getchar(struct console *cp);
 static int	spinc_ischar(struct console *cp);
+static void	spinc_devinfo(struct console *cp);
 
 struct console spinconsole = {
 	.c_name = "spin",
@@ -57,8 +58,15 @@ struct console spinconsole = {
 	.c_in = spinc_getchar,
 	.c_ready = spinc_ischar,
 	.c_ioctl = NULL,
+	.c_devinfo = spinc_devinfo,
 	.c_private = NULL
 };
+
+static void
+spinc_devinfo(struct console *cp __unused)
+{
+	printf("\tsoftware device");
+}
 
 static void
 spinc_probe(struct console *cp)
@@ -74,7 +82,8 @@ spinc_probe(struct console *cp)
 	}
 
 	parent = cp->c_private;
-	parent->c_probe(cp);
+	if (parent != NULL)
+		parent->c_probe(cp);
 }
 
 static int
@@ -83,7 +92,10 @@ spinc_init(struct console *cp, int arg)
 	struct console *parent;
 
 	parent = cp->c_private;
-	return (parent->c_init(cp, arg));
+	if (parent != NULL)
+		return (parent->c_init(cp, arg));
+	else
+		return (0);
 }
 
 static void
@@ -99,6 +111,8 @@ spinc_putchar(struct console *cp, int c __unused)
 		return;
 	lasttime = now;
 	parent = cp->c_private;
+	if (parent == NULL)
+		return;
 
 	parent->c_out(parent, (char)tw_chars);
 	parent->c_out(parent, '\b');

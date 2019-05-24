@@ -22,6 +22,7 @@
 /*
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2019 Toomas Soome <tsoome@me.com>
  */
 
 #ifndef _SYS_FONT_H
@@ -41,6 +42,23 @@ enum vfnt_map {
 	VFNT_MAPS		/* Number of maps. */
 };
 
+/*
+ * If the custom console font was loaded, pass it for kernel as a module.
+ * We do not just load the font file, as the font file needs to be processed,
+ * and the early boot has very little resources. So we just set up the
+ * needed structures and make a copy of the byte arrays.
+ *
+ * Note we cannot copy the structures one to one due to the pointer size,
+ * so we record the data by using fixed size structure.
+ */
+struct font_info {
+	int32_t fi_checksum;
+	uint32_t fi_width;
+	uint32_t fi_height;
+	uint32_t fi_bitmap_size;
+	uint32_t fi_map_count[VFNT_MAPS];
+};
+
 struct font_map {
 	uint32_t font_src;	/* Source glyph. */
 	uint16_t font_dst;	/* Target glyph. */
@@ -57,15 +75,14 @@ struct font {
 };
 
 typedef	struct  bitmap_data {
-	short		width;
-	short		height;
+	uint32_t	width;
+	uint32_t	height;
 	uint32_t	compressed_size;
 	uint32_t	uncompressed_size;
 	uint8_t		*compressed_data;
 	struct font	*font;
 } bitmap_data_t;
 
-typedef	bitmap_data_t   *font_load_cb_t(char *);
 typedef enum {
 	FONT_AUTO,
 	FONT_MANUAL,
@@ -76,7 +93,7 @@ struct fontlist {
 	char		*font_name;
 	FONT_FLAGS	font_flags;
 	bitmap_data_t	*font_data;
-	font_load_cb_t	*font_load;
+	bitmap_data_t   *(*font_load)(char *);
 	STAILQ_ENTRY(fontlist) font_next;
 };
 

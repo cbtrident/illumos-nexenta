@@ -20,7 +20,7 @@
  * just borrowing bits from it.
  *
  * Note, this implementation is assuming UEFI linear frame buffer and
- * 32bit depth, which should not be issue as GOP is supposed to provide those.
+ * 32-bit depth, which should not be issue as GOP is supposed to provide those.
  * At the time of writing, this is the only case for frame buffer anyhow.
  */
 
@@ -31,11 +31,33 @@
 #include <sys/bootinfo.h>
 #include <sys/boot_console.h>
 #include <sys/bootconf.h>
-#include <sys/tem_impl.h>
-#include <sys/visual_io.h>
+#include <sys/rgb.h>
 #include "boot_console_impl.h"
 
 #define	P2ROUNDUP(x, align)	(-(-(x) & -(align)))
+#define	MIN(a, b)		((a) < (b) ? (a) : (b))
+#define	nitems(x)		(sizeof ((x)) / sizeof ((x)[0]))
+
+/*
+ * Simplified visual_io data structures from visual_io.h
+ */
+
+struct vis_consdisplay {
+	uint16_t row;		/* Row to display data at */
+	uint16_t col;		/* Col to display data at */
+	uint16_t width;		/* Width of data */
+	uint16_t height;	/* Height of data */
+	uint8_t  *data;		/* Data to display */
+};
+
+struct vis_conscopy {
+	uint16_t s_row;		/* Starting row */
+	uint16_t s_col;		/* Starting col */
+	uint16_t e_row;		/* Ending row */
+	uint16_t e_col;		/* Ending col */
+	uint16_t t_row;		/* Row to move to */
+	uint16_t t_col;		/* Col to move to */
+};
 
 /*
  * We have largest font 16x32 with depth 32. This will allocate 2048
@@ -50,25 +72,11 @@ static struct font	cf_font;
 static struct font	boot_fb_font; /* set by set_font() */
 static uint8_t		glyph[MAX_GLYPH];
 
-#define	WHITE		(0)		/* indexed color */
-#define	BLACK		(1)		/* indexed color */
-#define	WHITE_32	(0xFFFFFFFF)	/* RGB */
-#define	BLACK_32	(0x00000000)	/* RGB */
-static uint32_t fg = BLACK_32;
-static uint32_t bg = WHITE_32;
-
 static void boot_fb_putchar(int);
 static void boot_fb_eraseline(void);
 static void boot_fb_setpos(int, int);
 static void boot_fb_shiftline(int);
-
-struct font_info {
-	int32_t fi_checksum;
-	uint32_t fi_width;
-	uint32_t fi_height;
-	uint32_t fi_bitmap_size;
-	uint32_t fi_map_count[VFNT_MAPS];
-};
+static void boot_fb_eraseline_impl(uint16_t, uint16_t);
 
 static void
 xbi_init_font(struct xboot_info *xbi)
@@ -156,14 +164,8 @@ xbi_fb_init(struct xboot_info *xbi, bcons_dev_t *bcons_dev)
 	}
 
 	xbi_init_font(xbi);
+
 	fb_info.paddr = tag->framebuffer_common.framebuffer_addr;
-
-	/* frame buffer address is mapped in dboot. */
-	if (xbi_fb->boot_fb_virt != 0)
-		fb_info.fb = (uint8_t *)(uintptr_t)xbi_fb->boot_fb_virt;
-	else
-		fb_info.fb = (uint8_t *)(uintptr_t)fb_info.paddr;
-
 	fb_info.pitch = tag->framebuffer_common.framebuffer_pitch;
 	fb_info.depth = tag->framebuffer_common.framebuffer_bpp;
 	fb_info.bpp = P2ROUNDUP(fb_info.depth, 8) >> 3;
@@ -213,11 +215,15 @@ xbi_fb_init(struct xboot_info *xbi, bcons_dev_t *bcons_dev)
 static void
 boot_fb_set_font(uint16_t height, uint16_t width)
 {
+	short h, w;
 	bitmap_data_t *bp;
 	int i;
 
+	h = MIN(height, 4096);
+	w = MIN(width, 4096);
+
 	bp = set_font((short *)&fb_info.terminal.y,
-	    (short *)&fb_info.terminal.x, (short)height, (short)width);
+	    (short *)&fb_info.terminal.x, h, w);
 
 	boot_fb_font.vf_bytes = bp->font->vf_bytes;
 	boot_fb_font.vf_width = bp->font->vf_width;
@@ -288,7 +294,7 @@ boot_fb_cpy(uint8_t *dst, uint8_t *src, uint32_t len)
 	case 16:
 		dst16 = (uint16_t *)dst;
 		src16 = (uint16_t *)src;
-		len = len >> 1;
+		len /= 2;
 		if (dst16 <= src16) {
 			do {
 				*dst16++ = *src16++;
@@ -304,7 +310,7 @@ boot_fb_cpy(uint8_t *dst, uint8_t *src, uint32_t len)
 	case 32:
 		dst32 = (uint32_t *)dst;
 		src32 = (uint32_t *)src;
-		len = len >> 2;
+		len /= 4;
 		if (dst32 <= src32) {
 			do {
 				*dst32++ = *src32++;
@@ -340,33 +346,54 @@ boot_fb_shadow_init(bootops_t *bops)
 	boot_fb_cpy(fb_info.shadow_fb, fb_info.fb, fb_info.fb_size);
 }
 
-static uint32_t
+/*
+ * Translate ansi color based on inverses and brightness.
+ */
+void
+boot_get_color(uint32_t *fg, uint32_t *bg)
+{
+	/* ansi to solaris colors, see also boot_console.c */
+	if (fb_info.inverse == B_TRUE ||
+	    fb_info.inverse_screen == B_TRUE) {
+		if (fb_info.fg_color < 16)
+			*bg = dim_xlate[fb_info.fg_color];
+		else
+			*bg = fb_info.fg_color;
+
+		if (fb_info.bg_color < 16)
+			*fg = brt_xlate[fb_info.bg_color];
+		else
+			*fg = fb_info.bg_color;
+	} else {
+		if (fb_info.bg_color < 16) {
+			if (fb_info.bg_color == 7)
+				*bg = brt_xlate[fb_info.bg_color];
+			else
+				*bg = dim_xlate[fb_info.bg_color];
+		} else {
+			*bg = fb_info.bg_color;
+		}
+		if (fb_info.fg_color < 16)
+			*fg = dim_xlate[fb_info.fg_color];
+		else
+			*fg = fb_info.fg_color;
+	}
+}
+
+/*
+ * Map indexed color to RGB value.
+ */
+uint32_t
 boot_color_map(uint8_t index)
 {
-	uint8_t c;
-	int pos, size;
-	uint32_t color;
+	if (fb_info.fb_type != FB_TYPE_RGB) {
+		if (index < nitems(solaris_color_to_pc_color))
+			return (solaris_color_to_pc_color[index]);
+		else
+			return (index);
+	}
 
-	/* 8bit depth is using indexed colors */
-	if (fb_info.depth == 8)
-		return (solaris_color_to_pc_color[index]);
-
-	c = cmap4_to_24.red[index];
-	pos = fb_info.rgb.red.pos;
-	size = fb_info.rgb.red.size;
-	color = ((c >> 8 - size) & ((1 << size) - 1)) << pos;
-
-	c = cmap4_to_24.green[index];
-	pos = fb_info.rgb.green.pos;
-	size = fb_info.rgb.green.size;
-	color |= ((c >> 8 - size) & ((1 << size) - 1)) << pos;
-
-	c = cmap4_to_24.blue[index];
-	pos = fb_info.rgb.blue.pos;
-	size = fb_info.rgb.blue.size;
-	color |= ((c >> 8 - size) & ((1 << size) - 1)) << pos;
-
-	return (color);
+	return (rgb_color_map(&fb_info.rgb, index));
 }
 
 /* set up out simple console. */
@@ -375,6 +402,9 @@ void
 boot_fb_init(int console)
 {
 	fb_info_pixel_coord_t window;
+
+	/* frame buffer address is mapped in dboot. */
+	fb_info.fb = (uint8_t *)(uintptr_t)fb_info.paddr;
 
 	boot_fb_set_font(fb_info.screen.y, fb_info.screen.x);
 	window.x = (fb_info.screen.x -
@@ -419,31 +449,21 @@ boot_fb_init(int console)
 		fb_info.cursor.pos.y = 0;
 	}
 
-	/* ansi to solaris colors, see also boot_console.c */
-	if (fb_info.inverse == B_TRUE ||
-	    fb_info.inverse_screen == B_TRUE) {
-		bg = dim_xlate[fb_info.fg_color];
-		fg = brt_xlate[fb_info.bg_color];
-	} else {
-		if (fb_info.bg_color == 7)
-			bg = brt_xlate[fb_info.bg_color];
-		else
-			bg = dim_xlate[fb_info.bg_color];
-		fg = dim_xlate[fb_info.fg_color];
-	}
-
-	fg = boot_color_map(fg);
-	bg = boot_color_map(bg);
-
 #if defined(_BOOT)
 	/* clear the screen if cursor is set to 0,0 */
-	if (console == CONS_FRAMEBUFFER &&
-	    fb_info.cursor.pos.x == 0 && fb_info.cursor.pos.y == 0) {
-		int i;
+	if (fb_info.cursor.pos.x == 0 && fb_info.cursor.pos.y == 0) {
+		uint32_t fg, bg, toffset;
+		uint16_t y;
 
-		for (i = 0; i < fb_info.screen.y; i++) {
-			uint8_t *dest = fb_info.fb + i * fb_info.pitch;
+		boot_get_color(&fg, &bg);
+		bg = boot_color_map(bg);
+
+		toffset = 0;
+		for (y = 0; y < fb_info.screen.y; y++) {
+			uint8_t *dest = fb_info.fb + toffset;
+
 			boot_fb_fill(dest, bg, fb_info.pitch);
+			toffset += fb_info.pitch;
 		}
 	}
 #endif
@@ -485,6 +505,12 @@ boot_fb_blit(struct vis_consdisplay *rect)
 static void
 bit_to_pix(uchar_t c)
 {
+	uint32_t fg, bg;
+
+	boot_get_color(&fg, &bg);
+	fg = boot_color_map(fg);
+	bg = boot_color_map(bg);
+
 	switch (fb_info.depth) {
 	case 8:
 		font_bit_to_pix8(&boot_fb_font, (uint8_t *)glyph, c, fg, bg);
@@ -507,8 +533,12 @@ static void
 boot_fb_eraseline_impl(uint16_t x, uint16_t y)
 {
 	uint32_t toffset, size;
+	uint32_t fg, bg;
 	uint8_t *dst, *sdst;
 	int i;
+
+	boot_get_color(&fg, &bg);
+	bg = boot_color_map(bg);
 
 	size = fb_info.terminal.x * boot_fb_font.vf_width * fb_info.bpp;
 
@@ -521,7 +551,7 @@ boot_fb_eraseline_impl(uint16_t x, uint16_t y)
 		uint8_t *dest = dst + i * fb_info.pitch;
 		if (fb_info.fb + fb_info.fb_size >= dest + size)
 			boot_fb_fill(dest, bg, size);
-		if (sdst != NULL) {
+		if (fb_info.shadow_fb != NULL) {
 			dest = sdst + i * fb_info.pitch;
 			if (fb_info.shadow_fb + fb_info.fb_size >=
 			    dest + size) {
@@ -624,21 +654,24 @@ boot_fb_scroll(void)
 
 /*
  * Very simple block cursor. Save space below the cursor and restore
- * when cursor is invisible. Of course the space below is usually black
- * screen, but never know when someone will add kmdb to have support for
- * arrow keys... kmdb is the only possible consumer for such case.
+ * when cursor is invisible.
  */
 void
 boot_fb_cursor(boolean_t visible)
 {
-	uint32_t offset, size;
+	uint32_t offset, size, j;
 	uint32_t *fb32, *sfb32 = NULL;
+	uint32_t fg, bg;
 	uint16_t *fb16, *sfb16 = NULL;
 	uint8_t *fb8, *sfb8 = NULL;
-	int i, j, pitch;
+	int i, pitch;
 
 	if (fb_info.cursor.visible == visible)
 		return;
+
+	boot_get_color(&fg, &bg);
+	fg = boot_color_map(fg);
+	bg = boot_color_map(bg);
 
 	fb_info.cursor.visible = visible;
 	pitch = fb_info.pitch;

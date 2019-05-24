@@ -16,15 +16,28 @@
 #include <zlib.h>
 #include "pnglite.h"
 
+#ifndef abs
 #define	abs(x)	((x) < 0? -(x):(x))
+#endif
 
-static size_t
+#define	PNG_32b(b, s) ((uint32_t)(b) << (s))
+#define	PNG_U32(b1, b2, b3, b4) \
+	(PNG_32b(b1, 24) | PNG_32b(b2, 16) | PNG_32b(b3, 8) | PNG_32b(b4, 0))
+
+#define	png_IDAT PNG_U32(73,  68,  65,  84)
+#define	png_IEND PNG_U32(73,  69,  78,  68)
+
+static ssize_t
 file_read(png_t *png, void *out, size_t size, size_t numel)
 {
-	size_t result;
+	ssize_t result;
+	off_t offset = (off_t)(size * numel);
+
+	if (offset < 0)
+		return (PNG_FILE_ERROR);
 
 	if (!out) {
-		result = lseek(png->fd, (off_t)(size * numel), SEEK_CUR);
+		result = lseek(png->fd, offset, SEEK_CUR);
 	} else {
 		result = read(png->fd, out, size * numel);
 	}
@@ -45,7 +58,8 @@ file_read_ul(png_t *png, unsigned *out)
 	return (PNG_NO_ERROR);
 }
 
-static unsigned get_ul(uint8_t *buf)
+static unsigned
+get_ul(uint8_t *buf)
 {
 	unsigned result;
 	uint8_t foo[4];
@@ -57,7 +71,8 @@ static unsigned get_ul(uint8_t *buf)
 	return (result);
 }
 
-static int png_get_bpp(png_t *png)
+static int
+png_get_bpp(png_t *png)
 {
 	int bpp;
 
@@ -76,7 +91,7 @@ static int png_get_bpp(png_t *png)
 		return (PNG_FILE_ERROR);
 	}
 
-	bpp *= png->depth/8;
+	bpp *= png->depth / 8;
 
 	return (bpp);
 }
@@ -84,12 +99,13 @@ static int png_get_bpp(png_t *png)
 static int
 png_read_ihdr(png_t *png)
 {
-	unsigned length;
+	unsigned length = 0;
 	unsigned orig_crc;
 	unsigned calc_crc;
 	uint8_t ihdr[13+4]; /* length should be 13, make room for type (IHDR) */
 
-	file_read_ul(png, &length);
+	if (file_read_ul(png, &length) != PNG_NO_ERROR)
+		return (PNG_FILE_ERROR);
 
 	if (length != 13)
 		return (PNG_CRC_ERROR);
@@ -97,7 +113,8 @@ png_read_ihdr(png_t *png)
 	if (file_read(png, ihdr, 1, 13+4) != 13+4)
 		return (PNG_EOF_ERROR);
 
-	file_read_ul(png, &orig_crc);
+	if (file_read_ul(png, &orig_crc) != PNG_NO_ERROR)
+		return (PNG_FILE_ERROR);
 
 	calc_crc = crc32(0L, Z_NULL, 0);
 	calc_crc = crc32(calc_crc, ihdr, 13+4);
@@ -181,12 +198,20 @@ png_open(png_t *png, const char *filename)
 	}
 
 	result = png_read_ihdr(png);
-
-	png->bpp = (uint8_t)png_get_bpp(png);
+	if (result == PNG_NO_ERROR) {
+		result = png_get_bpp(png);
+		if (result > 0) {
+			png->bpp = (uint8_t)result;
+			result = PNG_NO_ERROR;
+		}
+	}
 
 done:
 	if (result == PNG_NO_ERROR) {
-		png->image = malloc(png->width * png->height * png->bpp);
+		uint64_t size = png->width * png->height * png->bpp;
+
+		if (size < UINT_MAX)
+			png->image = malloc(size);
 		if (png->image == NULL)
 			result = PNG_MEMORY_ERROR;
 	}
@@ -196,7 +221,7 @@ done:
 
 	if (result != PNG_NO_ERROR) {
 		free(png->image);
-		close(png->fd);
+		(void) close(png->fd);
 		png->fd = -1;
 		return (result);
 	}
@@ -207,7 +232,7 @@ done:
 int
 png_close(png_t *png)
 {
-	close(png->fd);
+	(void) close(png->fd);
 	png->fd = -1;
 	free(png->image);
 	png->image = NULL;
@@ -219,16 +244,18 @@ static int
 png_init_inflate(png_t *png)
 {
 	z_stream *stream;
-	png->zs = malloc(sizeof (z_stream));
+	png->zs = calloc(1, sizeof (z_stream));
 
 	stream = png->zs;
 
 	if (!stream)
 		return (PNG_MEMORY_ERROR);
 
-	memset(stream, 0, sizeof (z_stream));
-	if (inflateInit(stream) != Z_OK)
+	if (inflateInit(stream) != Z_OK) {
+		free(png->zs);
+		png->zs = NULL;
 		return (PNG_ZLIB_ERROR);
+	}
 
 	stream->next_out = png->png_data;
 	stream->avail_out = png->png_datalen;
@@ -240,18 +267,20 @@ static int
 png_end_inflate(png_t *png)
 {
 	z_stream *stream = png->zs;
+	int rc = PNG_NO_ERROR;
 
 	if (!stream)
 		return (PNG_MEMORY_ERROR);
 
 	if (inflateEnd(stream) != Z_OK) {
 		printf("ZLIB says: %s\n", stream->msg);
-		return (PNG_ZLIB_ERROR);
+		rc = PNG_ZLIB_ERROR;
 	}
 
 	free(png->zs);
+	png->zs = NULL;
 
-	return (PNG_NO_ERROR);
+	return (rc);
 }
 
 static int
@@ -284,26 +313,25 @@ png_read_idat(png_t *png, unsigned length)
 {
 	unsigned orig_crc;
 	unsigned calc_crc;
+	ssize_t len = length;
 
 	if (!png->readbuf || png->readbuflen < length) {
-		if (png->readbuf)
-			free(png->readbuf);
-
-		png->readbuf = malloc(length);
+		png->readbuf = realloc(png->readbuf, length);
 		png->readbuflen = length;
 	}
 
 	if (!png->readbuf)
 		return (PNG_MEMORY_ERROR);
 
-	if (file_read(png, png->readbuf, 1, length) != length)
+	if (file_read(png, png->readbuf, 1, length) != len)
 		return (PNG_FILE_ERROR);
 
 	calc_crc = crc32(0L, Z_NULL, 0);
 	calc_crc = crc32(calc_crc, (uint8_t *)"IDAT", 4);
 	calc_crc = crc32(calc_crc, (uint8_t *)png->readbuf, length);
 
-	file_read_ul(png, &orig_crc);
+	if (file_read_ul(png, &orig_crc) != PNG_NO_ERROR)
+		return (PNG_FILE_ERROR);
 
 	if (orig_crc != calc_crc)
 		return (PNG_CRC_ERROR);
@@ -318,16 +346,17 @@ png_process_chunk(png_t *png)
 	unsigned type;
 	unsigned length;
 
-	file_read_ul(png, &length);
+	if (file_read_ul(png, &length) != PNG_NO_ERROR)
+		return (PNG_FILE_ERROR);
 
-	if (file_read(png, &type, 1, 4) != 4)
+	if (file_read_ul(png, &type) != PNG_NO_ERROR)
 		return (PNG_FILE_ERROR);
 
 	/*
 	 * if we found an idat, all other idats should be followed with no
 	 * other chunks in between
 	 */
-	if (type == *(unsigned int *)"IDAT") {
+	if (type == png_IDAT) {
 		if (!png->png_data) {	/* first IDAT */
 			png->png_datalen = png->width * png->height *
 			    png->bpp + png->height;
@@ -344,18 +373,18 @@ png_process_chunk(png_t *png)
 		}
 
 		return (png_read_idat(png, length));
-	} else if (type == *(unsigned int *)"IEND")
+	} else if (type == png_IEND)
 		return (PNG_DONE);
 	else
-		file_read(png, 0, 1, length + 4); /* unknown chunk */
+		(void) file_read(png, 0, 1, length + 4); /* unknown chunk */
 
 	return (result);
 }
 
 static void
-png_filter_sub(int stride, uint8_t *in, uint8_t *out, int len)
+png_filter_sub(unsigned stride, uint8_t *in, uint8_t *out, unsigned len)
 {
-	int i;
+	unsigned i;
 	uint8_t a = 0;
 
 	for (i = 0; i < len; i++) {
@@ -367,10 +396,10 @@ png_filter_sub(int stride, uint8_t *in, uint8_t *out, int len)
 }
 
 static void
-png_filter_up(int stride, uint8_t *in, uint8_t *out, uint8_t *prev_line,
-    int len)
+png_filter_up(unsigned stride __unused, uint8_t *in, uint8_t *out,
+    uint8_t *prev_line, unsigned len)
 {
-	int i;
+	unsigned i;
 
 	if (prev_line) {
 		for (i = 0; i < len; i++)
@@ -380,10 +409,10 @@ png_filter_up(int stride, uint8_t *in, uint8_t *out, uint8_t *prev_line,
 }
 
 static void
-png_filter_average(int stride, uint8_t *in, uint8_t *out, uint8_t *prev_line,
-    int len)
+png_filter_average(unsigned stride, uint8_t *in, uint8_t *out,
+    uint8_t *prev_line, unsigned len)
 {
-	int i;
+	unsigned int i;
 	uint8_t a = 0;
 	uint8_t b = 0;
 	unsigned int sum = 0;
@@ -398,7 +427,7 @@ png_filter_average(int stride, uint8_t *in, uint8_t *out, uint8_t *prev_line,
 		sum = a;
 		sum += b;
 
-		out[i] = (char)(in[i] + sum/2);
+		out[i] = in[i] + sum/2;
 	}
 }
 
@@ -423,10 +452,10 @@ png_paeth(uint8_t a, uint8_t b, uint8_t c)
 }
 
 static void
-png_filter_paeth(int stride, uint8_t *in, uint8_t *out, uint8_t *prev_line,
-    int len)
+png_filter_paeth(unsigned stride, uint8_t *in, uint8_t *out, uint8_t *prev_line,
+    unsigned len)
 {
-	int i;
+	unsigned i;
 	uint8_t a;
 	uint8_t b;
 	uint8_t c;
@@ -461,8 +490,7 @@ png_unfilter(png_t *png, uint8_t *data)
 	unsigned pos = 0;
 	unsigned outpos = 0;
 	uint8_t *filtered = png->png_data;
-
-	int stride = png->bpp;
+	unsigned stride = png->bpp;
 
 	while (pos < png->png_datalen) {
 		uint8_t filter = filtered[pos];
@@ -546,7 +574,7 @@ png_get_data(png_t *png, uint8_t *data)
 		png->readbuflen = 0;
 	}
 	if (png->zs)
-		png_end_inflate(png);
+		(void) png_end_inflate(png);
 
 	if (result != PNG_DONE) {
 		free(png->png_data);

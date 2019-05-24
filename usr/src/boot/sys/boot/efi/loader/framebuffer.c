@@ -27,6 +27,7 @@
  */
 
 #include <sys/cdefs.h>
+
 #include <stand.h>
 #include <bootstrap.h>
 #include <sys/endian.h>
@@ -43,9 +44,9 @@
 #include "gfx_fb.h"
 #include "framebuffer.h"
 
-static EFI_GUID gop_guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+EFI_GUID gop_guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
 static EFI_GUID pciio_guid = EFI_PCI_IO_PROTOCOL_GUID;
-static EFI_GUID uga_guid = EFI_UGA_DRAW_PROTOCOL_GUID;
+EFI_GUID uga_guid = EFI_UGA_DRAW_PROTOCOL_GUID;
 static EFI_GUID active_edid_guid = EFI_EDID_ACTIVE_PROTOCOL_GUID;
 static EFI_GUID discovered_edid_guid = EFI_EDID_DISCOVERED_PROTOCOL_GUID;
 
@@ -55,11 +56,11 @@ static uint32_t default_mode = (uint32_t)-1;
 static uint32_t gop_default_mode(void);
 static int efifb_set_mode(EFI_GRAPHICS_OUTPUT *, u_int);
 
-static u_int
+static uint_t
 efifb_color_depth(struct efi_fb *efifb)
 {
 	uint32_t mask;
-	u_int depth;
+	uint_t depth;
 
 	mask = efifb->fb_mask_red | efifb->fb_mask_green |
 	    efifb->fb_mask_blue | efifb->fb_mask_reserved;
@@ -452,11 +453,10 @@ efifb_gop_get_edid(EFI_HANDLE gop)
 	EFI_STATUS status;
 	size_t size;
 
-	edid_info = malloc(sizeof (*edid_info));
+	edid_info = calloc(1, sizeof (*edid_info));
 	if (edid_info == NULL)
 		return (NULL);
 
-	memset (edid_info, 0, sizeof (*edid_info));
 	guid = &active_edid_guid;
 	status = BS->OpenProtocol(gop, guid, (VOID **)&edid, IH, NULL,
 	    EFI_OPEN_PROTOCOL_GET_PROTOCOL);
@@ -492,21 +492,16 @@ error:
 }
 
 static int
-efifb_get_edid(int *pwidth, int *pheight)
+efifb_get_edid(UINT32 *pwidth, UINT32 *pheight)
 {
 	extern EFI_GRAPHICS_OUTPUT *gop;
 	struct vesa_edid_info *edid_info;
-	struct edid_detailed_timings *timings;
 	int rv = 1;
 
 	edid_info = efifb_gop_get_edid(gop);
 	if (edid_info != NULL) {
-		timings = edid_info->detailed_timings;
-		*pwidth = timings[0].horizontal_active_lo |
-		    (((int)(timings[0].horizontal_hi & 0xf0)) << 4);
-
-		*pheight = timings[0].vertical_active_lo |
-		    (((int)(timings[0].vertical_hi & 0xf0)) << 4);
+		*pwidth = GET_EDID_INFO_WIDTH(edid_info, 0);
+		*pheight = GET_EDID_INFO_HEIGHT(edid_info, 0);
 		rv = 0;
 	}
 	free(edid_info);
@@ -549,8 +544,8 @@ efi_find_framebuffer(struct efi_fb *efifb)
 static void
 print_efifb(int mode, struct efi_fb *efifb, int verbose)
 {
-	u_int depth;
-	int width, height;
+	uint_t depth;
+	UINT32 width, height;
 
 	if (verbose == 1) {
 		printf("Framebuffer mode: %s\n",
@@ -598,50 +593,21 @@ efifb_set_mode(EFI_GRAPHICS_OUTPUT *gop, u_int mode)
 	return (CMD_OK);
 }
 
-static int
-efifb_parse_mode_str(char *str, int *x, int *y, int *depth)
-{
-	char *p;
-
-	p = str;
-	*x = strtoul(p, NULL, 0);
-	if (*x == 0)
-		return (0);
-	p = strchr(p, 'x');
-	if (!p)
-		return (0);
-	++p;
-	*y = strtoul(p, NULL, 0);
-	if (*y == 0)
-		return (0);
-	p = strchr(p, 'x');
-	if (!p) {
-		*depth = -1;	/* auto select */
-	} else {
-		++p;
-		*depth = strtoul(p, NULL, 0);
-		if (*depth == 0)
-			return (0);
-	}
-
-	return (1);
-}
-
 /*
  * Verify existance of mode number or find mode by
  * dimensions. If depth is not given, walk values 32, 24, 16, 8.
  * Return MaxMode if mode is not found.
  */
 static int
-efifb_find_mode_xydm(int x, int y, int depth, int m)
+efifb_find_mode_xydm(UINT32 x, UINT32 y, int depth, int m)
 {
 	extern EFI_GRAPHICS_OUTPUT *gop;
 	EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
 	EFI_STATUS status;
 	UINTN infosz;
 	struct efi_fb fb;
-	uint32_t mode;
-        int d, i;
+	UINT32 mode;
+        uint_t d, i;
 
         if (m != -1)
                 i = 8;
@@ -657,7 +623,7 @@ efifb_find_mode_xydm(int x, int y, int depth, int m)
 				continue;
 
 			if (m != -1) {
-				if (m == mode)
+				if ((UINT32)m == mode)
 					return (mode);
 				else
 					continue;
@@ -684,7 +650,7 @@ efifb_find_mode(char *str)
 	extern EFI_GRAPHICS_OUTPUT *gop;
 	int x, y, depth;
 
-	if (!efifb_parse_mode_str(str, &x, &y, &depth))
+	if (!gfx_parse_mode_str(str, &x, &y, &depth))
 		return (gop->Mode->MaxMode);
 
 	return (efifb_find_mode_xydm(x, y, depth, -1));
@@ -697,7 +663,7 @@ static uint32_t
 gop_default_mode(void)
 {
 	extern EFI_GRAPHICS_OUTPUT *gop;
-	int mode, width = 0, height = 0;
+	UINT32 mode, width = 0, height = 0;
 
 	mode = gop->Mode->MaxMode;
 	if (efifb_get_edid(&width, &height) == 0)
@@ -719,7 +685,6 @@ command_gop(int argc, char *argv[])
 	extern EFI_GRAPHICS_OUTPUT *gop;
 	struct efi_fb fb;
 	EFI_STATUS status;
-	EFI_CONSOLE_CONTROL_SCREEN_MODE screen_mode;
 	char *arg, *cp;
 	u_int mode;
 

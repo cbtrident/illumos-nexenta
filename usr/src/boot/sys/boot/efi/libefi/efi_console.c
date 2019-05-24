@@ -1,4 +1,4 @@
-/*-
+/*
  * Copyright (c) 2000 Doug Rabson
  * All rights reserved.
  *
@@ -42,18 +42,24 @@ EFI_UGA_DRAW_PROTOCOL	*uga;
 static EFI_GUID ccontrol_protocol_guid = EFI_CONSOLE_CONTROL_PROTOCOL_GUID;
 static EFI_CONSOLE_CONTROL_PROTOCOL	*console_control;
 static EFI_GUID simple_input_ex_guid = EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL_GUID;
-static EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *coninex;
-static SIMPLE_TEXT_OUTPUT_INTERFACE	*conout;
-static SIMPLE_INPUT_INTERFACE		*conin;
 static EFI_CONSOLE_CONTROL_SCREEN_MODE	console_mode;
+static SIMPLE_TEXT_OUTPUT_INTERFACE	*conout;
 
 /* mode change callback and argument from tem */
 static vis_modechg_cb_t modechg_cb;
 static struct vis_modechg_arg *modechg_arg;
 static tem_vt_state_t tem;
 
+struct efi_console_data {
+	struct visual_ops			*ecd_visual_ops;
+	SIMPLE_INPUT_INTERFACE			*ecd_conin;
+	EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL	*ecd_coninex;
+};
+
 #define	KEYBUFSZ 10
 static unsigned keybuf[KEYBUFSZ];      /* keybuf for extended codes */
+
+static int key_pending;
 
 static const unsigned char solaris_color_to_efi_color[16] = {
 	EFI_WHITE,
@@ -87,6 +93,7 @@ static void efi_cons_efiputchar(int);
 static int efi_cons_getchar(struct console *);
 static int efi_cons_poll(struct console *);
 static int efi_cons_ioctl(struct console *cp, int cmd, void *data);
+static void efi_cons_devinfo(struct console *);
 
 static int efi_fb_devinit(struct vis_devinit *);
 static void efi_cons_cursor(struct vis_conscursor *);
@@ -106,6 +113,7 @@ struct console efi_console = {
 	.c_in = efi_cons_getchar,
 	.c_ready = efi_cons_poll,
 	.c_ioctl = efi_cons_ioctl,
+	.c_devinfo = efi_cons_devinfo,
 	.c_private = NULL
 };
 
@@ -149,6 +157,14 @@ plat_tem_hide_prom_cursor(void)
 	conout->EnableCursor(conout, FALSE);
 }
 
+static void
+plat_tem_display_prom_cursor(screen_pos_t row, screen_pos_t col)
+{
+
+	conout->SetCursorPosition(conout, col, row);
+	conout->EnableCursor(conout, TRUE);
+}
+
 void
 plat_tem_get_prom_pos(uint32_t *row, uint32_t *col)
 {
@@ -188,9 +204,9 @@ plat_tem_get_prom_size(size_t *height, size_t *width)
 void
 plat_cons_update_mode(int mode)
 {
-	EFI_STATUS status;
 	UINTN cols, rows;
 	struct vis_devinit devinit;
+	struct efi_console_data *ecd = efi_console.c_private;
 
 	/* Make sure we have usable console. */
 	if (efi_find_framebuffer(&efifb)) {
@@ -216,7 +232,7 @@ plat_cons_update_mode(int mode)
 		devinit.linebytes = cols;
 		devinit.color_map = NULL;
 		devinit.mode = VIS_TEXT;
-		efi_console.c_private = &text_ops;
+		ecd->ecd_visual_ops = &text_ops;
 	} else {
 		devinit.version = VIS_CONS_REV;
 		devinit.width = gfx_fb.framebuffer_common.framebuffer_width;
@@ -225,7 +241,7 @@ plat_cons_update_mode(int mode)
 		devinit.linebytes = gfx_fb.framebuffer_common.framebuffer_pitch;
 		devinit.color_map = gfx_fb_color_map;
 		devinit.mode = VIS_PIXEL;
-		efi_console.c_private = &fb_ops;
+		ecd->ecd_visual_ops = &fb_ops;
 	}
 
 	modechg_cb(modechg_arg, &devinit);
@@ -343,13 +359,8 @@ static void efi_cons_cursor(struct vis_conscursor *cc)
 	case VIS_DISPLAY_CURSOR:
 		if (plat_stdout_is_framebuffer())
 			gfx_fb_display_cursor(cc);
-		else {
-			UINTN row, col;
-			row = cc->row;
-			col = cc->col;
-			conout->SetCursorPosition(conout, col, row);
-			conout->EnableCursor(conout, TRUE);
-		}
+		else
+			plat_tem_display_prom_cursor(cc->row, cc->col);
 		break;
 	case VIS_GET_CURSOR: {	/* only used at startup */
 		uint32_t row, col;
@@ -365,7 +376,8 @@ static void efi_cons_cursor(struct vis_conscursor *cc)
 static int
 efi_cons_ioctl(struct console *cp, int cmd, void *data)
 {
-	struct visual_ops *ops = cp->c_private;
+	struct efi_console_data *ecd = cp->c_private;
+	struct visual_ops *ops = ecd->ecd_visual_ops;
 
 	switch (cmd) {
 	case VIS_GETIDENTIFIER:
@@ -432,11 +444,21 @@ efi_framebuffer_setup(void)
 static void
 efi_cons_probe(struct console *cp)
 {
+	struct efi_console_data *ecd;
 	EFI_STATUS status;
 	UINTN i, max_dim, best_mode, cols, rows;
 
+	ecd = calloc(1, sizeof (*ecd));
+	/*
+	 * As console probing is called very early, the only reason for
+	 * out of memory can be that we just do not have enough memory.
+	 */
+	if (ecd == NULL)
+		panic("efi_cons_probe: This system has not enough memory\n");
+	cp->c_private = ecd;
+
 	conout = ST->ConOut;
-	conin = ST->ConIn;
+	ecd->ecd_conin = ST->ConIn;
 	cp->c_flags |= C_PRESENTIN | C_PRESENTOUT;
 
 	status = BS->LocateProtocol(&ccontrol_protocol_guid, NULL,
@@ -467,19 +489,19 @@ efi_cons_probe(struct console *cp)
 		setenv("screen-#cols", "80", 1);
 	} else {
 		char env[8];
-		sprintf(env, "%u", (unsigned)rows);
+		snprintf(env, sizeof (env), "%u", (unsigned)rows);
 		setenv("screen-#rows", env, 1);
-		sprintf(env, "%u", (unsigned)cols);
+		snprintf(env, sizeof (env), "%u", (unsigned)cols);
 		setenv("screen-#cols", env, 1);
 	}
 
 	if (efi_find_framebuffer(&efifb)) {
 		console_mode = EfiConsoleControlScreenText;
-		cp->c_private = &text_ops;
+		ecd->ecd_visual_ops = &text_ops;
 	} else {
 		efi_framebuffer_setup();
 		console_mode = EfiConsoleControlScreenGraphics;
-		cp->c_private = &fb_ops;
+		ecd->ecd_visual_ops = &fb_ops;
 	}
 
 	if (console_control != NULL)
@@ -492,17 +514,25 @@ efi_cons_probe(struct console *cp)
 static int
 efi_cons_init(struct console *cp, int arg __unused)
 {
+	struct efi_console_data *ecd;
+	void *coninex;
 	EFI_STATUS status;
 	int rc;
 
 	conout->SetAttribute(conout, EFI_TEXT_ATTR(DEFAULT_FGCOLOR,
 	    DEFAULT_BGCOLOR));
 	memset(keybuf, 0, KEYBUFSZ);
-#if 0
-	status = BS->OpenProtocol(ST->ConsoleInHandle, &simple_input_ex_guid,
-	    (void**)&coninex, IH, NULL, EFI_OPEN_PROTOCOL_GET_PROTOCOL);
-#endif
+
+	ecd = cp->c_private;
 	coninex = NULL;
+	/*
+	 * Try to set up for SimpleTextInputEx protocol. If not available,
+	 * we will use SimpleTextInput protocol.
+	 */
+	status = BS->OpenProtocol(ST->ConsoleInHandle, &simple_input_ex_guid,
+	    &coninex, IH, NULL, EFI_OPEN_PROTOCOL_GET_PROTOCOL);
+	if (status == EFI_SUCCESS)
+		ecd->ecd_coninex = coninex;
 
 	gfx_framework_init(&fb_ops);
 	rc = tem_info_init(cp);
@@ -516,7 +546,7 @@ efi_cons_init(struct console *cp, int arg __unused)
 	if (tem == NULL)
 		panic("Failed to set up console terminal");
 
-	return 0;
+	return (0);
 }
 
 static void
@@ -532,82 +562,178 @@ efi_cons_putchar(struct console *cp __unused, int c)
 }
 
 static int
-efi_cons_getchar(struct console *cp __unused)
+keybuf_getchar(void)
 {
-	EFI_INPUT_KEY key, *kp;
-	EFI_KEY_DATA  key_data;
-	EFI_STATUS status;
-	UINTN junk;
-	int i, c;
+	int i, c = 0;
 
 	for (i = 0; i < KEYBUFSZ; i++) {
 		if (keybuf[i] != 0) {
 			c = keybuf[i];
 			keybuf[i] = 0;
-			return (c);
+			break;
 		}
 	}
 
-	if (coninex != NULL) {
-		status = coninex->ReadKeyStrokeEx(coninex, &key_data);
-		if (status == EFI_NOT_READY) {
-			BS->WaitForEvent(1, &coninex->WaitForKeyEx, &junk);
-			status = coninex->ReadKeyStrokeEx(coninex, &key_data);
-		}
-		kp = &key_data.Key;
-	} else {
-		status = conin->ReadKeyStroke(conin, &key);
-		if (status == EFI_NOT_READY) {
-			BS->WaitForEvent(1, &conin->WaitForKey, &junk);
-			status = conin->ReadKeyStroke(conin, &key);
-		}
-		kp = &key;
-	}
-
-	if (status != EFI_SUCCESS) {
-		return (-1);
-	}
-
-	switch (kp->ScanCode) {
-	case 0x1: /* UP */
-		keybuf[0] = '[';
-		keybuf[1] = 'A';
-		return (0x1b);  /* esc */
-	case 0x2: /* DOWN */
-		keybuf[0] = '[';
-		keybuf[1] = 'B';
-		return (0x1b);  /* esc */
-	case 0x3: /* RIGHT */
-		keybuf[0] = '[';
-		keybuf[1] = 'C';
-		return (0x1b);  /* esc */
-	case 0x4: /* LEFT */
-		keybuf[0] = '[';
-		keybuf[1] = 'D';
-		return (0x1b);  /* esc */
-	case 0x17: /* ESC */
-		return (0x1b);  /* esc */
-	}
-
-	/* this can return  */
-	return (kp->UnicodeChar);
+	return (c);
 }
 
-static int
-efi_cons_poll(struct console *cp __unused)
+static bool
+keybuf_ischar(void)
 {
 	int i;
 
 	for (i = 0; i < KEYBUFSZ; i++) {
 		if (keybuf[i] != 0)
-			return (1);
+			return (true);
+	}
+	return (false);
+}
+
+/*
+ * We are not reading input before keybuf is empty, so we are safe
+ * just to fill keybuf from the beginning.
+ */
+static void
+keybuf_inschar(EFI_INPUT_KEY *key)
+{
+
+	switch (key->ScanCode) {
+	case 0x1: /* UP */
+		keybuf[0] = 0x1b;	/* esc */
+		keybuf[1] = '[';
+		keybuf[2] = 'A';
+		break;
+	case 0x2: /* DOWN */
+		keybuf[0] = 0x1b;	/* esc */
+		keybuf[1] = '[';
+		keybuf[2] = 'B';
+		break;
+	case 0x3: /* RIGHT */
+		keybuf[0] = 0x1b;	/* esc */
+		keybuf[1] = '[';
+		keybuf[2] = 'C';
+		break;
+	case 0x4: /* LEFT */
+		keybuf[0] = 0x1b;	/* esc */
+		keybuf[1] = '[';
+		keybuf[2] = 'D';
+		break;
+	case 0x17:
+		keybuf[0] = 0x1b;	/* esc */
+		break;
+	default:
+		keybuf[0] = key->UnicodeChar;
+		break;
+	}
+}
+
+static bool
+efi_readkey(SIMPLE_INPUT_INTERFACE *conin)
+{
+	EFI_STATUS status;
+	EFI_INPUT_KEY key;
+
+	status = conin->ReadKeyStroke(conin, &key);
+	if (status == EFI_SUCCESS) {
+		keybuf_inschar(&key);
+		return (true);
+	}
+	return (false);
+}
+
+static bool
+efi_readkey_ex(EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *coninex)
+{
+	EFI_STATUS status;
+	EFI_INPUT_KEY *kp;
+	EFI_KEY_DATA  key_data;
+	uint32_t kss;
+
+	status = coninex->ReadKeyStrokeEx(coninex, &key_data);
+	if (status == EFI_SUCCESS) {
+		kss = key_data.KeyState.KeyShiftState;
+		kp = &key_data.Key;
+		if (kss & EFI_SHIFT_STATE_VALID) {
+
+			/*
+			 * quick mapping to control chars, replace with
+			 * map lookup later.
+			 */
+			if (kss & EFI_RIGHT_CONTROL_PRESSED ||
+			    kss & EFI_LEFT_CONTROL_PRESSED) {
+				if (kp->UnicodeChar >= 'a' &&
+				    kp->UnicodeChar <= 'z') {
+					kp->UnicodeChar -= 'a';
+					kp->UnicodeChar++;
+				}
+			}
+		}
+
+		keybuf_inschar(kp);
+		return (true);
+	}
+	return (false);
+}
+
+static int
+efi_cons_getchar(struct console *cp)
+{
+	struct efi_console_data *ecd;
+	int c;
+
+	if ((c = keybuf_getchar()) != 0)
+		return (c);
+
+	ecd = cp->c_private;
+	key_pending = 0;
+
+	if (ecd->ecd_coninex == NULL) {
+		if (efi_readkey(ecd->ecd_conin))
+			return (keybuf_getchar());
+	} else {
+		if (efi_readkey_ex(ecd->ecd_coninex))
+			return (keybuf_getchar());
 	}
 
-	/* This can clear the signaled state. */
-	if (coninex != NULL)
-		return (BS->CheckEvent(coninex->WaitForKeyEx) == EFI_SUCCESS);
-	else
-		return (BS->CheckEvent(conin->WaitForKey) == EFI_SUCCESS);
+	return (-1);
+}
+
+static int
+efi_cons_poll(struct console *cp)
+{
+	struct efi_console_data *ecd;
+	EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *coninex;
+	SIMPLE_INPUT_INTERFACE *conin;
+	EFI_STATUS status;
+
+	if (keybuf_ischar() || key_pending)
+		return (1);
+
+	ecd = cp->c_private;
+	coninex = ecd->ecd_coninex;
+	conin = ecd->ecd_conin;
+	/*
+	 * Some EFI implementation (u-boot for example) do not support
+	 * WaitForKey().
+	 * CheckEvent() can clear the signaled state.
+	 */
+	if (coninex != NULL) {
+		if (coninex->WaitForKeyEx == NULL)
+			key_pending = efi_readkey_ex(coninex);
+		else {
+			status = BS->CheckEvent(coninex->WaitForKeyEx);
+			key_pending = status == EFI_SUCCESS;
+		}
+	} else {
+		if (conin->WaitForKey == NULL)
+			key_pending = efi_readkey(conin);
+		else {
+			status = BS->CheckEvent(conin->WaitForKey);
+			key_pending = status == EFI_SUCCESS;
+		}
+	}
+
+	return (key_pending);
 }
 
 /* Plain direct access to EFI OutputString(). */
@@ -624,4 +750,47 @@ efi_cons_efiputchar(int c)
 	if (EFI_ERROR(status))
 		buf[0] = '?';
 	conout->OutputString(conout, buf);
+}
+
+static void
+efi_cons_devinfo_print(EFI_HANDLE handle)
+{
+	EFI_DEVICE_PATH *dp;
+	CHAR16 *text;
+
+	dp = efi_lookup_devpath(handle);
+	if (dp == NULL)
+		return;
+
+	text = efi_devpath_name(dp);
+	if (text == NULL)
+		return;
+
+	printf("\t%S", text);
+	efi_free_devpath_name(text);
+}
+
+static void
+efi_cons_devinfo(struct console *cp __unused)
+{
+	EFI_HANDLE *handles;
+	UINTN nhandles;
+	extern EFI_GUID gop_guid;
+	extern EFI_GUID uga_guid;
+	EFI_STATUS status;
+
+	if (gop != NULL)
+		status = BS->LocateHandleBuffer(ByProtocol, &gop_guid, NULL,
+		    &nhandles, &handles);
+	else
+		status = BS->LocateHandleBuffer(ByProtocol, &uga_guid, NULL,
+		    &nhandles, &handles);
+
+	if (EFI_ERROR(status))
+		return;
+
+	for (UINTN i = 0; i < nhandles; i++)
+		efi_cons_devinfo_print(handles[i]);
+
+	BS->FreePool(handles);
 }

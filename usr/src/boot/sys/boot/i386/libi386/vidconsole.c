@@ -1,4 +1,4 @@
-/*-
+/*
  * Copyright (c) 1998 Michael Smith (msmith@freebsd.org)
  * Copyright (c) 1997 Kazutaka YOKOTA (yokota@zodiac.mech.utsunomiya-u.ac.jp)
  * All rights reserved.
@@ -24,7 +24,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * 	Id: probe_keyboard.c,v 1.13 1997/06/09 05:10:55 bde Exp
+ *	Id: probe_keyboard.c,v 1.13 1997/06/09 05:10:55 bde Exp
  */
 
 #include <sys/cdefs.h>
@@ -55,6 +55,7 @@ static int	vidc_getchar(struct console *cp);
 static int	vidc_ischar(struct console *cp);
 static int	vidc_ioctl(struct console *cp, int cmd, void *data);
 static void	vidc_biosputchar(int c);
+static void	vidc_devinfo(struct console *cp);
 
 static int vidc_vbe_devinit(struct vis_devinit *);
 static void vidc_cons_cursor(struct vis_conscursor *);
@@ -92,6 +93,7 @@ struct console text = {
 	.c_in = vidc_getchar,
 	.c_ready = vidc_ischar,
 	.c_ioctl = vidc_ioctl,
+	.c_devinfo = vidc_devinfo,
 	.c_private = NULL
 };
 
@@ -640,7 +642,6 @@ vidc_init(struct console *cp, int arg)
 		return (0);
 
 	vidc_started = 1;
-	gfx_framework_init(&fb_ops);
 
 	/*
 	 * Check Miscellaneous Output Register (Read at 3CCh, Write at 3C2h)
@@ -672,10 +673,11 @@ vidc_init(struct console *cp, int arg)
 			if (vbe_set_mode(rc) == 0)
 				cp->c_private = &fb_ops;
 			else
-				bios_set_text_mode(3);
+				bios_set_text_mode(VGA_TEXT_MODE);
 		}
 	}
 
+	gfx_framework_init(&fb_ops);
 	rc = tem_info_init(cp);
 
 	if (rc != 0) {
@@ -698,15 +700,15 @@ vidc_init(struct console *cp, int arg)
 static void
 vidc_biosputchar(int c)
 {
-    v86.ctl = 0;
-    v86.addr = 0x10;
-    v86.eax = 0xe00 | (c & 0xff);
-    v86.ebx = 0x7;
-    v86int();
+	v86.ctl = 0;
+	v86.addr = 0x10;
+	v86.eax = 0xe00 | (c & 0xff);
+	v86.ebx = 0x7;
+	v86int();
 }
 
 static void
-vidc_putchar(struct console *cp, int c)
+vidc_putchar(struct console *cp __unused, int c)
 {
 	uint8_t buf = c;
 
@@ -720,67 +722,81 @@ vidc_putchar(struct console *cp, int c)
 static int
 vidc_getchar(struct console *cp)
 {
-    int i, c;
+	int i, c;
 
-    for (i = 0; i < KEYBUFSZ; i++) {
-	if (keybuf[i] != 0) {
-	    c = keybuf[i];
-	    keybuf[i] = 0;
-	    return (c);
-	}
-    }
-
-    if (vidc_ischar(cp)) {
-	v86.ctl = 0;
-	v86.addr = 0x16;
-	v86.eax = 0x0;
-	v86int();
-	if ((v86.eax & 0xff) != 0) {
-		return (v86.eax & 0xff);
+	for (i = 0; i < KEYBUFSZ; i++) {
+		if (keybuf[i] != 0) {
+			c = keybuf[i];
+			keybuf[i] = 0;
+			return (c);
+		}
 	}
 
-	/* extended keys */
-	switch (v86.eax & 0xff00) {
-	case 0x4800:	/* up */
-		keybuf[0] = '[';
-		keybuf[1] = 'A';
-		return (0x1b);	/* esc */
-	case 0x4b00:	/* left */
-		keybuf[0] = '[';
-		keybuf[1] = 'D';
-		return (0x1b);	/* esc */
-	case 0x4d00:	/* right */
-		keybuf[0] = '[';
-		keybuf[1] = 'C';
-		return (0x1b);	/* esc */
-	case 0x5000:	/* down */
-		keybuf[0] = '[';
-		keybuf[1] = 'B';
-		return (0x1b);	/* esc */
-	default:
+	if (vidc_ischar(cp)) {
+		v86.ctl = 0;
+		v86.addr = 0x16;
+		v86.eax = 0x0;
+		v86int();
+		if ((v86.eax & 0xff) != 0) {
+			return (v86.eax & 0xff);
+		}
+
+		/* extended keys */
+		switch (v86.eax & 0xff00) {
+		case 0x4800:	/* up */
+			keybuf[0] = '[';
+			keybuf[1] = 'A';
+			return (0x1b);	/* esc */
+		case 0x4b00:	/* left */
+			keybuf[0] = '[';
+			keybuf[1] = 'D';
+			return (0x1b);	/* esc */
+		case 0x4d00:	/* right */
+			keybuf[0] = '[';
+			keybuf[1] = 'C';
+			return (0x1b);	/* esc */
+		case 0x5000:	/* down */
+			keybuf[0] = '[';
+			keybuf[1] = 'B';
+			return (0x1b);	/* esc */
+		default:
+			return (-1);
+		}
+	} else {
 		return (-1);
 	}
-    } else {
-	return (-1);
-    }
 }
 
 static int
-vidc_ischar(struct console *cp)
+vidc_ischar(struct console *cp __unused)
 {
-    int i;
+	int i;
 
-    for (i = 0; i < KEYBUFSZ; i++) {
-	if (keybuf[i] != 0) {
-	    return (1);
+	for (i = 0; i < KEYBUFSZ; i++) {
+		if (keybuf[i] != 0) {
+			return (1);
+		}
 	}
-    }
 
-    v86.ctl = V86_FLAGS;
-    v86.addr = 0x16;
-    v86.eax = 0x100;
-    v86int();
-    return (!V86_ZR(v86.efl));
+	v86.ctl = V86_FLAGS;
+	v86.addr = 0x16;
+	v86.eax = 0x100;
+	v86int();
+	return (!V86_ZR(v86.efl));
+}
+
+static void
+vidc_devinfo(struct console *cp __unused)
+{
+	if (plat_stdout_is_framebuffer()) {
+		printf("\tVESA %ux%ux%u framebuffer mode %#x",
+		    gfx_fb.framebuffer_common.framebuffer_width,
+		    gfx_fb.framebuffer_common.framebuffer_height,
+		    gfx_fb.framebuffer_common.framebuffer_bpp,
+		    vbe_get_mode());
+	} else {
+		printf("\tVGA %ux%u text mode", TEXT_COLS, TEXT_ROWS);
+	}
 }
 
 #if KEYBOARD_PROBE
@@ -791,10 +807,10 @@ vidc_ischar(struct console *cp)
 #define IO_KBD		0x060		/* 8042 Keyboard */
 
 /* selected defines from kbdio.h */
-#define KBD_STATUS_PORT 	4	/* status port, read */
-#define KBD_DATA_PORT		0	/* data port, read/write 
+#define	KBD_STATUS_PORT		4	/* status port, read */
+#define KBD_DATA_PORT		0	/* data port, read/write
 					 * also used as keyboard command
-					 * and mouse command port 
+					 * and mouse command port
 					 */
 #define KBDC_ECHO		0x00ee
 #define KBDS_ANY_BUFFER_FULL	0x0001
@@ -805,13 +821,13 @@ vidc_ischar(struct console *cp)
 static void
 delay7(void)
 {
-    /* 
-     * I know this is broken, but no timer is available yet at this stage...
-     * See also comments in `delay1ms()'.
-     */
-    inb(IO_DUMMY); inb(IO_DUMMY);
-    inb(IO_DUMMY); inb(IO_DUMMY);
-    inb(IO_DUMMY); inb(IO_DUMMY);
+	/*
+	 * I know this is broken, but no timer is available yet at this stage...
+	 * See also comments in `delay1ms()'.
+	 */
+	inb(IO_DUMMY); inb(IO_DUMMY);
+	inb(IO_DUMMY); inb(IO_DUMMY);
+	inb(IO_DUMMY); inb(IO_DUMMY);
 }
 
 /*
@@ -826,12 +842,12 @@ delay7(void)
 static void
 delay1ms(void)
 {
-    int i = 800;
-    while (--i >= 0)
-	(void)inb(0x84);
+	int i = 800;
+	while (--i >= 0)
+		(void)inb(0x84);
 }
 
-/* 
+/*
  * We use the presence/absence of a keyboard to determine whether the internal
  * console can be used for input.
  *
@@ -842,55 +858,57 @@ delay1ms(void)
 static int
 probe_keyboard(void)
 {
-    int retry = PROBE_MAXRETRY;
-    int wait;
-    int i;
+	int retry = PROBE_MAXRETRY;
+	int wait;
+	int i;
 
-    while (--retry >= 0) {
-	/* flush any noise */
-	while (inb(IO_KBD + KBD_STATUS_PORT) & KBDS_ANY_BUFFER_FULL) {
-	    delay7();
-	    inb(IO_KBD + KBD_DATA_PORT);
-	    delay1ms();
-	}
+	while (--retry >= 0) {
+		/* flush any noise */
+		while (inb(IO_KBD + KBD_STATUS_PORT) & KBDS_ANY_BUFFER_FULL) {
+			delay7();
+			inb(IO_KBD + KBD_DATA_PORT);
+			delay1ms();
+		}
 
-	/* wait until the controller can accept a command */
-	for (wait = PROBE_MAXWAIT; wait > 0; --wait) {
-	    if (((i = inb(IO_KBD + KBD_STATUS_PORT)) 
-                & (KBDS_INPUT_BUFFER_FULL | KBDS_ANY_BUFFER_FULL)) == 0)
-		break;
-	    if (i & KBDS_ANY_BUFFER_FULL) {
+		/* wait until the controller can accept a command */
+		for (wait = PROBE_MAXWAIT; wait > 0; --wait) {
+			if (((i = inb(IO_KBD + KBD_STATUS_PORT)) &
+			    (KBDS_INPUT_BUFFER_FULL | KBDS_ANY_BUFFER_FULL))
+			    == 0)
+				break;
+			if (i & KBDS_ANY_BUFFER_FULL) {
+				delay7();
+				inb(IO_KBD + KBD_DATA_PORT);
+			}
+			delay1ms();
+		}
+		if (wait <= 0)
+			continue;
+
+		/* send the ECHO command */
+		outb(IO_KBD + KBD_DATA_PORT, KBDC_ECHO);
+
+		/* wait for a response */
+		for (wait = PROBE_MAXWAIT; wait > 0; --wait) {
+			if (inb(IO_KBD + KBD_STATUS_PORT) &
+			    KBDS_ANY_BUFFER_FULL)
+				break;
+			delay1ms();
+		}
+		if (wait <= 0)
+			continue;
+
 		delay7();
-	        inb(IO_KBD + KBD_DATA_PORT);
-	    }
-	    delay1ms();
-	}
-	if (wait <= 0)
-	    continue;
-
-	/* send the ECHO command */
-	outb(IO_KBD + KBD_DATA_PORT, KBDC_ECHO);
-
-	/* wait for a response */
-	for (wait = PROBE_MAXWAIT; wait > 0; --wait) {
-	     if (inb(IO_KBD + KBD_STATUS_PORT) & KBDS_ANY_BUFFER_FULL)
-		 break;
-	     delay1ms();
-	}
-	if (wait <= 0)
-	    continue;
-
-	delay7();
-	i = inb(IO_KBD + KBD_DATA_PORT);
+		i = inb(IO_KBD + KBD_DATA_PORT);
 #ifdef PROBE_KBD_BEBUG
-        printf("probe_keyboard: got 0x%x.\n", i);
+		printf("probe_keyboard: got 0x%x.\n", i);
 #endif
-	if (i == KBD_ECHO) {
-	    /* got the right answer */
-	    return (1);
+		if (i == KBD_ECHO) {
+			/* got the right answer */
+			return (1);
+		}
 	}
-    }
 
-    return (0);
+	return (0);
 }
 #endif /* KEYBOARD_PROBE */

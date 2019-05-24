@@ -138,7 +138,7 @@ struct vis_cmap {
 };
 
 
-#if defined(_KERNEL) || defined(_BOOT)
+#if defined(_KERNEL) || defined(_STANDALONE)
 /*
  * The following ioctls are used for communication between the layered
  * device and the framebuffer.  The layered driver calls the framebuffer
@@ -162,11 +162,11 @@ typedef short screen_size_t;
  * Union of pixel depths
  */
 typedef union {
-	unsigned char  mono;   /* one-bit */
-	unsigned char  four;   /* four bit */
-	unsigned char  eight;  /* eight bit */
-	unsigned char  sixteen[2];  /* 16 bit */
-	unsigned char  twentyfour[3];  /* 24 bit */
+	unsigned char mono;		/* one-bit */
+	unsigned char four;		/* four bit */
+	unsigned char eight;		/* eight bit */
+	unsigned char sixteen[2];	/* 16 bit */
+	unsigned char twentyfour[3];	/* 24 bit */
 } color_t;
 
 /*
@@ -319,7 +319,18 @@ struct vis_devinit {
 	struct vis_modechg_arg *modechg_arg; /* Mode change cb arg */
 };
 
-#endif	/* _KERNEL || _BOOT */
+struct visual_ops {
+	const struct vis_identifier *ident;
+	int (*kdsetmode)(int);
+	int (*devinit)(struct vis_devinit *);
+	void (*cons_copy)(struct vis_conscopy *);
+	void (*cons_display)(struct vis_consdisplay *);
+	void (*cons_cursor)(struct vis_conscursor *);
+	int (*cons_clear)(struct vis_consclear *);
+	int (*cons_put_cmap)(struct vis_cmap *);
+};
+
+#endif	/* _KERNEL || _STANDALONE */
 
 #ifdef __cplusplus
 }

@@ -10,7 +10,8 @@
 #
 
 #
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2019 Nexenta Systems, Inc.
+# Copyright 2019 Joyent, Inc.
 #
 
 SUBDIRS=	consfonts \
@@ -19,7 +20,10 @@ SUBDIRS=	consfonts \
 		terminfo \
 		zoneinfo
 
-MSGSUBDIRS= 	zoneinfo
+# XXX Remove me
+SUBDIRS +=	bootcompat
+
+MSGSUBDIRS=	zoneinfo
 
 all :=		TARGET=all
 clean :=	TARGET=clean

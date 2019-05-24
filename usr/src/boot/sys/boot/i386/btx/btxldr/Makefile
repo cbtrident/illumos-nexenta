@@ -14,31 +14,23 @@
 #
 
 include $(SRC)/Makefile.master
+include $(SRC)/boot/sys/boot/Makefile.inc
+include ../../Makefile.inc
 
 PROG=	btxldr
 SRCS=	btxldr.S
 OBJS=	btxldr.o
 
-AS=	$(GNU_ROOT)/bin/gas
-LD=	$(GNU_ROOT)/bin/gld
-CC=	$(GNUC_ROOT)/bin/gcc
-
-LOADER_ADDRESS=0x200000
-CPPFLAGS=
-CFLAGS = -m32 -DLOADER_ADDRESS=${LOADER_ADDRESS}
-CFLAGS += -I./../../common
-CFLAGS += -Wa,--divide
-CFLAGS += -DBTXLDR_VERBOSE
+CPPFLAGS += -DLOADER_ADDRESS=${LOADER_ADDRESS}
+CPPFLAGS += -DBTXLDR_VERBOSE
+CPPFLAGS += -I./../../common
 
 LDFLAGS=-e start -Ttext ${LOADER_ADDRESS} -N -S --oformat binary
 
+all install:	$(PROG)
+
 $(PROG): $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS)
-
-.S.o:
-	$(COMPILE.S) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
-
-all:	$(PROG)
 
 clobber: clean
 

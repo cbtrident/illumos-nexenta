@@ -15,13 +15,17 @@
 
 COMDIR=		$(SRC)/common/crypto
 MACHINE=	$(MACH64)
-ASFLAGS=	-m64
+AS=		$(AS_amd64_64)
 
 all:		libcrypto.a
 
-include ../Makefile.com
+SRCS = sha1-x86_64.s
+OBJS = sha1-x86_64.o
 
-CFLAGS +=	-m64
-CLEANFILES +=	machine x86
+include ../Makefile.com
+ASFLAGS =	$(amd64_AS_XARCH) -I$(SRC)/uts/common -D_ASM
+
+CFLAGS +=	-m64 $(CFLAGS64)
+CLEANFILES +=	machine x86 sha1-x86_64.s
 
 $(OBJS): machine x86

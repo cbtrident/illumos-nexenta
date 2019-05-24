@@ -252,21 +252,20 @@ tem_internal_init(struct tem_vt_state *ptem, cred_t *credp,
 			ptem->tvs_screen_rows[i][j].tc_bg_color = bg;
 			ptem->tvs_screen_rows[i][j].tc_char =
 			    TEM_ATTR(attr) | ' ';
-
 		}
 	}
 
 	ptem->tvs_initialized = B_TRUE;
 }
 
-int
+boolean_t
 tem_initialized(tem_vt_state_t tem_arg)
 {
 	struct tem_vt_state *ptem = (struct tem_vt_state *)tem_arg;
-	int ret;
+	boolean_t ret;
 
 	mutex_enter(&ptem->tvs_lock);
-	ret = ptem->tvs_initialized == B_TRUE? 1 : 0;
+	ret = ptem->tvs_initialized;
 	mutex_exit(&ptem->tvs_lock);
 
 	return (ret);
@@ -774,11 +773,8 @@ tems_reset_colormap(cred_t *credp, enum called_from called_from)
 	case 8:
 		cm.index = 0;
 		cm.count = 16;
-		/* 8-bits (1/3 of TrueColor 24) */
 		cm.red   = (uint8_t *)cmap4_to_24.red;
-		/* 8-bits (1/3 of TrueColor 24) */
 		cm.blue  = (uint8_t *)cmap4_to_24.blue;
-		/* 8-bits (1/3 of TrueColor 24) */
 		cm.green = (uint8_t *)cmap4_to_24.green;
 		(void) ldi_ioctl(tems.ts_hdl, VIS_PUTCMAP, (intptr_t)&cm,
 		    FKIOCTL, credp, &rval);
@@ -913,6 +909,19 @@ tem_pix_align(struct tem_vt_state *tem, cred_t *credp,
 		tem->tvs_s_cursor.row = tem->tvs_c_cursor.row =
 		    (screen_pos_t)row;
 		tem->tvs_s_cursor.col = tem->tvs_c_cursor.col = 0;
+
+		/*
+		 * When tem is starting up, part of the screen is filled
+		 * with information from boot loader and early boot.
+		 * For tem, the screen content above current cursor
+		 * should be treated as image.
+		 */
+		for (; row > 0; row--) {
+			for (col = 0; col < tems.ts_c_dimension.width; col++) {
+				tem->tvs_screen_rows[row][col].tc_char =
+				    TEM_ATTR(TEM_ATTR_IMAGE);
+			}
+		}
 	} else {
 		tem_safe_reset_display(tem, credp, called_from, B_TRUE, B_TRUE);
 	}
@@ -943,6 +952,10 @@ tems_get_initial_color(tem_color_t *pcolor)
 	pcolor->fg_color = DEFAULT_ANSI_FOREGROUND;
 	pcolor->bg_color = DEFAULT_ANSI_BACKGROUND;
 #ifndef _HAVE_TEM_FIRMWARE
+	/*
+	 * _HAVE_TEM_FIRMWARE is defined on SPARC, at this time, the
+	 * plat_tem_get_colors() is implemented only on x86.
+	 */
 	plat_tem_get_colors(&pcolor->fg_color, &pcolor->bg_color);
 #endif
 

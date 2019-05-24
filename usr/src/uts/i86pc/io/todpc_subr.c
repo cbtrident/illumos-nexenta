@@ -374,6 +374,7 @@ todpc_rtcget(unsigned char *buf)
 		drv_usecwait(5000);		/* Delay for 5000 us */
 	}
 
+
 checkuip:
 	if (uip_try-- < 0)
 		return (EAGAIN);

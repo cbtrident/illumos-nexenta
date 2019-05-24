@@ -1,4 +1,4 @@
-/*-
+/*
  * Copyright (c) 2014 Roger Pau Monné <royger@FreeBSD.org>
  * All rights reserved.
  *
@@ -51,7 +51,7 @@
 #include "bootstrap.h"
 #include <sys/multiboot.h>
 #include "vbe.h"
-#include "../../zfs/libzfs.h"
+#include "libzfs.h"
 #include "libi386.h"
 #include "../btx/lib/btxv86.h"
 
@@ -89,20 +89,6 @@ num_modules(struct preloaded_file *kfp)
 		mod_num++;
 
 	return (mod_num);
-}
-
-static vm_offset_t
-max_addr(void)
-{
-	struct preloaded_file	*fp;
-	vm_offset_t		 addr = 0;
-
-	for (fp = file_findfile(NULL, NULL); fp != NULL; fp = fp->f_next) {
-		if (addr < (fp->f_addr + fp->f_size))
-			addr = fp->f_addr + fp->f_size;
-	}
-
-	return (addr);
 }
 
 static int
@@ -245,8 +231,7 @@ static int
 multiboot_exec(struct preloaded_file *fp)
 {
 	struct preloaded_file		*mfp;
-	vm_offset_t			 module_start, metadata_size;
-	vm_offset_t			 modulep, kernend, entry;
+	vm_offset_t			 entry;
 	struct file_metadata		*md;
 	struct multiboot_info		*mb_info = NULL;
 	struct multiboot_mod_list	*mb_mod = NULL;
@@ -446,7 +431,7 @@ multiboot_exec(struct preloaded_file *fp)
 	cmdline = NULL;
 
 	/* make sure we have text mode */
-	bios_set_text_mode(3);
+	bios_set_text_mode(VGA_TEXT_MODE);
 
 	dev_cleanup();
 	__exec((void *)VTOP(multiboot_tramp), MULTIBOOT_BOOTLOADER_MAGIC,
@@ -464,7 +449,6 @@ multiboot_obj_loadfile(char *filename, u_int64_t dest,
     struct preloaded_file **result)
 {
 	struct preloaded_file	*mfp, *kfp, *rfp;
-	struct kernel_module	*kmp;
 	int			 error, mod_num;
 
 	/* See if there's a aout multiboot kernel loaded */

@@ -89,9 +89,7 @@ gfxp_check_for_console(dev_info_t *devi, struct gfxp_fb_softc *softc,
 	 */
 
 	if (pci_config_setup(devi, &pci_conf) != DDI_SUCCESS) {
-		cmn_err(CE_WARN,
-		    MYNAME
-		    ": can't get PCI conf handle");
+		cmn_err(CE_WARN, MYNAME ": can't get PCI conf handle");
 		return;
 	}
 
@@ -224,7 +222,7 @@ gfxp_fb_attach(dev_info_t *devi, ddi_attach_cmd_t cmd, gfxp_fb_softc_ptr_t ptr)
 	if (ddi_prop_update_int(DDI_DEV_T_NONE, devi,
 	    "primary-controller", value) != DDI_SUCCESS) {
 		cmn_err(CE_WARN,
-		    "Can not %s primary-controller "
+		    "Cannot %s primary-controller "
 		    "property for driver", value ? "set" : "clear");
 	}
 
@@ -236,13 +234,13 @@ gfxp_fb_attach(dev_info_t *devi, ddi_attach_cmd_t cmd, gfxp_fb_softc_ptr_t ptr)
 		 */
 	case FB_TYPE_EGA_TEXT:
 		softc->fb_type = GFXP_VGATEXT;
-		error = gfxp_vga_attach(devi, cmd, softc);
+		error = gfxp_vga_attach(devi, softc);
 		break;
 
 	case FB_TYPE_INDEXED:	/* FB types */
 	case FB_TYPE_RGB:
 		softc->fb_type = GFXP_BITMAP;
-		error = gfxp_bm_attach(devi, cmd, softc);
+		error = gfxp_bm_attach(devi, softc);
 		break;
 
 	default:
@@ -277,10 +275,10 @@ gfxp_fb_detach(dev_info_t *devi, ddi_detach_cmd_t cmd, gfxp_fb_softc_ptr_t ptr)
 
 		switch (softc->fb_type) {
 		case GFXP_BITMAP:
-			error = gfxp_bm_detach(devi, cmd, softc);
+			error = gfxp_bm_detach(devi, softc);
 			break;
 		case GFXP_VGATEXT:
-			error = gfxp_vga_detach(devi, cmd, softc);
+			error = gfxp_vga_detach(devi, softc);
 			break;
 		}
 		mutex_destroy(&(softc->lock));
@@ -334,13 +332,6 @@ do_gfx_ioctl(int cmd, intptr_t data, int mode, struct gfxp_fb_softc *softc)
 		if (ddi_copyout(&kd_mode, (void *)data, sizeof (int), mode))
 			return (EFAULT);
 		break;
-
-	/* KDGET_SCRNMAP/KDSET_SCRNMAP is only supported in text mode. */
-	case KDGET_SCRNMAP:
-	case KDSET_SCRNMAP:
-		if (softc->fb_type == GFXP_BITMAP)
-			return (ENXIO);
-		return (gfxp_vga_scrnmap(cmd, data, mode, softc));
 
 	case VIS_GETIDENTIFIER:
 		if (ddi_copyout(softc->gfxp_ops->ident, (void *)data,

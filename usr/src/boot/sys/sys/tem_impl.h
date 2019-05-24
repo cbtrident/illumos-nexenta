@@ -26,7 +26,7 @@
 /*	Copyright (c) 1990, 1991 UNIX System Laboratories, Inc.	*/
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989, 1990 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*		All Rights Reserved	*/
 
 #ifndef	_SYS_TEM_H
 #define	_SYS_TEM_H
@@ -40,6 +40,7 @@ extern "C" {
 #include <sys/font.h>
 #include <sys/list.h>
 #include <sys/tem.h>
+#include <sys/rgb.h>
 #include <bootstrap.h>
 #include <stdbool.h>
 
@@ -83,11 +84,12 @@ typedef uint32_t tem_char_t;	/* 32bit char to support UTF-8 */
 #define	TEM_ATTR_BRIGHT_FG	0x0020
 #define	TEM_ATTR_BRIGHT_BG	0x0040
 #define	TEM_ATTR_TRANSPARENT	0x0080
+#define	TEM_ATTR_IMAGE		0x0100
 
 #define	ANSI_COLOR_BLACK	0
 #define	ANSI_COLOR_RED		1
 #define	ANSI_COLOR_GREEN	2
-#define	ANSI_COLOR_BROWN	3
+#define	ANSI_COLOR_YELLOW	3
 #define	ANSI_COLOR_BLUE		4
 #define	ANSI_COLOR_MAGENTA	5
 #define	ANSI_COLOR_CYAN		6
@@ -118,8 +120,10 @@ typedef uint32_t tem_char_t;	/* 32bit char to support UTF-8 */
  * Default foreground/background color
  */
 
+#if !defined(DEFAULT_ANSI_FOREGROUND) && !defined(DEFAULT_ANSI_BACKGROUND)
 #define	DEFAULT_ANSI_FOREGROUND	ANSI_COLOR_BLACK
 #define	DEFAULT_ANSI_BACKGROUND	ANSI_COLOR_WHITE
+#endif
 
 
 #define	BUF_LEN		160 /* Two lines of data can be processed at a time */
@@ -148,24 +152,12 @@ struct tem_size {
 	screen_size_t	height;
 };
 
-typedef struct {
-	uint8_t red[16];
-	uint8_t green[16];
-	uint8_t blue[16];
-} text_cmap_t;
-
 /* Combined color and 32bit tem char */
 typedef struct term_char {
 	text_color_t	tc_fg_color;
 	text_color_t	tc_bg_color;
 	tem_char_t	tc_char;
 } term_char_t;
-
-/* Color translation tables. */
-extern const uint8_t dim_xlate[8];
-extern const uint8_t brt_xlate[8];
-extern const uint8_t solaris_color_to_pc_color[16];
-extern const text_cmap_t cmap4_to_24;
 
 /*
  * State structure for each virtual terminal emulator
@@ -189,12 +181,13 @@ struct tem_vt_state {
 
 	term_char_t	*tvs_outbuf;	/* place to keep incomplete lines */
 	int		tvs_outindex;	/* index into a_outbuf */
-	void   		*tvs_pix_data;	/* pointer to tmp bitmap area */
+	void		*tvs_pix_data;	/* pointer to tmp bitmap area */
 	int		tvs_pix_data_size;
 	text_color_t	tvs_fg_color;
 	text_color_t	tvs_bg_color;
 	int		tvs_first_line;	/* kernel console output begins */
 
+	term_char_t	*tvs_screen_buf;	/* whole screen buffer */
 	unsigned	tvs_utf8_left;		/* UTF-8 code points */
 	tem_char_t	tvs_utf8_partial;	/* UTF-8 char being completed */
 
@@ -274,6 +267,8 @@ void	tem_save_state(void);
 void	tem_register_modechg_cb(tem_modechg_cb_t, tem_modechg_cb_arg_t);
 void	tem_activate(tem_vt_state_t, boolean_t);
 void	tem_get_colors(tem_vt_state_t, text_color_t *, text_color_t *);
+void	tem_image_display(struct tem_vt_state *, screen_pos_t, screen_pos_t,
+	screen_pos_t, screen_pos_t);
 
 #ifdef __cplusplus
 }

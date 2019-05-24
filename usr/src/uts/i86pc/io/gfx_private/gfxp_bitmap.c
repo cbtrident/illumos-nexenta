@@ -15,8 +15,6 @@
 
 /*
  * Framebuffer based console support.
- * Note: this is very simplifyed proof of concept code working just with
- * plain console, no X, tested with vmware fusion VM.
  *
  * Missing (no particular order):
  * memory barriers
@@ -30,8 +28,8 @@
 #include <sys/ddi.h>
 #include <sys/kd.h>
 #include <sys/sunddi.h>
+#include <sys/rgb.h>
 #include <sys/gfx_private.h>
-#include <sys/tem_impl.h>
 #include "gfxp_fb.h"
 
 #define	MYNAME	"gfxp_bitmap"
@@ -66,7 +64,6 @@ static int	bitmap_cons_clear(struct gfxp_fb_softc *,
     struct vis_consclear *);
 static void	bitmap_cons_cursor(struct gfxp_fb_softc *,
     struct vis_conscursor *);
-static uint32_t bitmap_color_map(uint8_t);
 static void	bitmap_polled_copy(struct vis_polledio_arg *,
     struct vis_conscopy *);
 static void	bitmap_polled_display(struct vis_polledio_arg *,
@@ -91,7 +88,6 @@ static struct gfxp_ops gfxp_bitmap_ops = {
 	.devmap = bitmap_devmap
 };
 
-/* ARGSUSED */
 void
 gfxp_bm_register_fbops(gfxp_fb_softc_ptr_t ptr, struct gfxp_blt_ops *ops)
 {
@@ -132,9 +128,8 @@ gfxp_bm_getfb_info(gfxp_fb_softc_ptr_t ptr, struct gfxp_bm_fb_info *fbip)
 	}
 }
 
-/*ARGSUSED*/
-int gfxp_bm_attach(dev_info_t *devi, ddi_attach_cmd_t cmd,
-    struct gfxp_fb_softc *softc)
+int
+gfxp_bm_attach(dev_info_t *devi __unused, struct gfxp_fb_softc *softc)
 {
 	softc->polledio.display = bitmap_polled_display;
 	softc->polledio.copy = bitmap_polled_copy;
@@ -146,9 +141,8 @@ int gfxp_bm_attach(dev_info_t *devi, ddi_attach_cmd_t cmd,
 	return (DDI_SUCCESS);
 }
 
-/*ARGSUSED*/
-int gfxp_bm_detach(dev_info_t *devi, ddi_detach_cmd_t cmd,
-    struct gfxp_fb_softc *softc)
+int
+gfxp_bm_detach(dev_info_t *devi __unused, struct gfxp_fb_softc *softc)
 {
 	if (softc == NULL || softc->console == NULL)
 		return (DDI_SUCCESS);
@@ -171,18 +165,16 @@ bitmap_kdsettext(struct gfxp_fb_softc *softc)
 	    softc->console->fb.fb);
 }
 
-/*ARGSUSED*/
 static void
-bitmap_kdsetgraphics(struct gfxp_fb_softc *softc)
+bitmap_kdsetgraphics(struct gfxp_fb_softc *softc __unused)
 {
-	/* we have all the data in shadow_fb */
+	/* we have the copy of fb content in shadow_fb */
 }
 
-/*ARGSUSED*/
 static int
-bitmap_suspend(struct gfxp_fb_softc *softc)
+bitmap_suspend(struct gfxp_fb_softc *softc __unused)
 {
-	/* we have all the data in shadow_fb */
+	/* we have the copy of fb content in shadow_fb */
 	return (DDI_SUCCESS);
 }
 
@@ -269,40 +261,6 @@ bitmap_setup_fb(struct gfxp_fb_softc *softc)
 	return (DDI_SUCCESS);
 }
 
-static uint32_t
-bitmap_color_map(uint8_t index)
-{
-	uint8_t c, mask;
-	uint32_t color = 0;
-
-	if (fb_info.fb_type == FB_TYPE_INDEXED) {
-		if (index < sizeof(solaris_color_to_pc_color))
-			return (solaris_color_to_pc_color[index]);
-		else
-			return (index);
-	}
-
-	c = cmap4_to_24.red[index];
-	mask = (1 << fb_info.rgb.red.size) - 1;
-	c >>= 8 - fb_info.rgb.red.size;
-	c &= mask;
-	color |= c << fb_info.rgb.red.pos;
-
-	c = cmap4_to_24.green[index];
-	mask = (1 << fb_info.rgb.green.size) - 1;
-	c >>= 8 - fb_info.rgb.green.size;
-	c &= mask;
-	color |= c << fb_info.rgb.green.pos;
-
-	c = cmap4_to_24.blue[index];
-	mask = (1 << fb_info.rgb.blue.size) - 1;
-	c >>= 8 - fb_info.rgb.blue.size;
-	c &= mask;
-	color |= c << fb_info.rgb.blue.pos;
-
-	return (color);
-}
-
 static int
 bitmap_devinit(struct gfxp_fb_softc *softc, struct vis_devinit *data)
 {
@@ -321,7 +279,7 @@ bitmap_devinit(struct gfxp_fb_softc *softc, struct vis_devinit *data)
 	data->width = console->fb.screen.x;
 	data->height = console->fb.screen.y;
 	data->linebytes = console->fb.pitch;
-	data->color_map = bitmap_color_map;
+	data->color_map = boot_color_map;
 	data->depth = console->fb.depth;
 	data->mode = VIS_PIXEL;
 	data->polledio = &softc->polledio;
@@ -369,19 +327,21 @@ bitmap_cons_copy(struct gfxp_fb_softc *softc, struct vis_conscopy *ma)
 		for (i = 0; i < height; i++) {
 			uint32_t increment = i * pitch;
 			if (softc->mode == KD_TEXT) {
-				(void)memmove(dst + increment,
+				(void) memmove(dst + increment,
 				    src + increment, width);
 			}
-			(void)memmove(sdst + increment, src + increment, width);
+			(void) memmove(sdst + increment, src + increment,
+			    width);
 		}
 	} else {
 		for (i = height - 1; i >= 0; i--) {
 			uint32_t increment = i * pitch;
 			if (softc->mode == KD_TEXT) {
-				(void)memmove(dst + increment,
+				(void) memmove(dst + increment,
 				    src + increment, width);
 			}
-			(void)memmove(sdst + increment, src + increment, width);
+			(void) memmove(sdst + increment, src + increment,
+			    width);
 		}
 	}
 }
@@ -464,7 +424,7 @@ bitmap_cons_display(struct gfxp_fb_softc *softc, struct vis_consdisplay *da)
 		if (softc->mode == KD_TEXT)
 			bitmap_cpy(dest, src, size, console->fb.bpp);
 		dest = sfbp + i * console->fb.pitch;
-		(void) memcpy(dest, src, size);
+		bitmap_cpy(dest, src, size, console->fb.bpp);
 	}
 }
 
@@ -479,16 +439,16 @@ bitmap_cons_clear(struct gfxp_fb_softc *softc, struct vis_consclear *ca)
 
 	console = softc->console;
 	pitch = console->fb.pitch;
-	data = bitmap_color_map(ca->bg_color);
+	data = boot_color_map(ca->bg_color);
 	switch (console->fb.depth) {
 	case 8:
 		for (i = 0; i < console->fb.screen.y; i++) {
 			if (softc->mode == KD_TEXT) {
 				fb = console->fb.fb + i * pitch;
-				(void) memset(fb, data, pitch);
+				(void) memset(fb, ca->bg_color, pitch);
 			}
 			fb = console->fb.shadow_fb + i * pitch;
-			(void) memset(fb, data, pitch);
+			(void) memset(fb, ca->bg_color, pitch);
 		}
 		break;
 	case 15:

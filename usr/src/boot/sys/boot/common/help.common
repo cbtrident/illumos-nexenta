@@ -57,6 +57,14 @@
 	Displays statistics about disk cache usage.  For debugging only.
 
 ################################################################################
+# Tconsole DOutput information about console devices
+
+	console
+
+	Display the currently active console device(s) and show
+	information about available console devices.
+
+################################################################################
 # Tchain DChain load disk block
 
 	chain disk:
@@ -87,12 +95,12 @@
 	Switch framebuffer mode on or off, get current mode, list available
 	modes or set mode by using either display resolution or framebuffer
 	mode number. If the system does not provide display resolution via
-	EDID, the default resolution will be set 800x600. If depth is not
+	EDID, the default resolution will be set to 800x600. If depth is not
 	specified, the best depth is used.
 
 ################################################################################
 # Tload DLoad a kernel or module
-	
+
 	load [-t <type>] <filename> [arguments]
 
 	Loads the module contained in <filename> into memory.  If no other
@@ -129,6 +137,13 @@
 	lsmod [-v]
 
 	List loaded modules. If [-v] is specified, print more details.
+
+################################################################################
+# Tmap-vdisk DMap virtual disk
+
+	map-vdisk filename
+
+	Map file as virtual disk.
 
 ################################################################################
 # Tmore DPage files
@@ -272,7 +287,7 @@
 	set prompt=<value>
 
 	The command prompt is displayed when the loader is waiting for input.
-	Variable substitution is performed on the prompt.  The default 
+	Variable substitution is performed on the prompt.  The default
 	prompt can be set with:
 
 		set prompt=\${interpret}
@@ -300,6 +315,14 @@
 	Displays the value of <variable>, or all variables if not specified.
 
 ################################################################################
+# Tsifting DSearch for words containing a substring
+
+	sifting <substring>
+
+	Displays words in the search order list containing the provided
+	<substring>.
+
+################################################################################
 # Tinclude DRead commands from a script file
 
 	include <filename> [<filename> ...]
@@ -312,12 +335,12 @@
 
 	read [-t <value>] [-p <prompt>] [<variable name>]
 
-	The read command reads a line of input from the terminal.  If the 
+	The read command reads a line of input from the terminal.  If the
 	-t argument is specified, it will return nothing if no input has been
-	received after <value> seconds.  (Any keypress will cancel the 
+	received after <value> seconds.  (Any keypress will cancel the
 	timeout).
 
-	If -p is specified, <prompt> is printed before reading input. No 
+	If -p is specified, <prompt> is printed before reading input. No
 	newline is emitted after the prompt.
 
 	If a variable name is supplied, the variable is set to the value read,
@@ -331,11 +354,18 @@
 	This command removes any kernel and all loaded modules from memory.
 
 ################################################################################
+# Tunmap-vdisk DUnmap virtual disk
+
+	unmap-vdisk diskname
+
+	Delete virtual disk mapping.
+
+################################################################################
 # Tunset DUnset a variable
 
 	unset <variable name>
 
 	If allowed, the named variable's value is discarded and the variable
-	is removed.	
+	is removed.
 
 ################################################################################

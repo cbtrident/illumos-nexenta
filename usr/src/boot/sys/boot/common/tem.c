@@ -107,13 +107,13 @@ static void	tem_copy_area(struct tem_vt_state *tem,
 			screen_pos_t s_col, screen_pos_t s_row,
 			screen_pos_t e_col, screen_pos_t e_row,
 			screen_pos_t t_col, screen_pos_t t_row);
-#if 0
-static void	tem_image_display(struct tem_vt_state *, uint8_t *,
-			int, int, screen_pos_t, screen_pos_t);
-#endif
 static void	tem_bell(struct tem_vt_state *tem);
 static void	tem_pix_clear_prom_output(struct tem_vt_state *tem);
 
+static void	tem_virtual_cls(struct tem_vt_state *, size_t, screen_pos_t,
+		    screen_pos_t);
+static void	tem_virtual_display(struct tem_vt_state *, term_char_t *,
+		    size_t, screen_pos_t, screen_pos_t);
 static void	tem_align_cursor(struct tem_vt_state *tem);
 
 static void	tem_check_first_time(struct tem_vt_state *tem);
@@ -208,15 +208,20 @@ static void
 tem_internal_init(struct tem_vt_state *ptem,
     boolean_t init_color, boolean_t clear_screen)
 {
-	size_t size;
+	size_t size, width, height;
 
 	if (tems.ts_display_mode == VIS_PIXEL) {
 		ptem->tvs_pix_data_size = tems.ts_pix_data_size;
 		ptem->tvs_pix_data = malloc(ptem->tvs_pix_data_size);
 	}
 
-	size = tems.ts_c_dimension.width * sizeof (tem_char_t);
+	width = tems.ts_c_dimension.width;
+	height = tems.ts_c_dimension.height;
+
+	size = width * sizeof (tem_char_t);
 	ptem->tvs_outbuf = malloc(size);
+	if (ptem->tvs_outbuf == NULL)
+		panic("out of memory in tem_internal_init()\n");
 
 	tem_reset_display(ptem, clear_screen, init_color);
 
@@ -224,6 +229,14 @@ tem_internal_init(struct tem_vt_state *ptem,
 	ptem->tvs_utf8_partial = 0;
 
 	ptem->tvs_initialized  = true;
+
+	/*
+	 * Out of memory is not fatal there, without the screen history,
+	 * we can not optimize the screen copy.
+	 */
+	size = width * height * sizeof (term_char_t);
+	ptem->tvs_screen_buf = malloc(size);
+	tem_virtual_cls(ptem, width * height, 0, 0);
 }
 
 int
@@ -283,14 +296,14 @@ tem_reinit(struct tem_vt_state *tem, boolean_t reset_display)
 static void
 tem_free_buf(struct tem_vt_state *tem)
 {
-	if (tem->tvs_outbuf != NULL) {
-		free(tem->tvs_outbuf);
-		tem->tvs_outbuf = NULL;
-	}
-	if (tem->tvs_pix_data != NULL) {
-		free(tem->tvs_pix_data);
-		tem->tvs_pix_data = NULL;
-	}
+	free(tem->tvs_outbuf);
+	tem->tvs_outbuf = NULL;
+
+	free(tem->tvs_pix_data);
+	tem->tvs_pix_data = NULL;
+
+	free(tem->tvs_screen_buf);
+	tem->tvs_screen_buf = NULL;
 }
 
 static int
@@ -415,7 +428,7 @@ env_screen_nounset(struct env_var *ev __unused)
 	if (tems.ts_p_dimension.width == 0 &&
 	    tems.ts_p_dimension.height == 0)
 		return (0);
-	return(EPERM);
+	return (EPERM);
 }
 
 static void
@@ -502,8 +515,9 @@ tems_setup_terminal(struct vis_devinit *tp, size_t height, size_t width)
 				tems.ts_font.vf_bytes =
 				    malloc(font_data->uncompressed_size);
 				if (tems.ts_font.vf_bytes == NULL)
-					panic("out of memory\n");
-				(void)lz4_decompress(font_data->compressed_data,
+					panic("out of memory");
+				(void) lz4_decompress(
+				    font_data->compressed_data,
 				    tems.ts_font.vf_bytes,
 				    font_data->compressed_size,
 				    font_data->uncompressed_size, 0);
@@ -683,9 +697,10 @@ tems_cursor(struct vis_conscursor *pca)
 static void
 tem_kdsetmode(int mode)
 {
-	if (tems.ts_hdl != NULL)
+	if (tems.ts_hdl != NULL) {
 		(void) tems.ts_hdl->c_ioctl(tems.ts_hdl, KDSETMODE,
-	     (void *)(intptr_t)mode);
+		    (void *)(intptr_t)mode);
+	}
 }
 
 static void
@@ -1170,7 +1185,6 @@ tem_setparam(struct tem_vt_state *tem, int count, int newparam)
 	}
 }
 
-
 /*
  * select graphics mode based on the param vals stored in a_params
  */
@@ -1240,16 +1254,42 @@ tem_selgraph(struct tem_vt_state *tem)
 			}
 			break;
 
-		case 30: /* black	(grey) 		foreground */
-		case 31: /* red		(light red) 	foreground */
-		case 32: /* green	(light green) 	foreground */
-		case 33: /* brown	(yellow) 	foreground */
-		case 34: /* blue	(light blue) 	foreground */
-		case 35: /* magenta	(light magenta) foreground */
-		case 36: /* cyan	(light cyan) 	foreground */
-		case 37: /* white	(bright white) 	foreground */
+		case 30: /* black	(grey)		foreground */
+		case 31: /* red		(light red)	foreground */
+		case 32: /* green	(light green)	foreground */
+		case 33: /* brown	(yellow)	foreground */
+		case 34: /* blue	(light blue)	foreground */
+		case 35: /* magenta	(light magenta)	foreground */
+		case 36: /* cyan	(light cyan)	foreground */
+		case 37: /* white	(bright white)	foreground */
 			tem->tvs_fg_color = param - 30;
 			tem->tvs_flags &= ~TEM_ATTR_BRIGHT_FG;
+			break;
+
+		case 38:
+			/* We should have at least 3 parameters */
+			if (curparam < 3)
+				break;
+
+			/*
+			 * 256 and truecolor needs depth at least 24, but
+			 * we still need to process the sequence.
+			 */
+			count++;
+			curparam--;
+			param = tem->tvs_params[count];
+			switch (param) {
+			case 5:	/* 256 colors */
+				count++;
+				curparam--;
+				if (tems.ts_pdepth < 24)
+					break;
+				tem->tvs_fg_color = tem->tvs_params[count];
+				tem->tvs_flags &= ~TEM_ATTR_BRIGHT_FG;
+				break;
+			default:
+				break;
+			}
 			break;
 
 		case 39:
@@ -1263,16 +1303,42 @@ tem_selgraph(struct tem_vt_state *tem)
 				tem->tvs_flags &= ~TEM_ATTR_BRIGHT_FG;
 			break;
 
-		case 40: /* black	(grey) 		background */
-		case 41: /* red		(light red) 	background */
-		case 42: /* green	(light green) 	background */
-		case 43: /* brown	(yellow) 	background */
-		case 44: /* blue	(light blue) 	background */
-		case 45: /* magenta	(light magenta) background */
-		case 46: /* cyan	(light cyan) 	background */
-		case 47: /* white	(bright white) 	background */
+		case 40: /* black	(grey)		background */
+		case 41: /* red		(light red)	background */
+		case 42: /* green	(light green)	background */
+		case 43: /* brown	(yellow)	background */
+		case 44: /* blue	(light blue)	background */
+		case 45: /* magenta	(light magenta)	background */
+		case 46: /* cyan	(light cyan)	background */
+		case 47: /* white	(bright white)	background */
 			tem->tvs_bg_color = param - 40;
 			tem->tvs_flags &= ~TEM_ATTR_BRIGHT_BG;
+			break;
+
+		case 48:
+			/* We should have at least 3 parameters */
+			if (curparam < 3)
+				break;
+
+			/*
+			 * 256 and truecolor needs depth at least 24, but
+			 * we still need to process the sequence.
+			 */
+			count++;
+			curparam--;
+			param = tem->tvs_params[count];
+			switch (param) {
+			case 5:	/* 256 colors */
+				count++;
+				curparam--;
+				if (tems.ts_pdepth < 24)
+					break;
+				tem->tvs_bg_color = tem->tvs_params[count];
+				tem->tvs_flags &= ~TEM_ATTR_BRIGHT_FG;
+				break;
+			default:
+				break;
+			}
 			break;
 
 		case 49:
@@ -1286,26 +1352,26 @@ tem_selgraph(struct tem_vt_state *tem)
 				tem->tvs_flags &= ~TEM_ATTR_BRIGHT_BG;
 			break;
 
-		case 90: /* black	(grey) 		foreground */
-		case 91: /* red		(light red) 	foreground */
-		case 92: /* green	(light green) 	foreground */
-		case 93: /* brown	(yellow) 	foreground */
-		case 94: /* blue	(light blue) 	foreground */
-		case 95: /* magenta	(light magenta) foreground */
-		case 96: /* cyan	(light cyan) 	foreground */
-		case 97: /* white	(bright white) 	foreground */
+		case 90: /* black	(grey)		foreground */
+		case 91: /* red		(light red)	foreground */
+		case 92: /* green	(light green)	foreground */
+		case 93: /* brown	(yellow)	foreground */
+		case 94: /* blue	(light blue)	foreground */
+		case 95: /* magenta	(light magenta)	foreground */
+		case 96: /* cyan	(light cyan)	foreground */
+		case 97: /* white	(bright white)	foreground */
 			tem->tvs_fg_color = param - 90;
 			tem->tvs_flags |= TEM_ATTR_BRIGHT_FG;
 			break;
 
-		case 100: /* black	(grey) 		background */
-		case 101: /* red	(light red) 	background */
-		case 102: /* green	(light green) 	background */
-		case 103: /* brown	(yellow) 	background */
-		case 104: /* blue	(light blue) 	background */
-		case 105: /* magenta	(light magenta) background */
-		case 106: /* cyan	(light cyan) 	background */
-		case 107: /* white	(bright white) 	background */
+		case 100: /* black	(grey)		background */
+		case 101: /* red	(light red)	background */
+		case 102: /* green	(light green)	background */
+		case 103: /* brown	(yellow)	background */
+		case 104: /* blue	(light blue)	background */
+		case 105: /* magenta	(light magenta)	background */
+		case 106: /* cyan	(light cyan)	background */
+		case 107: /* white	(bright white)	background */
 			tem->tvs_bg_color = param - 100;
 			tem->tvs_flags |= TEM_ATTR_BRIGHT_BG;
 			break;
@@ -1681,6 +1747,9 @@ tem_send_data(struct tem_vt_state *tem)
 		return;
 	}
 
+	tem_virtual_display(tem, tem->tvs_outbuf, tem->tvs_outindex,
+	    tem->tvs_s_cursor.row, tem->tvs_s_cursor.col);
+
 	if (tem->tvs_isactive) {
 		/*
 		 * Call the primitive to render this data.
@@ -1772,7 +1841,7 @@ tem_parse(struct tem_vt_state *tem, tem_char_t ch)
 			    tem->tvs_r_cursor.col);
 			tem->tvs_state = A_STATE_START;
 			return;
-		case 'p': 	/* sunbow */
+		case 'p':	/* sunbow */
 			tem_send_data(tem);
 			/*
 			 * Don't set anything if we are
@@ -1793,7 +1862,7 @@ tem_parse(struct tem_vt_state *tem, tem_char_t ch)
 			tem_cls(tem);
 			tem->tvs_state = A_STATE_START;
 			return;
-		case 'q':  	/* sunwob */
+		case 'q':	/* sunwob */
 			tem_send_data(tem);
 			/*
 			 * Don't set anything if we are
@@ -1915,12 +1984,39 @@ tem_scroll(struct tem_vt_state *tem, int start, int end, int count,
 	}
 }
 
+static int
+tem_copy_width(term_char_t *src, term_char_t *dst, int cols)
+{
+	int width = cols - 1;
+
+	while (width >= 0) {
+		/* We do not have image bits to compare, stop there. */
+		if (TEM_CHAR_ATTR(src[width].tc_char) == TEM_ATTR_IMAGE ||
+		    TEM_CHAR_ATTR(dst[width].tc_char) == TEM_ATTR_IMAGE)
+			break;
+
+		/*
+		 * Find difference on line, compare char with its attributes
+		 * and colors.
+		 */
+		if (src[width].tc_char != dst[width].tc_char ||
+		    src[width].tc_fg_color != dst[width].tc_fg_color ||
+		    src[width].tc_bg_color != dst[width].tc_bg_color) {
+			break;
+		}
+		width--;
+	}
+	return (width + 1);
+}
+
 static void
 tem_copy_area(struct tem_vt_state *tem,
     screen_pos_t s_col, screen_pos_t s_row,
     screen_pos_t e_col, screen_pos_t e_row,
     screen_pos_t t_col, screen_pos_t t_row)
 {
+	size_t soffset, toffset;
+	term_char_t *src, *dst;
 	int rows;
 	int cols;
 
@@ -1944,10 +2040,54 @@ tem_copy_area(struct tem_vt_state *tem,
 	    t_col + cols > tems.ts_c_dimension.width)
 		return;
 
-	if (!tem->tvs_isactive)
+	if (tem->tvs_screen_buf == NULL) {
+		if (tem->tvs_isactive) {
+			tem_callback_copy(tem, s_col, s_row,
+			    e_col, e_row, t_col, t_row);
+		}
 		return;
+	}
 
-	tem_callback_copy(tem, s_col, s_row, e_col, e_row, t_col, t_row);
+	soffset = s_col + s_row * tems.ts_c_dimension.width;
+	toffset = t_col + t_row * tems.ts_c_dimension.width;
+	src = tem->tvs_screen_buf + soffset;
+	dst = tem->tvs_screen_buf + toffset;
+
+	/*
+	 * Copy line by line. We determine the length by comparing the
+	 * screen content from cached text in tvs_screen_buf.
+	 */
+	if (toffset <= soffset) {
+		for (int i = 0; i < rows; i++) {
+			int increment = i * tems.ts_c_dimension.width;
+			int width;
+
+			width = tem_copy_width(src + increment,
+			    dst + increment, cols);
+			memmove(dst + increment, src + increment,
+			    width * sizeof (term_char_t));
+			if (tem->tvs_isactive) {
+				tem_callback_copy(tem, s_col, s_row + i,
+				    e_col - cols + width, s_row + i,
+				    t_col, t_row + i);
+			}
+		}
+	} else {
+		for (int i = rows - 1; i >= 0; i--) {
+			int increment = i * tems.ts_c_dimension.width;
+			int width;
+
+			width = tem_copy_width(src + increment,
+			    dst + increment, cols);
+			memmove(dst + increment, src + increment,
+			    width * sizeof (term_char_t));
+			if (tem->tvs_isactive) {
+				tem_callback_copy(tem, s_col, s_row + i,
+				    e_col - cols + width, s_row + i,
+				    t_col, t_row + i);
+			}
+		}
+	}
 }
 
 static void
@@ -1966,6 +2106,8 @@ tem_clear_chars(struct tem_vt_state *tem, int count, screen_pos_t row,
 	if (count > tems.ts_c_dimension.width ||
 	    col + count > tems.ts_c_dimension.width)
 		count = tems.ts_c_dimension.width - col;
+
+	tem_virtual_cls(tem, count, row, col);
 
 	if (!tem->tvs_isactive)
 		return;
@@ -1997,33 +2139,25 @@ tem_text_display(struct tem_vt_state *tem __unused, term_char_t *string,
 	}
 }
 
-#if 0
 /*
- * This function is used to blit a rectangular color image,
- * unperturbed on the underlying framebuffer, to render
- * icons and pictures.  The data is a pixel pattern that
- * fills a rectangle bounded to the width and height parameters.
- * The color pixel data must to be pre-adjusted by the caller
- * for the current video depth.
- *
- * This function is unused now.
+ * This function is used to mark a rectangular image area so the scrolling
+ * will know we need to copy the data from there.
  */
-/*ARGSUSED*/
-static void
-tem_image_display(struct tem_vt_state *tem, uint8_t *image,
-    int height, int width, screen_pos_t row, screen_pos_t col)
+void
+tem_image_display(struct tem_vt_state *tem, screen_pos_t s_row,
+    screen_pos_t s_col, screen_pos_t e_row, screen_pos_t e_col)
 {
-	struct vis_consdisplay da;
+	screen_pos_t i, j;
+	term_char_t c;
 
-	da.data = image;
-	da.width = (screen_size_t)width;
-	da.height = (screen_size_t)height;
-	da.row = row;
-	da.col = col;
+	c.tc_char = TEM_ATTR(TEM_ATTR_IMAGE);
 
-	tems_display(&da);
+	for (i = s_row; i <= e_row; i++) {
+		for (j = s_col; j <= e_col; j++) {
+			tem_virtual_display(tem, &c, 1, i, j);
+		}
+	}
 }
-#endif
 
 /*ARGSUSED*/
 static void
@@ -2108,7 +2242,8 @@ tem_pix_copy(struct tem_vt_state *tem,
 	need_clear = B_FALSE;
 
 	ma.s_row = s_row * tems.ts_font.vf_height + tems.ts_p_offset.y;
-	ma.e_row = (e_row + 1) * tems.ts_font.vf_height + tems.ts_p_offset.y - 1;
+	ma.e_row = (e_row + 1) * tems.ts_font.vf_height +
+	    tems.ts_p_offset.y - 1;
 	ma.t_row = t_row * tems.ts_font.vf_height + tems.ts_p_offset.y;
 
 	/*
@@ -2150,6 +2285,9 @@ tem_pix_bit2pix(struct tem_vt_state *tem, term_char_t c)
 	text_color_t fg, bg;
 	void (*fp)(struct tem_vt_state *, tem_char_t,
 	    unsigned char, unsigned char);
+
+	fg = DEFAULT_ANSI_FOREGROUND;
+	bg = DEFAULT_ANSI_BACKGROUND;
 
 	tem_get_color(&fg, &bg, c);
 	switch (tems.ts_pdepth) {
@@ -2239,6 +2377,11 @@ tem_cls(struct tem_vt_state *tem)
 	text_color_t bg_color;
 	text_attr_t attr;
 	term_char_t c;
+	int row;
+
+	for (row = 0; row < tems.ts_c_dimension.height; row++) {
+		tem_virtual_cls(tem, tems.ts_c_dimension.width, row, 0);
+	}
 
 	if (!tem->tvs_isactive)
 		return;
@@ -2247,9 +2390,11 @@ tem_cls(struct tem_vt_state *tem)
 	    TEM_ATTR_SCREEN_REVERSE);
 	c.tc_char = TEM_ATTR(attr);
 
+	fg_color = DEFAULT_ANSI_FOREGROUND;
+	bg_color = DEFAULT_ANSI_BACKGROUND;
 	tem_get_color(&fg_color, &bg_color, c);
 	cl.bg_color = bg_color;
-	(void)tems_cls(&cl);
+	(void) tems_cls(&cl);
 
 	tem->tvs_c_cursor.row = 0;
 	tem->tvs_c_cursor.col = 0;
@@ -2500,6 +2645,8 @@ tem_pix_cursor(struct tem_vt_state *tem, short action)
 	    TEM_ATTR_REVERSE);
 	c.tc_char = TEM_ATTR(attr);
 
+	fg = DEFAULT_ANSI_FOREGROUND;
+	bg = DEFAULT_ANSI_BACKGROUND;
 	tem_get_color(&fg, &bg, c);
 
 	switch (tems.ts_pdepth) {
@@ -2646,15 +2793,24 @@ tem_get_attr(struct tem_vt_state *tem, text_color_t *fg,
 static void
 tem_get_color(text_color_t *fg, text_color_t *bg, term_char_t c)
 {
-	if (TEM_CHAR_ATTR(c.tc_char) & (TEM_ATTR_BRIGHT_FG | TEM_ATTR_BOLD))
-		*fg = brt_xlate[c.tc_fg_color];
-	else
-		*fg = dim_xlate[c.tc_fg_color];
+	if (c.tc_fg_color < 16) {
+		if (TEM_CHAR_ATTR(c.tc_char) &
+		    (TEM_ATTR_BRIGHT_FG | TEM_ATTR_BOLD))
+			*fg = brt_xlate[c.tc_fg_color];
+		else
+			*fg = dim_xlate[c.tc_fg_color];
+	} else {
+		*fg = c.tc_fg_color;
+	}
 
-	if (TEM_CHAR_ATTR(c.tc_char) & TEM_ATTR_BRIGHT_BG)
-		*bg = brt_xlate[c.tc_bg_color];
-	else
-		*bg = dim_xlate[c.tc_bg_color];
+	if (c.tc_bg_color < 16) {
+		if (TEM_CHAR_ATTR(c.tc_char) & TEM_ATTR_BRIGHT_BG)
+			*bg = brt_xlate[c.tc_bg_color];
+		else
+			*bg = dim_xlate[c.tc_bg_color];
+	} else {
+		*bg = c.tc_bg_color;
+	}
 }
 
 void
@@ -2716,5 +2872,46 @@ tem_pix_cls_range(struct tem_vt_state *tem,
 			tems_display(&da);
 			da.col += da.width;
 		}
+	}
+}
+
+/*
+ * virtual screen operations
+ */
+static void
+tem_virtual_display(struct tem_vt_state *tem, term_char_t *string,
+    size_t count, screen_pos_t row, screen_pos_t col)
+{
+	size_t i, width;
+	term_char_t *addr;
+
+	if (tem->tvs_screen_buf == NULL)
+		return;
+
+	if (row < 0 || row >= tems.ts_c_dimension.height ||
+	    col < 0 || col >= tems.ts_c_dimension.width ||
+	    col + count > (size_t)tems.ts_c_dimension.width)
+		return;
+
+	width = tems.ts_c_dimension.width;
+	addr = tem->tvs_screen_buf +  (row * width + col);
+	for (i = 0; i < count; i++) {
+		*addr++ = string[i];
+	}
+}
+
+static void
+tem_virtual_cls(struct tem_vt_state *tem, size_t count,
+    screen_pos_t row, screen_pos_t col)
+{
+	term_char_t c;
+
+	c.tc_char = ' ';
+	tem_get_colors((tem_vt_state_t)tem, &c.tc_fg_color, &c.tc_bg_color);
+
+	while (count > 0) {
+		tem_virtual_display(tem, &c, 1, row, col);
+		col++;
+		count--;
 	}
 }

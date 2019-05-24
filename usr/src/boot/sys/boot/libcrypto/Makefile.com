@@ -14,35 +14,25 @@
 #
 
 include $(SRC)/Makefile.master
+include $(SRC)/boot/sys/boot/Makefile.inc
 
-CC=     $(GNUC_ROOT)/bin/gcc
+COMDIR = ../../../../../common/crypto
 
 install:
 
 SRCS +=	sha1.c digest.c
+OBJS += sha1.o digest.o
 
-OBJS=	$(SRCS:%.c=%.o)
-
-CFLAGS = -Os
-CFLAGS += -fPIC -ffreestanding -msoft-float
-CFLAGS += -mno-mmx -mno-3dnow -mno-sse2 -mno-sse3 -mno-sse
-CFLAGS += -mno-avx -mno-aes -std=gnu99
-
-#.if ${MACHINE_CPUARCH} == "aarch64"
-#CFLAGS+=	-msoft-float -mgeneral-regs-only
-#.endif
-
-CPPFLAGS = -nostdinc -I. -I../../../../include -I../../..
+CPPFLAGS += -I. -I../../../../include -I../../..
 CPPFLAGS += -I../../../../lib/libstand
 
 # Pick up the bootstrap header for some interface items
 CPPFLAGS += -I../../common
-CPPFLAGS += -D_STANDALONE
-
-#include ../../Makefile.inc
 
 # For multiboot2.h, must be last, to avoid conflicts
 CPPFLAGS +=	-I$(SRC)/uts/common
+
+.PARALLEL:
 
 libcrypto.a: $(OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJS)
@@ -64,3 +54,9 @@ x86:
 
 %.o:	../../../../../common/crypto/sha1/%.c
 	$(COMPILE.c) $<
+
+sha1-x86_64.s: $(COMDIR)/sha1/amd64/sha1-x86_64.pl
+	$(PERL) $? $@
+
+sha1-x86_64.o: sha1-x86_64.s
+	$(COMPILE.s) -o $@ ${@F:.o=.s}

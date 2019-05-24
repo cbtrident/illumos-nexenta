@@ -27,7 +27,7 @@
 /*	Copyright (c) 1990, 1991 UNIX System Laboratories, Inc.	*/
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989, 1990 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 #ifndef	_SYS_TEM_IMPL_H
 #define	_SYS_TEM_IMPL_H
@@ -38,6 +38,7 @@ extern "C" {
 
 #include <sys/types.h>
 #include <sys/font.h>
+#include <sys/rgb.h>
 #if !defined(_BOOT)
 #include <sys/sunddi.h>
 #include <sys/sunldi.h>
@@ -65,15 +66,15 @@ extern "C" {
  * tvs_screen_buf is implementing the character array and the foreground
  * and the background colors have tvs_fg_color and tvs_bg_color arrays.
  * The character and color arrays are currently only used to restore the
- * screen from tem switch (vt switch, or switch from Xorg session.
+ * screen from tem switch (vt switch, or switch from Xorg session).
  * To implement the console history, this buffering needs to be reviewed.
  */
 
-typedef uint32_t tem_char_t;	/* 32bit char to support UTF-8 */
 #define	TEM_ATTR_MASK		0x7FF
 #define	TEM_CHAR(c)		((c) & 0x1fffff)
 #define	TEM_CHAR_ATTR(c)	(((c) >> 21) & TEM_ATTR_MASK)
 #define	TEM_ATTR(c)		(((c) & TEM_ATTR_MASK) << 21)
+#define	TEM_ATTR_ISSET(c, a)	((TEM_CHAR_ATTR(c) & (a)) == (a))
 
 #define	TEM_MAXPARAMS	5	/* maximum number of ANSI paramters */
 #define	TEM_MAXTAB	40	/* maximum number of tab stops */
@@ -94,6 +95,7 @@ typedef uint32_t tem_char_t;	/* 32bit char to support UTF-8 */
 #define	TEM_ATTR_BRIGHT_FG	0x0020
 #define	TEM_ATTR_BRIGHT_BG	0x0040
 #define	TEM_ATTR_TRANSPARENT	0x0080
+#define	TEM_ATTR_IMAGE		0x0100
 
 #define	ANSI_COLOR_BLACK	0
 #define	ANSI_COLOR_RED		1
@@ -118,7 +120,6 @@ typedef uint32_t tem_char_t;	/* 32bit char to support UTF-8 */
 #define	A_STATE_CSI			2
 #define	A_STATE_CSI_QMARK		3
 #define	A_STATE_CSI_EQUAL		4
-#define	A_STATE_OSC			5
 
 /*
  * Default number of rows and columns
@@ -138,20 +139,9 @@ typedef uint32_t tem_char_t;	/* 32bit char to support UTF-8 */
 #define	DEFAULT_ANSI_FOREGROUND	ANSI_COLOR_BLACK
 #define	DEFAULT_ANSI_BACKGROUND	ANSI_COLOR_WHITE
 
+typedef uint32_t tem_char_t;	/* 32bit char to support UTF-8 */
 typedef uint8_t text_color_t;
 typedef uint16_t text_attr_t;
-
-typedef struct {
-	uint8_t red[16];
-	uint8_t green[16];
-	uint8_t blue[16];
-} text_cmap_t;
-
-/* Color translation tables. */
-extern const uint8_t dim_xlate[8];
-extern const uint8_t brt_xlate[8];
-extern const uint8_t solaris_color_to_pc_color[16];
-extern const text_cmap_t cmap4_to_24;
 
 #if !defined(_BOOT)
 typedef struct tem_color {
@@ -208,7 +198,7 @@ struct tem_vt_state {
 	term_char_t	*tvs_outbuf;	/* place to keep incomplete lines */
 	size_t		tvs_outbuf_size;
 	size_t		tvs_outindex;	/* index into a_outbuf */
-	void   		*tvs_pix_data;	/* pointer to tmp bitmap area */
+	void		*tvs_pix_data;	/* pointer to tmp bitmap area */
 	size_t		tvs_pix_data_size;
 	text_color_t	tvs_fg_color;
 	text_color_t	tvs_bg_color;

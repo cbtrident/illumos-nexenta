@@ -33,13 +33,13 @@
 #include <sys/panic.h>
 #include <sys/ctype.h>
 #include <sys/ascii.h>
+#include <sys/vgareg.h>
 #if defined(__xpv)
 #include <sys/hypervisor.h>
 #endif /* __xpv */
 
 #include "boot_console_impl.h"
 #include "boot_serial.h"
-#include "boot_vga.h"
 
 #if defined(_BOOT)
 #include <dboot/dboot_asm.h>
@@ -169,17 +169,6 @@ serial_init(void)
 
 	/* adjust setting based on tty properties */
 	serial_adjust_prop();
-
-#if defined(_BOOT)
-#if 0
-	/*
-	 * Do a full reset to match console behavior.
-	 * 0x1B + c - reset everything
-	 */
-	serial_putchar(0x1B);
-	serial_putchar('c');
-#endif
-#endif
 }
 
 /* Advance str pointer past white space */
@@ -584,9 +573,8 @@ boot_fb(struct xboot_info *xbi, int console)
 		return (console);
 
 	/* FB address is not set, fall back to serial terminal. */
-	if (fb_info.paddr == 0) {
+	if (fb_info.paddr == 0)
 		return (CONS_TTY);
-	}
 
 	fb_info.terminal.x = VGA_TEXT_COLS;
 	fb_info.terminal.y = VGA_TEXT_ROWS;
@@ -641,19 +629,19 @@ bcons_init_fb(void)
 	fb_info.inverse = B_FALSE;
 	fb_info.inverse_screen = B_FALSE;
 
-	/* color values are 0 - 7 */
+	/* color values are 0 - 255 */
 	propval = find_boot_prop("tem.fg_color");
 	if (propval != NULL) {
 		intval = atoi(propval);
-		if (intval >= 0 && intval <= 7)
+		if (intval >= 0 && intval <= 255)
 			fb_info.fg_color = intval;
 	}
 
-	/* color values are 0 - 7 */
+	/* color values are 0 - 255 */
 	propval = find_boot_prop("tem.bg_color");
 	if (propval != NULL && ISDIGIT(*propval)) {
 		intval = atoi(propval);
-		if (intval >= 0 && intval <= 7)
+		if (intval >= 0 && intval <= 255)
 			fb_info.bg_color = intval;
 	}
 
@@ -1041,7 +1029,7 @@ btem_control(btem_state_t *btem, int c)
 
 	case A_HT:
 		cols += 8 - (cols % 8);
-		if (cols == fb_info.terminal.x)
+		if (cols >= fb_info.terminal.x)
 			cols = fb_info.terminal.x - 1;
 		bcons_dev.bd_setpos(rows, cols);
 		break;
@@ -1129,7 +1117,7 @@ btem_chkparam(btem_state_t *btem, int c)
 static void
 btem_getparams(btem_state_t *btem, int c)
 {
-	if (c >= '0' && c <= '9') {
+	if (isdigit(c)) {
 		btem->btem_paramval = btem->btem_paramval * 10 + c - '0';
 		btem->btem_gotparam = B_TRUE;
 		return;

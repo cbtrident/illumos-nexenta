@@ -121,13 +121,15 @@ struct flatpanelinfo
 	uint8_t Reserved[14];
 } __packed;
 
-#define	VBE_VALID_MODE(a)	((a) >= 0x100)
+#define	VBE_BASE_MODE		(0x100)		/* VBE 3.0 page 18 */
+#define	VBE_VALID_MODE(a)	((a) >= VBE_BASE_MODE)
 #define	VBE_ERROR(a)		(((a) & 0xFF) != 0x4F || ((a) & 0xFF00) != 0)
 #define	VBE_SUCCESS		(0x004F)
 #define	VBE_FAILED		(0x014F)
 #define	VBE_NOTSUP		(0x024F)
 #define	VBE_INVALID		(0x034F)
 
+#define	VGA_TEXT_MODE		(3)		/* 80x25 text mode */
 #define	TEXT_ROWS		(25)		/* VGATEXT rows */
 #define	TEXT_COLS		(80)		/* VGATEXT columns */
 
@@ -139,5 +141,5 @@ int vbe_available(void);
 int vbe_default_mode(void);
 int vbe_set_mode(int);
 int vbe_get_mode(void);
-int vbe_set_palette(const struct paletteentry *, int);
+int vbe_set_palette(const struct paletteentry *, size_t);
 void vbe_modelist(int);

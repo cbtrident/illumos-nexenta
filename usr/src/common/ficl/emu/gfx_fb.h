@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 <contributor>
+ * Copyright 2016 Toomas Some <tsoome@me.com>
  */
 
 #ifndef _GFX_FB_H
@@ -27,7 +27,7 @@ extern "C" {
 #endif
 
 struct framebuffer {
-        struct vis_identifier ident;
+	struct vis_identifier ident;
 	int fd;			/* frame buffer device descriptor */
 	uint8_t *fb_addr;	/* mapped framebuffer */
 
@@ -53,12 +53,13 @@ extern struct framebuffer fb;
 
 void gfx_framework_init(void);
 void gfx_framework_fini(void);
-void gfx_fb_setpixel(int x, int y);
-void gfx_fb_drawrect(int x1, int y1, int x2, int y2, int fill);
-void gfx_term_drawrect(int row1, int col1, int row2, int col2);
-void gfx_fb_line(int x0, int y0, int x1, int y1, int width);
-void gfx_fb_bezier(int x0, int y0, int x1, int y1, int x2, int y2, int width);
-int gfx_fb_putimage(png_t *);
+void gfx_fb_setpixel(uint32_t, uint32_t);
+void gfx_fb_drawrect(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+void gfx_term_drawrect(uint32_t, uint32_t, uint32_t, uint32_t);
+void gfx_fb_line(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+void gfx_fb_bezier(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+	uint32_t);
+int gfx_fb_putimage(png_t *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 
 #ifdef __cplusplus
 }

@@ -489,19 +489,6 @@ tem_safe_control(struct tem_vt_state *tem, tem_char_t ch, cred_t *credp,
 		}
 		break;
 
-	case A_OSC:
-		{
-			int i;
-			tem->tvs_curparam = 0;
-			tem->tvs_paramval = 0;
-			tem->tvs_gotparam = B_FALSE;
-			/* clear the parameters */
-			for (i = 0; i < TEM_MAXPARAMS; i++)
-				tem->tvs_params[i] = -1;
-			tem->tvs_state = A_STATE_OSC;
-		}
-		break;
-
 	case A_GS:
 		tem_safe_back_tab(tem, credp, called_from);
 		break;
@@ -597,16 +584,42 @@ tem_safe_selgraph(struct tem_vt_state *tem)
 			}
 			break;
 
-		case 30: /* black	(grey) 		foreground */
-		case 31: /* red		(light red) 	foreground */
-		case 32: /* green	(light green) 	foreground */
-		case 33: /* brown	(yellow) 	foreground */
-		case 34: /* blue	(light blue) 	foreground */
-		case 35: /* magenta	(light magenta) foreground */
-		case 36: /* cyan	(light cyan) 	foreground */
-		case 37: /* white	(bright white) 	foreground */
+		case 30: /* black	(grey)		foreground */
+		case 31: /* red		(light red)	foreground */
+		case 32: /* green	(light green)	foreground */
+		case 33: /* brown	(yellow)	foreground */
+		case 34: /* blue	(light blue)	foreground */
+		case 35: /* magenta	(light magenta)	foreground */
+		case 36: /* cyan	(light cyan)	foreground */
+		case 37: /* white	(bright white)	foreground */
 			tem->tvs_fg_color = param - 30;
 			tem->tvs_flags &= ~TEM_ATTR_BRIGHT_FG;
+			break;
+
+		case 38:
+			/* We should have at least 3 parameters */
+			if (curparam < 3)
+				break;
+
+			/*
+			 * 256 and truecolor needs depth at least 24, but
+			 * we still need to process the sequence.
+			 */
+			count++;
+			curparam--;
+			param = tem->tvs_params[count];
+			switch (param) {
+			case 5: /* 256 colors */
+				count++;
+				curparam--;
+				if (tems.ts_pdepth < 24)
+					break;
+				tem->tvs_fg_color = tem->tvs_params[count];
+				tem->tvs_flags &= ~TEM_ATTR_BRIGHT_FG;
+				break;
+			default:
+				break;
+			}
 			break;
 
 		case 39:
@@ -620,16 +633,42 @@ tem_safe_selgraph(struct tem_vt_state *tem)
 				tem->tvs_flags &= ~TEM_ATTR_BRIGHT_FG;
 			break;
 
-		case 40: /* black	(grey) 		background */
-		case 41: /* red		(light red) 	background */
-		case 42: /* green	(light green) 	background */
-		case 43: /* brown	(yellow) 	background */
-		case 44: /* blue	(light blue) 	background */
-		case 45: /* magenta	(light magenta) background */
-		case 46: /* cyan	(light cyan) 	background */
-		case 47: /* white	(bright white) 	background */
+		case 40: /* black	(grey)		background */
+		case 41: /* red		(light red)	background */
+		case 42: /* green	(light green)	background */
+		case 43: /* brown	(yellow)	background */
+		case 44: /* blue	(light blue)	background */
+		case 45: /* magenta	(light magenta)	background */
+		case 46: /* cyan	(light cyan)	background */
+		case 47: /* white	(bright white)	background */
 			tem->tvs_bg_color = param - 40;
 			tem->tvs_flags &= ~TEM_ATTR_BRIGHT_BG;
+			break;
+
+		case 48:
+			/* We should have at least 3 parameters */
+			if (curparam < 3)
+				break;
+
+			/*
+			 * 256 and truecolor needs depth at least 24, but
+			 * we still need to process the sequence.
+			 */
+			count++;
+			curparam--;
+			param = tem->tvs_params[count];
+			switch (param) {
+			case 5: /* 256 colors */
+				count++;
+				curparam--;
+				if (tems.ts_pdepth < 24)
+					break;
+				tem->tvs_bg_color = tem->tvs_params[count];
+				tem->tvs_flags &= ~TEM_ATTR_BRIGHT_BG;
+				break;
+			default:
+				break;
+			}
 			break;
 
 		case 49:
@@ -981,61 +1020,6 @@ tem_safe_getparams(struct tem_vt_state *tem, tem_char_t ch,
 }
 
 /*
- * Gather the OSC string.
- * OSC Ps ; Pt ST
- * OSC Ps ; Pt BEL
- * Ps is number sequence identifying the function. We only support
- * Ps = 4 and Ps = 104.
- * Quite obviously this is nowhere close to be done;)
- */
-/* ARGSUSED */
-static void
-tem_safe_get_oscstring(struct tem_vt_state *tem, uchar_t ch,
-    cred_t *credp __unused, enum called_from called_from)
-{
-	ASSERT((called_from == CALLED_FROM_STANDALONE) ||
-	    MUTEX_HELD(&tem->tvs_lock));
-
-	/* Should we cancel? */
-	if (ch == A_CAN || ch == A_SUB || ch == A_ESC) {
-		tem->tvs_state = A_STATE_START;
-		return;
-	}
-
-	/* following two if statements will read in the numeric parameter */
-	if (ch >= '0' && ch <= '9') {
-		tem->tvs_paramval = ((tem->tvs_paramval * 10) + (ch - '0'));
-		tem->tvs_gotparam = B_TRUE;  /* Remember got parameter */
-		return; /* Return immediately */
-	}
-
-	if (tem->tvs_gotparam && ch == ';') {
-		/* get the parameter value */
-		tem->tvs_params[tem->tvs_curparam] = tem->tvs_paramval;
-		tem->tvs_curparam++;
-		tem->tvs_gotparam = B_FALSE;
-		tem->tvs_paramval = 0;
-	}
-
-	if (tem->tvs_curparam == 0) {
-		/* bad sequence */
-		tem->tvs_state = A_STATE_START;
-		return;
-	}
-	if (tem->tvs_gotparam == B_FALSE && tem->tvs_curparam > 0) {
-		if (tem->tvs_params[0] != 4 && tem->tvs_params[0] != 104) {
-			/* make sure tvs_params will not get filled up */
-			tem->tvs_curparam = 1;
-		}
-	}
-	if (ch == A_ST || ch == A_BEL) {
-		/* done */
-		tem->tvs_state = A_STATE_START;
-		return;
-	}
-}
-
-/*
  * Add character to internal buffer.
  * When its full, send it to the next layer.
  */
@@ -1190,7 +1174,7 @@ tem_safe_parse(struct tem_vt_state *tem, tem_char_t ch,
 	    MUTEX_HELD(&tem->tvs_lock));
 
 	if (tem->tvs_state == A_STATE_START) {	/* Normal state? */
-		if (ch == A_CSI || ch == A_OSC || ch == A_ESC || ch < ' ') {
+		if (ch == A_CSI || ch == A_ESC || ch < ' ') {
 			/* Control */
 			tem_safe_control(tem, ch, credp, called_from);
 		} else {
@@ -1202,11 +1186,6 @@ tem_safe_parse(struct tem_vt_state *tem, tem_char_t ch,
 
 	/* In <ESC> sequence */
 	if (tem->tvs_state != A_STATE_ESC) {	/* Need to get parameters? */
-		if (tem->tvs_state == A_STATE_OSC) {
-			tem_safe_get_oscstring(tem, ch, credp, called_from);
-			return;
-		}
-
 		if (tem->tvs_state != A_STATE_CSI) {
 			tem_safe_getparams(tem, ch, credp, called_from);
 			return;
@@ -1248,7 +1227,7 @@ tem_safe_parse(struct tem_vt_state *tem, tem_char_t ch,
 			    tem->tvs_r_cursor.col, credp, called_from);
 			tem->tvs_state = A_STATE_START;
 			return;
-		case 'p': 	/* sunbow */
+		case 'p':	/* sunbow */
 			tem_safe_send_data(tem, credp, called_from);
 			/*
 			 * Don't set anything if we are
@@ -1269,7 +1248,7 @@ tem_safe_parse(struct tem_vt_state *tem, tem_char_t ch,
 			tem_safe_cls(tem, credp, called_from);
 			tem->tvs_state = A_STATE_START;
 			return;
-		case 'q':  	/* sunwob */
+		case 'q':	/* sunwob */
 			tem_safe_send_data(tem, credp, called_from);
 			/*
 			 * Don't set anything if we are
@@ -1317,14 +1296,6 @@ tem_safe_parse(struct tem_vt_state *tem, tem_char_t ch,
 		for (i = 0; i < TEM_MAXPARAMS; i++)
 			tem->tvs_params[i] = -1;
 		tem->tvs_state = A_STATE_CSI;
-	} else if (ch == ']') {
-		tem->tvs_curparam = 0;
-		tem->tvs_paramval = 0;
-		tem->tvs_gotparam = B_FALSE;
-		/* clear the parameters */
-		for (i = 0; i < TEM_MAXPARAMS; i++)
-			tem->tvs_params[i] = -1;
-		tem->tvs_state = A_STATE_OSC;
 	} else if (ch == 'Q') {	/* <ESC>Q ? */
 		tem->tvs_state = A_STATE_START;
 	} else if (ch == 'C') {	/* <ESC>C ? */
@@ -1410,6 +1381,31 @@ tem_safe_scroll(struct tem_vt_state *tem, int start, int end, int count,
 	}
 }
 
+static int
+tem_copy_width(term_char_t *src, term_char_t *dst, int cols)
+{
+	int width = cols - 1;
+
+	while (width >= 0) {
+		/* We can't compare images. */
+		if (TEM_CHAR_ATTR(src[width].tc_char) == TEM_ATTR_IMAGE ||
+		    TEM_CHAR_ATTR(dst[width].tc_char) == TEM_ATTR_IMAGE)
+			break;
+
+		/*
+		 * Find difference on line, compare char with its attributes
+		 * and colors.
+		 */
+		if (src[width].tc_char != dst[width].tc_char ||
+		    src[width].tc_fg_color != dst[width].tc_fg_color ||
+		    src[width].tc_bg_color != dst[width].tc_bg_color) {
+			break;
+		}
+		width--;
+	}
+	return (width + 1);
+}
+
 static void
 tem_safe_copy_area(struct tem_vt_state *tem,
     screen_pos_t s_col, screen_pos_t s_row,
@@ -1417,6 +1413,8 @@ tem_safe_copy_area(struct tem_vt_state *tem,
     screen_pos_t t_col, screen_pos_t t_row,
     cred_t *credp, enum called_from called_from)
 {
+	size_t soffset, toffset;
+	term_char_t *src, *dst;
 	int rows;
 	int cols;
 
@@ -1443,16 +1441,52 @@ tem_safe_copy_area(struct tem_vt_state *tem,
 	    t_col + cols > tems.ts_c_dimension.width)
 		return;
 
-	tem_safe_virtual_copy(tem,
-	    s_col, s_row,
-	    e_col, e_row,
-	    t_col, t_row);
+	soffset = s_col + s_row * tems.ts_c_dimension.width;
+	toffset = t_col + t_row * tems.ts_c_dimension.width;
+	src = tem->tvs_screen_buf + soffset;
+	dst = tem->tvs_screen_buf + toffset;
 
-	if (!tem->tvs_isactive)
-		return;
+	/*
+	 * Copy line by line. We determine the length by comparing the
+	 * screen content from cached text in tvs_screen_buf.
+	 */
+	if (toffset <= soffset) {
+		for (int i = 0; i < rows; i++) {
+			int increment = i * tems.ts_c_dimension.width;
+			int width;
 
-	tem_safe_callback_copy(tem, s_col, s_row,
-	    e_col, e_row, t_col, t_row, credp, called_from);
+			width = tem_copy_width(src + increment,
+			    dst + increment, cols);
+
+			tem_safe_virtual_copy(tem, s_col, s_row + i,
+			    e_col  - cols + width, s_row + i,
+			    t_col, t_row + i);
+
+			if (tem->tvs_isactive) {
+				tem_safe_callback_copy(tem, s_col, s_row + i,
+				    e_col - cols + width, s_row + i,
+				    t_col, t_row + i, credp, called_from);
+			}
+		}
+	} else {
+		for (int i = rows - 1; i >= 0; i--) {
+			int increment = i * tems.ts_c_dimension.width;
+			int width;
+
+			width = tem_copy_width(src + increment,
+			    dst + increment, cols);
+
+			tem_safe_virtual_copy(tem, s_col, s_row + i,
+			    e_col  - cols + width, s_row + i,
+			    t_col, t_row + i);
+
+			if (tem->tvs_isactive) {
+				tem_safe_callback_copy(tem, s_col, s_row + i,
+				    e_col - cols + width, s_row + i,
+				    t_col, t_row + i, credp, called_from);
+			}
+		}
+	}
 }
 
 static void
@@ -1589,7 +1623,7 @@ tem_safe_text_cls(struct tem_vt_state *tem,
 		tems.ts_blank_line[i] = c;
 
 	tem_safe_text_display(tem, tems.ts_blank_line, count, row, col,
-		credp, called_from);
+	    credp, called_from);
 }
 
 void
@@ -1611,8 +1645,11 @@ tem_safe_pix_display(struct tem_vt_state *tem,
 	da.col = (col * da.width) + tems.ts_p_offset.x;
 
 	for (i = 0; i < count; i++) {
-		tem_safe_callback_bit2pix(tem, string[i]);
-		tems_safe_display(&da, credp, called_from);
+		/* Do not display image area */
+		if (!TEM_ATTR_ISSET(string[i].tc_char, TEM_ATTR_IMAGE)) {
+			tem_safe_callback_bit2pix(tem, string[i]);
+			tems_safe_display(&da, credp, called_from);
+		}
 		da.col += da.width;
 	}
 }
@@ -2151,12 +2188,9 @@ tem_safe_pix_cursor(struct tem_vt_state *tem, short action,
 
 	switch (tems.ts_pdepth) {
 	case 4:
+	case 8:
 		ca.fg_color.mono = fg;
 		ca.bg_color.mono = bg;
-		break;
-	case 8:
-		ca.fg_color.mono = tems.ts_color_map(fg);
-		ca.bg_color.mono = tems.ts_color_map(bg);
 		break;
 	case 15:
 	case 16:
@@ -2233,9 +2267,6 @@ bit_to_pix8(struct tem_vt_state *tem, tem_char_t c, text_color_t fg_color,
     text_color_t bg_color)
 {
 	uint8_t *dest = (uint8_t *)tem->tvs_pix_data;
-
-	fg_color = (text_color_t)tems.ts_color_map(fg_color);
-	bg_color = (text_color_t)tems.ts_color_map(bg_color);
 	font_bit_to_pix8(&tems.ts_font, dest, c, fg_color, bg_color);
 }
 
@@ -2262,8 +2293,6 @@ bit_to_pix24(struct tem_vt_state *tem, tem_char_t c, text_color_t fg_color4,
 	uint32_t fg_color32, bg_color32;
 	uint8_t *dest;
 
-	ASSERT(fg_color4 < 16 && bg_color4 < 16);
-
 #ifdef _HAVE_TEM_FIRMWARE
 	fg_color32 = PIX4TO32(fg_color4);
 	bg_color32 = PIX4TO32(bg_color4);
@@ -2281,8 +2310,6 @@ bit_to_pix32(struct tem_vt_state *tem, tem_char_t c, text_color_t fg_color4,
     text_color_t bg_color4)
 {
 	uint32_t fg_color32, bg_color32, *dest;
-
-	ASSERT(fg_color4 < 16 && bg_color4 < 16);
 
 #ifdef _HAVE_TEM_FIRMWARE
 	fg_color32 = PIX4TO32(fg_color4);
@@ -2320,15 +2347,23 @@ tem_safe_get_attr(struct tem_vt_state *tem, text_color_t *fg,
 static void
 tem_safe_get_color(text_color_t *fg, text_color_t *bg, term_char_t c)
 {
-	if (TEM_CHAR_ATTR(c.tc_char) & (TEM_ATTR_BRIGHT_FG | TEM_ATTR_BOLD))
-		*fg = brt_xlate[c.tc_fg_color];
-	else
-		*fg = dim_xlate[c.tc_fg_color];
+	*fg = c.tc_fg_color;
+	*bg = c.tc_bg_color;
 
-	if (TEM_CHAR_ATTR(c.tc_char) & TEM_ATTR_BRIGHT_BG)
-		*bg = brt_xlate[c.tc_bg_color];
-	else
-		*bg = dim_xlate[c.tc_bg_color];
+	if (c.tc_fg_color < 16) {
+		if (TEM_ATTR_ISSET(c.tc_char,
+		    TEM_ATTR_BRIGHT_FG | TEM_ATTR_BOLD))
+			*fg = brt_xlate[c.tc_fg_color];
+		else
+			*fg = dim_xlate[c.tc_fg_color];
+	}
+
+	if (c.tc_bg_color < 16) {
+		if (TEM_ATTR_ISSET(c.tc_char, TEM_ATTR_BRIGHT_BG))
+			*bg = brt_xlate[c.tc_bg_color];
+		else
+			*bg = dim_xlate[c.tc_bg_color];
+	}
 }
 
 /*

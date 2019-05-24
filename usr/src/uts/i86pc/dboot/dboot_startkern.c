@@ -138,7 +138,7 @@ multiboot_tag_mmap_t *mb2_mmap_tagp;
 int num_entries;			/* mmap entry count */
 boolean_t num_entries_set;		/* is mmap entry count set */
 uintptr_t load_addr;
-static boot_framebuffer_t framebuffer[2];
+static boot_framebuffer_t framebuffer __aligned(16);
 static boot_framebuffer_t *fb;
 
 /* can not be automatic variables because of alignment */
@@ -151,7 +151,7 @@ static efi_guid_t acpi1 = ACPI_10_TABLE_GUID;
 /*
  * This contains information passed to the kernel
  */
-struct xboot_info boot_info[2];	/* extra space to fix alignement for amd64 */
+struct xboot_info boot_info __aligned(16);
 struct xboot_info *bi;
 
 /*
@@ -987,7 +987,6 @@ dboot_multiboot2_xboot_consinfo(void)
 	fbtag = dboot_multiboot2_find_tag(mb2_info,
 	    MULTIBOOT_TAG_TYPE_FRAMEBUFFER);
 	fb->framebuffer = (uint64_t)(uintptr_t)fbtag;
-	fb->boot_fb_virt = 0;
 }
 
 static int
@@ -1070,7 +1069,7 @@ dboot_multiboot_modcmdline(int index)
  *
  * Note, we just will search for and if found, will pass the modules
  * to console setup, the proper module list processing will happen later.
- * Currenly used modules are boot environment and consoler font.
+ * Currently used modules are boot environment and console font.
  */
 static void
 dboot_find_console_modules(void)
@@ -2037,7 +2036,7 @@ build_page_tables(void)
 	 * Map framebuffer memory as PT_NOCACHE as this is memory from a
 	 * device and therefore must not be cached.
 	 */
-	if (fb != NULL && fb->framebuffer != 0) {
+	if (bi->bi_framebuffer != NULL && fb->framebuffer != 0) {
 		multiboot_tag_framebuffer_t *fb_tagp;
 		fb_tagp = (multiboot_tag_framebuffer_t *)(uintptr_t)
 		    fb->framebuffer;
@@ -2046,35 +2045,20 @@ build_page_tables(void)
 		end = start + fb_tagp->framebuffer_common.framebuffer_height *
 		    fb_tagp->framebuffer_common.framebuffer_pitch;
 
-		/* VGA text memory is already mapped. */
-		if (fb_tagp->framebuffer_common.framebuffer_type !=
-		    MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT) {
-			uint64_t vaddr;
+		if (map_debug)
+			dboot_printf("FB 1:1 map pa=%" PRIx64 "..%" PRIx64 "\n",
+			    start, end);
+		pte_bits |= PT_NOCACHE;
+		if (PAT_support != 0)
+			pte_bits |= PT_PAT_4K;
 
-#if defined(_BOOT_TARGET_amd64)
-			vaddr = start;
-#else
-			vaddr = (uintptr_t)mem_alloc(end - start);
-#endif
-			fb->boot_fb_virt = vaddr;
-			if (map_debug) {
-				dboot_printf("FB map pa=%" PRIx64 "..%"
-				    PRIx64 "\n", start, end);
-			}
-
-			pte_bits |= PT_NOCACHE;
-			if (PAT_support != 0)
-				pte_bits |= PT_PAT_4K;
-
-			while (start < end) {
-				map_pa_at_va(start, vaddr, 0);
-				start += MMU_PAGESIZE;
-				vaddr += MMU_PAGESIZE;
-			}
-			pte_bits &= ~PT_NOCACHE;
-			if (PAT_support != 0)
-				pte_bits &= ~PT_PAT_4K;
+		while (start < end) {
+			map_pa_at_va(start, start, 0);
+			start += MMU_PAGESIZE;
 		}
+		pte_bits &= ~PT_NOCACHE;
+		if (PAT_support != 0)
+			pte_bits &= ~PT_PAT_4K;
 	}
 #endif /* !__xpv */
 
@@ -2091,21 +2075,10 @@ See http://illumos.org/msg/SUNOS-8000-AK for details.\n"
 static void
 dboot_init_xboot_consinfo(void)
 {
-	uintptr_t addr;
-	/*
-	 * boot info must be 16 byte aligned for 64 bit kernel ABI
-	 */
-	addr = (uintptr_t)boot_info;
-	addr = (addr + 0xf) & ~0xf;
-	bi = (struct xboot_info *)addr;
+	bi = &boot_info;
 
 #if !defined(__xpv)
-	/*
-	 * fb info must be 16 byte aligned for 64 bit kernel ABI
-	 */
-	addr = (uintptr_t)framebuffer;
-	addr = (addr + 0xf) & ~0xf;
-	fb = (boot_framebuffer_t *)addr;
+	fb = &framebuffer;
 	bi->bi_framebuffer = (native_ptr_t)(uintptr_t)fb;
 
 	switch (multiboot_version) {
@@ -2120,10 +2093,6 @@ dboot_init_xboot_consinfo(void)
 		    multiboot_version);
 		break;
 	}
-	/*
-	 * Lookup environment module for the console. Complete module list
-	 * will be built after console setup.
-	 */
 	dboot_find_console_modules();
 #endif
 }
@@ -2618,6 +2587,8 @@ startup_kernel(void)
 		dump_tables();
 #endif
 
+	DBG_MSG("\n\n*** DBOOT DONE -- back to asm to jump to kernel\n\n");
+
 #ifndef __xpv
 	/* Update boot info with FB data */
 	fb->cursor.origin.x = fb_info.cursor.origin.x;
@@ -2626,6 +2597,4 @@ startup_kernel(void)
 	fb->cursor.pos.y = fb_info.cursor.pos.y;
 	fb->cursor.visible = fb_info.cursor.visible;
 #endif
-
-	DBG_MSG("\n\n*** DBOOT DONE -- back to asm to jump to kernel\n\n");
 }

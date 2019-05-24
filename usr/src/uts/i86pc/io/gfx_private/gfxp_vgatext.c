@@ -26,7 +26,7 @@
 
 /*	Copyright (c) 1990, 1991 UNIX System Laboratories, Inc.	*/
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989, 1990 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*		All Rights Reserved	*/
 
 #include <sys/errno.h>
 #include <sys/types.h>
@@ -44,58 +44,10 @@
 #include <sys/kd.h>
 #include <sys/ddi_impldefs.h>
 #include <sys/gfx_private.h>
+#include <sys/vgareg.h>
 #include "gfxp_fb.h"
 
 #define	MYNAME	"gfxp_vgatext"
-
-#define	VGA_BRIGHT_WHITE	0x0f
-#define	VGA_BLACK		0x00
-
-#define	VGA_REG_ADDR		0x3c0
-#define	VGA_REG_SIZE		0x20
-
-#define	VGA_MEM_ADDR		0xa0000
-#define	VGA_MEM_SIZE		0x20000
-
-#define	VGA_MMAP_FB_BASE	VGA_MEM_ADDR
-
-typedef enum pc_colors {
-	pc_black	= 0,
-	pc_blue		= 1,
-	pc_green	= 2,
-	pc_cyan		= 3,
-	pc_red		= 4,
-	pc_magenta	= 5,
-	pc_brown	= 6,
-	pc_white	= 7,
-	pc_grey		= 8,
-	pc_brt_blue	= 9,
-	pc_brt_green	= 10,
-	pc_brt_cyan	= 11,
-	pc_brt_red	= 12,
-	pc_brt_magenta	= 13,
-	pc_yellow	= 14,
-	pc_brt_white	= 15
-} pc_colors_t;
-
-static const unsigned char solaris_color_to_pc_color[16] = {
-	pc_brt_white,		/*  0 - brt_white	*/
-	pc_black,		/*  1 - black		*/
-	pc_blue,		/*  2 - blue		*/
-	pc_green,		/*  3 - green		*/
-	pc_cyan,		/*  4 - cyan		*/
-	pc_red,			/*  5 - red		*/
-	pc_magenta,		/*  6 - magenta		*/
-	pc_brown,		/*  7 - brown		*/
-	pc_white,		/*  8 - white		*/
-	pc_grey,		/*  9 - gery		*/
-	pc_brt_blue,		/* 10 - brt_blue	*/
-	pc_brt_green,		/* 11 - brt_green	*/
-	pc_brt_cyan,		/* 12 - brt_cyan	*/
-	pc_brt_red,		/* 13 - brt_red		*/
-	pc_brt_magenta,		/* 14 - brt_magenta	*/
-	pc_yellow		/* 15 - yellow		*/
-};
 
 static ddi_device_acc_attr_t dev_attr = {
 	DDI_DEVICE_ATTR_V0,
@@ -108,7 +60,7 @@ static struct fbgattr vgatext_attr =  {
 /*	real_type	owner */
 	FBTYPE_SUNFAST_COLOR, 0,
 /* fbtype: type		h  w  depth cms  size */
-	{ FBTYPE_SUNFAST_COLOR, TEXT_ROWS, TEXT_COLS, 1,    256,  0 },
+	{ FBTYPE_SUNFAST_COLOR, VGA_TEXT_ROWS, VGA_TEXT_COLS, 1,    256,  0 },
 /* fbsattr: flags emu_type	dev_specific */
 	{ 0, FBTYPE_SUN4COLOR, { 0 } },
 /*	emu_types */
@@ -117,7 +69,6 @@ static struct fbgattr vgatext_attr =  {
 
 static struct vis_identifier gfxp_vgatext_ident = { "illumos_text" };
 
-int gfxp_vga_detach(dev_info_t *, ddi_detach_cmd_t, struct gfxp_fb_softc *);
 static int vgatext_devinit(struct gfxp_fb_softc *, struct vis_devinit *data);
 static void	vgatext_cons_copy(struct gfxp_fb_softc *,
 			struct vis_conscopy *);
@@ -177,10 +128,8 @@ static struct gfxp_ops gfxp_vgatext_ops = {
 
 #define	STREQ(a, b)	(strcmp((a), (b)) == 0)
 
-/*ARGSUSED*/
 int
-gfxp_vga_attach(dev_info_t *devi, ddi_attach_cmd_t cmd,
-    struct gfxp_fb_softc *softc)
+gfxp_vga_attach(dev_info_t *devi, struct gfxp_fb_softc *softc)
 {
 	int	unit = ddi_get_instance(devi);
 	int	error;
@@ -317,10 +266,8 @@ fail:
 	return (error);
 }
 
-/*ARGSUSED*/
 int
-gfxp_vga_detach(dev_info_t *devi, ddi_detach_cmd_t cmd,
-    struct gfxp_fb_softc *softc)
+gfxp_vga_detach(dev_info_t *devi __unused, struct gfxp_fb_softc *softc)
 {
 	if (softc->console->vga.fb.mapped)
 		ddi_regs_map_free(&softc->console->vga.fb.handle);
@@ -335,7 +282,7 @@ gfxp_vga_detach(dev_info_t *devi, ddi_detach_cmd_t cmd,
  * vgatext_suspend
  * vgatext_resume
  *
- * 	Routines to save and restore contents of the VGA text area
+ *	Routines to save and restore contents of the VGA text area
  * Mostly, this is to support Suspend/Resume operation for graphics
  * device drivers.  Here in the VGAtext common code, we simply squirrel
  * away the contents of the hardware's text area during Suspend and then
@@ -496,19 +443,19 @@ vgatext_devmap(dev_t dev, devmap_cookie_t dhp, offset_t off, size_t len,
 	}
 	console = softc->console;
 
-	if (!(off >= VGA_MMAP_FB_BASE &&
-	    off < VGA_MMAP_FB_BASE + console->vga.fb_size)) {
+	if (!(off >= VGA_MEM_ADDR &&
+	    off < VGA_MEM_ADDR + console->vga.fb_size)) {
 		cmn_err(CE_WARN, "vgatext: Can't map offset 0x%llx", off);
 		return (-1);
 	}
 
-	if (off + len > VGA_MMAP_FB_BASE + console->vga.fb_size)
-		length = VGA_MMAP_FB_BASE + console->vga.fb_size - off;
+	if (off + len > VGA_MEM_ADDR + console->vga.fb_size)
+		length = VGA_MEM_ADDR + console->vga.fb_size - off;
 	else
 		length = len;
 
 	if ((err = devmap_devmem_setup(dhp, softc->devi,
-	    NULL, console->vga.fb_regno, off - VGA_MMAP_FB_BASE,
+	    NULL, console->vga.fb_regno, off - VGA_MEM_ADDR,
 	    length, PROT_ALL, 0, &dev_attr)) < 0) {
 		return (err);
 	}
@@ -524,9 +471,9 @@ vgatext_devinit(struct gfxp_fb_softc *softc, struct vis_devinit *data)
 {
 	/* initialize console instance */
 	data->version = VIS_CONS_REV;
-	data->width = TEXT_COLS;
-	data->height = TEXT_ROWS;
-	data->linebytes = TEXT_COLS;
+	data->width = VGA_TEXT_COLS;
+	data->height = VGA_TEXT_ROWS;
+	data->linebytes = VGA_TEXT_COLS;
 	data->color_map = NULL;
 	data->depth = 4;
 	data->mode = VIS_TEXT;
@@ -612,7 +559,7 @@ vga_get_cp437(uint32_t c)
 	int min, mid, max;
 
 	min = 0;
-	max = (sizeof(cp437table) / sizeof(struct unicp437)) - 1;
+	max = (sizeof (cp437table) / sizeof (struct unicp437)) - 1;
 
 	if (c < cp437table[0].unicode_base ||
 	    c > cp437table[max].unicode_base + cp437table[max].length)
@@ -653,9 +600,9 @@ vgatext_cons_display(struct gfxp_fb_softc *softc, struct vis_consdisplay *da)
 	 * Sanity checks.  This is a last-ditch effort to avoid damage
 	 * from brokenness or maliciousness above.
 	 */
-	if (da->row < 0 || da->row >= TEXT_ROWS ||
-	    da->col < 0 || da->col >= TEXT_COLS ||
-	    da->col + da->width > TEXT_COLS)
+	if (da->row < 0 || da->row >= VGA_TEXT_ROWS ||
+	    da->col < 0 || da->col >= VGA_TEXT_COLS ||
+	    da->col + da->width > VGA_TEXT_COLS)
 		return;
 
 	/*
@@ -668,7 +615,7 @@ vgatext_cons_display(struct gfxp_fb_softc *softc, struct vis_consdisplay *da)
 	    | solaris_color_to_pc_color[da->fg_color & 0xf];
 	string = (uint32_t *)da->data;
 	addr = (struct cgatext *)softc->console->vga.current_base
-	    +  (da->row * TEXT_COLS + da->col);
+	    +  (da->row * VGA_TEXT_COLS + da->col);
 	for (i = 0; i < da->width; i++) {
 		addr[i].ch = vga_get_cp437(string[i]);
 		addr[i].attr = attr;
@@ -703,12 +650,12 @@ vgatext_cons_copy(struct gfxp_fb_softc *softc, struct vis_conscopy *ma)
 	 * Sanity checks.  Note that this is a last-ditch effort to avoid
 	 * damage caused by broken-ness or maliciousness above.
 	 */
-	if (ma->s_col < 0 || ma->s_col >= TEXT_COLS ||
-	    ma->s_row < 0 || ma->s_row >= TEXT_ROWS ||
-	    ma->e_col < 0 || ma->e_col >= TEXT_COLS ||
-	    ma->e_row < 0 || ma->e_row >= TEXT_ROWS ||
-	    ma->t_col < 0 || ma->t_col >= TEXT_COLS ||
-	    ma->t_row < 0 || ma->t_row >= TEXT_ROWS ||
+	if (ma->s_col < 0 || ma->s_col >= VGA_TEXT_COLS ||
+	    ma->s_row < 0 || ma->s_row >= VGA_TEXT_ROWS ||
+	    ma->e_col < 0 || ma->e_col >= VGA_TEXT_COLS ||
+	    ma->e_row < 0 || ma->e_row >= VGA_TEXT_ROWS ||
+	    ma->t_col < 0 || ma->t_col >= VGA_TEXT_COLS ||
+	    ma->t_row < 0 || ma->t_row >= VGA_TEXT_ROWS ||
 	    ma->s_col > ma->e_col ||
 	    ma->s_row > ma->e_row)
 		return;
@@ -721,21 +668,21 @@ vgatext_cons_copy(struct gfxp_fb_softc *softc, struct vis_conscopy *ma)
 	rows_to_move = ma->e_row - ma->s_row + 1;
 
 	/* More sanity checks. */
-	if (ma->t_row + rows_to_move > TEXT_ROWS ||
-	    ma->t_col + chars_per_row > TEXT_COLS)
+	if (ma->t_row + rows_to_move > VGA_TEXT_ROWS ||
+	    ma->t_col + chars_per_row > VGA_TEXT_COLS)
 		return;
 
 	base = (unsigned short *)softc->console->vga.current_base;
 
-	to_row_start = base + ((ma->t_row * TEXT_COLS) + ma->t_col);
-	from_row_start = base + ((ma->s_row * TEXT_COLS) + ma->s_col);
+	to_row_start = base + ((ma->t_row * VGA_TEXT_COLS) + ma->t_col);
+	from_row_start = base + ((ma->s_row * VGA_TEXT_COLS) + ma->s_col);
 
 	if (to_row_start < from_row_start) {
 		while (rows_to_move-- > 0) {
 			to = to_row_start;
 			from = from_row_start;
-			to_row_start += TEXT_COLS;
-			from_row_start += TEXT_COLS;
+			to_row_start += VGA_TEXT_COLS;
+			from_row_start += VGA_TEXT_COLS;
 			for (cnt = chars_per_row; cnt-- > 0; )
 				*to++ = *from++;
 		}
@@ -743,13 +690,13 @@ vgatext_cons_copy(struct gfxp_fb_softc *softc, struct vis_conscopy *ma)
 		/*
 		 * Offset to the end of the region and copy backwards.
 		 */
-		cnt = rows_to_move * TEXT_COLS + chars_per_row;
+		cnt = rows_to_move * VGA_TEXT_COLS + chars_per_row;
 		to_row_start += cnt;
 		from_row_start += cnt;
 
 		while (rows_to_move-- > 0) {
-			to_row_start -= TEXT_COLS;
-			from_row_start -= TEXT_COLS;
+			to_row_start -= VGA_TEXT_COLS;
+			from_row_start -= VGA_TEXT_COLS;
 			to = to_row_start;
 			from = from_row_start;
 			for (cnt = chars_per_row; cnt-- > 0; )
@@ -783,7 +730,7 @@ vgatext_cons_clear(struct gfxp_fb_softc *softc, struct vis_consclear *ca)
 	val = (val << 8) | ' ';
 
 	base = (uint16_t *)softc->console->vga.current_base;
-	for (i = 0; i < TEXT_ROWS * TEXT_COLS; i++)
+	for (i = 0; i < VGA_TEXT_ROWS * VGA_TEXT_COLS; i++)
 		base[i] = val;
 
 	return (0);
@@ -807,8 +754,8 @@ vgatext_cons_cursor(struct gfxp_fb_softc *softc, struct vis_conscursor *ca)
 		 * Sanity check.  This is a last-ditch effort to avoid
 		 * damage from brokenness or maliciousness above.
 		 */
-		if (ca->col < 0 || ca->col >= TEXT_COLS ||
-		    ca->row < 0 || ca->row >= TEXT_ROWS)
+		if (ca->col < 0 || ca->col >= VGA_TEXT_COLS ||
+		    ca->row < 0 || ca->row >= VGA_TEXT_ROWS)
 			return;
 
 		softc->console->vga.cursor.visible = B_TRUE;
@@ -846,7 +793,7 @@ vgatext_hide_cursor(struct gfxp_fb_softc *softc)
 
 	msl = vga_get_crtc(&console->vga.regs, VGA_CRTC_MAX_S_LN) & 0x1f;
 	s = vga_get_crtc(&console->vga.regs, VGA_CRTC_CSSL) & 0xc0;
-	s |= (1<<5);
+	s |= (1 << 5);
 
 	/* disable cursor */
 	vga_set_crtc(&console->vga.regs, VGA_CRTC_CSSL, s);
@@ -866,7 +813,7 @@ vgatext_set_cursor(struct gfxp_fb_softc *softc, int row, int col)
 	msl = vga_get_crtc(&console->vga.regs, VGA_CRTC_MAX_S_LN) & 0x1f;
 	s = vga_get_crtc(&console->vga.regs, VGA_CRTC_CSSL) & 0xc0;
 
-	addr = row * TEXT_COLS + col;
+	addr = row * VGA_TEXT_COLS + col;
 
 	vga_set_crtc(&console->vga.regs, VGA_CRTC_CLAH, addr >> 8);
 	vga_set_crtc(&console->vga.regs, VGA_CRTC_CLAL, addr & 0xff);
@@ -886,8 +833,8 @@ vgatext_get_cursor(struct gfxp_fb_softc *softc,
 	addr = (vga_get_crtc(&console->vga.regs, VGA_CRTC_CLAH) << 8) +
 	    vga_get_crtc(&console->vga.regs, VGA_CRTC_CLAL);
 
-	*row = addr / TEXT_COLS;
-	*col = addr % TEXT_COLS;
+	*row = addr / VGA_TEXT_COLS;
+	*col = addr % VGA_TEXT_COLS;
 }
 
 static void
@@ -940,10 +887,6 @@ vgatext_set_text(struct gfxp_fb_softc *softc)
 	vga_reg = &console->vga.vga_reg;
 
 	vgatext_get_text(softc);
-/*
-	if (softc->happyface_boot == 0)
-		return;
-*/
 
 	/*
 	 * Set output register bits for text mode.
@@ -952,53 +895,44 @@ vgatext_set_text(struct gfxp_fb_softc *softc)
 	vga_set_reg(regs, VGA_MISC_W, VGA_MISC_HSP | VGA_MISC_PGSL |
 	    VGA_MISC_VCLK1 | VGA_MISC_ENB_RAM | VGA_MISC_IOA_SEL);
 
-#if 0
-	/* set misc registers */
-	vga_set_reg(regs, VGA_MISC_W, vga_reg->vga_misc);
-#endif
-
 	/* set sequencer registers */
-	vga_set_seq(&console->vga.regs, VGA_SEQ_RST_SYN,
-	    (vga_get_seq(&console->vga.regs, VGA_SEQ_RST_SYN) &
+	vga_set_seq(regs, VGA_SEQ_RST_SYN,
+	    (vga_get_seq(regs, VGA_SEQ_RST_SYN) &
 	    ~VGA_SEQ_RST_SYN_NO_SYNC_RESET));
 	for (i = 1; i < NUM_SEQ_REG; i++) {
-		/* vga_set_seq(regs, i, vga_reg->vga_seq[i]); */
 		vga_set_seq(regs, i, VGA_SEQ_TEXT[i]);
 	}
-	vga_set_seq(&console->vga.regs, VGA_SEQ_RST_SYN,
-	    (vga_get_seq(&console->vga.regs, VGA_SEQ_RST_SYN) |
+	vga_set_seq(regs, VGA_SEQ_RST_SYN,
+	    (vga_get_seq(regs, VGA_SEQ_RST_SYN) |
 	    VGA_SEQ_RST_SYN_NO_ASYNC_RESET |
 	    VGA_SEQ_RST_SYN_NO_SYNC_RESET));
 
 	/* set crt controller registers */
-	vga_set_crtc(&console->vga.regs, VGA_CRTC_VRE,
+	vga_set_crtc(regs, VGA_CRTC_VRE,
 	    (vga_reg->vga_crtc[VGA_CRTC_VRE] & ~VGA_CRTC_VRE_LOCK));
 	for (i = 0; i < NUM_CRTC_REG; i++) {
-		/* vga_set_crtc(regs, i, vga_reg->vga_crtc[i]); */
 		vga_set_crtc(regs, i, VGA_CRTC_TEXT[i]);
 	}
 
 	/* set graphics controller registers */
 	for (i = 0; i < NUM_GRC_REG; i++) {
-		/* vga_set_grc(regs, i, vga_reg->vga_grc[i]); */
 		vga_set_grc(regs, i, VGA_GRC_TEXT[i]);
 	}
 
 	/* set attribute registers */
 	for (i = 0; i < NUM_ATR_REG; i++) {
-		/* vga_set_atr(regs, i, vga_reg->vga_seq[i]); */
 		vga_set_atr(regs, i, VGA_ATR_TEXT[i]);
 	}
 
 	/* set palette */
 	for (i = 0; i < VGA_TEXT_CMAP_ENTRIES; i++) {
-		vga_put_cmap(&console->vga.regs, i,
+		vga_put_cmap(regs, i,
 		    VGA_TEXT_PALETTES[i][0] << 2,
 		    VGA_TEXT_PALETTES[i][1] << 2,
 		    VGA_TEXT_PALETTES[i][2] << 2);
 	}
 	for (i = VGA_TEXT_CMAP_ENTRIES; i < VGA8_CMAP_ENTRIES; i++) {
-		vga_put_cmap(&console->vga.regs, i, 0, 0, 0);
+		vga_put_cmap(regs, i, 0, 0, 0);
 	}
 }
 
@@ -1017,10 +951,10 @@ vgatext_init(struct gfxp_fb_softc *softc)
 	vga_set_atr(&console->vga.regs, VGA_ATR_MODE, atr_mode);
 #if	defined(USE_BORDERS)
 	vga_set_atr(&console->vga.regs, VGA_ATR_BDR_CLR,
-	    vga_get_atr(&console->vga.regs, VGA_BRIGHT_WHITE));
+	    vga_get_atr(&console->vga.regs, pc_brt_white));
 #else
 	vga_set_atr(&console->vga.regs, VGA_ATR_BDR_CLR,
-	    vga_get_atr(&console->vga.regs, VGA_BLACK));
+	    vga_get_atr(&console->vga.regs, pc_black));
 #endif
 	vgatext_setfont(softc);	/* need selectable font? */
 }
@@ -1030,7 +964,7 @@ static void
 vgatext_init_graphics(struct gfxp_fb_softc *softc)
 {
 	vga_set_atr(&softc->console->vga.regs, VGA_ATR_BDR_CLR,
-	    vga_get_atr(&softc->console->vga.regs, VGA_BLACK));
+	    vga_get_atr(&softc->console->vga.regs, pc_black));
 }
 #endif
 
@@ -1038,9 +972,9 @@ vgatext_init_graphics(struct gfxp_fb_softc *softc)
  * Binary searchable table for CP437 to Unicode conversion.
  */
 struct cp437uni {
-        uint8_t         cp437_base;
-        uint16_t        unicode_base;
-        uint8_t         length;
+	uint8_t		cp437_base;
+	uint16_t	unicode_base;
+	uint8_t		length;
 };
 
 static const struct cp437uni cp437unitable[] = {
@@ -1102,25 +1036,21 @@ vga_cp437_to_uni(uint8_t c)
 	int min, mid, max;
 
 	min = 0;
-	max = (sizeof(cp437unitable) / sizeof(struct cp437uni)) - 1;
+	max = (sizeof (cp437unitable) / sizeof (struct cp437uni)) - 1;
 
-	if (c < cp437unitable[0].cp437_base ||
-            c > cp437unitable[max].cp437_base + cp437unitable[max].length)
-                return ('?');
+	while (max >= min) {
+		mid = (min + max) / 2;
+		if (c < cp437unitable[mid].cp437_base)
+			max = mid - 1;
+		else if (c > cp437unitable[mid].cp437_base +
+		    cp437unitable[mid].length)
+			min = mid + 1;
+		else
+			return (c - cp437unitable[mid].cp437_base +
+			    cp437unitable[mid].unicode_base);
+	}
 
-        while (max >= min) {
-                mid = (min + max) / 2;
-                if (c < cp437unitable[mid].cp437_base)
-                        max = mid - 1;
-                else if (c > cp437unitable[mid].cp437_base +
-                    cp437unitable[mid].length)
-                        min = mid + 1;
-                else
-                        return (c - cp437unitable[mid].cp437_base +
-                            cp437unitable[mid].unicode_base);
-        }
-
-        return ('?');
+	return ('?');
 }
 
 static void
@@ -1211,13 +1141,6 @@ vgatext_setfont(struct gfxp_fb_softc *softc)
 	/* enable all color plane */
 	vga_set_atr(&console->vga.regs, 0x12, 0x0f);
 
-}
-
-int
-/*ARGSUSED*/
-gfxp_vga_scrnmap(int cmd, intptr_t data, int mode, struct gfxp_fb_softc *softc)
-{
-	return (ENXIO);
 }
 
 static void

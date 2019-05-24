@@ -227,6 +227,7 @@ ACPICA_OBJS	+= \
 		   osl_ml.o osl.o
 
 AGP_OBJS += agpmaster.o
+
 FBT_OBJS += fbt.o
 SDT_OBJS += sdt.o
 

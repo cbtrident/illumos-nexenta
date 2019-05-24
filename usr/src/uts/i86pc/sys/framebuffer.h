@@ -43,25 +43,24 @@ typedef struct fb_info_char_coord {
 typedef struct fb_cursor {
 	fb_info_pixel_coord_t origin;	/* cursor upper left */
 	fb_info_char_coord_t pos;	/* cursor coord in chars */
-	uint32_t visible;
+	boolean_t visible;
 } fb_cursor_t;
 
 typedef struct boot_framebuffer {
 	uint64_t framebuffer;	/* native_ptr_t */
-	uint64_t boot_fb_virt;	/* native_ptr_t */
 	fb_cursor_t cursor;
-} __attribute__((packed)) boot_framebuffer_t;
+} __packed boot_framebuffer_t;
 
-enum fb_type {
+typedef enum fb_type {
 	FB_TYPE_UNINITIALIZED = 0,	/* FB not set up, use vga text mode */
 	FB_TYPE_EGA_TEXT,		/* vga text mode */
 	FB_TYPE_INDEXED,		/* FB mode */
 	FB_TYPE_RGB,			/* FB mode */
 	FB_TYPE_UNKNOWN
-};
+} fb_type_t;
 
 typedef struct fb_info {
-	enum fb_type fb_type;	/* Marker from xbi_fb_init */
+	fb_type_t fb_type;	/* Marker from xbi_fb_init */
 	uint64_t paddr;		/* FB address from bootloader */
 	uint8_t *fb;		/* kernel mapped frame buffer */
 	uint8_t *shadow_fb;
@@ -84,6 +83,7 @@ typedef struct fb_info {
 
 extern fb_info_t fb_info;
 void boot_fb_cursor(boolean_t);
+extern uint32_t boot_color_map(uint8_t);
 
 #ifdef __cplusplus
 }

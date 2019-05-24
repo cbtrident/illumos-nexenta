@@ -13,11 +13,11 @@
  * Copyright 2016 Toomas Soome <tsome@me.com>
  */
 
-#include <sys/types.h>
-#include <sys/bootinfo.h>
-
 #ifndef _BOOT_CONSOLE_IMPL_H
 #define	_BOOT_CONSOLE_IMPL_H
+
+#include <sys/types.h>
+#include <sys/bootinfo.h>
 
 /*
  * Boot console implementation details.
@@ -39,6 +39,7 @@ typedef struct bcons_dev {
 extern boolean_t xbi_fb_init(struct xboot_info *, bcons_dev_t *);
 extern void boot_fb_init(int);
 extern void boot_vga_init(bcons_dev_t *);
+extern void boot_get_color(uint32_t *, uint32_t *);
 
 #ifdef __cplusplus
 }

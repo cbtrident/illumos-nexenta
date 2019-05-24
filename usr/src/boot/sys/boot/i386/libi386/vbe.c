@@ -1,4 +1,4 @@
-/*-
+/*
  * Copyright (c) 2009 Jared D. McNeill <jmcneill@invisible.ca>
  * All rights reserved.
  *
@@ -29,6 +29,7 @@
  */
 
 #include <stand.h>
+#include <stdbool.h>
 #include <bootstrap.h>
 #include <machine/bootinfo.h>
 #include <machine/metadata.h>
@@ -42,9 +43,9 @@
 
 multiboot_tag_vbe_t vbestate;
 static struct vbeinfoblock *vbe =
-    (struct vbeinfoblock *) &vbestate.vbe_control_info;
+	(struct vbeinfoblock *)&vbestate.vbe_control_info;
 static struct modeinfoblock *vbe_mode =
-    (struct modeinfoblock *) &vbestate.vbe_mode_info;
+	(struct modeinfoblock *)&vbestate.vbe_mode_info;
 multiboot_color_t cmap[16];
 
 /* Actually assuming mode 3. */
@@ -123,7 +124,7 @@ biosvbe_get_mode(int *mode)
 	v86.addr = 0x10;
 	v86.eax = 0x4f03;
 	v86int();
-	*mode = v86.ebx & 0xffff;
+	*mode = v86.ebx & 0x3fff;	/* Bits 0-13 */
 	return (v86.eax & 0xffff);
 }
 
@@ -198,17 +199,17 @@ static int
 vbe_mode_is_supported(struct modeinfoblock *mi)
 {
 	if ((mi->ModeAttributes & 0x01) == 0)
-		return 0;	/* mode not supported by hardware */
+		return (0);	/* mode not supported by hardware */
 	if ((mi->ModeAttributes & 0x08) == 0)
-		return 0;	/* linear fb not available */
+		return (0);	/* linear fb not available */
 	if ((mi->ModeAttributes & 0x10) == 0)
-		return 0;	/* text mode */
+		return (0);	/* text mode */
 	if (mi->NumberOfPlanes != 1)
-		return 0;	/* planar mode not supported */
+		return (0);	/* planar mode not supported */
 	if (mi->MemoryModel != 0x04 /* Packed pixel */ &&
 	    mi->MemoryModel != 0x06 /* Direct Color */)
-		return 0;	/* unsupported pixel format */
-	return 1;
+		return (0);	/* unsupported pixel format */
+	return (1);
 }
 
 static int
@@ -237,7 +238,7 @@ vbe_init(void)
 	gfx_fb.framebuffer_common.framebuffer_pitch = TEXT_COLS * 2;
 
 	/* Now check if we have vesa. */
-	memset(vbe, 0, sizeof(*vbe));
+	memset(vbe, 0, sizeof (*vbe));
 	memcpy(vbe->VbeSignature, "VBE2", 4);
 	if (biosvbe_info(vbe) != VBE_SUCCESS)
 		return;
@@ -253,11 +254,11 @@ vbe_init(void)
 int
 vbe_available(void)
 {
-	return vbestate.mb_type;
+	return (vbestate.mb_type);
 }
 
 int
-vbe_set_palette(const struct paletteentry *entry, int slot)
+vbe_set_palette(const struct paletteentry *entry, size_t slot)
 {
 	struct paletteentry pe;
 	int ret;
@@ -288,14 +289,14 @@ vbe_set_palette(const struct paletteentry *entry, int slot)
 int
 vbe_get_mode(void)
 {
-	return vbestate.vbe_mode;
+	return (vbestate.vbe_mode);
 }
 
 int
 vbe_set_mode(int modenum)
 {
 	struct modeinfoblock mi;
-	int ret, i, bpp;
+	int ret;
 
 	if (!vbe_check())
 		return (1);
@@ -314,17 +315,10 @@ vbe_set_mode(int modenum)
 	/* calculate bytes per pixel */
 	switch (mi.BitsPerPixel) {
 	case 32:
-		bpp = 4;
-		break;
 	case 24:
-		bpp = 3;
-		break;
 	case 16:
 	case 15:
-		bpp = 2;
-		break;
 	case 8:
-		bpp = 1;
 		break;
 	default:
 		printf("BitsPerPixel %d is not supported\n", mi.BitsPerPixel);
@@ -399,36 +393,7 @@ vbe_set_mode(int modenum)
 static void *
 vbe_farptr(uint32_t farptr)
 {
-	return PTOV((((farptr & 0xffff0000) >> 12) + (farptr & 0xffff)));
-}
-
-static int
-vbe_parse_mode_str(char *str, int *x, int *y, int *depth)
-{
-	char *p;
-
-	p = str;
-	*x = strtoul(p, NULL, 0);
-	if (*x == 0)
-		return (0);
-	p = strchr(p, 'x');
-	if (!p)
-		return (0);
-	++p;
-	*y = strtoul(p, NULL, 0);
-	if (*y == 0)
-		return (0);
-	p = strchr(p, 'x');
-	if (!p)
-		*depth = -1;	/* auto select */
-	else {
-		++p;
-		*depth = strtoul(p, NULL, 0);
-		if (*depth == 0)
-			return (0);
-	}
-
-	return (1);
+	return (PTOV((((farptr & 0xffff0000) >> 12) + (farptr & 0xffff))));
 }
 
 /*
@@ -441,9 +406,9 @@ vbe_find_mode_xydm(int x, int y, int depth, int m)
 	struct modeinfoblock mi;
 	uint32_t farptr;
 	uint16_t mode;
-	int safety = 0, d, i;
+	int safety = 0, i;
 
-	memset(vbe, 0, sizeof(vbe));
+	memset(vbe, 0, sizeof (vbe));
 	memcpy(vbe->VbeSignature, "VBE2", 4);
 	if (biosvbe_info(vbe) != VBE_SUCCESS)
 		return (0);
@@ -465,7 +430,7 @@ vbe_find_mode_xydm(int x, int y, int depth, int m)
 			safety++;
 			farptr += 2;
 			if (safety == 100)
-				return 0;
+				return (0);
 			if (biosvbe_get_mode_info(mode, &mi) != VBE_SUCCESS) {
 				continue;
 			}
@@ -484,7 +449,7 @@ vbe_find_mode_xydm(int x, int y, int depth, int m)
 			if (mi.XResolution == x &&
 			    mi.YResolution == y &&
 			    mi.BitsPerPixel == i)
-				return mode;
+				return (mode);
 		}
 		if (depth != -1)
 			break;
@@ -500,7 +465,7 @@ vbe_find_mode(char *str)
 {
 	int x, y, depth;
 
-	if (!vbe_parse_mode_str(str, &x, &y, &depth))
+	if (!gfx_parse_mode_str(str, &x, &y, &depth))
 		return (0);
 
 	return (vbe_find_mode_xydm(x, y, depth, -1));
@@ -513,37 +478,42 @@ vbe_dump_mode(int modenum, struct modeinfoblock *mi)
 	    mi->XResolution, mi->YResolution, mi->BitsPerPixel);
 }
 
-static int
-vbe_get_edid(int *pwidth, int *pheight)
+static bool
+vbe_get_edid(uint_t *pwidth, uint_t *pheight)
 {
-	struct vesa_edid_info edid_info;
+	struct vesa_edid_info *edid_info;
 	const uint8_t magic[] = EDID_MAGIC;
-	int ddc_caps, ret, i;
+	int ddc_caps;
+	bool ret = false;
 
 	ddc_caps = biosvbe_ddc_caps();
 	if (ddc_caps == 0) {
-		return (1);
+		return (ret);
 	}
 
-	ret = biosvbe_ddc_read_edid(0, &edid_info);
-	if (VBE_ERROR(ret))
-		return (1);
+	edid_info = bio_alloc(sizeof (*edid_info));
+	if (edid_info == NULL)
+		return (ret);
 
-	if (memcmp(&edid_info, magic, sizeof(magic)) != 0)
-		return (1);
+	if (VBE_ERROR(biosvbe_ddc_read_edid(0, edid_info)))
+		goto done;
 
-	if (!(edid_info.header.version == 1 &&
-	    (edid_info.display.supported_features
+	if (memcmp(edid_info, magic, sizeof (magic)) != 0)
+		goto done;
+
+	if (!(edid_info->header.version == 1 &&
+	    (edid_info->display.supported_features
 	    & EDID_FEATURE_PREFERRED_TIMING_MODE) &&
-	    edid_info.detailed_timings[0].pixel_clock))
-		return (1);
+	    edid_info->detailed_timings[0].pixel_clock))
+		goto done;
 
-	*pwidth = edid_info.detailed_timings[0].horizontal_active_lo |
-	    (((int)edid_info.detailed_timings[0].horizontal_hi & 0xf0) << 4);
-	*pheight = edid_info.detailed_timings[0].vertical_active_lo |
-	    (((int)edid_info.detailed_timings[0].vertical_hi & 0xf0) << 4);
+	*pwidth = GET_EDID_INFO_WIDTH(edid_info, 0);
+	*pheight = GET_EDID_INFO_HEIGHT(edid_info, 0);
 
-	return (0);
+	ret = true;
+done:
+	bio_free(edid_info, sizeof (*edid_info));
+	return (ret);
 }
 
 static void
@@ -570,7 +540,7 @@ vbe_print_vbe_info(struct vbeinfoblock *vbep)
 	if (vbep->OemSoftwareRev != 0) {
 		printf("OEM Version %d.%d, %s (%s, %s)\n",
 		    vbep->OemSoftwareRev >> 8, vbep->OemSoftwareRev & 0xF,
-			oemvendor, oemproductname, oemproductrev);
+		    oemvendor, oemproductname, oemproductrev);
 	}
 }
 
@@ -582,7 +552,8 @@ vbe_modelist(int depth)
 	uint32_t farptr;
 	uint16_t mode;
 	int nmodes = 0, safety = 0;
-	int ddc_caps, edid_width, edid_height;
+	int ddc_caps;
+	uint_t edid_width, edid_height;
 
 	if (!vbe_check())
 		return;
@@ -595,13 +566,13 @@ vbe_modelist(int depth)
 		if (ddc_caps & 2)
 			printf(" [DDC2]");
 
-		if (vbe_get_edid(&edid_width, &edid_height) != 0)
-			printf(": no EDID information\n");
-		else
+		if (vbe_get_edid(&edid_width, &edid_height))
 			printf(": EDID %dx%d\n", edid_width, edid_height);
+		else
+			printf(": no EDID information\n");
 	}
 
-	memset(vbe, 0, sizeof(vbe));
+	memset(vbe, 0, sizeof (vbe));
 	memcpy(vbe->VbeSignature, "VBE2", 4);
 	if (biosvbe_info(vbe) != VBE_SUCCESS)
 		goto done;
@@ -656,7 +627,7 @@ vbe_print_mode(void)
 	int mode, i, rc;
 	struct paletteentry pe;
 
-	memset(vbe, 0, sizeof(vbe));
+	memset(vbe, 0, sizeof (vbe));
 	memcpy(vbe->VbeSignature, "VBE2", 4);
 	if (biosvbe_info(vbe) != VBE_SUCCESS)
 		return;
@@ -685,11 +656,11 @@ vbe_print_mode(void)
 	    gfx_fb.framebuffer_common.framebuffer_width,
 	    gfx_fb.framebuffer_common.framebuffer_height,
 	    gfx_fb.framebuffer_common.framebuffer_bpp,
-            (gfx_fb.framebuffer_common.framebuffer_pitch << 3) /
+	    (gfx_fb.framebuffer_common.framebuffer_pitch << 3) /
 	    gfx_fb.framebuffer_common.framebuffer_bpp);
 	printf("\n    frame buffer: address=%jx, size=%jx",
-	    (uintmax_t) gfx_fb.framebuffer_common.framebuffer_addr,
-	    (uintmax_t) gfx_fb.framebuffer_common.framebuffer_height *
+	    (uintmax_t)gfx_fb.framebuffer_common.framebuffer_addr,
+	    (uintmax_t)gfx_fb.framebuffer_common.framebuffer_height *
 	    gfx_fb.framebuffer_common.framebuffer_pitch);
 
 	if (vbe_mode->MemoryModel == 0x6) {
@@ -722,14 +693,15 @@ vbe_print_mode(void)
 int
 vbe_default_mode(void)
 {
-	int modenum, edid_width, edid_height;
+	int modenum;
+	uint_t edid_width, edid_height;
 
-	if (vbe_get_edid(&edid_width, &edid_height) != 0) {
-		modenum = vbe_find_mode(VBE_DEFAULT_MODE);
-	} else {
+	if (vbe_get_edid(&edid_width, &edid_height)) {
 		modenum = vbe_find_mode_xydm(edid_width, edid_height, -1, -1);
 		if (modenum == 0)
 			modenum = vbe_find_mode(VBE_DEFAULT_MODE);
+	} else {
+		modenum = vbe_find_mode(VBE_DEFAULT_MODE);
 	}
 	return (modenum);
 }
@@ -784,7 +756,7 @@ command_vesa(int argc, char *argv[])
 		if (vbestate.vbe_mode == 0)
 			return (CMD_OK);
 
-		bios_set_text_mode(3);		/* set VGA text mode 3 */
+		bios_set_text_mode(VGA_TEXT_MODE);
 		plat_cons_update_mode(0);
 		return (CMD_OK);
 	}
@@ -795,7 +767,7 @@ command_vesa(int argc, char *argv[])
 
 		modenum = vbe_default_mode();
 		if (modenum == 0) {
-			sprintf(command_errbuf,
+			snprintf(command_errbuf, sizeof (command_errbuf),
 			    "%s: no suitable VBE mode number found", argv[0]);
 			return (CMD_ERROR);
 		}
@@ -817,11 +789,14 @@ command_vesa(int argc, char *argv[])
 		} else if (strchr(argv[2], 'x') != NULL) {
 			modenum = vbe_find_mode(argv[2]);
 		}
+	} else {
+		goto usage;
 	}
 
 	if (modenum == 0) {
-		sprintf(command_errbuf, "%s: mode %s not supported by "
-		    "firmware\n", argv[0], argv[2]);
+		snprintf(command_errbuf, sizeof (command_errbuf),
+		    "%s: mode %s not supported by firmware\n",
+		    argv[0], argv[2]);
 		return (CMD_ERROR);
 	}
 
@@ -832,13 +807,14 @@ command_vesa(int argc, char *argv[])
 		}
 		return (CMD_OK);
 	} else {
-		sprintf(command_errbuf, "%s: mode %s is not framebuffer mode\n",
-		    argv[0], argv[2]);
+		snprintf(command_errbuf, sizeof (command_errbuf),
+		    "%s: mode %s is not framebuffer mode\n", argv[0], argv[2]);
 		return (CMD_ERROR);
 	}
 
 usage:
-	sprintf(command_errbuf, "usage: %s on | off | get | list [depth] | "
+	snprintf(command_errbuf, sizeof (command_errbuf),
+	    "usage: %s on | off | get | list [depth] | "
 	    "set <display or VBE mode number>", argv[0]);
 	return (CMD_ERROR);
 }

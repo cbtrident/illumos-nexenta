@@ -168,7 +168,7 @@ framebuffer_tag_start:
 	.long	0		/* height - no preference */
 	.long	0		/* depth - no preference */
 framebuffer_tag_end:
-	.long 	0		/* padding */
+	.long	0		/* padding */
 
 	/*
 	 * Tell the bootloader to load the modules page aligned to

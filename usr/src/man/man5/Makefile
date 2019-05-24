@@ -16,6 +16,8 @@
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright (c) 2015, Joyent, Inc.  All rights reserved.
 # Copyright 2018 Gary Mills
+# Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2019 Peter Tribble
 #
 
 include		$(SRC)/Makefile.master
@@ -142,6 +144,7 @@ i386_MANFILES=	brand.4th.5		\
 		color.4th.5		\
 		delay.4th.5		\
 		gptzfsboot.5		\
+		isoboot.5		\
 		loader.5		\
 		loader.4th.5		\
 		menu.4th.5		\

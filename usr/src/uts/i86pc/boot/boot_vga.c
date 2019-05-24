@@ -32,11 +32,10 @@
 #include <sys/vgareg.h>
 #include <sys/framebuffer.h>
 #include <sys/boot_console.h>
-#include <sys/tem_impl.h>
+#include <sys/rgb.h>
 #include "boot_console_impl.h"
 
-#include "boot_vga.h"
-
+#include "boot_console_impl.h"
 #if defined(_BOOT)
 #include "../dboot/dboot_asm.h"
 #include "../dboot/dboot_xboot.h"
@@ -59,7 +58,7 @@ extern unsigned short *video_fb;
 #else /* __xpv && _BOOT */
 
 /* Device memory address */
-#define	VGA_SCREEN		((unsigned short *)0xb8000)
+#define	VGA_SCREEN	((uint16_t *)(VGA_MEM_ADDR + VGA_COLOR_BASE))
 
 #endif /* __xpv && _BOOT */
 
@@ -81,35 +80,14 @@ static void vga_set_atr(int index, unsigned char val);
 static unsigned char vga_get_atr(int index);
 
 static int
-set_vga_color(void)
+get_vga_color(void)
 {
 	int color;
-	uint8_t tmp;
+	uint32_t fg, bg;
 
-	/*
-	 * Now we have two principal cases, black on white and white on black.
-	 * And we have possible inverse to switch them, and we want to
-	 * follow the tem logic.. to set VGA TEXT color. FB will take care
-	 * of itself in boot_fb.c
-	 */
-	if (fb_info.inverse == B_TRUE ||
-	    fb_info.inverse_screen == B_TRUE) {
-		tmp = dim_xlate[fb_info.fg_color];
-		color = solaris_color_to_pc_color[tmp] << 4;
-		tmp = brt_xlate[fb_info.bg_color];
-		color |= solaris_color_to_pc_color[tmp];
-		return (color);
-	}
-
-	/* use bright white for background */
-	if (fb_info.bg_color == 7)
-		tmp = brt_xlate[fb_info.bg_color];
-	else
-		tmp = dim_xlate[fb_info.bg_color];
-
-	color = solaris_color_to_pc_color[tmp] << 4;
-	tmp = dim_xlate[fb_info.fg_color];
-	color |= solaris_color_to_pc_color[tmp];
+	boot_get_color(&fg, &bg);
+	color = solaris_color_to_pc_color[bg] << 4;
+	color |= solaris_color_to_pc_color[fg];
 	return (color);
 }
 
@@ -118,19 +96,30 @@ boot_vga_init(bcons_dev_t *bcons_dev)
 {
 	fb_info.terminal.x = VGA_TEXT_COLS;
 	fb_info.terminal.y = VGA_TEXT_ROWS;
-	cons_color = set_vga_color();
+	cons_color = get_vga_color();
 
 #if defined(_BOOT)
-	/* Note that we have to enable the cursor before clearing the
+	/*
+	 * Note that we have to enable the cursor before clearing the
 	 * screen since the cursor position is dependant upon the cursor
 	 * skew, which is initialized by vga_cursor_display()
-	*/
+	 */
 	vga_init();
 	fb_info.cursor.visible = B_FALSE;
 	vga_cursor_display(B_TRUE);
 
+	/*
+	 * In general we should avoid resetting the display during the boot,
+	 * we may have valueable messages there, this why the "native" loader
+	 * boot does pass the console state down to kernel and we do try to
+	 * pick the state. However, the loader is not the only way to boot.
+	 * The non-native boot loaders do not implement the smooth console.
+	 * If we have no information about cursor location, we will get value
+	 * (0, 0) and that means we better clear the screen.
+	 */
 	if (fb_info.cursor.pos.x == 0 && fb_info.cursor.pos.y == 0)
 		vga_clear(cons_color);
+	vga_setpos(fb_info.cursor.pos.y, fb_info.cursor.pos.x);
 #endif /* _BOOT */
 
 	bcons_dev->bd_putchar = vga_drawc;
@@ -152,7 +141,7 @@ vga_init(void)
 	vga_set_atr(VGA_ATR_MODE, val);
 }
 
-void
+static void
 vga_cursor_display(boolean_t visible)
 {
 	unsigned char val, msl;
@@ -224,6 +213,8 @@ vga_shiftline(int chars)
 	x = fb_info.cursor.pos.x;
 	y = fb_info.cursor.pos.y;
 	len = VGA_TEXT_COLS - x - chars;
+	if (len <= 0)
+		return;
 
 	src = VGA_SCREEN + x + y * VGA_TEXT_COLS;
 	dst = src + chars;
@@ -265,7 +256,11 @@ vga_drawc(int c)
 		return;
 	}
 
-	VGA_SCREEN[row*VGA_TEXT_COLS + col] = (cons_color << 8) | c;
+	/*
+	 * VGA_SCREEN is an array of 16-bit unsigned ints, we do let
+	 * the compiler to take care of truncation here.
+	 */
+	VGA_SCREEN[row * VGA_TEXT_COLS + col] = (cons_color << 8) | c;
 
 	if (col < VGA_TEXT_COLS - 1)
 		vga_setpos(row, col + 1);

@@ -255,12 +255,20 @@ if ${flags.d} ; then
 	unset RELEASE_BUILD
 	unset EXTRA_OPTIONS
 	unset EXTRA_CFLAGS
+
+	if [ -n "$DEBUG_CONSOLE_COLOR" ]; then
+		export DEFAULT_CONSOLE_COLOR="$DEBUG_CONSOLE_COLOR"
+	fi
 else
 	# default is a non-DEBUG build
 	print 'non-DEBUG'
 	export RELEASE_BUILD=
 	unset EXTRA_OPTIONS
 	unset EXTRA_CFLAGS
+
+	if [ -n "$RELEASE_CONSOLE_COLOR" ]; then
+		export DEFAULT_CONSOLE_COLOR="$RELEASE_CONSOLE_COLOR"
+	fi
 fi
 
 # update build-type variables

@@ -2398,8 +2398,6 @@ cmpstat(
 	if (is_flag_on(IS_SPARC_TARGET) &&
 	    is_dir_flag_on(FILE64, NEED_UPDATE) && !bam_nowrite())
 		return (0);
-
-
 	/*
 	 * File exists in old archive. Check if file has changed
 	 */
@@ -4109,9 +4107,8 @@ is_grub(const char *root)
 			BAM_DPRINTF(("%s: Missing GRUB directory: %s\n",
 			    fcn, path));
 			return (0);
-		} else {
+		} else
 			return (1);
-		}
 	}
 
 	return (0);

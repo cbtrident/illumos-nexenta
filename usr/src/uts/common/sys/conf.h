@@ -41,7 +41,7 @@
 extern "C" {
 #endif
 
-#define	FMNAMESZ	8 		/* used by struct fmodsw */
+#define	FMNAMESZ	8		/* used by struct fmodsw */
 
 #if !defined(_XPG4_2) || defined(__EXTENSIONS__)
 
