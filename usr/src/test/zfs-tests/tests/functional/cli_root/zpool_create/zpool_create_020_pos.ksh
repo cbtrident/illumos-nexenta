@@ -49,9 +49,9 @@ function cleanup
 	if poolexists $TESTPOOL ; then
                 destroy_pool $TESTPOOL
         fi
-	if [ -d ${TESTPOOL}.root ]
+	if [ -d /${TESTPOOL}.root ]
 	then
-		log_must rmdir ${TESTPOOL}.root
+		log_must rmdir /${TESTPOOL}.root
 	fi
 }
 
