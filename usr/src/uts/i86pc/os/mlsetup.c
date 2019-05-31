@@ -158,7 +158,7 @@ mlsetup(struct regs *rp)
 		prom_printf("unix: forcing kpti to %s due to boot argument\n",
 		    (kpti_enable == 1) ? "ON" : "OFF");
 	} else {
-		kpti_enable = 1;
+		kpti_enable = 0;
 	}
 
 	if (bootprop_getval("pcid", &prop_value) == 0 && prop_value == 0) {
