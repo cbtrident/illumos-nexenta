@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -30,6 +30,9 @@
 #include <sys/cmn_err.h>
 
 #include "krrp_stream.h"
+
+/* This is a timeout, after that avg RPO stats will be zeroed */
+#define	IDLE_TIME_SEC 5
 
 #define	is_str_empty(str) (str[0] == '\0')
 
@@ -653,6 +656,18 @@ krrp_stream_txg_confirmed(krrp_stream_t *stream, uint64_t txg,
 	krrp_queue_put(stream->task_engine->tasks_done2, task);
 }
 
+/*
+ * Just zero whole RPO stats structure, that contains
+ * sliding-window index, slots and calculated avg RPO
+ * So that next time the old results will not affect us.
+ */
+static void
+krrp_stream_zero_avg_rpo(krrp_stream_t *stream)
+{
+	bzero(&stream->avg_total_rpo, sizeof(krrp_txg_rpo_t));
+	bzero(&stream->avg_rpo, sizeof(krrp_txg_rpo_t));
+}
+
 static void
 krrp_stream_calc_avg_rpo(krrp_stream_t *stream, krrp_stream_task_t *task,
     boolean_t complete)
@@ -836,6 +851,7 @@ krrp_stream_read(void *arg)
 	krrp_stream_task_t *stream_task = NULL;
 	int rc;
 	krrp_pdu_data_t *pdu = NULL;
+	hrtime_t idle_start_ts = 0;
 
 	VERIFY(stream->data_pdu_engine != NULL);
 
@@ -865,9 +881,35 @@ krrp_stream_read(void *arg)
 			    &stream_task);
 			if (stream_task == NULL) {
 				krrp_stream_lock(stream);
+
+				/*
+				 * 'idle' will start when 'receiver'
+				 * completely ACKs the last sent task
+				 */
+				if ((idle_start_ts == 0) ||
+				    (stream->last_full_ack_txg !=
+				    stream->last_send_txg)) {
+					idle_start_ts = gethrtime();
+					continue;
+				}
+
+				/*
+				 * INT64_MAX means avg_rpo
+				 * is already zeroed
+				 */
+				if (idle_start_ts == INT64_MAX)
+					continue;
+
+				if (NSEC2SEC(gethrtime() - idle_start_ts) >
+				    IDLE_TIME_SEC) {
+					krrp_stream_zero_avg_rpo(stream);
+					idle_start_ts = INT64_MAX;
+				}
+
 				continue;
 			}
 
+			idle_start_ts = 0;
 			stream->cur_task = stream_task;
 			stream->cur_send_txg = stream_task->txg;
 			stream->cur_pdu = pdu;
