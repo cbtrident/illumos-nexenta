@@ -27,6 +27,7 @@
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Joyent, Inc.
  * Copyright (c) 2017 Datto Inc.
+ * Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -240,6 +241,8 @@ typedef enum {
 	ZPOOL_PROP_BOOTSIZE,
 	ZPOOL_PROP_SCRUB_PRIO,
 	ZPOOL_PROP_RESILVER_PRIO,
+	ZPOOL_PROP_DEADMAN,
+	ZPOOL_PROP_DEADMAN_MODE,
 	ZPOOL_NUM_PROPS
 } zpool_prop_t;
 
@@ -931,7 +934,7 @@ typedef struct vdev_stat {
  * is passed between kernel and userland as an nvlist uint64 array.
  */
 typedef struct ddt_object {
-	uint64_t	ddo_count;	/* number of elments in ddt 	*/
+	uint64_t	ddo_count;	/* number of elments in ddt	*/
 	uint64_t	ddo_dspace;	/* size of ddt on disk		*/
 	uint64_t	ddo_mspace;	/* size of ddt in-core		*/
 } ddt_object_t;

@@ -29,6 +29,7 @@
  * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright 2018 Joyent, Inc.
  * Copyright (c) 2017 Datto Inc.
+ * Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -282,6 +283,11 @@ spa_prop_get_config(spa_t *spa, nvlist_t **nvp)
 		else
 			src = ZPROP_SRC_LOCAL;
 		spa_prop_add_list(*nvp, ZPOOL_PROP_VERSION, NULL, version, src);
+
+		spa_prop_add_list(*nvp, ZPOOL_PROP_DEADMAN, NULL,
+		    NSEC2SEC(spa_deadman_synctime(spa)), src);
+		spa_prop_add_list(*nvp, ZPOOL_PROP_DEADMAN_MODE, NULL,
+		    spa_deadman_mode(spa), src);
 	}
 
 	if (pool != NULL) {
@@ -721,6 +727,22 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 			error = nvpair_value_uint64(elem, &intval);
 			if (error || intval > 100)
 				error = SET_ERROR(EINVAL);
+			break;
+		case ZPOOL_PROP_DEADMAN:
+			/* 0 or in range SPA_DEADMAN_MIN to SPA_DEADMAN_MAX */
+			error = nvpair_value_uint64(elem, &intval);
+			if (!error && intval != 0 &&
+			    (intval < SPA_DEADMAN_MIN ||
+			    intval > SPA_DEADMAN_MAX)) {
+				error = SET_ERROR(EINVAL);
+			}
+			break;
+		case ZPOOL_PROP_DEADMAN_MODE:
+			error = nvpair_value_uint64(elem, &intval);
+			if (!error && (intval < SPA_DEADMAN_SYSTEM ||
+			    intval > SPA_DEADMAN_PANIC)) {
+				error = SET_ERROR(EINVAL);
+			}
 			break;
 		}
 
@@ -2935,6 +2957,10 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	if (error && error != ENOENT)
 		return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA, EIO));
 
+	spa->spa_deadman = zpool_prop_default_numeric(ZPOOL_PROP_DEADMAN);
+	spa->spa_deadman_mode =
+	    zpool_prop_default_numeric(ZPOOL_PROP_DEADMAN_MODE);
+
 	if (error == 0) {
 		uint64_t autoreplace;
 		uint64_t val = 0;
@@ -2974,6 +3000,10 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		    &spa->spa_dedup_lo_best_effort);
 		spa_prop_find(spa, ZPOOL_PROP_DEDUP_HI_BEST_EFFORT,
 		    &spa->spa_dedup_hi_best_effort);
+
+		spa_prop_find(spa, ZPOOL_PROP_DEADMAN, &spa->spa_deadman);
+		spa_prop_find(spa, ZPOOL_PROP_DEADMAN_MODE,
+		    &spa->spa_deadman_mode);
 
 		spa_prop_find(spa, ZPOOL_PROP_META_PLACEMENT,
 		    &mp->spa_enable_meta_placement_selection);
@@ -4122,6 +4152,10 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 		spa_auto_trim_taskq_create(spa);
 	mutex_exit(&spa->spa_auto_trim_lock);
 
+	spa->spa_deadman = zpool_prop_default_numeric(ZPOOL_PROP_DEADMAN);
+	spa->spa_deadman_mode =
+	    zpool_prop_default_numeric(ZPOOL_PROP_DEADMAN_MODE);
+
 	mp->spa_enable_meta_placement_selection =
 	    zpool_prop_default_numeric(ZPOOL_PROP_META_PLACEMENT);
 	mp->spa_sync_to_special =
@@ -5007,9 +5041,9 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 
 	/*
 	 * "spa_last_synced_txg(spa) + 1" is used because:
-	 *   - spa_vdev_exit() calls txg_wait_synced() for "txg"
-	 *   - spa_config_update() calls txg_wait_synced() for
-	 *     "spa_last_synced_txg(spa) + 1"
+	 * - spa_vdev_exit() calls txg_wait_synced() for "txg"
+	 * - spa_config_update() calls txg_wait_synced() for
+	 *   "spa_last_synced_txg(spa) + 1"
 	 */
 	tx = dmu_tx_create_assigned(spa_get_dsl(spa),
 	    spa_last_synced_txg(spa) + 1);
@@ -5980,7 +6014,8 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 				vd->vdev_queue.vq_cos = NULL;
 			}
 
-			ev = spa_event_create(spa, vd, NULL, ESC_ZFS_VDEV_REMOVE_AUX);
+			ev = spa_event_create(spa, vd, NULL,
+			    ESC_ZFS_VDEV_REMOVE_AUX);
 			spa_vdev_remove_aux(spa->spa_spares.sav_config,
 			    ZPOOL_CONFIG_SPARES, spares, nspares, nv);
 			spa_load_spares(spa);
@@ -6014,7 +6049,8 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		ASSERT(!locked);
 
 		if (vd != vd->vdev_top)
-			return (spa_vdev_exit(spa, NULL, txg, SET_ERROR(ENOTSUP)));
+			return (spa_vdev_exit(spa, NULL, txg,
+			    SET_ERROR(ENOTSUP)));
 
 		mg = vd->vdev_mg;
 
@@ -6065,11 +6101,13 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		ASSERT(!locked);
 
 		if (vd != vd->vdev_top)
-			return (spa_vdev_exit(spa, NULL, txg, SET_ERROR(ENOTSUP)));
+			return (spa_vdev_exit(spa, NULL, txg,
+			    SET_ERROR(ENOTSUP)));
 
 		error = spa_special_vdev_remove(spa, vd, &txg);
 		if (error == 0) {
-			ev = spa_event_create(spa, vd, NULL, ESC_ZFS_VDEV_REMOVE_DEV);
+			ev = spa_event_create(spa, vd, NULL,
+			    ESC_ZFS_VDEV_REMOVE_DEV);
 			spa_vdev_remove_from_namespace(spa, vd);
 
 			/*
@@ -6807,6 +6845,7 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 		zpool_prop_t prop;
 		const char *propname;
 		zprop_type_t proptype;
+		boolean_t remove = B_FALSE;
 		spa_feature_t fid;
 
 		switch (prop = zpool_name_to_prop(nvpair_name(elem))) {
@@ -6984,11 +7023,32 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 			case ZPOOL_PROP_SCRUB_PRIO:
 				spa->spa_scrub_prio = intval;
 				break;
+			case ZPOOL_PROP_DEADMAN:
+				spa->spa_deadman = intval;
+				remove = (intval == 0);
+				break;
+			case ZPOOL_PROP_DEADMAN_MODE:
+				spa->spa_deadman_mode = intval;
+				remove = (intval == 0);
+				break;
 			default:
 				break;
 			}
-		}
 
+			/*
+			 * For some properties, a specific value may mean that
+			 * it should be removed from the poolprops mos object.
+			 * Ideally we shouldn't both update above and remove
+			 * here, but doing so to minimize code divergence.
+			 */
+			if (remove) {
+				VERIFY(zap_remove(mos,
+				    spa->spa_pool_props_object, propname, tx)
+				    == 0);
+				spa_history_log_internal(spa, "property reset",
+				    tx, "%s=%lld", nvpair_name(elem), intval);
+			}
+		}
 	}
 
 	mutex_exit(&spa->spa_props_lock);
@@ -7178,7 +7238,7 @@ spa_sync(spa_t *spa, uint64_t txg)
 
 	spa->spa_sync_starttime = gethrtime();
 	VERIFY(cyclic_reprogram(spa->spa_deadman_cycid,
-	    spa->spa_sync_starttime + spa->spa_deadman_synctime));
+	    spa->spa_sync_starttime + spa_deadman_synctime(spa)));
 
 	/*
 	 * If we are upgrading to SPA_VERSION_RAIDZ_DEFLATE this txg,

@@ -25,6 +25,7 @@
  * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2017 Datto Inc.
+ * Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SYS_SPA_IMPL_H
@@ -332,7 +333,14 @@ struct spa {
 	cyclic_id_t	spa_deadman_cycid;	/* cyclic id */
 	uint64_t	spa_deadman_calls;	/* number of deadman calls */
 	hrtime_t	spa_sync_starttime;	/* starting time fo spa_sync */
-	uint64_t	spa_deadman_synctime;	/* deadman expiration timer */
+	/*
+	 * spa deadman properties
+	 * Access via spa_deadman_synctime_ms() and spa_deadman_mode() functions
+	 * to ensure default to system-wide values.
+	 */
+	uint64_t	spa_deadman;		/* deadman expiration seconds */
+	uint64_t	spa_deadman_mode;	/* deadman timeout action */
+
 	uint64_t	spa_all_vdev_zaps;	/* ZAP of per-vd ZAP obj #s */
 	spa_avz_action_t	spa_avz_action;	/* destroy/rebuild AVZ? */
 

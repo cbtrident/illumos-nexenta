@@ -27,6 +27,7 @@
 
 #
 # Copyright (c) 2016 by Delphix. All rights reserved.
+# Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -38,7 +39,8 @@
 # Zpool get returns values for all known properties
 #
 # STRATEGY:
-# 1. For all properties, verify zpool get retrieves a value
+# 1. For all properties, including hidden properties, verify
+#    zpool get retrieves a value
 #
 
 log_assert "Zpool get returns values for all known properties"
@@ -63,6 +65,19 @@ do
 	if [ $i -eq 0 ] && [ $? -ne 0 ]
 	then
 		log_fail "Header not seen in zpool get output"
+	fi
+	i=$(( $i + 1 ))
+done
+
+i=0
+while [ $i -lt "${#hidden_properties[@]}" ]
+do
+	log_note "Checking for ${hidden_properties[$i]} property"
+	log_must eval "zpool get ${hidden_properties[$i]} $TESTPOOL > /tmp/value.$$"
+	grep "${hidden_properties[$i]}" /tmp/value.$$ > /dev/null 2>&1
+	if [ $? -ne 0 ]
+	then
+		log_fail "${hidden_properties[$i]} not seen in output"
 	fi
 	i=$(( $i + 1 ))
 done

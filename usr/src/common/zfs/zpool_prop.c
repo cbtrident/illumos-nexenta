@@ -24,6 +24,7 @@
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/zio.h>
@@ -71,6 +72,13 @@ zpool_prop_init(void)
 		{ "wait",	ZIO_FAILURE_MODE_WAIT },
 		{ "continue",	ZIO_FAILURE_MODE_CONTINUE },
 		{ "panic",	ZIO_FAILURE_MODE_PANIC },
+		{ NULL }
+	};
+
+	static zprop_index_t deadmanmode_table[] = {
+		{ "system",	SPA_DEADMAN_SYSTEM },
+		{ "continue",	SPA_DEADMAN_CONTINUE },
+		{ "panic",	SPA_DEADMAN_PANIC },
 		{ NULL }
 	};
 
@@ -228,6 +236,12 @@ zpool_prop_init(void)
 	    PROP_READONLY, ZFS_TYPE_POOL, "NAME");
 	zprop_register_hidden(ZPOOL_PROP_MAXBLOCKSIZE, "maxblocksize",
 	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_POOL, "MAXBLOCKSIZE");
+
+	zprop_register_hidden(ZPOOL_PROP_DEADMAN, "deadman", PROP_TYPE_NUMBER,
+	    PROP_DEFAULT, ZFS_TYPE_POOL, "DEADMAN_SEC");
+	zprop_register_index_hidden(ZPOOL_PROP_DEADMAN_MODE, "deadman_mode",
+	    SPA_DEADMAN_SYSTEM, PROP_TYPE_NUMBER, ZFS_TYPE_POOL,
+	    "system | continue | panic", "DEADMAN_MODE", deadmanmode_table);
 }
 
 /*

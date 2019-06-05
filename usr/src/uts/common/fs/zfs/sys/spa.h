@@ -28,6 +28,7 @@
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Joyent, Inc.
  * Copyright (c) 2017 Datto Inc.
+ * Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SYS_SPA_H
@@ -640,6 +641,26 @@ typedef enum {
 	SPA_AUTO_TRIM_ON
 } spa_auto_trim_t;
 
+/*
+ * How we behave when a zio exceeds the pool's deadman timeout?
+ * ZPOOL_PROP_DEADMAN_MODE values.
+ *
+ * The default SPA_DEADMAN_SYSTEM setting indicates the use of
+ * the system-wide zfs_deadman_enabled setting, in place of a
+ * pool-specific value.
+ */
+typedef enum {
+	SPA_DEADMAN_SYSTEM,	/* default */
+	SPA_DEADMAN_CONTINUE,
+	SPA_DEADMAN_PANIC
+} spa_deadman_t;
+
+/*
+ * Min and Max values (seconds) for zfs_deadman property (spa_deadman timeout)
+ */
+#define	SPA_DEADMAN_MIN	60	/* 1 minute */
+#define	SPA_DEADMAN_MAX	3600	/* 1 hour */
+
 /* state manipulation functions */
 extern int spa_open(const char *pool, spa_t **, void *tag);
 extern int spa_open_rewind(const char *pool, spa_t **, void *tag,
@@ -859,6 +880,7 @@ extern uint64_t spa_bootfs(spa_t *spa);
 extern uint64_t spa_delegation(spa_t *spa);
 extern objset_t *spa_meta_objset(spa_t *spa);
 extern uint64_t spa_deadman_synctime(spa_t *spa);
+extern uint64_t spa_deadman_mode(spa_t *spa);
 extern spa_force_trim_t spa_get_force_trim(spa_t *spa);
 extern spa_auto_trim_t spa_get_auto_trim(spa_t *spa);
 

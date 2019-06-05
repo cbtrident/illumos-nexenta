@@ -26,6 +26,7 @@
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright (c) 2017 Datto Inc.
+ * Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -306,26 +307,38 @@ boolean_t zfs_free_leak_on_eio = B_FALSE;
 int64_t zfs_root_latency_alpha = 10;
 
 /*
- * Expiration time in milliseconds. This value has two meanings. First it is
- * used to determine when the spa_deadman() logic should fire. By default the
- * spa_deadman() will fire if spa_sync() has not completed in 250 seconds.
+ * Deadman expiration time in milliseconds.
+ * This is the default system-wide value. It may be over-ridden for a specific
+ * pool using the hidden "deadman" pool property. The applicable value for a
+ * pool (system-wide, or override) is returned by spa_deadman_synctime().
+ *
+ * This value has two meanings:
+ * First it is used as the default value to determine when the spa_deadman()
+ * logic should fire. The spa_deadman() will fire if spa_sync() has not
+ * completed in spa_deadman_synctime().
  * Secondly, the value determines if an I/O is considered "hung". Any I/O that
- * has not completed in zfs_deadman_synctime_ms is considered "hung" resulting
- * in a system panic.
+ * has not completed in spa_deadman_synctime() is considered "hung". The
+ * action taken in this case is determined by spa_deadman_mode(), based on
+ * the system-wide zfs_deadman_enabled or overridden per-pool by the hidden
+ * "zfs_deadman_mode" property.
  */
 uint64_t zfs_deadman_synctime_ms = 250000ULL;
+
+/*
+ * Controls action in event of hung I/O.
+ * By default the deadman is enabled (non-zero) except on VMware and sparc
+ * deployments. Enabled means that the system will panic if an I/O is hung.
+ * This is the system-wide default value. It may be over-ridden for a
+ * specific pool using the hidden "deadman_mode" pool property.
+ * spa_deadman_mode() returns the behavior applicable to the pool.
+ */
+int zfs_deadman_enabled = -1;
 
 /*
  * Check time in milliseconds. This defines the frequency at which we check
  * for hung I/O.
  */
 uint64_t zfs_deadman_checktime_ms = 5000ULL;
-
-/*
- * Override the zfs deadman behavior via /etc/system. By default the
- * deadman is enabled except on VMware and sparc deployments.
- */
-int zfs_deadman_enabled = -1;
 
 /*
  * The worst case is single-sector max-parity RAID-Z blocks, in which
@@ -539,8 +552,8 @@ spa_lookup(const char *name)
 }
 
 /*
- * Fires when spa_sync has not completed within zfs_deadman_synctime_ms.
- * If the zfs_deadman_enabled flag is set then it inspects all vdev queues
+ * Fires when spa_sync has not completed within spa_deadman_synctime() ms.
+ * If spa_deadman_mode() is not CONTINUE then it inspects all vdev queues
  * looking for potentially hung I/Os.
  */
 void
@@ -559,7 +572,7 @@ spa_deadman(void *arg)
 	zfs_dbgmsg("slow spa_sync: started %llu seconds ago, calls %llu",
 	    (gethrtime() - spa->spa_sync_starttime) / NANOSEC,
 	    ++spa->spa_deadman_calls);
-	if (zfs_deadman_enabled)
+	if (spa_deadman_mode(spa) != SPA_DEADMAN_CONTINUE)
 		vdev_deadman(spa->spa_root_vdev);
 }
 
@@ -639,8 +652,6 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 	hdlr.cyh_func = spa_deadman;
 	hdlr.cyh_arg = spa;
 	hdlr.cyh_level = CY_LOW_LEVEL;
-
-	spa->spa_deadman_synctime = MSEC2NSEC(zfs_deadman_synctime_ms);
 
 	/*
 	 * This determines how often we need to check for hung I/Os after
@@ -1982,10 +1993,34 @@ spa_prev_software_version(spa_t *spa)
 	return (spa->spa_prev_software_version);
 }
 
+/*
+ * If per pool "deadman" property is not set (0) use system-wide
+ * deadman timeout setting.
+ */
 uint64_t
 spa_deadman_synctime(spa_t *spa)
 {
-	return (spa->spa_deadman_synctime);
+	if (spa->spa_deadman == 0)
+		return (MSEC2NSEC(zfs_deadman_synctime_ms));
+	else
+		return (SEC2NSEC(spa->spa_deadman));
+}
+
+/*
+ * If per pool "deadman_mode" property is not set (SPA_DEADMAN_SYSTEM)
+ * use value determined from system-wide deadman_enabled setting.
+ */
+uint64_t
+spa_deadman_mode(spa_t *spa)
+{
+	if (spa->spa_deadman_mode == SPA_DEADMAN_SYSTEM) {
+		if (zfs_deadman_enabled)
+			return (SPA_DEADMAN_PANIC);
+		else
+			return (SPA_DEADMAN_CONTINUE);
+	} else {
+		return (spa->spa_deadman_mode);
+	}
 }
 
 spa_force_trim_t
