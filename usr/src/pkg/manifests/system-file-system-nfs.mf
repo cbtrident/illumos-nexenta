@@ -22,6 +22,7 @@
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
 #
 
 set name=pkg.fmri value=pkg:/system/file-system/nfs@$(PKGVERS)
@@ -70,7 +71,6 @@ file path=etc/fs/nfs/mount mode=0555
 file path=etc/nfssec.conf group=sys original_name=SUNWnfsc:etc/nfssec.conf \
     preserve=true
 file path=kernel/fs/$(ARCH64)/nfs group=sys mode=0755
-file path=kernel/misc/$(ARCH64)/cl_bootstrap group=sys mode=0755
 file path=kernel/misc/$(ARCH64)/klmmod group=sys mode=0755
 file path=kernel/misc/$(ARCH64)/klmops group=sys mode=0755
 file path=kernel/misc/$(ARCH64)/nfs_dlboot group=sys mode=0755

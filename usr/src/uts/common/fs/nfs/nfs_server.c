@@ -21,19 +21,17 @@
 
 /*
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011 Bayard G. Bell. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2017 Joyent Inc
+ * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
  *	Copyright (c) 1983,1984,1985,1986,1987,1988,1989  AT&T.
  *	All rights reserved.
  *	Use is subject to license terms.
- */
-
-/*
- * Copyright (c) 2011 Bayard G. Bell. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.
- * Copyright (c) 2017 Joyent Inc
  */
 
 #include <sys/param.h>
@@ -318,7 +316,7 @@ nfs_srv_shutdown_all(int quiesce)
 			ng->nfs_server_upordown = NFS_SERVER_QUIESCED;
 			cv_signal(&ng->nfs_server_upordown_cv);
 
-			/* reset DSS state, for subsequent warm restart */
+			/* reset DSS state */
 			rfs4_dss_numnewpaths = 0;
 			rfs4_dss_newpaths = NULL;
 
@@ -333,6 +331,11 @@ nfs_srv_shutdown_all(int quiesce)
 			rfs4_fini_drc();
 			mutex_enter(&ng->nfs_server_upordown_lock);
 			ng->nfs_server_upordown = NFS_SERVER_STOPPED;
+
+			/* reset DSS state */
+			rfs4_dss_numnewpaths = 0;
+			rfs4_dss_newpaths = NULL;
+
 			cv_signal(&ng->nfs_server_upordown_cv);
 		}
 	}
