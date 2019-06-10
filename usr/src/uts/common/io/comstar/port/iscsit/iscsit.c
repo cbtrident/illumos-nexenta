@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2017 - 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2017, Joyent, Inc.  All rights reserved.
  */
 
@@ -1335,11 +1335,12 @@ iscsit_ffp_disabled(idm_conn_t *ic, idm_ffp_disable_t disable_class)
 static idm_status_t
 iscsit_conn_lost(idm_conn_t *ic)
 {
-	iscsit_conn_t	*ict	= ic->ic_handle;
-	iscsit_sess_t	*ist	= ict->ict_sess;
-	iscsit_cbuf_t	*cbuf;
-	idm_pdu_t	*rx_pdu;
-	int i;
+	iscsit_conn_t		*ict	= ic->ic_handle;
+	iscsit_sess_t		*ist	= ict->ict_sess;
+	iscsit_conn_login_t	*ils	= &ict->ict_login_sm;
+	iscsit_cbuf_t		*cbuf;
+	idm_pdu_t		*rx_pdu;
+	int			i;
 
 	mutex_enter(&ict->ict_mutex);
 	ict->ict_lost = B_TRUE;
@@ -1366,6 +1367,37 @@ iscsit_conn_lost(idm_conn_t *ic)
 		}
 		mutex_exit(&ist->ist_sn_mutex);
 	}
+
+	/*
+	 * If we're in the middle of processing a login request there
+	 * are several pdu's that could be hanging off of the icl_resp_list
+	 * or icl_pdu_list. Clean them up.
+	 */
+	mutex_enter(&ils->icl_mutex);
+
+	/*
+	 * The icl_pdu_list is made up of PDU's that have been received
+	 * from the Initiator. These PDU's don't have callback
+	 * methods and need to be removed from the list directly.
+	 * The call to idm_pdu_complete just frees the memory.
+	 */
+	while (!list_is_empty(&ils->icl_pdu_list)) {
+		idm_pdu_t *pdu = list_head(&ils->icl_pdu_list);
+
+		list_remove(&ils->icl_pdu_list, pdu);
+		mutex_exit(&ils->icl_mutex);
+		idm_pdu_complete(pdu, IDM_STATUS_SUCCESS);
+		mutex_enter(&ils->icl_mutex);
+	}
+
+	while (!list_is_empty(&ils->icl_resp_list)) {
+		idm_pdu_t *login_pdu = list_head(&ils->icl_resp_list);
+		mutex_exit(&ils->icl_mutex);
+		idm_pdu_complete(login_pdu, IDM_STATUS_FAIL);
+		mutex_enter(&ils->icl_mutex);
+	}
+	mutex_exit(&ils->icl_mutex);
+
 	/*
 	 * Make sure there aren't any PDU's transitioning from the receive
 	 * handler to the dispatch taskq.

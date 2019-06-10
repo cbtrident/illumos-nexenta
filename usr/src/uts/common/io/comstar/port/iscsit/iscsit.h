@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 - 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2017, Joyent, Inc.  All rights reserved.
  */
 
@@ -460,6 +460,7 @@ typedef struct {
 	int			icl_auth_pass;
 	list_t			icl_login_events;
 	list_t			icl_pdu_list;
+	list_t			icl_resp_list;
 	uint16_t		icl_tsih;
 	uint8_t			icl_isid[ISCSI_ISID_LEN];
 	uint32_t		icl_cmdsn;
