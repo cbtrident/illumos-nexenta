@@ -773,16 +773,13 @@ krrp_stream_write_snap_notify_cb(const char *snap_name, boolean_t recursive,
 
 	krrp_stream_lock(stream);
 
-	if (stream->cur_task == NULL) {
-		krrp_stream_unlock(stream);
-		return (B_FALSE);
-	}
-
-	if (stream->cur_task->txg_start == UINT64_MAX) {
-		stream->cur_task->txg_start = txg;
-		stream->cur_task->txg_end = AUTOSNAP_NO_SNAP;
-	} else {
-		stream->cur_task->txg_end = txg;
+	if (stream->cur_task != NULL) {
+		if (stream->cur_task->txg_start == UINT64_MAX) {
+			stream->cur_task->txg_start = txg;
+			stream->cur_task->txg_end = AUTOSNAP_NO_SNAP;
+		} else {
+			stream->cur_task->txg_end = txg;
+		}
 	}
 
 	krrp_stream_unlock(stream);
