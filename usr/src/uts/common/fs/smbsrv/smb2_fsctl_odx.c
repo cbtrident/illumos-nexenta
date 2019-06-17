@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -79,7 +79,7 @@ typedef struct smb_odx_token {
 	union {
 		uint8_t u_tok_other[TOKEN_MAX_PAYLOAD];
 		struct tok_native1 {
-			smb2fid_t 	tn1_fid;
+			smb2fid_t	tn1_fid;
 			uint64_t	tn1_off;
 			uint64_t	tn1_eof;
 		} u_tok_native1;
@@ -95,6 +95,7 @@ typedef struct odx_write_args {
 	uint32_t out_struct_size;
 	uint32_t out_flags;
 	uint64_t out_xlen;
+	uint64_t wa_eof;
 } odx_write_args_t;
 
 static int smb_odx_get_token(mbuf_chain_t *, smb_odx_token_t *);
@@ -211,7 +212,7 @@ smb2_fsctl_odx_read(smb_request_t *sr, smb_fsctl_t *fsctl)
 	rc = smb_mbc_decodef(
 	    fsctl->in_mbc, "lll4.qq",
 	    &in_struct_size,	/* l */
-	    &in_flags, 		/* l */
+	    &in_flags,		/* l */
 	    &in_ttl,		/* l */
 	    /* reserved		4. */
 	    &in_file_off,	/* q */
@@ -375,7 +376,7 @@ smb2_fsctl_odx_write(smb_request_t *sr, smb_fsctl_t *fsctl)
 	odx_write_args_t args;
 	smb_odx_token_t *tok = NULL;
 	smb_ofile_t *ofile = sr->fid_ofile;
-	uint64_t dst_size;
+	uint64_t dst_rnd_size;
 	uint32_t status = NT_STATUS_INVALID_PARAMETER;
 	int rc;
 
@@ -471,24 +472,26 @@ smb2_fsctl_odx_write(smb_request_t *sr, smb_fsctl_t *fsctl)
 	status = smb2_ofile_getattr(sr, ofile, &dst_attr);
 	if (status != NT_STATUS_SUCCESS)
 		return (status);
-	dst_size = dst_attr.sa_vattr.va_size;
+	args.wa_eof = dst_attr.sa_vattr.va_size;
+	dst_rnd_size = (args.wa_eof + OFFMASK) & ~OFFMASK;
 
 	/*
 	 * Destination offset vs. EOF
 	 */
-	if (args.in_dstoff >= dst_size)
+	if (args.in_dstoff >= args.wa_eof)
 		return (NT_STATUS_END_OF_FILE);
 
 	/*
 	 * Destination offset+len vs. EOF
 	 *
 	 * The spec. is silent about copying when the file length is
-	 * not block aligned, but clients appear to be OK with our
-	 * returning a non-aligned transfer length at EOF.
-	 * Trim xlen to the remaining (dst) file length.
+	 * not block aligned, but clients appear to ask us to copy a
+	 * range that's rounded up to a block size.  We'll limit the
+	 * transfer size to the rounded up file size, but the actual
+	 * copy will stop at EOF (args.wa_eof).
 	 */
-	if ((args.in_dstoff + args.in_xlen) > dst_size)
-		args.in_xlen = dst_size - args.in_dstoff;
+	if ((args.in_dstoff + args.in_xlen) > dst_rnd_size)
+		args.in_xlen = dst_rnd_size - args.in_dstoff;
 
 	/*
 	 * Finally, run the I/O
@@ -550,6 +553,15 @@ smb2_fsctl_odx_write_zeros(smb_request_t *sr, odx_write_args_t *args)
 		xlen = smb2_odx_read_max;
 
 	/*
+	 * Also limit to the actual file size, which may be
+	 * smaller than the (block-aligned) transfer size.
+	 * Report the rounded up size to the caller at EOF.
+	 */
+	args->out_xlen = xlen;
+	if ((args->in_dstoff + xlen) > args->wa_eof)
+		xlen = args->wa_eof - args->in_dstoff;
+
+	/*
 	 * Arrange for zeros to appear in the range:
 	 * in_dstoff, (in_dstoff + in_xlen)
 	 *
@@ -563,8 +575,8 @@ smb2_fsctl_odx_write_zeros(smb_request_t *sr, odx_write_args_t *args)
 		if (status == NT_STATUS_INVALID_PARAMETER ||
 		    status == NT_STATUS_NOT_SUPPORTED)
 			status = NT_STATUS_INVALID_DEVICE_REQUEST;
+		args->out_xlen = 0;
 	} else {
-		args->out_xlen = xlen;
 		status = 0;
 	}
 
@@ -585,6 +597,7 @@ smb2_fsctl_odx_write_native1(smb_request_t *sr,
 	void *buffer = NULL;
 	size_t bufsize = smb2_odx_buf_size;
 	uint64_t src_offset;
+	uint32_t resid;
 	uint32_t xlen;
 	uint32_t status;
 
@@ -626,6 +639,15 @@ smb2_fsctl_odx_write_native1(smb_request_t *sr,
 		xlen = (uint32_t)args->in_xlen;
 
 	/*
+	 * Also limit to the actual file size, which may be
+	 * smaller than the (block-aligned) transfer size.
+	 * Report the rounded up size to the caller at EOF.
+	 */
+	args->out_xlen = xlen;
+	if ((args->in_dstoff + xlen) > args->wa_eof)
+		xlen = (uint32_t)(args->wa_eof - args->in_dstoff);
+
+	/*
 	 * Note: in_xoff is relative to the beginning of the "token"
 	 * (a range of the source file tn1_off, tn1_eof).  Make sure
 	 * in_xoff is within the range represented by this token.
@@ -653,14 +675,20 @@ smb2_fsctl_odx_write_native1(smb_request_t *sr,
 
 	/*
 	 * Copy src to dst for xlen
-	 *
-	 * Note: caller needs out_xlen set to the amount moved.
-	 * Sparse copy leaves the "resid" in xlen.
 	 */
-	args->out_xlen = xlen;
+	resid = xlen;
 	status = smb2_sparse_copy(sr, src_ofile, dst_ofile,
-	    src_offset, args->in_dstoff, &xlen, buffer, bufsize);
-	args->out_xlen -= xlen;
+	    src_offset, args->in_dstoff, &resid, buffer, bufsize);
+
+	/*
+	 * If the result was a partial copy, round down the
+	 * reported transfer size to a block boundary.
+	 */
+	if (resid != 0) {
+		xlen -= resid;
+		xlen &= ~OFFMASK;
+		args->out_xlen = xlen;
+	}
 
 	/*
 	 * If we did any I/O, ignore the error that stopped us.
