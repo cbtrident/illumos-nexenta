@@ -179,6 +179,11 @@ devfs_getattr(struct vnode *vp, struct vattr *vap, int flags, struct cred *cr,
 	}
 
 	rw_enter(&dv->dv_contents, RW_READER);
+	if (dv->dv_dotdot == NULL) {
+		rw_exit(&dv->dv_contents);
+		return (ESTALE);
+	}
+
 	if (dv->dv_attr) {
 		/*
 		 * obtain from the memory version of attribute.
@@ -365,6 +370,13 @@ devfs_setattr(
 		    "?%s: getattr on vnode type %d", dvnm, vp->v_type);
 		return (ENOENT);
 	}
+
+	rw_enter(&dv->dv_contents, RW_READER);
+	if (dv->dv_dotdot == NULL) {
+		rw_exit(&dv->dv_contents);
+		return (ESTALE);
+	}
+	rw_exit(&dv->dv_contents);
 
 	if (vap->va_mask & AT_NOSET)
 		return (EINVAL);
@@ -662,6 +674,9 @@ devfs_setsecattr(struct vnode *vp, struct vsecattr *vsap, int flags,
 	if (dv->dv_flags & DV_NO_FSPERM)
 		return (ENOTSUP);
 
+	if (dv->dv_dotdot == NULL)
+		return (ESTALE);
+
 	/*
 	 * To complete, the setsecattr requires an underlying attribute node.
 	 */
@@ -889,6 +904,9 @@ devfs_readdir(struct vnode *dvp, struct uio *uiop, struct cred *cred, int *eofp,
 
 	if (dvp->v_type != VDIR)
 		return (ENOTDIR);
+
+	if (ddv->dv_dotdot == NULL)
+		return (ESTALE);
 
 	/* Load the initial contents */
 	if (ddv->dv_flags & DV_BUILD) {

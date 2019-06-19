@@ -941,7 +941,7 @@ dv_find(struct dv_node *ddv, char *nm, struct vnode **vpp, struct pathname *pnp,
 		rw_enter(&ddv->dv_contents, RW_READER);
 	}
 start:
-	if (DV_STALE(ddv)) {
+	if (DV_STALE(ddv) || ddv->dv_dotdot == NULL) {
 		rw_exit(&ddv->dv_contents);
 		return (ESTALE);
 	}
