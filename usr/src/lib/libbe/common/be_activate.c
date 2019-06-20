@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019, Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2016 Toomas Soome <tsoome@me.com>
  */
 
@@ -43,9 +43,16 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/efi_partition.h>
-
+#include <sys/vtoc.h>
+#include <sys/mntent.h>
+#include <libgen.h>
+#include <libfstyp.h>
 #include <libbe.h>
 #include <libbe_priv.h>
+
+#define	PCFS_MKFS	"/usr/lib/fs/pcfs/mkfs"
+#define	EFIPROG		"loader64.efi"
+#define	EFIBOOT		"bootx64.efi"
 
 char	*mnttab = MNTTAB;
 
@@ -870,6 +877,160 @@ be_do_install_mbr(char *diskname, nvlist_t *child)
 	return (B_TRUE);
 }
 
+/*
+ * Function:	be_prepare_efi_part
+ * Description: Check for the EFI system partition formatted with FAT32
+ *              and create if not exists, mount and copy EFI boot file
+ *              to the efi/boot directory.
+ *
+ * Parameters:
+ *              disk - the full disk name.
+ *              vname - the disk name without any leading "/dev/dsk"
+ *              and slice number.
+ * Return:
+ *              BE_SUCCESS - Success
+ *              be_errno_t - Failure
+ * Scope:
+ *		Private
+ */
+
+static int
+be_prepare_efi_part(char *disk, char *vname)
+{
+	struct dk_gpt *gpt;
+	fstyp_handle_t hdl;
+	char be_run_cmd_err[BUFSIZ];
+	char pcfs_cmd[MAXPATHLEN];
+	char efi_part[MAXPATHLEN];
+	char efi_rpart[MAXPATHLEN];
+	char mntoptions[MAX_MNTOPT_STR];
+	char efidir[MAXPATHLEN];
+	char infile[MAXPATHLEN];
+	char outfile[MAXPATHLEN];
+	FILE *infp = NULL;
+	FILE *outfp = NULL;
+	char *mountpoint = NULL;
+	char buffer[BUFSIZ];
+	size_t nread;
+	const char *id;
+	int fd, ret = 0;
+
+	if ((fd = open(disk, O_RDONLY|O_NDELAY)) < 0) {
+		be_print_err(gettext("%s: failed "
+		    "to open %s\n"), __func__, disk);
+		return (BE_ERR_BOOTFILE_INST);
+	}
+
+	if (efi_alloc_and_read(fd, &gpt) >= 0) {
+		if (gpt->efi_parts[0].p_tag != V_SYSTEM) {
+			be_print_err(gettext("%s: primary "
+			    "partition is not ESP\n"), __func__);
+			ret = BE_ERR_BOOTFILE_INST;
+			efi_free(gpt);
+			(void) close(fd);
+			return (ret);
+		}
+	}
+	efi_free(gpt);
+	(void) close(fd);
+
+	(void) snprintf(efi_rpart, sizeof (efi_rpart), "/dev/rdsk/%ss0", vname);
+	if ((fd = open(efi_rpart, O_RDONLY|O_NONBLOCK)) < 0) {
+		be_print_err(gettext("%s: failed to open "
+		    "%s\n"), __func__, efi_rpart);
+		return (BE_ERR_BOOTFILE_INST);
+	}
+
+	if (fstyp_init(fd, 0, NULL, &hdl) != 0) {
+		(void) close(fd);
+		return (BE_ERR_BOOTFILE_INST);
+	}
+
+	/* check and format ESP partition with pcfs filesystem */
+	if (fstyp_ident(hdl, MNTTYPE_PCFS, &id) != 0) {
+		(void) snprintf(pcfs_cmd, sizeof (pcfs_cmd),
+		    "%s %s </dev/null", PCFS_MKFS, efi_rpart);
+
+		*be_run_cmd_err = '\0';
+
+		if (be_run_cmd(pcfs_cmd, be_run_cmd_err, BUFSIZ,
+		    NULL, 0) != BE_SUCCESS) {
+			be_print_err(gettext("%s: failed "
+			    "to create PCFS: %s\n"), __func__,
+			    be_run_cmd_err);
+			(void) close(fd);
+			fstyp_fini(hdl);
+			return (BE_ERR_BOOTFILE_INST);
+		}
+	}
+	fstyp_fini(hdl);
+	(void) close(fd);
+
+	if (be_make_tmp_mountpoint(&mountpoint) != BE_SUCCESS) {
+		be_print_err(gettext("%s: failed to make "
+		    "temporary mountpoint\n"), __func__);
+		return (BE_ERR_BOOTFILE_INST);
+	}
+
+	(void) snprintf(efi_part, sizeof (efi_part), "/dev/dsk/%ss0", vname);
+	if (mount(efi_part, mountpoint, MS_OVERLAY | MS_OPTIONSTR,
+	    MNTTYPE_PCFS, NULL, 0, mntoptions, sizeof (mntoptions)) != 0) {
+		be_print_err(gettext("%s: failed to mount "
+		    "%s\n"), __func__, efi_part);
+		free(mountpoint);
+		return (BE_ERR_BOOTFILE_INST);
+	}
+
+	(void) snprintf(efidir, sizeof (efidir), "%s/efi/boot", mountpoint);
+	if (mkdirp(efidir, 0777) < 0) {
+		if (errno != EEXIST) {
+			be_print_err(gettext("%s: failed to create "
+			    "%s\n"), __func__, efidir);
+			ret = BE_ERR_BOOTFILE_INST;
+			goto done;
+		}
+	}
+
+	(void) snprintf(infile, sizeof (infile), "/boot/%s", EFIPROG);
+	if ((infp = fopen(infile, "r")) == NULL) {
+		be_print_err(gettext("%s: failed to open "
+		    "%s\n"), __func__, infile);
+		ret = BE_ERR_BOOTFILE_INST;
+		goto done;
+	}
+
+	(void) snprintf(outfile, sizeof (outfile), "%s/%s", efidir, EFIBOOT);
+	if ((outfp = fopen(outfile, "a")) == NULL) {
+		be_print_err(gettext("%s: failed to create "
+		    "%s\n"), __func__, outfile);
+		ret = BE_ERR_BOOTFILE_INST;
+		goto done;
+	}
+
+	while ((nread = fread(buffer, sizeof (char), sizeof (buffer),
+	    infp)) > 0) {
+		if (fwrite(buffer, sizeof (char), nread, outfp) != nread) {
+			be_print_err(gettext("%s: failed to copy "
+			    "%s\n"), __func__, infile);
+			ret = BE_ERR_BOOTFILE_INST;
+		}
+	}
+done:
+	free(mountpoint);
+	if (infp != NULL)
+		(void) fclose(infp);
+	if (outfp != NULL)
+		(void) fclose(outfp);
+	if (umount(mountpoint) != 0) {
+		if (umount2(mountpoint, MS_FORCE) != 0) {
+			be_print_err(gettext("%s: failed "
+			    "to umount ESP\n"), __func__);
+			return (BE_ERR_BOOTFILE_INST);
+		}
+	}
+	return (ret);
+}
+
 static int
 be_do_installboot_helper(zpool_handle_t *zphp, nvlist_t *child, char *stage1,
     char *stage2, uint16_t flags)
@@ -938,6 +1099,12 @@ be_do_installboot_helper(zpool_handle_t *zphp, nvlist_t *child, char *stage1,
 	if (be_is_isa("i386")) {
 		uint16_t force = flags & BE_INSTALLBOOT_FLAG_FORCE;
 		uint16_t mbr = flags & BE_INSTALLBOOT_FLAG_MBR;
+
+		if (!be_has_grub() && is_efi_system()) {
+			if (be_prepare_efi_part(diskname, vname) != 0) {
+				return (BE_ERR_BOOTFILE_INST);
+			}
+		}
 
 		if (force == BE_INSTALLBOOT_FLAG_FORCE) {
 			if (mbr == BE_INSTALLBOOT_FLAG_MBR ||

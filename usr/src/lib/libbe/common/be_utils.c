@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019, Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright (c) 2015 by Delphix. All rights reserved.
  */
@@ -4071,4 +4071,34 @@ be_open_menu(
 		}
 	}
 	return (BE_SUCCESS);
+}
+
+/*
+ * Function:	is_efi_system
+ * Description:	Check efi-systab property, if exist, there is
+ *              no BIOS.
+ * Parameters:
+ *		None
+ * Returns:
+ *		B_TRUE - Success
+ *		B_FALSE - Failure
+ * Scope:
+ *		Semi-private (library wide use only)
+ */
+boolean_t
+is_efi_system(void)
+{
+	boolean_t ret = B_FALSE;
+	static di_node_t devinfo_root = DI_NODE_NIL;
+
+	devinfo_root = di_init("/", DINFOCPYALL|DINFOFORCE);
+	if (devinfo_root != NULL) {
+		int64_t *prop;
+		if (di_prop_lookup_int64(DDI_DEV_T_ANY, devinfo_root,
+		    "efi-systab", &prop) >= 0) {
+			ret = B_TRUE;
+		}
+		di_fini(devinfo_root);
+	}
+	return (ret);
 }

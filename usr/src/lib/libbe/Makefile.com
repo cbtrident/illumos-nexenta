@@ -23,7 +23,7 @@
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
 #
 # Copyright 2012 OmniTI Computer Consulting, Inc.  All rights reserved.
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2019, Nexenta by DDN, Inc. All rights reserved.
 # Copyright 2016 Toomas Soome <tsoome@me.com>
 #
 
@@ -52,11 +52,9 @@ INCS += -I$(SRCDIR) -I$(SRC)/cmd/boot/common -I$(SRC)/common/ficl
 CSTD=	$(CSTD_GNU99)
 
 LDLIBS +=	-lficl-sys -lzfs -linstzones -luuid -lnvpair -lc -lgen
-LDLIBS +=	-ldevinfo -lefi
+LDLIBS +=	-ldevinfo -lefi -lfstyp
 CPPFLAGS +=	$(INCS)
-
 CLOBBERFILES += $(LIBRARY)
-
 $(LINTLIB) := SRCS=	$(SRCDIR)/$(LINTSRC)
 
 .KEEP_STATE:

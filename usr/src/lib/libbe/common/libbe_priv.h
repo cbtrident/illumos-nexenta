@@ -198,6 +198,7 @@ void be_print_err(char *, ...);
 int be_find_current_be(be_transaction_data_t *);
 int zfs_err_to_be_err(libzfs_handle_t *);
 int errno_to_be_err(int);
+boolean_t is_efi_system(void);
 
 /* be_activate.c */
 int _be_activate(char *);
