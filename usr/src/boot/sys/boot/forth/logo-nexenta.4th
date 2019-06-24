@@ -37,8 +37,8 @@
 ;
 
 : logo ( x y -- ) \ color nexenta logo
-
-	0 0 0 0 0 s" /boot/nexenta.png" fb-putimage if 2drop exit then
+	s" loadfont /boot/fonts/10x18.fnt" evaluate
+	0 30 20 0 0 s" /boot/nexenta.png" fb-putimage if 2drop exit then
 
 	s"                                     " logo+
 	s"                                     " logo+
