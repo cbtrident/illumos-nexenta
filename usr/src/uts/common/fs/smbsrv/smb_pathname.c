@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <smbsrv/smb_kproto.h>
@@ -607,6 +607,7 @@ smb_pathname(smb_request_t *sr, char *path, int flags,
 		 * the lowest mounted filesystem.
 		 */
 		if (mnt_pn != NULL &&
+		    fnode != NULL &&
 		    (err = VFS_ROOT(fnode->vp->v_vfsp, &fsrootvp)) == 0) {
 			if (fsrootvp == fnode->vp) {
 				mnt_pn->pn_pathlen = pn_pathleft(&upn);
