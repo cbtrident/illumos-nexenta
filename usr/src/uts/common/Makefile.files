@@ -1915,6 +1915,8 @@ SKD_OBJS = skd.o
 
 NVME_OBJS = nvme.o
 
+VIOSCSI_OBJS += vioscsi.o
+
 KRRP_SHARED_OBJS += krrp_error.o krrp_ioctl_common.o krrp_params.o
 
 KRRP_OBJS += krrp.o krrp_svc.o krrp_ioctl.o krrp_server.o \

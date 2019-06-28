@@ -62,7 +62,7 @@
  */
 
 /*
- * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef __VIRTIOVAR_H__
@@ -92,6 +92,7 @@ struct vq_entry {
 	ddi_acc_handle_t	qe_indirect_dma_acch;
 	struct vring_desc	*qe_indirect_descs;
 	unsigned int 		qe_indirect_next;
+	void			*qe_private;
 };
 
 struct virtqueue {
