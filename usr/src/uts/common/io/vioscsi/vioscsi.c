@@ -232,7 +232,7 @@ vioscsi_tran_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 
 	if (pkt->pkt_cdbp == NULL)
 		return (TRAN_BADPKT);
-	
+
 	req->vr_req_pkt = pkt;
 	cmd_req = (struct virtio_scsi_cmd_req *)req_buf->vb_virt;
 	bzero(cmd_req, sizeof (*cmd_req));
@@ -359,7 +359,7 @@ vioscsi_buffer_setup(vioscsi_softc_t sc, vioscsi_buffer_t vb, size_t vb_size,
 
 release_dma_mem:
 	(void) ddi_dma_mem_free(&vb->vb_acch);
-	
+
 unbind_handle:
 	(void) ddi_dma_unbind_handle(vb->vb_dmah);
 
@@ -624,7 +624,7 @@ virtio_scsi_config_lun(vioscsi_softc_t sc, int tgt, uint8_t lun,
 {
 	struct scsi_device	sd;
 	dev_info_t		*child;
-	boolean_t		rval;
+	boolean_t		probe_rval;
 	int			err;
 
 	bzero(&sd, sizeof (sd));
@@ -633,24 +633,23 @@ virtio_scsi_config_lun(vioscsi_softc_t sc, int tgt, uint8_t lun,
 	sd.sd_address.a_target = (uint16_t)tgt;
 	sd.sd_address.a_lun = (uint8_t)lun;
 
-	rval = virtio_scsi_probe_lun(&sd);
+	probe_rval = virtio_scsi_probe_lun(&sd);
 
 	if ((child = vioscsi_find_child(sc, tgt, lun)) != NULL) {
-		if (rval == B_FALSE) {
+		if (probe_rval == B_FALSE) {
 			ndi_devi_offline(child,
 			    NDI_DEVFS_CLEAN | NDI_DEVI_REMOVE | NDI_DEVI_GONE);
 			vioscsi_delete_child(sc, tgt, lun, child);
-			rval = NDI_FAILURE;
+			err = NDI_FAILURE;
 		} else {
 			if (ldip != NULL)
 				*ldip = child;
-			rval = NDI_SUCCESS;
+			err = NDI_SUCCESS;
 		}
-	} else if (rval == B_FALSE) {
+	} else if (probe_rval == B_FALSE) {
 		err = NDI_FAILURE;
 	} else {
 		err = virtio_scsi_config_child(sc, &sd, ldip);
-		return (err);
 	}
 	kmem_free(sd.sd_inq, SUN_INQSIZE);
 	return (err);
