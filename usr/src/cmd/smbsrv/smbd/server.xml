@@ -23,7 +23,7 @@ CDDL HEADER END
 
 Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
 Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
-Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 
 NOTE:  This service manifest is not editable; its contents will
 be overwritten by package or patch operations, including
@@ -230,7 +230,7 @@ file.
 		<propval name='max_protocol' type='astring'
 			value='' override='true'/>
 		<propval name='min_protocol' type='astring'
-			value='' override='true'/>
+			value='2.1' override='true'/>
 		<propval name='encrypt' type='astring'
 			value='disabled' override='true'/>
 		<propval name='initial_credits' type='integer'
