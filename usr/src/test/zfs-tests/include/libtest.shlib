@@ -23,8 +23,8 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 # Copyright (c) 2012, 2016 by Delphix. All rights reserved.
-# Copyright 2016 Nexenta Systems, Inc.
 # Copyright (c) 2017 Datto Inc.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
 . ${STF_TOOLS}/contrib/include/logapi.shlib
@@ -901,6 +901,27 @@ function poolexists
 
 	zpool get name "$pool" > /dev/null 2>&1
 	return $?
+}
+
+# Get pool size in bytes.
+# $1 pool name
+# $2 percent of poolsize
+# if $2 is 0 or undefined returns 100% 
+# Returns pool size per $2 in bytes
+
+function get_pool_size_by_percent # pool percent
+{
+    typeset pool=$1
+    typeset -i percent=$2
+  
+    if [[ -z $percent  ]] || (( $percent == 0)); then
+	percent=100
+    fi
+
+    typeset pool_size=`zpool list -Hp ${pool} | awk '{print $2}'`
+    pool_size=$(echo "$pool_size * $percent / 100" | bc)
+    echo $pool_size
+    return 0
 }
 
 # Return 0 if all the specified datasets exist; $? otherwise
@@ -2487,6 +2508,32 @@ function get_min
 	done
 
 	echo $min
+}
+
+#
+# Given a value like "100M" or "128G", return the number of bytes
+#
+function to_bytes
+{
+    typeset value=$(echo "$1" | sed 's/[^0123456789].*$//g')
+    typeset units
+    
+    units=$(echo "$1" | sed 's/^[0123456789]*//g' | tr '[:upper:]' '[:lower:]')
+    case "$units" in
+        t|tb)   let 'value *= 1024 * 1024 * 1024 * 1024'    ;;
+        g|gb)   let 'value *= 1024 * 1024 * 1024'   ;;
+        m|mb)   let 'value *= 1024 * 1024'  ;;
+        k|kb)   let 'value *= 1024' ;;
+        b|'')   let 'value += 0'    ;;
+        *)
+                value=
+                echo "Unsupported units '$units'" >&2
+		return 1
+        ;;
+    esac
+
+    echo "$value"
+    return 0
 }
 
 #
