@@ -22,7 +22,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2013, 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_SYS_SCSI_SCSI_PKT_H
@@ -190,6 +190,12 @@ struct scsi_pkt {
 /* Extended flags. */
 #define	FLAG_PKT_BUSY		0x04000000	/* Reject packet immediately. */
 #define	FLAG_PKT_TIMEOUT	0x08000000	/* Timed-out packet. */
+/*
+ * Device is potentially reserved, but the path to the reservation
+ * is disabled by the driver
+ */
+#define	FLAG_PKT_RESRV_DISABLED 	\
+				0x10000000
 
 /*
  * Definitions for the pkt_reason field.

@@ -28,7 +28,7 @@
  * Copyright (c) 2011 Bayard G. Bell.  All rights reserved.
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
- * Copyright 2019 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -88,6 +88,9 @@ int sd_qfull_throttle_enable		= TRUE;
 int sd_retry_on_reservation_conflict	= 1;
 int sd_reinstate_resv_delay		= SD_REINSTATE_RESV_DELAY;
 int sd_enable_lun_reset			= FALSE;
+
+/* Don't panic if the reservation path is disabled */
+int sd_failfast_disabled_resrv_nopanic	= FALSE;
 
 /*
  * Default safe I/O delay threshold of 30s for all devices.
@@ -1290,6 +1293,11 @@ static void sd_rmw_msg_print_handler(void *arg);
  */
 static int sd_failfast_enable = SD_FAILFAST_ENABLE_FAIL_RETRIES |
     SD_FAILFAST_ENABLE_FAIL_USCSI;
+
+#define	SD_RESERVATION_CONFLICT_FATAL(pkt)			\
+    (sd_failfast_enable != 0 &&					\
+    (sd_failfast_disabled_resrv_nopanic == FALSE ||		\
+    ((pkt)->pkt_flags & FLAG_PKT_RESRV_DISABLED) == 0))
 
 /*
  * Bitmask to control behavior of buf(9S) flushes when a transition to
@@ -19205,7 +19213,7 @@ sd_pkt_status_reservation_conflict(struct sd_lun *un, struct buf *bp,
 	un->un_resvd_status |= SD_RESERVATION_CONFLICT;
 
 	if ((un->un_resvd_status & SD_FAILFAST) != 0) {
-		if (sd_failfast_enable != 0) {
+		if (SD_RESERVATION_CONFLICT_FATAL(pktp)) {
 			/* By definition, we must panic here.... */
 			sd_panic_for_res_conflict(un);
 			/*NOTREACHED*/
@@ -24984,7 +24992,7 @@ sd_mhd_watch_cb(caddr_t arg, struct scsi_watch_result *resultp)
 			 */
 			mutex_enter(SD_MUTEX(un));
 			if ((un->un_resvd_status & SD_FAILFAST) &&
-			    (sd_failfast_enable)) {
+			    (SD_RESERVATION_CONFLICT_FATAL(pkt))) {
 				sd_panic_for_res_conflict(un);
 				/*NOTREACHED*/
 			}

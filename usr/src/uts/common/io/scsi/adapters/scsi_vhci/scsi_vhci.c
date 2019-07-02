@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2001, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2018, 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -83,6 +83,18 @@ int		vhci_init_wait_timeout = VHCI_INIT_WAIT_TIMEOUT;
 kcondvar_t	vhci_cv;
 kmutex_t	vhci_global_mutex;
 void		*vhci_softstate = NULL; /* for soft state */
+
+/*
+ * Normally, within reservation recovery, if the driver believes the path which
+ * was used to submit SCSI-II RESERVE command can be unavailable or exposes
+ * some communication issues, it invokes RESET over one of the remaining online
+ * paths. In the most of such cases it recovers VLUN only if
+ * VLUN_RESERVE_ACTIVE_FLG flag is stil set. That strategy is insufficient on
+ * some specific multipathed hardware which doesn't track that multiple LUNs
+ * match the same physical drive. In such cases all paths need to be reset.
+ * The tunable supplies the choice between those 2 options.
+ */
+int		vhci_force_recover_all_paths = FALSE;
 
 /*
  * Flag to delay the retry of the reserve command
@@ -1147,6 +1159,7 @@ vhci_scsi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 	ASSERT(vpkt != NULL);
 	ASSERT(vpkt->vpkt_state != VHCI_PKT_ISSUED);
 	cdip = ADDR2DIP(ap);
+	pkt->pkt_flags &= ~FLAG_PKT_RESRV_DISABLED;
 
 	/*
 	 * Block IOs if LUN is held or QUIESCED for IOs.
@@ -1293,8 +1306,14 @@ vhci_scsi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 	    (void *)vpkt));
 	vhci_update_pHCI_pkt(vpkt, pkt);
 
-	if (vlun->svl_flags & VLUN_RESERVE_ACTIVE_FLG) {
-		if (vpkt->vpkt_path != vlun->svl_resrv_pip) {
+	if (vlun->svl_resrv_pip != NULL &&
+	    vpkt->vpkt_path != vlun->svl_resrv_pip) {
+		if (MDI_PI_EXT_STATE(vlun->svl_resrv_pip) != 0) {
+			pkt->pkt_flags |=
+			    FLAG_PKT_RESRV_DISABLED;
+		}
+
+		if (vlun->svl_flags & VLUN_RESERVE_ACTIVE_FLG) {
 			VHCI_DEBUG(1, (CE_WARN, vhci->vhci_dip,
 			    "!vhci_bind: reserve flag set for vlun 0x%p, but, "
 			    "pktpath 0x%p resrv path 0x%p differ. lb_policy %x",
@@ -1586,8 +1605,13 @@ vhci_recovery_reset(scsi_vhci_lun_t *vlun, struct scsi_address *ap,
 	ASSERT(ap != NULL);
 
 	if (vlun && vlun->svl_support_lun_reset == 1) {
-		ret = vhci_scsi_reset_target(ap, RESET_LUN,
-		    select_path);
+		if (vhci_force_recover_all_paths == TRUE &&
+		    select_path == TRUE) {
+			ret = vhci_scsi_reset_all_paths(ap);
+		} else {
+			ret = vhci_scsi_reset_target(ap, RESET_LUN,
+			    select_path);
+		}
 	}
 
 	recovery_depth--;
@@ -1730,12 +1754,13 @@ vhci_scsi_reset_all_paths(struct scsi_address *ap)
 	dev_info_t		*vdip, *cdip = NULL;
 	mdi_pathinfo_t		*pip = NULL;
 	mdi_pathinfo_t		*npip = NULL;
-	int			rval = -1;
+	int			ret = 1;
 	scsi_vhci_priv_t	*svp = NULL;
 	struct scsi_address	*pap = NULL;
 	scsi_hba_tran_t		*hba = NULL;
-	int			sps = MDI_SUCCESS;
+	int			sps;
 	int			reset_result = 0;
+	int			reset_cnt = 0;
 	struct scsi_vhci	*vhci = NULL;
 
 	/*
@@ -1755,8 +1780,8 @@ vhci_scsi_reset_all_paths(struct scsi_address *ap)
 		return (0);
 	}
 
-	rval = mdi_select_path(cdip, NULL, MDI_SELECT_ONLINE_PATH, NULL, &pip);
-	if ((rval != MDI_SUCCESS) || (pip == NULL)) {
+	sps = mdi_select_path(cdip, NULL, MDI_SELECT_ONLINE_PATH, NULL, &pip);
+	if ((sps != MDI_SUCCESS) || (pip == NULL)) {
 		VHCI_DEBUG(2, (CE_WARN, NULL, "!%s: "
 		    "Unable to get a path, dip 0x%p",
 		    __func__, (void *)cdip));
@@ -1780,39 +1805,41 @@ again:
 		/*
 		 * The following sends reset down all available paths
 		 */
-		if (sps == MDI_SUCCESS) {
-			reset_result = hba->tran_reset(pap, RESET_LUN);
+		reset_result = hba->tran_reset(pap, RESET_LUN);
+		if (reset_result) {
+			reset_cnt++;
+		} else {
+			ret = 0;
+		}
 
-			VHCI_DEBUG(2, (CE_WARN, vdip, "!%s%d: "
-			    "path %s, reset LUN %s",
-			    ddi_driver_name(cdip), ddi_get_instance(cdip),
-			    mdi_pi_spathname(pip),
-			    (reset_result ? "Success" : "Failed")));
+		VHCI_DEBUG(2, (CE_WARN, vdip, "!%s%d: "
+		    "path %s, reset LUN %s",
+		    ddi_driver_name(cdip), ddi_get_instance(cdip),
+		    mdi_pi_spathname(pip),
+		    (reset_result ? "Success" : "Failed")));
 
-			/*
-			 * Select next path and issue the reset, repeat
-			 * until all paths are exhausted regardless of success
-			 * or failure of the previous reset.
-			 */
-			sps = mdi_select_path(cdip, NULL,
-			    MDI_SELECT_ONLINE_PATH, pip, &npip);
-			if ((sps != MDI_SUCCESS) || (npip == NULL)) {
-				mdi_rele_path(pip);
-				return (0);
-			}
+		/*
+		 * Select next path and issue the reset, repeat
+		 * until all paths are exhausted regardless of success
+		 * or failure of the previous reset.
+		 */
+		sps = mdi_select_path(cdip, NULL,
+		    MDI_SELECT_ONLINE_PATH, pip, &npip);
+		if ((sps == MDI_SUCCESS) && (npip != NULL)) {
 			mdi_rele_path(pip);
 			pip = npip;
 			goto again;
 		}
+
 		mdi_rele_path(pip);
+		if (reset_cnt == 0) {
+			return (0);
+		}
 		mutex_enter(&vhci->vhci_mutex);
 		scsi_hba_reset_notify_callback(&vhci->vhci_mutex,
 		    &vhci->vhci_reset_notify_listf);
 		mutex_exit(&vhci->vhci_mutex);
-		VHCI_DEBUG(6, (CE_NOTE, NULL, "!vhci_scsi_reset_target: "
-		    "reset %d sent down pip:%p for cdip:%p\n", RESET_LUN,
-		    (void *)pip, (void *)cdip));
-		return (1);
+		return (ret);
 	}
 	mdi_rele_path(pip);
 	return (0);
@@ -3441,6 +3468,7 @@ vhci_intr(struct scsi_pkt *pkt)
 				(void) mdi_set_lb_policy(vlun->svl_dip,
 				    vlun->svl_lb_policy_save);
 				vlun->svl_flags &= ~VLUN_RESERVE_ACTIVE_FLG;
+				vlun->svl_resrv_pip = NULL;
 				VHCI_DEBUG(1, (CE_WARN, NULL,
 				    "!vhci_intr: vlun 0x%p release path 0x%p",
 				    (void *)vlun, (void *)vpkt->vpkt_path));
@@ -4425,9 +4453,10 @@ vhci_pathinfo_state_change(dev_info_t *vdip, mdi_pathinfo_t *pip,
 			if (flags & MDI_DISABLE_OP)  {
 				/*
 				 * Issue scsi reset if it happens to be
-				 * reserved path.
+				 * (potentially) reserved path.
 				 */
-				if (vlun->svl_flags & VLUN_RESERVE_ACTIVE_FLG) {
+				if (vlun->svl_flags & VLUN_RESERVE_ACTIVE_FLG ||
+				    vhci_force_recover_all_paths == TRUE) {
 					/*
 					 * if reservation pending on
 					 * this path, dont' mark the
@@ -5462,15 +5491,16 @@ vhci_pathinfo_offline(dev_info_t *vdip, mdi_pathinfo_t *pip, int flags)
 	mutex_exit(&svp->svp_mutex);
 
 	/*
-	 * Check to see if this vlun has an active SCSI-II RESERVE. And this
-	 * is the pip for the path that has been reserved.
-	 * If so clear the reservation by sending a reset, so the host will not
-	 * get a reservation conflict.  Reset the flag VLUN_RESERVE_ACTIVE_FLG
-	 * for this lun.  Also a reset notify is sent to the target driver
-	 * just in case the POR check condition is cleared by some other layer
-	 * in the stack.
+	 * Check to see if this vlun (potentially) has an active
+	 * SCSI-II RESERVE. And this is the pip for the path that has been
+	 * reserved. If so clear the reservation by sending a reset, so the host
+	 * will not get a reservation conflict.  Reset the flag
+	 * VLUN_RESERVE_ACTIVE_FLG for this lun.  Also a reset notify is sent
+	 * to the target driver just in case the POR check condition is cleared
+	 * by some other layer in the stack.
 	 */
-	if (svp->svp_svl->svl_flags & VLUN_RESERVE_ACTIVE_FLG) {
+	if ((svp->svp_svl->svl_flags & VLUN_RESERVE_ACTIVE_FLG) ||
+	    vhci_force_recover_all_paths == TRUE) {
 		if (pip == svp->svp_svl->svl_resrv_pip) {
 			if (vhci_recovery_reset(svp->svp_svl,
 			    &svp->svp_psd->sd_address, TRUE,
@@ -6260,7 +6290,7 @@ vhci_devctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		    "!reset %s@%s on all available paths",
 		    ndi_dc_getname(dcp), ndi_dc_getaddr(dcp)));
 
-		if (vhci_scsi_reset_all_paths(&svp->svp_psd->sd_address) != 0) {
+		if (vhci_scsi_reset_all_paths(&svp->svp_psd->sd_address) == 0) {
 			VHCI_DEBUG(2, (CE_WARN, NULL,
 			    "!vhci_ioctl(pip:%p): reset failed\n",
 			    (void *)pip));

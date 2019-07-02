@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_FCPVAR_H
@@ -777,6 +779,10 @@ typedef struct fcp_tgt {
 	 * and is decremented until it reaches zero.
 	 */
 	uint_t			tgt_tmp_cnt;
+	/*
+	 * Pending online/offline events for LUNs within this target
+	 */
+	uint_t			pending_lun_event_cnt;
 	/*
 	 * fp/fctl handle for the "port_device".
 	 */

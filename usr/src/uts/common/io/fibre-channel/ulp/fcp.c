@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2018, 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -965,6 +965,9 @@ static int		fcp_watchdog_tick;
  * change it. This variable is set in fcp_attach().
  */
 unsigned int		fcp_offline_delay = FCP_OFFLINE_DELAY;
+
+/* Enable LUN reset within discovery */
+int			fcp_discovery_enable_lun_reset = FALSE;
 
 static void		*fcp_softstate = NULL; /* for soft state */
 static uchar_t		fcp_oflag = FCP_IDLE; /* open flag */
@@ -11272,11 +11275,17 @@ fcp_scsi_reset(struct scsi_address *ap, int level)
 	} else if (level == RESET_TARGET || level == RESET_LUN) {
 		/*
 		 * If we are in the middle of discovery, return
-		 * SUCCESS as this target will be rediscovered
-		 * anyway
+		 * SUCCESS unless reset is explicitly requested
+		 * as this target will be rediscovered anyway
 		 */
+		uint32_t	mask = FCP_TGT_OFFLINE | FCP_TGT_BUSY;
+
+		if (fcp_discovery_enable_lun_reset == TRUE &&
+		    level == RESET_LUN) {
+			mask &= ~FCP_TGT_BUSY;
+		}
 		mutex_enter(&ptgt->tgt_mutex);
-		if (ptgt->tgt_state & (FCP_TGT_OFFLINE | FCP_TGT_BUSY)) {
+		if (ptgt->tgt_state & mask) {
 			mutex_exit(&ptgt->tgt_mutex);
 			return (1);
 		}
@@ -11610,11 +11619,25 @@ fcp_reset_target(struct scsi_address *ap, int level)
 		fcp_update_tgt_state(ptgt, FCP_SET, FCP_LUN_BUSY);
 		(void) strcpy(lun_id, " ");
 	} else {
-		if (plun->lun_state & (FCP_LUN_OFFLINE | FCP_LUN_BUSY)) {
+		uint32_t 	mask = FCP_LUN_OFFLINE | FCP_LUN_BUSY;
+
+		/*
+		 * If we are in the middle of fcp LUN creation
+		 * which immediately follows discovery, enable
+		 * reset if that is configured even though LUN
+		 * is busy
+		 */
+		if (fcp_discovery_enable_lun_reset == TRUE &&
+		    ptgt->pending_lun_event_cnt != 0) {
+			mask &= ~FCP_LUN_BUSY;
+		}
+
+		if (plun->lun_state & mask) {
 			mutex_exit(&ptgt->tgt_mutex);
 			kmem_free(p, sizeof (struct fcp_reset_elem));
 			return (rval);
 		}
+
 		fcp_update_lun_state(plun, FCP_SET, FCP_LUN_BUSY);
 
 		(void) sprintf(lun_id, ", LUN=%d", plun->lun_num);
@@ -12338,6 +12361,7 @@ fcp_hp_task(void *arg)
 {
 	struct fcp_hp_elem	*elem = (struct fcp_hp_elem *)arg;
 	struct fcp_lun	*plun = elem->lun;
+	struct fcp_tgt	*ptgt = plun->lun_tgt;
 	struct fcp_port		*pptr = elem->port;
 	int			result;
 
@@ -12347,21 +12371,32 @@ fcp_hp_task(void *arg)
 	    elem->what == FCP_MPXIO_PATH_SET_BUSY);
 
 	mutex_enter(&pptr->port_mutex);
+	mutex_enter(&ptgt->tgt_mutex);
 	mutex_enter(&plun->lun_mutex);
 	if (((elem->what == FCP_ONLINE || elem->what == FCP_OFFLINE) &&
 	    plun->lun_event_count != elem->event_cnt) ||
 	    pptr->port_state & (FCP_STATE_SUSPENDED |
 	    FCP_STATE_DETACHING | FCP_STATE_POWER_DOWN)) {
+		ptgt->pending_lun_event_cnt--;
 		mutex_exit(&plun->lun_mutex);
+		mutex_exit(&ptgt->tgt_mutex);
 		mutex_exit(&pptr->port_mutex);
 		fcp_process_elem(elem, NDI_FAILURE);
 		return;
 	}
 	mutex_exit(&plun->lun_mutex);
+	mutex_exit(&ptgt->tgt_mutex);
 	mutex_exit(&pptr->port_mutex);
 
 	result = fcp_trigger_lun(plun, elem->cip, elem->old_lun_mpxio,
 	    elem->what, elem->link_cnt, elem->tgt_cnt, elem->flags);
+
+	if (elem->what == FCP_ONLINE || elem->what == FCP_OFFLINE) {
+		mutex_enter(&ptgt->tgt_mutex);
+		ptgt->pending_lun_event_cnt--;
+		mutex_exit(&ptgt->tgt_mutex);
+	}
+
 	fcp_process_elem(elem, result);
 }
 
@@ -14414,6 +14449,7 @@ fcp_pass_to_hp(struct fcp_port *pptr, struct fcp_lun *plun,
 	mutex_enter(&plun->lun_mutex);
 	if (elem->what == FCP_ONLINE || elem->what == FCP_OFFLINE) {
 		plun->lun_event_count++;
+		plun->lun_tgt->pending_lun_event_cnt++;
 		elem->event_cnt = plun->lun_event_count;
 	}
 	mutex_exit(&plun->lun_mutex);
@@ -14421,6 +14457,7 @@ fcp_pass_to_hp(struct fcp_port *pptr, struct fcp_lun *plun,
 	    (void *)elem, KM_NOSLEEP) == NULL) {
 		mutex_enter(&plun->lun_mutex);
 		if (elem->what == FCP_ONLINE || elem->what == FCP_OFFLINE) {
+			plun->lun_tgt->pending_lun_event_cnt--;
 			plun->lun_event_count--;
 		}
 		mutex_exit(&plun->lun_mutex);
