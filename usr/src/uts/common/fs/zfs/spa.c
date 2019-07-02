@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2016 Toomas Soome <tsoome@me.com>
@@ -351,6 +351,7 @@ spa_prop_get_config(spa_t *spa, nvlist_t **nvp)
 int
 spa_prop_get(spa_t *spa, nvlist_t **nvp)
 {
+	dsl_pool_t *dp;
 	objset_t *mos = spa->spa_meta_objset;
 	zap_cursor_t zc;
 	zap_attribute_t za;
@@ -358,6 +359,8 @@ spa_prop_get(spa_t *spa, nvlist_t **nvp)
 
 	VERIFY(nvlist_alloc(nvp, NV_UNIQUE_NAME, KM_SLEEP) == 0);
 
+	dp = spa_get_dsl(spa);
+	dsl_pool_config_enter(dp, FTAG);
 	mutex_enter(&spa->spa_props_lock);
 
 	/*
@@ -368,6 +371,7 @@ spa_prop_get(spa_t *spa, nvlist_t **nvp)
 	/* If no pool property object, no more prop to get. */
 	if (mos == NULL || spa->spa_pool_props_object == 0) {
 		mutex_exit(&spa->spa_props_lock);
+		dsl_pool_config_exit(dp, FTAG);
 		return (0);
 	}
 
@@ -393,11 +397,8 @@ spa_prop_get(spa_t *spa, nvlist_t **nvp)
 				src = ZPROP_SRC_LOCAL;
 
 			if (prop == ZPOOL_PROP_BOOTFS) {
-				dsl_pool_t *dp;
 				dsl_dataset_t *ds = NULL;
 
-				dp = spa_get_dsl(spa);
-				dsl_pool_config_enter(dp, FTAG);
 				if (err = dsl_dataset_hold_obj(dp,
 				    za.za_first_integer, FTAG, &ds)) {
 					dsl_pool_config_exit(dp, FTAG);
@@ -408,7 +409,6 @@ spa_prop_get(spa_t *spa, nvlist_t **nvp)
 				    KM_SLEEP);
 				dsl_dataset_name(ds, strval);
 				dsl_dataset_rele(ds, FTAG);
-				dsl_pool_config_exit(dp, FTAG);
 			} else {
 				strval = NULL;
 				intval = za.za_first_integer;
@@ -440,6 +440,7 @@ spa_prop_get(spa_t *spa, nvlist_t **nvp)
 	}
 	zap_cursor_fini(&zc);
 	mutex_exit(&spa->spa_props_lock);
+	dsl_pool_config_exit(dp, FTAG);
 out:
 	if (err && err != ENOENT) {
 		nvlist_free(*nvp);
