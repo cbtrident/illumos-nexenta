@@ -1,0 +1,99 @@
+#!/usr/sbin/dtrace -s
+
+/*
+ * This file and its contents are supplied under the terms of the
+ * Common Development and Distribution License ("CDDL"), version 1.0.
+ * You may only use this file in accordance with the terms of version
+ * 1.0 of the CDDL.
+ *
+ * A full copy of the text of the CDDL should have accompanied this
+ * source.  A copy of the CDDL is also available via the Internet at
+ * http://www.illumos.org/license/CDDL.
+ */
+
+/*
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ */
+
+/*
+ * Usage: nfsslowio [<threshold millisec>]
+ *
+ * Trace all NFS read or write operations that take longer than
+ * <threshold miilsec>, default 1000ms.
+ *
+ * Outputs: datetime, NFS op, bytes, elasped time of operation, filename.
+ */
+
+#pragma D option defaultargs
+#pragma D option quiet
+
+dtrace:::BEGIN
+{
+	threshold_ms = $1 == 0 ? 1000 : $1;
+        printf("Tracing IOs taking > %d ms... Hit Ctrl-C to end.\n",
+	    threshold_ms);
+}
+
+nfsv3:::op-read-start,
+nfsv3:::op-write-start,
+nfsv4:::op-read-start,
+nfsv4:::op-write-start
+{
+	self->start = 1;
+	self->ts = timestamp;
+}
+
+nfsv3:::op-read-done
+/ (self->start == 1) && (args[2]->status == 0) && (((timestamp - self->ts) / 1000000) > threshold_ms ) /
+{
+	printf("%Y NFSv3 read [%d bytes] %d ms %s\n",
+	    walltimestamp,
+	    args[2]->res_u.ok.data.data_len,
+	    (timestamp - self->ts) / 1000000,
+	    args[1]->noi_curpath);
+
+	self->ts = 0;
+	self->start = 0;
+}
+
+nfsv4:::op-read-done
+/ (self->start == 1) && (args[2]->status == 0) && (((timestamp - self->ts) / 1000000) > threshold_ms ) /
+{
+	printf("%Y NFSv4 read [%d bytes] %d ms %s\n",
+	    walltimestamp,
+	    args[2]->data_len,
+	    (timestamp - self->ts) / 1000000,
+	    args[1]->noi_curpath);
+	self->ts = 0;
+	self->start = 0;
+}
+
+nfsv3:::op-write-done
+/ (self->start == 1) && (args[2]->status == 0) && (((timestamp - self->ts) / 1000000) > threshold_ms ) /
+{
+	printf("%Y NFSv3 %swrite [%d bytes] %d ms, file: %s\n",
+	    walltimestamp,
+	    args[2]->res_u.ok.committed ? "sync " : "",
+	    args[2]->res_u.ok.count,
+	    (timestamp - self->ts) / 1000000,
+	    args[1]->noi_curpath);
+	self->ts = 0;
+	self->start = 0;
+}
+
+nfsv4:::op-write-done
+/ (self->start == 1) && (args[2]->status == 0) && (((timestamp - self->ts) / 1000000) > threshold_ms ) /
+{
+	printf("%Y NFSv4 %swrite [%d bytes] %d ms %s\n",
+	    walltimestamp,
+	    args[2]->committed ? "sync " : "",
+	    args[2]->count,
+	    (timestamp - self->ts) / 1000000,
+	    args[1]->noi_curpath);
+	self->ts = 0;
+	self->start = 0;
+}
+
+dtrace:::END
+{
+}

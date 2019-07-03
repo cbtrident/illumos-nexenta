@@ -1,0 +1,79 @@
+#!/usr/sbin/dtrace -s
+
+/*
+ * This file and its contents are supplied under the terms of the
+ * Common Development and Distribution License ("CDDL"), version 1.0.
+ * You may only use this file in accordance with the terms of version
+ * 1.0 of the CDDL.
+ *
+ * A full copy of the text of the CDDL should have accompanied this
+ * source.  A copy of the CDDL is also available via the Internet at
+ * http://www.illumos.org/license/CDDL.
+ */
+
+/*
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ */
+
+#pragma D option defaultargs
+#pragma D option destructive
+#pragma D option quiet
+
+/*
+ * Usage: nfstop [N]
+ *
+ * Output the top N (default 10) busiest files by:
+ * - NFS operations: #ops, filename
+ * - NFS read/write bytes: #bytes, filename
+ */
+
+dtrace:::BEGIN
+{
+	printf("Tracing... Hit Ctrl-C to end.\n");
+	top = ($1 == 0) ? 10 : $1;
+}
+
+nfsv3:::op-*-done,
+nfsv4:::op-*-done
+{
+	@ops[args[1]->noi_curpath] = count();
+}
+
+nfsv3:::op-read-done
+{
+	@bytes[args[1]->noi_curpath] = sum(args[2]->res_u.ok.data.data_len);
+}
+nfsv3:::op-write-done
+{
+	@bytes[args[1]->noi_curpath] = sum(args[2]->res_u.ok.count);
+}
+
+nfsv4:::op-read-done
+{
+	@bytes[args[1]->noi_curpath] = sum(args[2]->data_len);
+}
+nfsv4:::op-write-done
+{
+	@bytes[args[1]->noi_curpath] = sum(args[2]->count);
+}
+
+tick-1s
+{
+	system("clear");
+	trunc(@ops, top);
+	trunc(@bytes, top);
+
+	printf("%-12s %s\n", "NFS Ops", "filename");
+	printa("%-@12d %s\n", @ops);
+	clear(@ops);
+	printf("\n");
+	printf("%-12s %s\n", "Bytes", "filename");
+	printa("%-@12d %s\n", @bytes);
+	clear(@bytes);
+	printf("\n");
+	printf("Hit Ctrl-C to end.\n");
+}
+
+dtrace:::END
+{
+}

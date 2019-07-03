@@ -28,7 +28,9 @@ file path=usr/nexenta/dtrace/iscsirwlat mode=0555
 file path=usr/nexenta/dtrace/iscsisvrtop mode=0555
 file path=usr/nexenta/dtrace/msload mode=0555
 file path=usr/nexenta/dtrace/nfsio mode=0555
+file path=usr/nexenta/dtrace/nfsslowio mode=0555
 file path=usr/nexenta/dtrace/nfssvrtop mode=0555
+file path=usr/nexenta/dtrace/nfstop mode=0555
 file path=usr/nexenta/dtrace/nfsutil mode=0555
 file path=usr/nexenta/dtrace/nfswizard mode=0555
 file path=usr/nexenta/dtrace/rspmon mode=0555
@@ -45,7 +47,9 @@ link path=usr/bin/iscsirwlat target=../nexenta/dtrace/iscsirwlat
 link path=usr/bin/iscsisvrtop target=../nexenta/dtrace/iscsisvrtop
 link path=usr/bin/msload target=../nexenta/dtrace/msload
 link path=usr/bin/nfsio target=../nexenta/dtrace/nfsio
+link path=usr/bin/nfsslowio target=../nexenta/dtrace/nfsslowio
 link path=usr/bin/nfssvrtop target=../nexenta/dtrace/nfssvrtop
+link path=usr/bin/nfstop target=../nexenta/dtrace/nfstop
 link path=usr/bin/nfsutil target=../nexenta/dtrace/nfsutil
 link path=usr/bin/nfswizard target=../nexenta/dtrace/nfswizard
 link path=usr/bin/rspmon target=../nexenta/dtrace/rspmon
