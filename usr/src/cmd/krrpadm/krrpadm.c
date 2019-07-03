@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -261,7 +261,7 @@ krrp_usage_sess(int rc, krrp_cmd_t *cmd, boolean_t use_return)
 		    "-s <sess_id> -d <src dataset> [-z <src snapshot>] "
 		    "[-c <common snapshot>] [-I] [-r] [-p] [-e] [-k] [-x]"
 		    "[-j] [-b] [-f <fake_data_sz>] [-t <resume_token>] "
-		    "[-n <keep snaps>] [-m <user_prop_name>=<val>]\n",
+		    "[-n <keep snaps>] [-m <user_prop_name>=<val>] [-o]\n",
 		    tool_name);
 		break;
 	case KRRP_CMD_SESS_CREATE_WRITE_STREAM:
@@ -861,7 +861,7 @@ krrp_do_sess_create_read_stream(int argc, char **argv, krrp_cmd_t *cmd)
 
 	uuid_clear(sess_id);
 
-	while ((c = getopt(argc, argv, "hs:d:c:z:Irpejbkf:t:n:m:x")) != -1) {
+	while ((c = getopt(argc, argv, "hs:d:c:z:Irpejbkf:t:n:m:xo")) != -1) {
 		switch (c) {
 		case 's':
 			if (krrp_parse_and_check_sess_id(optarg, sess_id) != 0)
@@ -1002,6 +1002,14 @@ krrp_do_sess_create_read_stream(int argc, char **argv, krrp_cmd_t *cmd)
 			}
 
 			flags |= KRRP_STREAM_EXCLUDE_CLONES;
+			break;
+		case 'o':
+			if ((flags & KRRP_STREAM_ROOT_IS_CLONE) != 0) {
+				krrp_print_err_already_defined("o");
+				exit(1);
+			}
+
+			flags |= KRRP_STREAM_ROOT_IS_CLONE;
 			break;
 		case '?':
 			krrp_print_err_unknown_param(argv[optind - 1]);

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <libintl.h>
@@ -264,6 +264,7 @@ static size_t unix_errnos_sz = sizeof (unix_errnos) / sizeof (unix_errnos[0]);
 	X(WRITEFAIL, ENOLINK, LIBKRRP_EMSG_NOORIGIN) \
 	X(WRITEFAIL, 0, LIBKRRP_EMSG_WRITEFAIL, \
 	    krrp_unix_errno_to_str(unix_errno)) \
+	X(READFAIL, EILSEQ, LIBKRRP_EMSG_ROOT_IS_NOT_CLONE) \
 	X(READFAIL, EXDEV, LIBKRRP_EMSG_NOTEARLIERSNAP) \
 	X(READFAIL, ENODEV, LIBKRRP_EMSG_NOINCRSNAP) \
 	X(READFAIL, ENOLINK, LIBKRRP_EMSG_NOORIGIN) \

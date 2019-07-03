@@ -1399,6 +1399,7 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 	boolean_t incl_interim_snaps = krrp_task->buffer_args.do_all;
 	boolean_t recursive = krrp_task->buffer_args.recursive;
 	boolean_t exclude_clones = krrp_task->buffer_args.exclude_clones;
+	boolean_t root_is_clone = krrp_task->buffer_args.root_is_clone;
 
 	list_create(&ds_collect_list, sizeof (zfs_ds_node_t),
 	    offsetof(zfs_ds_node_t, list_node));
@@ -1422,6 +1423,12 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 	if (err != 0) {
 		dsl_pool_config_exit(dp, FTAG);
 		return (err);
+	}
+
+	if (root_is_clone && !node->is_clone) {
+		zfs_destroy_ds_node(node, krrp_task);
+		dsl_pool_config_exit(dp, FTAG);
+		return (SET_ERROR(EILSEQ));
 	}
 
 	node->is_root = B_TRUE;

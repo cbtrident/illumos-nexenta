@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_LIBKRRP_ERROR_H
@@ -138,6 +138,7 @@ typedef enum {
 #define	LIBKRRP_EMSG_READFAIL "Session read stream error (%s)"
 #define	LIBKRRP_EMSG_NOTEARLIERSNAP \
 	    "Not an earlier snapshot from the same fs"
+#define	LIBKRRP_EMSG_ROOT_IS_NOT_CLONE "Root dataset is not a clone"
 #define	LIBKRRP_EMSG_SENDMBLKFAIL "ksocket_sendmblk error (%s)"
 #define	LIBKRRP_EMSG_SNAPFAIL "Failed to create snapshot (%s)"
 #define	LIBKRRP_EMSG_CONNTIMEOUT_INVAL \

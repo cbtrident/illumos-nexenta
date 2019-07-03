@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -143,6 +143,8 @@ krrp_stream_te_read_create(krrp_stream_te_t **result_te,
 	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_SEND_ALL_SNAPS);
 	task_engine->exclude_clones =
 	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_EXCLUDE_CLONES);
+	task_engine->root_is_clone =
+	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_ROOT_IS_CLONE);
 
 	task_engine->mem_check_cb = mem_check_cb;
 	task_engine->mem_check_cb_arg = mem_check_cb_arg;
@@ -487,6 +489,7 @@ krrp_stream_task_constructor(void *opaque_task,
 		task->zargs.compressok = task_engine->compressed;
 		task->zargs.large_block_ok = task_engine->large_blocks;
 		task->zargs.exclude_clones = task_engine->exclude_clones;
+		task->zargs.root_is_clone = task_engine->root_is_clone;
 
 		break;
 	case KRRP_STEM_WRITE:

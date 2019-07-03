@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_KREPLICATION_COMMON_H
@@ -73,6 +73,7 @@ typedef struct kreplication_zfs_args {
 	boolean_t compressok;
 	boolean_t large_block_ok;
 	boolean_t exclude_clones;
+	boolean_t root_is_clone;
 	void *stream_handler;
 	krrp_check_enough_mem *mem_check_cb;
 	void *mem_check_cb_arg;

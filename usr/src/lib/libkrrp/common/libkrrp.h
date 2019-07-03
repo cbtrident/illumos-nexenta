@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_LIBKRRP_H_
@@ -52,6 +52,7 @@ typedef unsigned long krrp_sess_stream_flags_t;
 #define	KRRP_STREAM_ZFS_COMPRESSED	0x0100
 #define	KRRP_STREAM_ZFS_LARGE_BLOCKS	0x0200
 #define	KRRP_STREAM_EXCLUDE_CLONES	0x0400
+#define	KRRP_STREAM_ROOT_IS_CLONE	0x0800
 
 typedef struct libkrrp_handle_s libkrrp_handle_t;
 typedef struct libkrrp_evc_handle_s libkrrp_evc_handle_t;
