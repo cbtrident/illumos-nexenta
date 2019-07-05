@@ -12,6 +12,7 @@
 /*
  * Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include "i40e_sw.h"
@@ -1273,11 +1274,24 @@ i40e_rx_bind(i40e_trqpair_t *itrq, i40e_rx_data_t *rxd, uint32_t index,
 		}
 	}
 
+	/* Before fetching data, make sure we sync our view of DMA */
 	I40E_DMA_SYNC(&rcb->rcb_dma, DDI_DMA_SYNC_FORKERNEL);
 
-	if (i40e_check_dma_handle(rcb->rcb_dma.dmab_dma_handle) != DDI_FM_OK) {
-		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
+	/* And make sure the handle is still usable; free the rcb if not */
+	/*
+	 * NEEDSWORK
+	 * There are lots of places where we check handles that don't make a whole
+	 * lot of sense.  It is *very* unlikely the handle will go bad unless the
+	 * hardware itself goes bad.  But in a non-fastpath, it might be worthwhile
+	 * to occasionaly check.  But is this a place.
+	 */
+	if (i40e_check_dma_handle(i40e, rcb->rcb_dma.dmab_dma_handle) != DDI_FM_OK) {
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
+		/*
+		 * NEEDSWORK
+		 * Sigh, this is wrong.  If the handle is no longer valid, neither
+		 * is the rcb.  This needs to be tossed and re-initialized.
+		 */
 		i40e_rcb_free(rxd, rcb);
 		return (NULL);
 	}
@@ -1312,8 +1326,8 @@ i40e_rx_copy(i40e_trqpair_t *itrq, i40e_rx_data_t *rxd, uint32_t index,
 
 	I40E_DMA_SYNC(&rcb->rcb_dma, DDI_DMA_SYNC_FORKERNEL);
 
-	if (i40e_check_dma_handle(rcb->rcb_dma.dmab_dma_handle) != DDI_FM_OK) {
-		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
+	/* See the NEEDSWORK in i40e_rx_bind() */
+	if (i40e_check_dma_handle(i40e, rcb->rcb_dma.dmab_dma_handle) != DDI_FM_OK) {
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		return (NULL);
 	}
@@ -1471,9 +1485,9 @@ i40e_ring_rx(i40e_trqpair_t *itrq, int poll_bytes)
 	 * actually good from an FM perspective.
 	 */
 	I40E_DMA_SYNC(&rxd->rxd_desc_area, DDI_DMA_SYNC_FORKERNEL);
-	if (i40e_check_dma_handle(rxd->rxd_desc_area.dmab_dma_handle) !=
+	/* See the NEEDSWORK in i40e_rx_bind() */
+	if (i40e_check_dma_handle(i40e, rxd->rxd_desc_area.dmab_dma_handle) !=
 	    DDI_FM_OK) {
-		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		return (NULL);
 	}
@@ -1608,9 +1622,9 @@ discard:
 	 * next.
 	 */
 	I40E_DMA_SYNC(&rxd->rxd_desc_area, DDI_DMA_SYNC_FORDEV);
-	if (i40e_check_dma_handle(rxd->rxd_desc_area.dmab_dma_handle) !=
+	/* See the NEEDSWORK in i40e_rx_bind() */
+	if (i40e_check_dma_handle(i40e, rxd->rxd_desc_area.dmab_dma_handle) !=
 	    DDI_FM_OK) {
-		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 	}
 
@@ -1621,9 +1635,7 @@ discard:
 		tail = i40e_prev_desc(cur_head, 1, rxd->rxd_ring_size);
 
 		I40E_WRITE_REG(hw, I40E_QRX_TAIL(itrq->itrq_index), tail);
-		if (i40e_check_acc_handle(rh) != DDI_FM_OK) {
-			ddi_fm_service_impact(i40e->i40e_dip,
-			    DDI_SERVICE_DEGRADED);
+		if (i40e_check_acc_handle(i40e, rh) != DDI_FM_OK) {
 			atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		}
 
@@ -2133,10 +2145,10 @@ i40e_tx_recycle_ring(i40e_trqpair_t *itrq)
 	    (uintptr_t)itrq->itrq_desc_wbhead,
 	    sizeof (uint32_t), DDI_DMA_SYNC_FORKERNEL));
 
-	if (i40e_check_dma_handle(itrq->itrq_desc_area.dmab_dma_handle) !=
+	/* See the NEEDSWORK in i40e_rx_bind()  */
+	if (i40e_check_dma_handle(i40e, itrq->itrq_desc_area.dmab_dma_handle) !=
 	    DDI_FM_OK) {
 		mutex_exit(&itrq->itrq_tx_lock);
-		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		return;
 	}
@@ -2991,14 +3003,13 @@ i40e_ring_tx(void *arg, mblk_t *mp)
 	I40E_WRITE_REG(hw, I40E_QTX_TAIL(itrq->itrq_index),
 	    itrq->itrq_desc_tail);
 
-	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_reg_handle) !=
+	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
 	    DDI_FM_OK) {
 		/*
 		 * Note, we can't really go through and clean this up very well,
 		 * because the memory has been given to the device, so just
 		 * indicate it's been transmitted.
 		 */
-		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 	}
 
