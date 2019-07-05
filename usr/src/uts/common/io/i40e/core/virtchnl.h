@@ -169,7 +169,7 @@ struct virtchnl_msg {
 
 VIRTCHNL_CHECK_STRUCT_LEN(20, virtchnl_msg);
 
-/* Message descriptions and data structures.*/
+/* Message descriptions and data structures. */
 
 /* VIRTCHNL_OP_VERSION
  * VF posts its version number to the PF. PF responds with its version number
@@ -254,6 +254,8 @@ VIRTCHNL_CHECK_STRUCT_LEN(16, virtchnl_vsi_resource);
 #define VIRTCHNL_VF_OFFLOAD_ENCAP		0X00100000
 #define VIRTCHNL_VF_OFFLOAD_ENCAP_CSUM		0X00200000
 #define VIRTCHNL_VF_OFFLOAD_RX_ENCAP_CSUM	0X00400000
+/* Define below the capability flags that are not offloads */
+#define VIRTCHNL_VF_CAP_ADV_LINK_SPEED		0x00000080
 
 #define VF_BASE_MODE_OFFLOADS (VIRTCHNL_VF_OFFLOAD_L2 | \
 			       VIRTCHNL_VF_OFFLOAD_VLAN | \
@@ -345,8 +347,8 @@ VIRTCHNL_CHECK_STRUCT_LEN(72, virtchnl_vsi_queue_config_info);
  * additional queues must be negotiated.  This is a best effort request as it
  * is possible the PF does not have enough queues left to support the request.
  * If the PF cannot support the number requested it will respond with the
- * maximum number it is able to support; otherwise it will respond with the
- * number requested.
+ * maximum number it is able to support.  If the request is successful, PF will
+ * then reset the VF to institute required changes.
  */
 
 /* VF resource request */
@@ -465,8 +467,23 @@ VIRTCHNL_CHECK_STRUCT_LEN(4, virtchnl_promisc_info);
  * the virtchnl_queue_select struct to specify the VSI. The queue_id
  * field is ignored by the PF.
  *
- * PF replies with struct eth_stats in an external buffer.
+ * PF replies with struct virtchnl_eth_stats in an external buffer.
  */
+
+struct virtchnl_eth_stats {
+	u64 rx_bytes;			/* received bytes */
+	u64 rx_unicast;			/* received unicast pkts */
+	u64 rx_multicast;		/* received multicast pkts */
+	u64 rx_broadcast;		/* received broadcast pkts */
+	u64 rx_discards;
+	u64 rx_unknown_protocol;
+	u64 tx_bytes;			/* transmitted bytes */
+	u64 tx_unicast;			/* transmitted unicast pkts */
+	u64 tx_multicast;		/* transmitted multicast pkts */
+	u64 tx_broadcast;		/* transmitted broadcast pkts */
+	u64 tx_discards;
+	u64 tx_errors;
+};
 
 /* VIRTCHNL_OP_CONFIG_RSS_KEY
  * VIRTCHNL_OP_CONFIG_RSS_LUT
@@ -526,10 +543,23 @@ enum virtchnl_event_codes {
 struct virtchnl_pf_event {
 	enum virtchnl_event_codes event;
 	union {
+		/* If the PF driver does not support the new speed reporting
+		 * capabilities then use link_event else use link_event_adv to
+		 * get the speed and link information. The ability to understand
+		 * new speeds is indicated by setting the capability flag
+		 * VIRTCHNL_VF_CAP_ADV_LINK_SPEED in vf_cap_flags parameter
+		 * in virtchnl_vf_resource struct and can be used to determine
+		 * which link event struct to use below.
+		 */
 		struct {
 			enum virtchnl_link_speed link_speed;
-			bool link_status;
+			u8 link_status;
 		} link_event;
+		struct {
+			/* link_speed provided in Mbps */
+			u32 link_speed;
+			u8 link_status;
+		} link_event_adv;
 	} event_data;
 
 	int severity;
@@ -549,14 +579,6 @@ VIRTCHNL_CHECK_STRUCT_LEN(16, virtchnl_pf_event);
  * to a single vector.
  * PF configures interrupt mapping and returns status.
  */
-
-/* HW does not define a type value for AEQ; only for RX/TX and CEQ.
- * In order for us to keep the interface simple, SW will define a
- * unique type value for AEQ.
- */
-#define QUEUE_TYPE_PE_AEQ  0x80
-#define QUEUE_INVALID_IDX  0xFFFF
-
 struct virtchnl_iwarp_qv_info {
 	u32 v_idx; /* msix_vector */
 	u16 ceq_idx;
@@ -648,10 +670,12 @@ virtchnl_vc_validate_vf_msg(struct virtchnl_version_info *ver, u32 v_opcode,
 		}
 		break;
 	case VIRTCHNL_OP_ENABLE_QUEUES:
+		/* fall through */
 	case VIRTCHNL_OP_DISABLE_QUEUES:
 		valid_len = sizeof(struct virtchnl_queue_select);
 		break;
 	case VIRTCHNL_OP_ADD_ETH_ADDR:
+		/* fall through */
 	case VIRTCHNL_OP_DEL_ETH_ADDR:
 		valid_len = sizeof(struct virtchnl_ether_addr_list);
 		if (msglen >= valid_len) {
@@ -664,6 +688,7 @@ virtchnl_vc_validate_vf_msg(struct virtchnl_version_info *ver, u32 v_opcode,
 		}
 		break;
 	case VIRTCHNL_OP_ADD_VLAN:
+		/* fall through */
 	case VIRTCHNL_OP_DEL_VLAN:
 		valid_len = sizeof(struct virtchnl_vlan_filter_list);
 		if (msglen >= valid_len) {
@@ -727,6 +752,7 @@ virtchnl_vc_validate_vf_msg(struct virtchnl_version_info *ver, u32 v_opcode,
 		valid_len = sizeof(struct virtchnl_rss_hena);
 		break;
 	case VIRTCHNL_OP_ENABLE_VLAN_STRIPPING:
+		/* fall through */
 	case VIRTCHNL_OP_DISABLE_VLAN_STRIPPING:
 		break;
 	case VIRTCHNL_OP_REQUEST_QUEUES:
@@ -734,7 +760,9 @@ virtchnl_vc_validate_vf_msg(struct virtchnl_version_info *ver, u32 v_opcode,
 		break;
 	/* These are always errors coming from the VF. */
 	case VIRTCHNL_OP_EVENT:
+		/* fall through */
 	case VIRTCHNL_OP_UNKNOWN:
+		/* fall through */
 	default:
 		return VIRTCHNL_ERR_PARAM;
 	}

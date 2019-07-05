@@ -13,6 +13,7 @@
  * Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright (c) 2018, Joyent, Inc.
  * Copyright 2017 Tegile Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2020 Ryan Zezeski
  * Copyright 2020 RackTop Systems, Inc.
  */
@@ -173,6 +174,8 @@ i40e_m_start(void *arg)
 	i40e_t *i40e = arg;
 	int rc = 0;
 
+	i40e_log(i40e, "Started instance %d", i40e->i40e_instance);
+
 	mutex_enter(&i40e->i40e_general_lock);
 	if (i40e->i40e_state & I40E_SUSPENDED) {
 		rc = ECANCELED;
@@ -195,6 +198,8 @@ static void
 i40e_m_stop(void *arg)
 {
 	i40e_t *i40e = arg;
+
+	i40e_log(i40e, "Stopped instance %d", i40e->i40e_instance);
 
 	mutex_enter(&i40e->i40e_general_lock);
 
@@ -671,7 +676,7 @@ i40e_transceiver_read(void *arg, uint_t id, uint_t page, void *buf,
 
 		status = i40e_aq_get_phy_register(hw,
 		    I40E_AQ_PHY_REG_ACCESS_EXTERNAL_MODULE, page, offset,
-		    &val, NULL);
+		    B_FALSE, (uint32_t *)&val, NULL);
 		if (status != I40E_SUCCESS) {
 			mutex_exit(&i40e->i40e_general_lock);
 			return (EIO);

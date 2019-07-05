@@ -166,6 +166,9 @@ enum i40e_status_code i40e_aq_set_vsi_unicast_promiscuous(struct i40e_hw *hw,
 		bool rx_only_promisc);
 enum i40e_status_code i40e_aq_set_vsi_multicast_promiscuous(struct i40e_hw *hw,
 		u16 vsi_id, bool set, struct i40e_asq_cmd_details *cmd_details);
+enum i40e_status_code i40e_aq_set_vsi_full_promiscuous(struct i40e_hw *hw,
+				u16 seid, bool set,
+				struct i40e_asq_cmd_details *cmd_details);
 enum i40e_status_code i40e_aq_set_vsi_mc_promisc_on_vlan(struct i40e_hw *hw,
 				u16 seid, bool enable, u16 vid,
 				struct i40e_asq_cmd_details *cmd_details);
@@ -259,6 +262,9 @@ enum i40e_status_code i40e_aq_discover_capabilities(struct i40e_hw *hw,
 enum i40e_status_code i40e_aq_update_nvm(struct i40e_hw *hw, u8 module_pointer,
 				u32 offset, u16 length, void *data,
 				bool last_command, u8 preservation_flags,
+				struct i40e_asq_cmd_details *cmd_details);
+enum i40e_status_code i40e_aq_rearrange_nvm(struct i40e_hw *hw,
+				u8 rearrange_nvm,
 				struct i40e_asq_cmd_details *cmd_details);
 enum i40e_status_code i40e_aq_nvm_progress(struct i40e_hw *hw, u8 *progress,
 				struct i40e_asq_cmd_details *cmd_details);
@@ -390,17 +396,27 @@ enum i40e_status_code i40e_aq_query_switch_comp_bw_config(struct i40e_hw *hw,
 		struct i40e_asq_cmd_details *cmd_details);
 enum i40e_status_code i40e_aq_resume_port_tx(struct i40e_hw *hw,
 				struct i40e_asq_cmd_details *cmd_details);
+enum i40e_status_code
+i40e_aq_add_cloud_filters_bb(struct i40e_hw *hw, u16 seid,
+			     struct i40e_aqc_cloud_filters_element_bb *filters,
+			     u8 filter_count);
+enum i40e_status_code
+i40e_aq_add_cloud_filters(struct i40e_hw *hw, u16 vsi,
+			  struct i40e_aqc_cloud_filters_element_data *filters,
+			  u8 filter_count);
+enum i40e_status_code
+i40e_aq_rem_cloud_filters(struct i40e_hw *hw, u16 vsi,
+			  struct i40e_aqc_cloud_filters_element_data *filters,
+			  u8 filter_count);
+enum i40e_status_code
+i40e_aq_rem_cloud_filters_bb(struct i40e_hw *hw, u16 seid,
+			     struct i40e_aqc_cloud_filters_element_bb *filters,
+			     u8 filter_count);
 enum i40e_status_code i40e_read_lldp_cfg(struct i40e_hw *hw,
 					struct i40e_lldp_variables *lldp_cfg);
-enum i40e_status_code i40e_aq_add_cloud_filters(struct i40e_hw *hw,
-		u16 vsi,
-		struct i40e_aqc_add_remove_cloud_filters_element_data *filters,
-		u8 filter_count);
-
-enum i40e_status_code i40e_aq_remove_cloud_filters(struct i40e_hw *hw,
-		u16 vsi,
-		struct i40e_aqc_add_remove_cloud_filters_element_data *filters,
-		u8 filter_count);
+enum i40e_status_code i40e_aq_replace_cloud_filters(struct i40e_hw *hw,
+		struct i40e_aqc_replace_cloud_filters_cmd *filters,
+		struct i40e_aqc_replace_cloud_filters_cmd_buf *cmd_buf);
 enum i40e_status_code i40e_aq_alternate_read(struct i40e_hw *hw,
 				u32 reg_addr0, u32 *reg_val0,
 				u32 reg_addr1, u32 *reg_val1);
@@ -543,11 +559,11 @@ enum i40e_status_code i40e_aq_rx_ctl_write_register(struct i40e_hw *hw,
 				struct i40e_asq_cmd_details *cmd_details);
 void i40e_write_rx_ctl(struct i40e_hw *hw, u32 reg_addr, u32 reg_val);
 enum i40e_status_code i40e_aq_set_phy_register(struct i40e_hw *hw,
-				u8 phy_select, u8 dev_addr,
+				u8 phy_select, u8 dev_addr, bool page_change,
 				u32 reg_addr, u32 reg_val,
 				struct i40e_asq_cmd_details *cmd_details);
 enum i40e_status_code i40e_aq_get_phy_register(struct i40e_hw *hw,
-				u8 phy_select, u8 dev_addr,
+				u8 phy_select, u8 dev_addr, bool page_change,
 				u32 reg_addr, u32 *reg_val,
 				struct i40e_asq_cmd_details *cmd_details);
 
@@ -566,6 +582,8 @@ enum i40e_status_code i40e_aq_set_clear_wol_filter(struct i40e_hw *hw,
 enum i40e_status_code i40e_aq_get_wake_event_reason(struct i40e_hw *hw,
 			u16 *wake_reason,
 			struct i40e_asq_cmd_details *cmd_details);
+enum i40e_status_code i40e_aq_clear_all_wol_filters(struct i40e_hw *hw,
+			struct i40e_asq_cmd_details *cmd_details);
 enum i40e_status_code i40e_read_phy_register_clause22(struct i40e_hw *hw,
 					u16 reg, u8 phy_addr, u16 *value);
 enum i40e_status_code i40e_write_phy_register_clause22(struct i40e_hw *hw,
@@ -581,4 +599,29 @@ enum i40e_status_code i40e_write_phy_register(struct i40e_hw *hw,
 u8 i40e_get_phy_address(struct i40e_hw *hw, u8 dev_num);
 enum i40e_status_code i40e_blink_phy_link_led(struct i40e_hw *hw,
 					      u32 time, u32 interval);
+enum i40e_status_code i40e_aq_write_ddp(struct i40e_hw *hw, void *buff,
+					u16 buff_size, u32 track_id,
+					u32 *error_offset, u32 *error_info,
+					struct i40e_asq_cmd_details *
+					cmd_details);
+enum i40e_status_code i40e_aq_get_ddp_list(struct i40e_hw *hw, void *buff,
+					   u16 buff_size, u8 flags,
+					   struct i40e_asq_cmd_details *
+					   cmd_details);
+struct i40e_generic_seg_header *
+i40e_find_segment_in_package(u32 segment_type,
+			     struct i40e_package_header *pkg_header);
+struct i40e_profile_section_header *
+i40e_find_section_in_profile(u32 section_type,
+			     struct i40e_profile_segment *profile);
+enum i40e_status_code
+i40e_write_profile(struct i40e_hw *hw, struct i40e_profile_segment *i40e_seg,
+		   u32 track_id);
+enum i40e_status_code
+i40e_rollback_profile(struct i40e_hw *hw, struct i40e_profile_segment *i40e_seg,
+		      u32 track_id);
+enum i40e_status_code
+i40e_add_pinfo_to_list(struct i40e_hw *hw,
+		       struct i40e_profile_segment *profile,
+		       u8 *profile_info_sec, u32 track_id);
 #endif /* _I40E_PROTOTYPE_H_ */

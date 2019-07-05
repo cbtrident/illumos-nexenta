@@ -13,6 +13,7 @@
  * Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2017 Tegile Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2020 RackTop Systems, Inc.
  * Copyright 2020 Ryan Zezeski
  */
@@ -406,6 +407,8 @@ i40e_dev_err(i40e_t *i40e, int level, boolean_t console, const char *fmt,
 
 	(void) vsnprintf(buf, sizeof (buf), fmt, ap);
 
+	DTRACE_PROBE2(i40e__dev__err, uint32_t, level, char *, buf);
+
 	if (i40e == NULL) {
 		cmn_err(level, (console) ? "%s: %s" : "!%s: %s",
 		    I40E_MODULE_NAME, buf);
@@ -653,25 +656,125 @@ i40e_rem_intr_handlers(i40e_t *i40e)
 }
 
 /*
- * illumos Fault Management Architecture (FMA) support.
+ * i40e Fault Management Architecture (FMA) support.
+ *
+ * Most FMA errors should be handled here, and not by callers, as it is
+ * more practical to put it in one place.  Unfortunately, some of these are likely
+ * recoverable (can toss a handle and reacquire another), but a caller that fixes
+ * those can make a REPAIRED call.
+ *
+ * NEEDSWORK:  The 'check' functions should be optimized for a fast-path.  Since
+ * most checks are expected to succeed *and* may come as part of a data fast-path or
+ * interrupts, it would be a bit better to have a macro that has the err_get
+ * functions inline and then only make calls here if an error is found.
  */
 
 int
-i40e_check_acc_handle(ddi_acc_handle_t handle)
+i40e_check_acc_handle(i40e_t *i40e, ddi_acc_handle_t handle)
 {
 	ddi_fm_error_t de;
 
+	/*
+	 * First check that we support this test.
+	 */
+	if (!DDI_FM_DMA_ERR_CAP(i40e->i40e_fm_capabilities)) {
+		return (DDI_FM_OK);
+	}
+
 	ddi_fm_acc_err_get(handle, &de, DDI_FME_VERSION);
-	ddi_fm_acc_err_clear(handle, DDI_FME_VERSION);
+
+	/*
+	 * We should try to recover from this error if possible, as
+	 * we don't want non-fatal errors to cause the driver to
+	 * become retired.
+	 */
+	switch (de.fme_status) {
+	case DDI_FM_OK: {
+		/* Most common case */
+		return (DDI_FM_OK);
+	}
+
+	case DDI_FM_NONFATAL: {
+		/*
+		 * Clear the error and return OK.
+		 * Future work: track this error so if it occurs again we fault
+		 */
+		ddi_fm_acc_err_clear(handle, DDI_FME_VERSION);
+		return (DDI_FM_OK);
+	}
+
+	case DDI_FM_UNKNOWN: {
+		/*
+		 * Here we try to clear the error and test again.
+		 * Whatever the error, return it and hope upper layers can fix it.
+		 * For an unknown error on access, we don't set a service impact.
+		 */
+		ddi_fm_acc_err_clear(handle, DDI_FME_VERSION);
+		ddi_fm_acc_err_get(handle, &de, DDI_FME_VERSION);
+		break;
+	}
+
+	case DDI_FM_FATAL:
+		/* For fatal access errors, service is degraded */
+		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
+	default:
+		break;
+	}
+
+	i40e_error(i40e, "ddi_fm_acc_err_get returned %d", de.fme_status);
 	return (de.fme_status);
 }
 
 int
-i40e_check_dma_handle(ddi_dma_handle_t handle)
+i40e_check_dma_handle(i40e_t *i40e, ddi_dma_handle_t handle)
 {
 	ddi_fm_error_t de;
 
+	/*
+	 * First check that we support these capabilities
+	 */
+	if (!DDI_FM_DMA_ERR_CAP(i40e->i40e_fm_capabilities)) {
+		return (DDI_FM_OK);
+	}
+
 	ddi_fm_dma_err_get(handle, &de, DDI_FME_VERSION);
+
+	/*
+	 * We should try to recover from this error if possible, as
+	 * we don't want non-fatal errors to cause the driver to
+	 * become retired.
+	 * As DMA access is a bit more tricky than others, we leave
+	 * that to later projects.
+	 */
+	switch (de.fme_status) {
+	/* Most common case */
+	case DDI_FM_OK:
+		return (DDI_FM_OK);
+
+	case DDI_FM_NONFATAL:
+		/* Try and clear the error, but don't check. */
+		ddi_fm_dma_err_clear(handle, DDI_FME_VERSION);
+		return (DDI_FM_OK);
+
+	case DDI_FM_UNKNOWN:
+	case DDI_FM_FATAL:
+		/* Clear the error, and see if we can continue. */
+		ddi_fm_dma_err_clear(handle, DDI_FME_VERSION);
+		ddi_fm_dma_err_get(handle, &de, DDI_FME_VERSION);
+		if (de.fme_status == DDI_FM_OK)
+			return (DDI_FM_OK);
+		/*
+		 * Otherwise, generate a service impact.
+		 * For either Unknown or Fatal DMA errors, we consider
+		 * the service as lost as we have no code yet to recover.
+		 */
+		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_LOST);
+		break;
+	default:
+		break;
+	}
+
+	i40e_error(i40e, "ddi_fm_dma_err_get returned %d", de.fme_status);
 	return (de.fme_status);
 }
 
@@ -686,10 +789,25 @@ i40e_fm_error_cb(dev_info_t *dip, ddi_fm_error_t *err, const void *impl_data)
 	return (err->fme_status);
 }
 
+/*
+ * Attach-time tunable to enable FMA in this driver
+ */
+int i40e_enable_fma = 0;
+
 static void
 i40e_fm_init(i40e_t *i40e)
 {
 	ddi_iblock_cookie_t iblk;
+
+	/*
+	 * If we don't want to support FMA at boot time, set the capabilities
+	 * and init the DMA attributes with the 'no-FMA' option.
+	 */
+	if (i40e_enable_fma == 0) {
+		i40e->i40e_fm_capabilities = 0;
+		i40e_init_dma_attrs(i40e, B_FALSE);
+		return;
+	}
 
 	i40e->i40e_fm_capabilities = ddi_prop_get_int(DDI_DEV_T_ANY,
 	    i40e->i40e_dip, DDI_PROP_DONTPASS, "fm_capable",
@@ -1487,8 +1605,7 @@ i40e_final_init(i40e_t *i40e)
 	if (!i40e_set_hw_bus_info(hw))
 		return (B_FALSE);
 
-	if (i40e_check_acc_handle(osdep->ios_reg_handle) != DDI_FM_OK) {
-		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_LOST);
+	if (i40e_check_acc_handle(i40e, osdep->ios_reg_handle) != DDI_FM_OK) {
 		return (B_FALSE);
 	}
 
@@ -1693,9 +1810,7 @@ i40e_alloc_intr_handles(i40e_t *i40e, dev_info_t *devinfo, int intr_type)
 		 * Should this read fail, we will drop back to using
 		 * MSI or fixed interrupts.
 		 */
-		if (i40e_check_acc_handle(rh) != DDI_FM_OK) {
-			ddi_fm_service_impact(i40e->i40e_dip,
-			    DDI_SERVICE_DEGRADED);
+		if (i40e_check_acc_handle(i40e, rh) != DDI_FM_OK) {
 			return (B_FALSE);
 		}
 		request = (reg & I40E_GLPCI_CNF2_MSI_X_PF_N_MASK) >>
@@ -2081,12 +2196,12 @@ i40e_set_shared_vsi_props(i40e_t *i40e,
 	 * and 128 for the X722.
 	 *
 	 * Some examples:
-	 * 	i40e_num_trqpairs_per_vsi == 1 =>  tc_queues = 0, 2^^0 = 1.
-	 * 	i40e_num_trqpairs_per_vsi == 7 =>  tc_queues = 3, 2^^3 = 8.
-	 * 	i40e_num_trqpairs_per_vsi == 8 =>  tc_queues = 3, 2^^3 = 8.
-	 * 	i40e_num_trqpairs_per_vsi == 9 =>  tc_queues = 4, 2^^4 = 16.
-	 * 	i40e_num_trqpairs_per_vsi == 17 => tc_queues = 5, 2^^5 = 32.
-	 * 	i40e_num_trqpairs_per_vsi == 64 => tc_queues = 6, 2^^6 = 64.
+	 *	i40e_num_trqpairs_per_vsi == 1 =>  tc_queues = 0, 2^^0 = 1.
+	 *	i40e_num_trqpairs_per_vsi == 7 =>  tc_queues = 3, 2^^3 = 8.
+	 *	i40e_num_trqpairs_per_vsi == 8 =>  tc_queues = 3, 2^^3 = 8.
+	 *	i40e_num_trqpairs_per_vsi == 9 =>  tc_queues = 4, 2^^4 = 16.
+	 *	i40e_num_trqpairs_per_vsi == 17 => tc_queues = 5, 2^^5 = 32.
+	 *	i40e_num_trqpairs_per_vsi == 64 => tc_queues = 6, 2^^6 = 64.
 	 */
 	tc_queues = ddi_fls(i40e->i40e_num_trqpairs_per_vsi - 1);
 
@@ -2434,7 +2549,7 @@ out:
 
 /*
  * Set up RSS.
- * 	1. Seed the hash key.
+ *	1. Seed the hash key.
  *	2. Enable PCTYPEs for the hash filter.
  *	3. Populate the LUT.
  */
@@ -2655,6 +2770,9 @@ i40e_shutdown_tx_ring(i40e_trqpair_t *itrq)
 /*
  * Wait for a ring to be shut down. e.g. Steps 2 and 5 from the above
  * functions.
+ *
+ * Some hardware seems to take longer to complete the shutdown than others,
+ * so we wait longer on each loop.
  */
 static boolean_t
 i40e_shutdown_ring_wait(i40e_trqpair_t *itrq)
@@ -2668,7 +2786,7 @@ i40e_shutdown_ring_wait(i40e_trqpair_t *itrq)
 		reg = I40E_READ_REG(hw, I40E_QRX_ENA(itrq->itrq_index));
 		if ((reg & I40E_QRX_ENA_QENA_STAT_MASK) == 0)
 			break;
-		i40e_msec_delay(I40E_RING_WAIT_PAUSE);
+		i40e_msec_delay(I40E_RING_WAIT_PAUSE * (try + 1));
 	}
 
 	if ((reg & I40E_QRX_ENA_QENA_STAT_MASK) != 0) {
@@ -2681,7 +2799,7 @@ i40e_shutdown_ring_wait(i40e_trqpair_t *itrq)
 		reg = I40E_READ_REG(hw, I40E_QTX_ENA(itrq->itrq_index));
 		if ((reg & I40E_QTX_ENA_QENA_STAT_MASK) == 0)
 			break;
-		i40e_msec_delay(I40E_RING_WAIT_PAUSE);
+		i40e_msec_delay(I40E_RING_WAIT_PAUSE * (try + 1));
 	}
 
 	if ((reg & I40E_QTX_ENA_QENA_STAT_MASK) != 0) {
@@ -3054,7 +3172,7 @@ i40e_setup_ring(i40e_trqpair_t *itrq)
 	if (!i40e_setup_tx_ring(itrq))
 		goto failed;
 
-	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_reg_handle) !=
+	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
 	    DDI_FM_OK)
 		goto failed;
 
@@ -3135,7 +3253,7 @@ i40e_stop(i40e_t *i40e)
 
 	i40e_intr_chip_fini(i40e);
 
-	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_cfg_handle) !=
+	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_cfg_handle) !=
 	    DDI_FM_OK) {
 		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_LOST);
 	}
@@ -3186,7 +3304,7 @@ i40e_start(i40e_t *i40e)
 	/*
 	 * Finally, make sure that we're happy from an FM perspective.
 	 */
-	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_reg_handle) !=
+	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
 	    DDI_FM_OK) {
 		rc = B_FALSE;
 		goto done;
@@ -3245,6 +3363,7 @@ i40e_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	i40e->i40e_aqbuf = kmem_zalloc(I40E_ADMINQ_BUFSZ, KM_SLEEP);
 	i40e->i40e_instance = instance;
 	i40e->i40e_dip = devinfo;
+	i40e_debug(i40e, 0, "Attaching instance %d", instance);
 
 	hw = &i40e->i40e_hw_space;
 	osdep = &i40e->i40e_osdep_space;
@@ -3311,9 +3430,16 @@ i40e_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	}
 	i40e->i40e_attach_progress |= I40E_ATTACH_INIT;
 
-	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_cfg_handle) !=
+	/*
+	 * NEEDSWORK
+	 * This is either a recoverable error, or unnecessary.  It is doubtful that
+	 * this handle will get fubar'd between the setup above, and here, so probably
+	 * isn't needed.  But if by * some chance it does, drop the handle and get a new
+	 * one.  We shouldn't be failing just because it has gone bad; or maybe better,
+	 * don't even check.
+	 */
+	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_cfg_handle) !=
 	    DDI_FM_OK) {
-		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_LOST);
 		goto attach_fail;
 	}
 
@@ -3365,6 +3491,9 @@ i40e_detach(dev_info_t *devinfo, ddi_detach_cmd_t cmd)
 		return (DDI_FAILURE);
 
 	i40e = (i40e_t *)ddi_get_driver_private(devinfo);
+
+	i40e_debug(i40e, 0, "Detaching instance %d", i40e->i40e_instance);
+
 	if (i40e == NULL) {
 		i40e_log(NULL, "i40e_detach() called with no i40e pointer!");
 		return (DDI_FAILURE);

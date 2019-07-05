@@ -12,6 +12,7 @@
 /*
  * Copyright 2019 Joyent, Inc.
  * Copyright 2017 Tegile Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2020 RackTop Systems, Inc.
  */
 
@@ -709,9 +710,8 @@ i40e_intr_other_work(i40e_t *i40e)
 	uint32_t reg;
 
 	reg = I40E_READ_REG(hw, I40E_PFINT_ICR0);
-	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_reg_handle) !=
+	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
 	    DDI_FM_OK) {
-		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		return;
 	}
@@ -848,9 +848,8 @@ i40e_intr_notx(i40e_t *i40e, boolean_t shared)
 	}
 
 	reg = I40E_READ_REG(hw, I40E_PFINT_ICR0);
-	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_reg_handle) !=
+	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
 	    DDI_FM_OK) {
-		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		return (DDI_INTR_CLAIMED);
 	}

@@ -37,6 +37,7 @@
 #include "i40e_register.h"
 #include "i40e_adminq.h"
 #include "i40e_prototype.h"
+#include "i40e_sw.h"
 
 /**
  *  i40e_adminq_init_regs - Initialize AdminQ registers
@@ -125,6 +126,7 @@ enum i40e_status_code i40e_alloc_adminq_arq_ring(struct i40e_hw *hw)
  **/
 void i40e_free_adminq_asq(struct i40e_hw *hw)
 {
+	i40e_free_virt_mem(hw, &hw->aq.asq.cmd_buf);
 	i40e_free_dma_mem(hw, &hw->aq.asq.desc_buf);
 }
 
@@ -396,7 +398,7 @@ enum i40e_status_code i40e_init_asq(struct i40e_hw *hw)
 	/* initialize base registers */
 	ret_code = i40e_config_asq_regs(hw);
 	if (ret_code != I40E_SUCCESS)
-		goto init_adminq_free_rings;
+		goto init_config_regs;
 
 	/* success! */
 	hw->aq.asq.count = hw->aq.num_asq_entries;
@@ -404,6 +406,10 @@ enum i40e_status_code i40e_init_asq(struct i40e_hw *hw)
 
 init_adminq_free_rings:
 	i40e_free_adminq_asq(hw);
+	return ret_code;
+
+init_config_regs:
+	i40e_free_asq_bufs(hw);
 
 init_adminq_exit:
 	return ret_code;
@@ -632,6 +638,30 @@ enum i40e_status_code i40e_init_adminq(struct i40e_hw *hw)
 	i40e_read_nvm_word(hw, (cfg_ptr + (I40E_NVM_OEM_VER_OFF + 1)),
 			   &oem_lo);
 	hw->nvm.oem_ver = ((u32)oem_hi << 16) | oem_lo;
+
+	/* The ability to RX (not drop) 802.1ad frames was added in API 1.7 */
+	if ((hw->aq.api_maj_ver > 1) ||
+	    ((hw->aq.api_maj_ver == 1) &&
+	     (hw->aq.api_min_ver >= 7)))
+		hw->flags |= I40E_HW_FLAG_802_1AD_CAPABLE;
+
+	if (hw->mac.type == I40E_MAC_XL710 &&
+	    hw->aq.api_maj_ver == I40E_FW_API_VERSION_MAJOR &&
+	    hw->aq.api_min_ver >= I40E_MINOR_VER_GET_LINK_INFO_XL710) {
+		hw->flags |= I40E_HW_FLAG_AQ_PHY_ACCESS_CAPABLE;
+		hw->flags |= I40E_HW_FLAG_FW_LLDP_STOPPABLE;
+	}
+	if (hw->mac.type == I40E_MAC_X722 &&
+	    hw->aq.api_maj_ver == I40E_FW_API_VERSION_MAJOR &&
+	    hw->aq.api_min_ver >= I40E_MINOR_VER_FW_LLDP_STOPPABLE_X722) {
+		hw->flags |= I40E_HW_FLAG_FW_LLDP_STOPPABLE;
+	}
+
+	/* Newer versions of firmware require lock when reading the NVM */
+	if ((hw->aq.api_maj_ver > 1) ||
+	    ((hw->aq.api_maj_ver == 1) &&
+	     (hw->aq.api_min_ver >= 5)))
+		hw->flags |= I40E_HW_FLAG_NVM_READ_REQUIRES_LOCK;
 
 	/* The ability to RX (not drop) 802.1ad frames was added in API 1.7 */
 	if ((hw->aq.api_maj_ver > 1) ||
@@ -931,6 +961,8 @@ enum i40e_status_code i40e_asq_send_command(struct i40e_hw *hw,
 		cmd_completed = TRUE;
 		if ((enum i40e_admin_queue_err)retval == I40E_AQ_RC_OK)
 			status = I40E_SUCCESS;
+		else if ((enum i40e_admin_queue_err)retval == I40E_AQ_RC_EBUSY)
+			status = I40E_ERR_NOT_READY;
 		else
 			status = I40E_ERR_ADMIN_QUEUE_ERROR;
 		hw->aq.asq_last_status = (enum i40e_admin_queue_err)retval;
@@ -1089,4 +1121,3 @@ clean_arq_element_err:
 
 	return ret_code;
 }
-
