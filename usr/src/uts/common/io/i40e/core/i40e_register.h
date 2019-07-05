@@ -1,6 +1,6 @@
 /******************************************************************************
 
-  Copyright (c) 2013-2015, Intel Corporation 
+  Copyright (c) 2013-2017, Intel Corporation 
   All rights reserved.
   
   Redistribution and use in source and binary forms, with or without 
@@ -113,7 +113,7 @@
 #define I40E_PF_ATQLEN_ATQCRIT_SHIFT   30
 #define I40E_PF_ATQLEN_ATQCRIT_MASK    I40E_MASK(0x1, I40E_PF_ATQLEN_ATQCRIT_SHIFT)
 #define I40E_PF_ATQLEN_ATQENABLE_SHIFT 31
-#define I40E_PF_ATQLEN_ATQENABLE_MASK  I40E_MASK(0x1UL, I40E_PF_ATQLEN_ATQENABLE_SHIFT)
+#define I40E_PF_ATQLEN_ATQENABLE_MASK  I40E_MASK(0x1, I40E_PF_ATQLEN_ATQENABLE_SHIFT)
 #define I40E_PF_ATQT            0x00080400 /* Reset: EMPR */
 #define I40E_PF_ATQT_ATQT_SHIFT 0
 #define I40E_PF_ATQT_ATQT_MASK  I40E_MASK(0x3FF, I40E_PF_ATQT_ATQT_SHIFT)
@@ -2803,7 +2803,7 @@
 #define I40E_GLV_RUPP_MAX_INDEX  383
 #define I40E_GLV_RUPP_RUPP_SHIFT 0
 #define I40E_GLV_RUPP_RUPP_MASK  I40E_MASK(0xFFFFFFFF, I40E_GLV_RUPP_RUPP_SHIFT)
-#define I40E_GLV_TEPC(_VSI)      (0x00344000 + ((_VSI) * 4)) /* _i=0...383 */ /* Reset: CORER */
+#define I40E_GLV_TEPC(_i)        (0x00344000 + ((_i) * 8)) /* _i=0...383 */ /* Reset: CORER */
 #define I40E_GLV_TEPC_MAX_INDEX  383
 #define I40E_GLV_TEPC_TEPC_SHIFT 0
 #define I40E_GLV_TEPC_TEPC_MASK  I40E_MASK(0xFFFFFFFF, I40E_GLV_TEPC_TEPC_SHIFT)
