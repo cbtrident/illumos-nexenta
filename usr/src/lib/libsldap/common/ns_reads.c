@@ -4173,6 +4173,7 @@ __ns_ldap_uid2dn(const char *uid,
 		userdata = (char *)malloc(len);
 		if (userdata == NULL) {
 			*userDN = NULL;
+			free(filter);
 			return (NS_LDAP_MEMORY);
 		}
 		(void) snprintf(userdata, len, UIDNUMFILTER_SSD, uid);
@@ -4189,6 +4190,7 @@ __ns_ldap_uid2dn(const char *uid,
 		userdata = (char *)malloc(len);
 		if (userdata == NULL) {
 			*userDN = NULL;
+			free(filter);
 			return (NS_LDAP_MEMORY);
 		}
 		(void) snprintf(userdata, len, UIDFILTER_SSD, uid);
@@ -4268,6 +4270,7 @@ __ns_ldap_dn2uid(const char *dn,
 	len = strlen(UIDDNFILTER_SSD) + strlen(dn) + 1;
 	userdata = (char *)malloc(len);
 	if (userdata == NULL) {
+		free(filter);
 		return (NS_LDAP_MEMORY);
 	}
 	(void) snprintf(userdata, len, UIDDNFILTER_SSD, dn);
@@ -4347,6 +4350,7 @@ __ns_ldap_host2dn(const char *host,
 	len = strlen(HOSTFILTER_SSD) + strlen(host) + 1;
 	userdata = (char *)malloc(len);
 	if (userdata == NULL) {
+		free(filter);
 		return (NS_LDAP_MEMORY);
 	}
 	(void) snprintf(userdata, len, HOSTFILTER_SSD, host);
@@ -5302,9 +5306,9 @@ validate_filter(ns_ldap_cookie_t *cookie)
 static int
 setup_acctmgmt_params(ns_ldap_cookie_t *cookie)
 {
-	LDAPControl	*req = NULL, **requestctrls;
+	LDAPControl	*req, **requestctrls;
 
-	req = (LDAPControl *)malloc(sizeof (LDAPControl));
+	req = calloc(1, sizeof (LDAPControl));
 
 	if (req == NULL)
 		return (NS_LDAP_MEMORY);
@@ -5316,8 +5320,6 @@ setup_acctmgmt_params(ns_ldap_cookie_t *cookie)
 		free(req);
 		return (NS_LDAP_MEMORY);
 	}
-	req->ldctl_value.bv_len = 0;
-	req->ldctl_value.bv_val = NULL;
 
 	requestctrls = (LDAPControl **)calloc(2, sizeof (LDAPControl *));
 	if (requestctrls == NULL) {
@@ -5732,7 +5734,6 @@ getAcctMgmt(const char *user, AcctUsableResponse_t *acctResp,
 	ns_conn_user_t *conn_user)
 {
 	int		scope, rc;
-	char		ldapfilter[1024];
 	ns_ldap_cookie_t	*cookie;
 	ns_ldap_search_desc_t	**sdlist = NULL;
 	ns_ldap_search_desc_t	*dptr;
@@ -5822,8 +5823,7 @@ getAcctMgmt(const char *user, AcctUsableResponse_t *acctResp,
 	}
 
 	/* search for entries for this particular uid */
-	(void) snprintf(ldapfilter, sizeof (ldapfilter), "(uid=%s)", user);
-	cookie->i_filter = strdup(ldapfilter);
+	(void) asprintf(&cookie->i_filter, "(uid=%s)", user);
 	if (cookie->i_filter == NULL) {
 		rc = NS_LDAP_MEMORY;
 		goto out;
