@@ -98,6 +98,11 @@
 #define	MAXHOST 32
 const char *kinet_ntop6(uchar_t *, char *, size_t);
 
+uint_t nfs_vsd_key = 0;
+uint_t nfs_stat_key_init = 0;
+uint_t nfs_vsd_stats_enable = 1;
+kmutex_t nfs_vsd_stats_mx;
+
 /*
  * Module linkage information.
  */
@@ -1425,6 +1430,70 @@ union acl_res {
 
 };
 
+void
+nfs_info_free(void *info)
+{
+	if (info != NULL)
+		kmem_free(info, sizeof(nfs_perfile_stats_t));
+}
+/*
+ * Keep per file statistics for NFS reads and writes
+ *
+ * This keeps IO counts for read and write and the total bytes read and
+ * written attached to each vnode in the v_vsd field. It tracks usage
+ * for a given file for the period of time the vnode exists.
+ *
+ * There is a possibility that a vnode can be discarded and reassigned to
+ * a new file.  When this happens vsd is zeroed and the path will change
+ * so users of this should check to be sure that the path has not changed
+ * between uses.  The operation of nfs_process_vsd_stats is not impacted
+ * by changes in the vnode.
+ */
+/* ARGSUSED */
+void
+nfs_process_vsd_stats(vnode_t *vp, boolean_t read, size_t resid)
+{
+	nfs_perfile_stats_t *info;
+
+	/* disable statistics gathering if needed */
+	if (!nfs_vsd_stats_enable)
+		return;
+
+	if (nfs_stat_key_init == 0) {
+		/*
+		 * prevent any possible race condition on startup by
+		 * getting a global lock and rechecking.
+		 */
+		mutex_enter(&nfs_vsd_stats_mx);
+		if (nfs_stat_key_init == 0) {
+			vsd_create(&nfs_vsd_key, nfs_info_free);
+			nfs_stat_key_init = 1;
+		}
+		mutex_exit(&nfs_vsd_stats_mx);
+	}
+
+	mutex_enter(&vp->v_vsd_lock);
+	info = (nfs_perfile_stats_t *)vsd_get(vp, nfs_vsd_key);
+	if (info == NULL) {
+		info = (nfs_perfile_stats_t *)kmem_zalloc(
+		    sizeof(nfs_perfile_stats_t), KM_NOSLEEP);
+		(void) vsd_set(vp, nfs_vsd_key, info);
+		if (info == NULL) {
+			mutex_exit(&vp->v_vsd_lock);
+			return;
+		}
+	}
+
+	if (read == FREAD) {
+		info->nfs_read_io++;
+		info->nfs_read_bw += resid;
+	} else {
+		info->nfs_write_io++;
+		info->nfs_write_bw += resid;
+	}
+	mutex_exit(&vp->v_vsd_lock);
+}
+
 static bool_t
 auth_tooweak(struct svc_req *req, char *res)
 {
@@ -2629,6 +2698,7 @@ nfs_srvinit(void)
 	rfs3_srvrinit();
 	rfs4_srvrinit();
 	nfsauth_init();
+	mutex_init(&nfs_vsd_stats_mx, NULL, MUTEX_DEFAULT, NULL);
 }
 
 /*
@@ -2644,6 +2714,10 @@ nfs_srvfini(void)
 	rfs3_srvrfini();
 	rfs_srvrfini();
 	nfs_exportfini();
+	if (nfs_stat_key_init != 0) {
+		vsd_destroy(&nfs_vsd_key);
+	}
+	mutex_destroy(&nfs_vsd_stats_mx);
 
 	(void) zone_key_delete(nfssrv_zone_key);
 }

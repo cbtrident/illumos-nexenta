@@ -3203,10 +3203,8 @@ do_io(int direction, vnode_t *vp, struct uio *uio, int ioflag, cred_t *cred,
 	 * EAGAIN, the caller should return NFS4ERR_LOCKED.
 	 */
 	uio->uio_fmode = FNONBLOCK;
-
+	nfs_process_vsd_stats(vp, direction, uio->uio_resid);
 	for (i = 0; i < rfs4_maxlock_tries; i++) {
-
-
 		if (direction == FREAD) {
 			(void) VOP_RWLOCK(vp, V_WRITELOCK_FALSE, ct);
 			error = VOP_READ(vp, uio, ioflag, cred, ct);

@@ -31,6 +31,7 @@
 /*
  * Copyright 2018 Nexenta Systems, Inc.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2019 Nexenta by DDN Inc.  All rights reserved.
  */
 
 #include <sys/param.h>
@@ -726,6 +727,7 @@ rfs_readlink_getfh(fhandle_t *fhp)
 {
 	return (fhp);
 }
+
 /*
  * Free data allocated by rfs_readlink
  */
@@ -917,6 +919,7 @@ rfs_read(struct nfsreadargs *ra, struct nfsrdresult *rr,
 	uio.uio_loffset = (offset_t)ra->ra_offset;
 	uio.uio_resid = ra->ra_count;
 
+	nfs_process_vsd_stats(vp, FREAD, uio.uio_resid);
 	error = VOP_READ(vp, &uio, 0, cr, &ct);
 
 	if (error) {
@@ -1151,6 +1154,7 @@ rfs_write_sync(struct nfswriteargs *wa, struct nfsattrstat *ns,
 		if (rlimit < (rlim64_t)uio.uio_resid)
 			uio.uio_resid = (uint_t)rlimit;
 
+		nfs_process_vsd_stats(vp, FWRITE, uio.uio_resid);
 		/*
 		 * for now we assume no append mode
 		 */

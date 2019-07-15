@@ -23,6 +23,7 @@
  * Copyright 2018 Nexenta Systems, Inc.
  * Copyright (c) 1994, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright 2019 Nexenta by DDN Inc.  All rights reserved.
  */
 
 /* Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T */
@@ -1165,6 +1166,7 @@ rfs3_read(READ3args *args, READ3res *resp, struct exportinfo *exi,
 	uiop = &uio;
 
 doio_read:
+	nfs_process_vsd_stats(vp, FREAD, uiop->uio_resid);
 	error = VOP_READ(vp, uiop, 0, cr, &ct);
 
 	if (error) {
@@ -1462,6 +1464,8 @@ rfs3_write(WRITE3args *args, WRITE3res *resp, struct exportinfo *exi,
 		resp->status = NFS3ERR_INVAL;
 		goto err1;
 	}
+
+	nfs_process_vsd_stats(vp, FWRITE, uio.uio_resid);
 
 	/*
 	 * We're changing creds because VM may fault and we need

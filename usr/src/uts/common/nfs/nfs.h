@@ -2397,6 +2397,16 @@ extern mblk_t	*rfs_read_alloc(uint_t, struct iovec **, int *);
 extern void	rfs_rndup_mblks(mblk_t *, uint_t, int);
 extern void	rfs_free_xuio(void *);
 
+typedef struct {
+	uint64_t	nfs_read_io;
+	uint64_t	nfs_read_bw;
+	uint64_t	nfs_write_io;
+	uint64_t	nfs_write_bw;
+} nfs_perfile_stats_t;
+
+extern void nfs_info_free(void *);
+extern void nfs_process_vsd_stats(vnode_t *, boolean_t, size_t);
+
 #endif	/* _KERNEL */
 
 #ifdef	__cplusplus
