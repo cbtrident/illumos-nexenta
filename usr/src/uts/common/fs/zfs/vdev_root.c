@@ -106,6 +106,8 @@ vdev_root_state_change(vdev_t *vd, int faulted, int degraded)
 	} else {
 		vdev_set_state(vd, B_FALSE, VDEV_STATE_HEALTHY, VDEV_AUX_NONE);
 	}
+
+	spa_event_notify(vd->vdev_spa, NULL, NULL, ESC_ZFS_STATE_CHANGE);
 }
 
 vdev_ops_t vdev_root_ops = {
