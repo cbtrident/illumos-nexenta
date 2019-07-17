@@ -11,7 +11,7 @@
 #
 
 #
-# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2013, 2019 Nexenta by DDN, Inc.  All rights reserved.
 #
 
 # Use distributed make (dmake) by default.
@@ -176,6 +176,7 @@ do_libs() {
 for lib in \
   libavl \
   libcmdutils \
+  libfakekernel \
   libuutil \
   libzpool \
   libzfs_core \
