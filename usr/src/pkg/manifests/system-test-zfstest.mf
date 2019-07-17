@@ -11,7 +11,7 @@
 
 #
 # Copyright (c) 2012, 2017 by Delphix. All rights reserved.
-# Copyright 2017 Nexenta Systems Inc.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 # Copyright 2016, OmniTI Computer Consulting, Inc. All rights reserved.
 #
 
@@ -32,6 +32,7 @@ dir path=opt/zfs-tests/tests/functional/acl
 dir path=opt/zfs-tests/tests/functional/acl/cifs
 dir path=opt/zfs-tests/tests/functional/acl/nontrivial
 dir path=opt/zfs-tests/tests/functional/acl/trivial
+dir path=opt/zfs-tests/tests/functional/align
 dir path=opt/zfs-tests/tests/functional/atime
 dir path=opt/zfs-tests/tests/functional/bootfs
 dir path=opt/zfs-tests/tests/functional/cache
@@ -336,6 +337,12 @@ file path=opt/zfs-tests/tests/functional/acl/trivial/zfs_acl_tar_001_pos \
     mode=0555
 file path=opt/zfs-tests/tests/functional/acl/trivial/zfs_acl_tar_002_neg \
     mode=0555
+file path=opt/zfs-tests/tests/functional/align/align.kshlib mode=0444
+file path=opt/zfs-tests/tests/functional/align/align_001 mode=0555
+file path=opt/zfs-tests/tests/functional/align/align_002 mode=0555
+file path=opt/zfs-tests/tests/functional/align/align_003 mode=0555
+file path=opt/zfs-tests/tests/functional/align/align_004 mode=0555
+file path=opt/zfs-tests/tests/functional/align/align_005 mode=0555
 file path=opt/zfs-tests/tests/functional/atime/atime.cfg mode=0444
 file path=opt/zfs-tests/tests/functional/atime/atime_001_pos mode=0555
 file path=opt/zfs-tests/tests/functional/atime/atime_002_neg mode=0555

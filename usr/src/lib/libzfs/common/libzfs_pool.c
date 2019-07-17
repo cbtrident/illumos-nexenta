@@ -24,7 +24,7 @@
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2017 Datto Inc.
  */
 
@@ -307,6 +307,7 @@ zpool_get_prop(zpool_handle_t *zhp, zpool_prop_t prop, char *buf, size_t len,
 		case ZPOOL_PROP_FREE:
 		case ZPOOL_PROP_FREEING:
 		case ZPOOL_PROP_LEAKED:
+		case ZPOOL_PROP_ALIGN:
 			if (literal) {
 				(void) snprintf(buf, len, "%llu",
 				    (u_longlong_t)intval);
@@ -516,6 +517,7 @@ zpool_valid_proplist(libzfs_handle_t *hdl, const char *poolname,
 			}
 			break;
 
+		case ZPOOL_PROP_ALIGN:
 		case ZPOOL_PROP_BOOTSIZE:
 			if (!flags.create) {
 				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,

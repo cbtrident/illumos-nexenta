@@ -22,12 +22,11 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2013, Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Joyent, Inc.
  * Copyright (c) 2017 Datto Inc.
- * Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -243,6 +242,7 @@ typedef enum {
 	ZPOOL_PROP_RESILVER_PRIO,
 	ZPOOL_PROP_DEADMAN,
 	ZPOOL_PROP_DEADMAN_MODE,
+	ZPOOL_PROP_ALIGN,
 	ZPOOL_NUM_PROPS
 } zpool_prop_t;
 

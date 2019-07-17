@@ -22,10 +22,9 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2017 Datto Inc.
- * Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SYS_SPA_IMPL_H
@@ -340,6 +339,9 @@ struct spa {
 	 */
 	uint64_t	spa_deadman;		/* deadman expiration seconds */
 	uint64_t	spa_deadman_mode;	/* deadman timeout action */
+
+	/* Minimum ashift to be used for all vdevs in pool */
+	uint64_t	spa_default_ashift;
 
 	uint64_t	spa_all_vdev_zaps;	/* ZAP of per-vd ZAP obj #s */
 	spa_avz_action_t	spa_avz_action;	/* destroy/rebuild AVZ? */

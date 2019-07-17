@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -121,7 +121,7 @@ skip_open:
 	}
 
 	*max_psize = *psize = vattr.va_size;
-	*ashift = SPA_MINBLOCKSHIFT;
+	*ashift = MAX(vd->vdev_spa->spa_default_ashift, SPA_MINBLOCKSHIFT);
 
 	return (0);
 }

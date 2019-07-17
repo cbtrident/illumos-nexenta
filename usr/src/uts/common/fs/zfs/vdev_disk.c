@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013 Joyent, Inc.  All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -526,6 +526,8 @@ skip_open:
 	}
 
 	*ashift = highbit64(MAX(pbsize, SPA_MINBLOCKSIZE)) - 1;
+	if (*ashift < vd->vdev_spa->spa_default_ashift)
+		*ashift = vd->vdev_spa->spa_default_ashift;
 
 	if (vd->vdev_wholedisk == 1) {
 		int wce = 1;

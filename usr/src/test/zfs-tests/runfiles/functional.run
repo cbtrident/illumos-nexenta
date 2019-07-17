@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
 [DEFAULT]
@@ -51,6 +51,11 @@ tests = ['zfs_acl_chmod_001_pos', 'zfs_acl_compress_001_pos',
     'zfs_acl_pax_004_pos', 'zfs_acl_pax_005_pos', 'zfs_acl_pax_006_pos',
     'zfs_acl_tar_001_pos', 'zfs_acl_tar_002_neg',
     'zfs_acl_aclmode_restricted_001_pos']
+
+[/opt/zfs-tests/tests/functional/align]
+tests = ['align_001', 'align_002', 'align_003', 'align_004', 'align_005']
+pre =
+post =
 
 [/opt/zfs-tests/tests/functional/atime]
 tests = ['atime_001_pos', 'atime_002_neg']

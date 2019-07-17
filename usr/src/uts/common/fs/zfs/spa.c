@@ -29,7 +29,6 @@
  * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright 2018 Joyent, Inc.
  * Copyright (c) 2017 Datto Inc.
- * Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -77,6 +76,7 @@
 #include <sys/special.h>
 #include <sys/wbc.h>
 #include <sys/abd.h>
+#include <sys/sysmacros.h>
 
 #ifdef	_KERNEL
 #include <sys/bootprops.h>
@@ -171,6 +171,25 @@ uint_t		zio_taskq_basedc = 80;		/* base duty cycle */
 
 boolean_t	spa_create_process = B_TRUE;	/* no process ==> no sysdc */
 extern int	zfs_sync_pass_deferred_free;
+
+/*
+ * The 'align' pool property (set only at pool creation) is used to define
+ * the minimum alignment for devices in the pool. The value is saved in
+ * spa_default_ashift. If a device reports a HIGHER alignment value, it is
+ * used instead of spa_default_ashift.
+ *
+ * During pool creation, if the 'align' property is not set it is derived from
+ * the zfs_default_ashift tunable and saved as the pool's 'align' property.
+ * A value of 0 preserves existing behavior.
+ */
+int	zfs_default_ashift = 12;	/* 4K alignment */
+
+/*
+ * SPA_ALIGN2ASHIFT and SPA_ASHIFT2ALIGN are used herein to translate between
+ * alignment (in bytes) and ashift.
+ */
+#define	SPA_ALIGN2ASHIFT(a)	((a) == 0) ? 0 : (highbit64((a)) - 1)
+#define	SPA_ASHIFT2ALIGN(a)	((a) == 0) ? 0 : (1 << (a))
 
 /*
  * ==========================================================================
@@ -288,6 +307,9 @@ spa_prop_get_config(spa_t *spa, nvlist_t **nvp)
 		    NSEC2SEC(spa_deadman_synctime(spa)), src);
 		spa_prop_add_list(*nvp, ZPOOL_PROP_DEADMAN_MODE, NULL,
 		    spa_deadman_mode(spa), src);
+
+		spa_prop_add_list(*nvp, ZPOOL_PROP_ALIGN, NULL,
+		    SPA_ASHIFT2ALIGN(spa->spa_default_ashift), src);
 	}
 
 	if (pool != NULL) {
@@ -744,8 +766,16 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 			break;
 		case ZPOOL_PROP_DEADMAN_MODE:
 			error = nvpair_value_uint64(elem, &intval);
-			if (!error && (intval < SPA_DEADMAN_SYSTEM ||
+			if (error == 0 && (intval < SPA_DEADMAN_SYSTEM ||
 			    intval > SPA_DEADMAN_PANIC)) {
+				error = SET_ERROR(EINVAL);
+			}
+			break;
+		case ZPOOL_PROP_ALIGN:
+			/* 0 or in range SPA_ALIGN_MIN to SPA_ALIGN_MAX */
+			error = nvpair_value_uint64(elem, &intval);
+			if (error == 0 && intval != 0 && (!ISP2(intval) ||
+			    intval < SPA_ALIGN_MIN || intval > SPA_ALIGN_MAX)) {
 				error = SET_ERROR(EINVAL);
 			}
 			break;
@@ -2966,6 +2996,9 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	spa->spa_deadman_mode =
 	    zpool_prop_default_numeric(ZPOOL_PROP_DEADMAN_MODE);
 
+	spa->spa_default_ashift =
+	    SPA_ALIGN2ASHIFT(zpool_prop_default_numeric(ZPOOL_PROP_ALIGN));
+
 	if (error == 0) {
 		uint64_t autoreplace;
 		uint64_t val = 0;
@@ -3009,6 +3042,10 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		spa_prop_find(spa, ZPOOL_PROP_DEADMAN, &spa->spa_deadman);
 		spa_prop_find(spa, ZPOOL_PROP_DEADMAN_MODE,
 		    &spa->spa_deadman_mode);
+
+		val = 0;
+		spa_prop_find(spa, ZPOOL_PROP_ALIGN, &val);
+		spa->spa_default_ashift = SPA_ALIGN2ASHIFT(val);
 
 		spa_prop_find(spa, ZPOOL_PROP_META_PLACEMENT,
 		    &mp->spa_enable_meta_placement_selection);
@@ -3907,6 +3944,8 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	uint64_t version, obj;
 	boolean_t has_features = B_FALSE, wbc_feature_exists = B_FALSE;
 	spa_meta_placement_t *mp;
+	nvlist_t *p, *lcl_props = NULL;
+	uint64_t intval = 0;
 
 	/*
 	 * If this pool already exists, return failure.
@@ -3924,6 +3963,28 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	    zpool_prop_to_name(ZPOOL_PROP_ALTROOT), &altroot);
 	spa = spa_add(pool, NULL, altroot);
 	spa_activate(spa, spa_mode_global);
+
+	/*
+	 * Set default ashift for devices in pool (before device processing).
+	 * If ZPOOL_PROP_ALIGN is set in props set default ashift from the
+	 * property value.
+	 * Otherwise use zfs_default_ashift (constrained to the values 0,
+	 * SPA_ASHIFT_MIN to SPA_ASHIFT_MAX) and add ZPOOL_PROP_ALIGN property.
+	 */
+	if ((props != NULL) && (nvlist_lookup_uint64(props,
+	    zpool_prop_to_name(ZPOOL_PROP_ALIGN), &intval) == 0)) {
+		spa->spa_default_ashift = SPA_ALIGN2ASHIFT(intval);
+	} else {
+		spa->spa_default_ashift = (zfs_default_ashift == 0) ? 0 :
+		    MAX(SPA_ASHIFT_MIN,
+		    MIN(zfs_default_ashift, SPA_ASHIFT_MAX));
+
+		/* add ZPOOL_PROP_ALIGN property */
+		if ((p = props) == NULL)
+			p = lcl_props = fnvlist_alloc();
+		fnvlist_add_uint64(p, zpool_prop_to_name(ZPOOL_PROP_ALIGN),
+		    SPA_ASHIFT2ALIGN(spa->spa_default_ashift));
+	}
 
 	if (props != NULL) {
 		nvpair_t *wbc_feature_nvp = NULL;
@@ -3960,10 +4021,10 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 			spa_deactivate(spa);
 			spa_remove(spa);
 			mutex_exit(&spa_namespace_lock);
+			nvlist_free(lcl_props);
 			return (error);
 		}
 	}
-
 
 	if (has_features || nvlist_lookup_uint64(props,
 	    zpool_prop_to_name(ZPOOL_PROP_VERSION), &version) != 0) {
@@ -4018,6 +4079,7 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 		spa_deactivate(spa);
 		spa_remove(spa);
 		mutex_exit(&spa_namespace_lock);
+		nvlist_free(lcl_props);
 		return (error);
 	}
 
@@ -4178,6 +4240,9 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 		spa_configfile_set(spa, props, B_FALSE);
 		spa_sync_props(props, tx);
 	}
+	if (lcl_props != NULL) {
+		spa_sync_props(lcl_props, tx);
+	}
 
 	if (spa_has_special(spa)) {
 		spa_feature_enable(spa, SPA_FEATURE_META_DEVICES, tx);
@@ -4215,6 +4280,7 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 
 	wbc_activate(spa, B_TRUE);
 
+	nvlist_free(lcl_props);
 	return (0);
 }
 
@@ -7035,6 +7101,10 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 			case ZPOOL_PROP_DEADMAN_MODE:
 				spa->spa_deadman_mode = intval;
 				remove = (intval == 0);
+				break;
+			case ZPOOL_PROP_ALIGN:
+				spa->spa_default_ashift =
+				    SPA_ALIGN2ASHIFT(intval);
 				break;
 			default:
 				break;

@@ -23,12 +23,11 @@
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Joyent, Inc.
  * Copyright (c) 2017 Datto Inc.
- * Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SYS_SPA_H
@@ -128,6 +127,21 @@ _NOTE(CONSTCOND) } while (0)
  * Size of block to hold the configuration data (a packed nvlist)
  */
 #define	SPA_CONFIG_BLOCKSIZE	(1ULL << 14)
+
+/*
+ * The 'align' pool property (set only at pool creation) is used to define
+ * the minimum alignment for devices in the pool. The values below constrain
+ * the property value. The value is saved in spa_default_ashift.
+ * If a device reports a HIGHER alignment value, it is used instead of
+ * spa_default_ashift. During pool creation, if the pool property is not set
+ * it is derived from the system-wide zfs_default_ashift and saved as the
+ * pool's 'align' property.
+ * A value of 0 preserves existing behavior.
+ */
+#define	SPA_ASHIFT_MIN	9
+#define	SPA_ASHIFT_MAX	20
+#define	SPA_ALIGN_MIN	(1ULL << SPA_ASHIFT_MIN)	/* 512 bytes */
+#define	SPA_ALIGN_MAX	(1ULL << SPA_ASHIFT_MAX)	/* 1M */
 
 /*
  * The DVA size encodings for LSIZE and PSIZE support blocks up to 32MB.

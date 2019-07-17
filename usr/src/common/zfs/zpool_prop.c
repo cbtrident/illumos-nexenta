@@ -23,8 +23,7 @@
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2017 Nexenta Systems, Inc.
- * Copyright 2019. Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/zio.h>
@@ -242,6 +241,9 @@ zpool_prop_init(void)
 	zprop_register_index_hidden(ZPOOL_PROP_DEADMAN_MODE, "deadman_mode",
 	    SPA_DEADMAN_SYSTEM, PROP_TYPE_NUMBER, ZFS_TYPE_POOL,
 	    "system | continue | panic", "DEADMAN_MODE", deadmanmode_table);
+
+	zprop_register_hidden(ZPOOL_PROP_ALIGN, "align",
+	    PROP_TYPE_NUMBER, PROP_DEFAULT, ZFS_TYPE_POOL, "ALIGN");
 }
 
 /*

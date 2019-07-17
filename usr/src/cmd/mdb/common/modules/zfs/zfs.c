@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2019 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2017, Joyent, Inc.  All rights reserved.
  */
@@ -460,6 +460,7 @@ zfs_params(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		"zfs_deadman_enabled",
 		"zfs_deadman_synctime_ms",
 		"zfs_dedup_prefetch",
+		"zfs_default_ashift",
 		"zfs_default_bs",
 		"zfs_default_ibs",
 		"zfs_delay_max_ns",
