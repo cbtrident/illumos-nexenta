@@ -27,10 +27,17 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
 
-DISK=${DISKS%% *}
+# This test was written with an assumption of a 512 alignment (ashift 9)
+# and doesn't work well for higher ashift values, so use filevdev with
+# 512 alignment.
 
-default_setup $DISK
+log_must zpool create fvdevpool ${DISKS%% *}
+log_must zfs create fvdevpool/fvdevfs
+log_must mkfile 2G /fvdevpool/fvdevfs/filevdev
+log_must zpool create -o align=512 $TESTPOOL /fvdevpool/fvdevfs/filevdev
+log_pass

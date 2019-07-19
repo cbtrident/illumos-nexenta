@@ -27,8 +27,11 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
 
-default_cleanup
+log_must zpool destroy $TESTPOOL
+log_must zpool destroy fvdevpool
+log_pass
