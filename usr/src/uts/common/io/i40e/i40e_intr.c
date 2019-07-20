@@ -12,7 +12,6 @@
 /*
  * Copyright 2018 Joyent, Inc.
  * Copyright 2017 Tegile Systems, Inc.  All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -339,16 +338,10 @@ i40e_intr_io_clear_cause(i40e_t *i40e)
 
 	for (i = 0; i < i40e->i40e_num_trqpairs; i++) {
 		uint32_t reg;
-#ifdef USE_INVALID_ASSERTS
+#ifdef DEBUG
 		/*
 		 * Verify that the interrupt in question is disabled. This is a
 		 * prerequisite of modifying the data in question.
-		 */
-		/*
-		 * rsf - I couldn't find anything to suggest this is
-		 * a valid VERIFY; yet it is regularly triggered if this
-		 * driver is compiled DEBUG.  So rather than removing it
-		 * (for now), change the #ifdef for later work.
 		 */
 		reg = I40E_READ_REG(hw, I40E_PFINT_DYN_CTLN(i));
 		VERIFY0(reg & I40E_PFINT_DYN_CTLN_INTENA_MASK);
@@ -722,8 +715,9 @@ i40e_intr_other_work(i40e_t *i40e)
 	uint32_t reg;
 
 	reg = I40E_READ_REG(hw, I40E_PFINT_ICR0);
-	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
+	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_reg_handle) !=
 	    DDI_FM_OK) {
+		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		return;
 	}
@@ -808,8 +802,9 @@ i40e_intr_notx(i40e_t *i40e, boolean_t shared)
 	}
 
 	reg = I40E_READ_REG(hw, I40E_PFINT_ICR0);
-	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
+	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_reg_handle) !=
 	    DDI_FM_OK) {
+		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		return (DDI_INTR_CLAIMED);
 	}

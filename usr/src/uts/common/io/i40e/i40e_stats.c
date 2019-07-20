@@ -12,7 +12,6 @@
 /*
  * Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include "i40e_sw.h"
@@ -212,7 +211,7 @@ i40e_stat_vsi_update(i40e_t *i40e, uint_t idx, boolean_t init)
 	 * 100% then we mark service unaffected as opposed to when fetching
 	 * things for MAC directly.
 	 */
-	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
+	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_reg_handle) !=
 	    DDI_FM_OK) {
 		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_UNAFFECTED);
 	}
@@ -432,7 +431,7 @@ i40e_stat_pf_update(i40e_t *i40e, boolean_t init)
 	 * 100% then we mark service unaffected as opposed to when fetching
 	 * things for MAC directly.
 	 */
-	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
+	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_reg_handle) !=
 	    DDI_FM_OK) {
 		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_UNAFFECTED);
 	}
@@ -1110,8 +1109,9 @@ i40e_m_stat(void *arg, uint_t stat, uint64_t *val)
 	mutex_exit(&i40e->i40e_stat_lock);
 	mutex_exit(&i40e->i40e_general_lock);
 
-	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
+	if (i40e_check_acc_handle(i40e->i40e_osdep_space.ios_reg_handle) !=
 	    DDI_FM_OK) {
+		ddi_fm_service_impact(i40e->i40e_dip, DDI_SERVICE_DEGRADED);
 		return (EIO);
 	}
 
