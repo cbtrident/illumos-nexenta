@@ -671,13 +671,13 @@ client_deliver_event_thr(void *arg)
 	int flag, error, i;
 	sysevent_t *ev;
 	hrtime_t now;
-	module_t *mod;
+	sysevent_module_t *mod;
 	struct event_dispatchq *eventq;
 	struct sysevent_client *scp;
 	struct event_dispatch_pkg *d_pkg;
 
 	scp = (struct sysevent_client *)arg;
-	mod = (module_t *)scp->client_data;
+	mod = (sysevent_module_t *)scp->client_data;
 
 	(void) mutex_lock(&scp->client_lock);
 	for (;;) {
@@ -1216,7 +1216,7 @@ load_modules(char *dirname)
 {
 	int client_id;
 	DIR *mod_dir;
-	module_t *mod;
+	sysevent_module_t *mod;
 	struct dirent *entp;
 	struct slm_mod_ops *mod_ops;
 	struct sysevent_client *scp;
@@ -1358,7 +1358,7 @@ static void
 unload_modules(int sig)
 {
 	int			i, count, done;
-	module_t		*mod;
+	sysevent_module_t		*mod;
 	struct sysevent_client	*scp;
 
 	/*
@@ -1403,7 +1403,7 @@ unload_modules(int sig)
 			/*
 			 * It is now safe to unload the module
 			 */
-			mod = (module_t *)scp->client_data;
+			mod = (sysevent_module_t *)scp->client_data;
 			syseventd_print(2, "Unload %s\n", mod->name);
 			mod->event_mod_fini();
 			(void) dlclose(mod->dlhandle);

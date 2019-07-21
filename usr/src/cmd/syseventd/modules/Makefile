@@ -30,6 +30,7 @@
 SUBDIRS=			\
 	datalink_mod		\
 	devfsadmd_mod		\
+	snmp_mod		\
 	sysevent_conf_mod	\
 	sysevent_reg_mod	\
 	zfs_mod

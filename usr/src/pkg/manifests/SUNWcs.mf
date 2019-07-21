@@ -24,7 +24,7 @@
 # Copyright (c) 2013 Gary Mills
 # Copyright 2014 PALO, Richard. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
-# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
 # Copyright 2017 Toomas Soome <tsoome@me.com>
 #
 
@@ -1224,6 +1224,7 @@ file path=usr/lib/saf/sac group=sys mode=0555
 file path=usr/lib/saf/ttymon group=sys mode=0555
 file path=usr/lib/sysevent/modules/datalink_mod.so
 file path=usr/lib/sysevent/modules/devfsadmd_mod.so
+file path=usr/lib/sysevent/modules/snmp_mod.so
 file path=usr/lib/sysevent/modules/sysevent_conf_mod.so
 file path=usr/lib/sysevent/modules/sysevent_reg_mod.so
 file path=usr/lib/sysevent/syseventconfd mode=0555

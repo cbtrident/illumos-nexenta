@@ -27,8 +27,6 @@
 #ifndef	_SYSEVENTD_H
 #define	_SYSEVENTD_H
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -87,16 +85,16 @@ struct ev_completion {
 };
 
 /*
- * module_t - SLM client module data
+ * sysevent_module_t - SLM client module data
  */
-typedef struct module {
-struct module *next;
+typedef struct sysevent_module {
+	struct sysevent_module *next;
 	char *name;
 	void *dlhandle;
 	int (*deliver_event)();
 	struct slm_mod_ops *(*event_mod_init)();
 	void (*event_mod_fini)();
-} module_t;
+} sysevent_module_t;
 
 /*
  * struct sysevent_client - per-client data
