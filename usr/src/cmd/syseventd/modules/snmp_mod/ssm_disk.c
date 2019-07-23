@@ -109,10 +109,12 @@ ssm_disk_walker(topo_hdl_t *thp, tnode_t *np, void *arg)
 	pnp = topo_node_parent(np);
 	if (strcmp(topo_node_name(pnp), BAY) == 0 &&
 	    topo_prop_get_string(pnp, TOPO_PGROUP_PROTOCOL,
-	    TOPO_PROP_LABEL, &slotname, &err) == 0)
+	    TOPO_PROP_LABEL, &slotname, &err) == 0) {
+		sdp->slotid = topo_node_instance(pnp);
 		sdp->slotname = strdup(slotname);
-	else
+	} else {
 		sdp->slotname = strdup("-");
+	}
 	if (sdp->slotname == NULL)
 		goto fail;
 
@@ -126,8 +128,8 @@ ssm_disk_walker(topo_hdl_t *thp, tnode_t *np, void *arg)
 		ssm_disk_free(tsdp);
 	}
 	avl_add(&ssm_disk_tree, sdp);
-	syseventd_print(9, "added %s: %s %s %s\n", ndevname, sdp->encid,
-	    sdp->encname, sdp->slotname);
+	syseventd_print(9, "added %s: %s:%d %s:%s\n", ndevname,
+	    sdp->encid, sdp->slotid, sdp->encname, sdp->slotname);
 
 	return (TOPO_WALK_TERMINATE);
 
@@ -253,7 +255,7 @@ ssm_disk_handler(sysevent_t *ev)
 		/* Enclosure slot ID */
 		(void) memcpy(var_name, ssm_disk_slotid_oid, oid_len);
 		(void) snmp_varlist_add_variable(&notification_vars, var_name,
-		    var_len, ASN_OCTET_STR, &sdp->slotid, sizeof (sdp->slotid));
+		    var_len, ASN_INTEGER, &sdp->slotid, sizeof (sdp->slotid));
 		/* Enclosure product name */
 		(void) memcpy(var_name, ssm_disk_encname_oid, oid_len);
 		(void) snmp_varlist_add_variable(&notification_vars, var_name,
