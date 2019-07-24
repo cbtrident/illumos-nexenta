@@ -64,8 +64,8 @@ extern "C" {
 #define VIRTIO_SCSI_CFG_SENSE_SIZE	20
 #define VIRTIO_SCSI_CFG_CDB_SIZE	24
 #define VIRTIO_SCSI_CFG_MAX_CHANNEL	28
-#define VIRTIO_SCSI_CFG_MAX_TARGET	32
-#define VIRTIO_SCSI_CFG_MAX_LUN		36
+#define VIRTIO_SCSI_CFG_MAX_TARGET	30
+#define VIRTIO_SCSI_CFG_MAX_LUN		32
 
 /* response codes */
 #define VIRTIO_SCSI_S_OK			0
@@ -194,11 +194,12 @@ typedef struct vioscsi_request {
 	uint8_t			vr_cdbp[DEFAULT_CDBLEN]; /* NOTUSED */
 } *vioscsi_request_t;
 
-struct vioscsi_ld {
-	dev_info_t		*vl_dip;
-	uint8_t			vl_lun_type;	/* NOTUSED */
-	uint8_t			reserved[3];	/* NOTUSED */
-};
+typedef struct vioscsi_dev {
+	list_node_t		vd_node;
+	dev_info_t		*vd_dip;
+	uint8_t			vd_target;
+	uint16_t		vd_lun;
+} vioscsi_dev_t;
 
 typedef struct vioscsi_softc {
 	dev_info_t		*vs_dip; /* mirrors virtio_softc->vs_dip */
@@ -219,7 +220,8 @@ typedef struct vioscsi_softc {
 	
 	/* ---- maximal number of requests ---- */
 	uint32_t		vs_max_req;	/* Set, NOTUSED */
-	struct vioscsi_ld	vs_ld[VIOSCSI_MAX_LUN];
+	kmutex_t		vs_devs_mutex;
+	list_t			vs_devs;
 	struct vioscsi_buffer	vs_events[4];	/* NOTUSED */
 } *vioscsi_softc_t;
 

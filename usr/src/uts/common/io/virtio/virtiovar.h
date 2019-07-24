@@ -208,5 +208,6 @@ int virtio_register_ints(struct virtio_softc *sc,
 		struct virtio_int_handler vq_handlers[]);
 void virtio_release_ints(struct virtio_softc *sc);
 int virtio_enable_ints(struct virtio_softc *sc);
+void virtio_ventry_stick(struct vq_entry *first, struct vq_entry *second);
 
 #endif /* __VIRTIOVAR_H__ */
