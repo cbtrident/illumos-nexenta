@@ -166,19 +166,71 @@ done:
 	return (ret);
 }
 
+/*
+ * A previous incantation of mi_start and mi_stop effectively configured
+ * and unconfigured the entire adapter.  While this would work, it is an
+ * awefully big hammer, and some hardware took a bit longer to perform this
+ * task than others causing some race conditions.  So what we do here now
+ * is to perform the last bit of that work by enable/disable interrupts,
+ * and set the last of the PF/VF link related configurations.  It makes
+ * this routine quicker, and keeps most of the other hardware state reasonably
+ * static.
+ */
 static int
 i40e_m_start(void *arg)
 {
 	i40e_t *i40e = arg;
+	i40e_hw_t *hw = &i40e->i40e_hw_space;
 	int rc = 0;
 
 	i40e_log(i40e, "Started instance %d\n", i40e->i40e_instance);
 
 	mutex_enter(&i40e->i40e_general_lock);
-	if (i40e->i40e_state & I40E_SUSPENDED) {
+	/* A suspended or faulted adapter should not be started */
+	if (i40e->i40e_state & I40E_SUSPENDED ||
+	    i40e->i40e_state & I40E_ERROR) {
+		i40e_error(i40e,
+		    "Trying to start a suspended or faulted instance: %d", rc);
 		rc = ECANCELED;
 		goto done;
 	}
+
+	/*
+	 * We need to chase down the current hardware state and setup
+	 * the link state.  Clean with this call.
+	 */
+	i40e_get_hw_state(i40e, hw);
+
+	/*
+	 * Though we didn't actually stop broadcast traffic in mi_stop,
+	 * make sure it is enabled.
+	 */
+	rc = i40e_aq_set_vsi_broadcast(hw, I40E_DEF_VSI_SEID(i40e), B_TRUE,
+	    NULL);
+	if (rc != I40E_SUCCESS) {
+		i40e_error(i40e, "failed to set default VSI: %d", rc);
+		rc = EIO;
+		goto done;
+	}
+
+	/* Restart the link and perform auto-negotiation. */
+	rc = i40e_aq_set_link_restart_an(hw, B_TRUE, NULL);
+	if (rc != I40E_SUCCESS) {
+		i40e_error(i40e, "failed to restart MAC: %d", rc);
+		rc = EIO;
+		goto done;
+	}
+	/*
+	 * Finally, make sure that the REG handle is still good.
+	 */
+	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
+	    DDI_FM_OK) {
+		rc = EIO;
+		goto done;
+	}
+
+	/* And re-enable interrupts */
+	i40e_intr_io_enable_all(i40e);
 
 	atomic_or_32(&i40e->i40e_state, I40E_STARTED);
 done:
@@ -187,6 +239,10 @@ done:
 	return (rc);
 }
 
+/*
+ * Here, all we really care about is stopping interrupts and setting
+ * the i40e_state.
+ */
 static void
 i40e_m_stop(void *arg)
 {
@@ -196,8 +252,24 @@ i40e_m_stop(void *arg)
 
 	mutex_enter(&i40e->i40e_general_lock);
 
+	/* A suspended adapter has already been stopped */
 	if (i40e->i40e_state & I40E_SUSPENDED)
 		goto done;
+
+	i40e_intr_io_disable_all(i40e);
+	/*
+	 * NEEDSWORK
+	 * Generally, this is the right thing to do, but this function
+	 * does more than we want for a simple mi_stop.  Since we also
+	 * want to remember this for future work, we just comment out
+	 * the line here.
+	 *
+	 * i40e_intr_io_clear_cause(i40e);
+	 */
+
+	i40e->i40e_link_speed = 0;
+	i40e->i40e_link_duplex = 0;
+	i40e_link_state_set(i40e, LINK_STATE_UNKNOWN);
 
 	atomic_and_32(&i40e->i40e_state, ~I40E_STARTED);
 done:
@@ -489,6 +561,15 @@ i40e_fill_tx_ring(void *arg, mac_ring_type_t rtype, const int group_index,
 	ASSERT(group_index == -1);
 	ASSERT(ring_index < i40e->i40e_num_trqpairs_per_vsi);
 
+	/*
+	 * NEEDSWORK
+	 * We do a fair amount of ring configuration in other areas of this driver
+	 * as a "big hammer", and it *really* should be put here and the corresponding
+	 * RX side.  Breaking out ring configuration at attach time initialization and
+	 * here in the mri_start and mri_stop callbacks (as well as in the 'groups'
+	 * part of rings), and not in the mi_start/mi_stop callbacks,  would go a long
+	 * way in taking advantage of this hardware.
+	 */
 	itrq->itrq_mactxring = rh;
 	infop->mri_driver = (mac_ring_driver_t)itrq;
 	infop->mri_start = NULL;
@@ -989,8 +1070,12 @@ i40e_m_setprop(void *arg, const char *pr_name, mac_prop_id_t pr_num,
 		if (new_mtu == i40e->i40e_sdu)
 			break;
 
+		/*
+		 * We check the 'max' value against the one determined at attach
+		 * time, as that was the constraint for physical allocations.
+		 */
 		if (new_mtu < I40E_MIN_MTU ||
-		    new_mtu > I40E_MAX_MTU) {
+		    new_mtu > i40e->i40e_max_mtu) {
 			ret = EINVAL;
 			break;
 		}
