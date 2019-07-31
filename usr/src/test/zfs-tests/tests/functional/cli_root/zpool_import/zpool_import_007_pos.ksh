@@ -27,6 +27,7 @@
 
 #
 # Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -70,21 +71,21 @@ if (( RANDOM % 2 == 0 )) ; then
 	target=$guid
 	log_note "Import by guid."
 fi
-log_must zpool destroy $TESTPOOL1
+log_must destroy_pool $TESTPOOL1
 
 log_must zpool create $TESTPOOL2 $VDEV0
 log_must zpool import -d $DEVICE_DIR -D -f $target
-log_must zpool destroy $TESTPOOL1
+log_must destroy_pool $TESTPOOL1
 
-log_must zpool destroy $TESTPOOL2
+log_must destroy_pool $TESTPOOL2
 log_must rm -rf $VDEV0
 log_must zpool import -d $DEVICE_DIR -D -f $target
-log_must zpool destroy $TESTPOOL1
+log_must destroy_pool $TESTPOOL1
 
 log_note "For raidz, two destroyed pool's devices were used, import failed."
 log_must mkfile $FILE_SIZE $VDEV0
 log_must zpool create $TESTPOOL2 $VDEV0 $VDEV1
 log_mustnot zpool import -d $DEVICE_DIR -D -f $target
-log_must zpool destroy $TESTPOOL2
+log_must destroy_pool $TESTPOOL2
 
 log_pass "zpool import -D raidz passed."
