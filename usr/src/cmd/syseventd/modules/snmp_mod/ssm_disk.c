@@ -277,14 +277,24 @@ ssm_disk_handler(sysevent_t *ev)
 	snmp_free_varbind(notification_vars);
 }
 
+void *
+ssm_disk_init_thread(void *arg)
+{
+	(void) ssm_disk_add(NULL);
+
+	return (NULL);
+}
+
 void
 ssm_disk_init(void)
 {
+	pthread_t utid;
+
 	avl_create(&ssm_disk_tree, ssm_disk_compare, sizeof (ssm_disk_t),
 	    offsetof(ssm_disk_t, ssm_disk_avl));
 
-	/* Add all drives to the cache */
-	(void) ssm_disk_add(NULL);
+	/* Do initial update in separate thread */
+	(void) pthread_create(&utid, NULL, ssm_disk_init_thread, 0);
 }
 
 void
