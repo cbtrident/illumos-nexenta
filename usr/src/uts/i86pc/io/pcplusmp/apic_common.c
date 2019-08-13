@@ -1076,6 +1076,15 @@ apic_calibrate_impl()
 
 	iflag = intr_clear();
 
+	/*
+	 * Google Cloud Platform doesn't program/initialize the realtime
+	 * clock before starting the OS. Calling microfind() is the straight
+	 * forward and easy method of doing so. Need to look at finding
+	 * exactly what's needed at some point.
+	 */
+	if (get_hwenv() == HW_KVM)
+		microfind();
+
 	do {
 		pit_tick_lo = inb(PITCTR0_PORT);
 		pit_tick = (inb(PITCTR0_PORT) << 8) | pit_tick_lo;
