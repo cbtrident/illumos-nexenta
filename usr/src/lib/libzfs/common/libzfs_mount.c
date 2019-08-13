@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
  * Copyright 2017 Joyent, Inc.
@@ -1197,13 +1197,14 @@ typedef struct mount_task {
 
 typedef struct mount_task_q {
 	pthread_mutex_t	q_lock;
+	pthread_cond_t	q_cv;
 	libzfs_handle_t	*hdl;
 	const char	*mntopts;
 	const char	*error_mp;
 	zfs_handle_t	*error_zh;
 	int		error;
 	int		q_length;
-	int		n_tasks;
+	int		n_tasks; /* # TASK_TO_PROCESS */
 	int		flags;
 	mount_task_t	task[1];
 } mount_task_q_t;
@@ -1229,6 +1230,11 @@ mount_task_q_init(int argc, zfs_handle_t **handles, const char *mntopts,
 		return (ENOMEM);
 
 	if ((error = pthread_mutex_init(&task_q->q_lock, NULL)) != 0) {
+		free(task_q);
+		return (error);
+	}
+	if ((error = pthread_cond_init(&task_q->q_cv, NULL)) != 0) {
+		pthread_mutex_destroy(&task_q->q_lock);
 		free(task_q);
 		return (error);
 	}
@@ -1292,6 +1298,7 @@ static void
 mount_task_q_fini(mount_task_q_t *task_q)
 {
 	assert(task_q != NULL);
+	(void) pthread_cond_destroy(&task_q->q_cv);
 	(void) pthread_mutex_destroy(&task_q->q_lock);
 	free(task_q);
 }
@@ -1410,6 +1417,7 @@ unmounter(void *arg)
 				task_next_stage(i, task_q);
 				task = &task_q->task[i];
 				t = i;
+				task_q->n_tasks--;
 				break; /* Out of for() loop */
 			}
 
@@ -1434,7 +1442,6 @@ unmounter(void *arg)
 		assert(t >= 0 && t < task_q->q_length);
 		task_next_stage(t, task_q);
 		assert(task_completed(t, task_q));
-		task_q->n_tasks--;
 
 		if (umount_err) {
 			/*
@@ -1460,6 +1467,7 @@ mounter(void *arg)
 {
 	mount_task_q_t *task_q = (mount_task_q_t *)arg;
 	int error = 0, done = 0;
+	struct timespec timeout = {1, 0};
 
 	assert(task_q != NULL);
 	if (task_q == NULL)
@@ -1500,6 +1508,7 @@ mounter(void *arg)
 				task_next_stage(i, task_q);
 				task = &task_q->task[i];
 				t = i;
+				task_q->n_tasks--;
 				break; /* Out of for() loop */
 			}
 
@@ -1510,9 +1519,31 @@ mounter(void *arg)
 		flags = task_q->flags;
 		mntopts = task_q->mntopts;
 
-		error = pthread_mutex_unlock(&task_q->q_lock);
+		if (done || error || task_q->error) {
+			(void) pthread_mutex_unlock(&task_q->q_lock);
+			break; /* Out of while() loop */
+		}
 
-		if (done || (task == NULL) || error || task_q->error)
+		if (task == NULL) {
+			if (task_q->n_tasks == 0) {
+				(void) pthread_mutex_unlock(&task_q->q_lock);
+				break; /* Out of while() loop */
+			}
+
+			/*
+			 * Didn't find a task to process but there are still
+			 * unprocessed tasks. They must be waiting for parent
+			 * mount to complete. Wait.
+			 * Use timed wait in case broadcast never happens due
+			 * to a thread breaking out of loop on a lock error.
+			 */
+			(void) pthread_cond_reltimedwait_np(&task_q->q_cv,
+			    &task_q->q_lock, &timeout);
+			(void) pthread_mutex_unlock(&task_q->q_lock);
+			continue; /* while() loop */
+		}
+
+		if ((error = pthread_mutex_unlock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
 
 		mount_err = zfs_mount(task->zh, mntopts, flags);
@@ -1525,7 +1556,6 @@ mounter(void *arg)
 		assert(t >= 0 && t < task_q->q_length);
 		task_next_stage(t, task_q);
 		assert(task_completed(t, task_q));
-		task_q->n_tasks--;
 
 		if (mount_err) {
 			task->error = q_error;
@@ -1535,6 +1565,9 @@ mounter(void *arg)
 			}
 			done = 1;
 		}
+
+		/* wake any waiters */
+		(void) pthread_cond_broadcast(&task_q->q_cv);
 
 		if ((error = pthread_mutex_unlock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
