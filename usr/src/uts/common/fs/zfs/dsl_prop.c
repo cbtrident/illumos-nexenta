@@ -23,7 +23,7 @@
  * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013 Martin Matuska. All rights reserved.
  * Copyright 2015, Joyent, Inc.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -56,10 +56,16 @@ dodefault(zfs_prop_t prop, int intsz, int numints, void *buf)
 		return (SET_ERROR(ENOENT));
 
 	if (zfs_prop_get_type(prop) == PROP_TYPE_STRING) {
+		const char *def_value;
+
 		if (intsz != 1)
 			return (SET_ERROR(EOVERFLOW));
-		(void) strncpy(buf, zfs_prop_default_string(prop),
-		    numints);
+
+		def_value = zfs_prop_default_string(prop);
+		if (def_value == NULL)
+			return (SET_ERROR(ENOENT));
+
+		(void) strncpy(buf, def_value, numints);
 	} else {
 		if (intsz != 8 || numints < 1)
 			return (SET_ERROR(EOVERFLOW));
