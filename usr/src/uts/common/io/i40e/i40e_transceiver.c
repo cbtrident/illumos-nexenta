@@ -1044,6 +1044,226 @@ cleanup:
 }
 
 /*
+ * Make sure that any core allocations that might have occured for
+ * the specified ring data have been freed.
+ */
+static void
+i40e_free_trqpair_data(i40e_trqpair_t *itrq)
+{
+	i40e_t *i40e = itrq->itrq_i40e;
+
+	/*
+	 * In other places, we protect the 'rx_data' with the
+	 * i40e_rx_pending_lock, so we can do the same when we
+	 * alloc or free it.  However, it would be more efficient
+	 * to do this per trqpair (or at the VSI layer in future
+	 * work).
+	 */
+	mutex_enter(&i40e->i40e_rx_pending_lock);
+	i40e_free_rx_data(itrq->itrq_rxdata);
+	itrq->itrq_rxdata = NULL;
+	mutex_exit(&i40e->i40e_rx_pending_lock);
+}
+
+/*
+ * Make sure that any DMA allocations that might have occured for
+ * the specified ring data have been freed. Also checks for partial
+ * allocations.
+ */
+static void
+i40e_free_trqpair_dma(i40e_trqpair_t *itrq)
+{
+	i40e_t *i40e = itrq->itrq_i40e;
+
+	/*
+	 * NEEDSWORK
+	 * This is a heavy big lock to take, but creating a smaller
+	 * one is a much larger task.  And since this is not run
+	 * often, it is OK for now.  Note: same issue on the 'alloc'
+	 * side.
+	 */
+	mutex_enter(&i40e->i40e_general_lock);
+	i40e_stats_trqpair_fini(itrq);
+	i40e_free_rx_dma(itrq->itrq_rxdata, B_TRUE);
+	i40e_free_tx_dma(itrq);
+	mutex_exit(&i40e->i40e_general_lock);
+}
+
+/*
+ * Allocate just the descriptor and list data for the specified ring.
+ */
+static int
+i40e_alloc_trqpair_data(i40e_trqpair_t *itrq)
+{
+	i40e_t *i40e = itrq->itrq_i40e;
+	boolean_t rc;
+
+	mutex_enter(&i40e->i40e_rx_pending_lock);
+	rc = i40e_alloc_rx_data(i40e, itrq);
+	mutex_exit(&i40e->i40e_rx_pending_lock);
+
+	if (!rc)
+		return (DDI_FAILURE);
+	else
+		return (DDI_SUCCESS);
+}
+
+/*
+ * This is so we can both globally allocate all resources, and
+ * alloc a single ring.
+ */
+static int
+i40e_alloc_trqpair_dma(i40e_trqpair_t *itrq)
+{
+	i40e_t *i40e = itrq->itrq_i40e;
+
+	i40e_debug_log(i40e, "Creating ring %d DMA with size 0x%x/0x%x\n",
+	    itrq->itrq_index, i40e->i40e_rx_buf_size, i40e->i40e_tx_buf_size);
+
+	mutex_enter(&i40e->i40e_general_lock);
+	if (!i40e_alloc_rx_dma(itrq->itrq_rxdata))
+		goto alloc_fail;
+
+	if (!i40e_alloc_tx_dma(itrq))
+		goto alloc_fail2;
+
+	if (!i40e_stats_trqpair_init(itrq)) {
+		i40e_stats_trqpair_fini(itrq);
+		i40e_debug_log(itrq->itrq_i40e,
+		    "Couldn't allocate kstats for ring %d\n",
+		    itrq->itrq_index);
+		goto alloc_fail2;
+	}
+
+	mutex_exit(&i40e->i40e_general_lock);
+	return (DDI_SUCCESS);
+
+alloc_fail2:
+	i40e_free_trqpair_dma(itrq);
+alloc_fail:
+	i40e_free_trqpair_data(itrq);
+	mutex_exit(&i40e->i40e_general_lock);
+	return (DDI_FAILURE);
+}
+
+/*
+ * Re-initialize the DMA memory for the descriptor ring and for each frame in
+ * the control block list.
+ * We may have determined that the buffers in the ring are not large enough for
+ * the current frame size.  So free that area, and alloc the new size
+ */
+boolean_t
+i40e_realloc_dma(i40e_trqpair_t *itrq)
+{
+
+	/*
+	 * This is a bigger hammer than desired (only need to free and and
+	 * re-alloc the rcb_dma area), but this is slightly easier for
+	 * initial work
+	 */
+	i40e_free_trqpair_dma(itrq);
+	return (i40e_alloc_trqpair_dma(itrq));
+}
+
+/*
+ * Check to see that the specified ring has been allocated and
+ * configured to perform rx and tx operations.  Fix anything that
+ * might be missing.
+ */
+int
+i40e_check_ring(i40e_trqpair_t *itrq)
+{
+	i40e_rx_data_t *rxd;
+	i40e_t *i40e = itrq->itrq_i40e;
+	i40e_hw_t *hw = &i40e->i40e_hw_space;
+	uint32_t index = itrq->itrq_index;	/* For logging */
+	int alloc = 0, rc;
+
+	i40e_debug_log(i40e, "Starting ring %d\n", index);
+	/* If we don't have the RX descriptor, allocate it now */
+	/*
+	 * Would really like to keep the descriptor area out of the
+	 * allocation at ring start (not that large, and less work to
+	 * update descriptors), but it is burried in i40e_alloc_rx_dma.
+	 * So for now, allocate it at ring start.
+	 */
+	if (itrq->itrq_rxdata == NULL) {
+		if (i40e_alloc_trqpair_data(itrq) != DDI_SUCCESS) {
+			i40e_error(i40e,
+			    "Couldn't allocate desc data for ring %d\n",
+			    index);
+			return (DDI_FAILURE);
+		}
+		alloc = 1;
+	}
+
+	rxd = itrq->itrq_rxdata;
+	/* Allocate the descriptor buffers. */
+	if ((rxd->rxd_desc_ring == NULL) || (itrq->itrq_desc_ring == NULL)) {
+		if (i40e_alloc_trqpair_dma(itrq) != DDI_SUCCESS) {
+			i40e_error(i40e,
+			    "Couldn't allocate DMA  for ring %d\n",
+			    index);
+			/*
+			 * We don't need to free the 'data' part of the
+			 * descriptor, as we not only may need it later,
+			 * but we will free any partially allocated
+			 * rings at detach time, but we do need to let
+			 * the upper layers know of the failure.
+			 */
+			return (DDI_FAILURE);
+		}
+		alloc = 1;
+	}
+
+	/* If we alloc'd anything here, we need to also start the ring. */
+	if (alloc != 0) {
+		if (i40e_startup_ring(itrq) != DDI_SUCCESS) {
+			i40e_error(i40e,
+			    "Couldn't allocate DMA  for ring %d\n",
+			    index);
+			return (DDI_FAILURE);
+		}
+		/*
+		 * As we have alloc'd rings, we need to make sure that
+		 * interrupts can actually work with this ring.
+		 */
+		I40E_WRITE_REG(hw,
+		    I40E_PFINT_ITRN(I40E_ITR_INDEX_RX, itrq->itrq_index),
+		    i40e->i40e_rx_itr);
+		I40E_WRITE_REG(hw,
+		    I40E_PFINT_ITRN(I40E_ITR_INDEX_RX, itrq->itrq_index),
+		    i40e->i40e_tx_itr);
+	} else {
+
+		/*
+		 * Update the context for this ring.
+		 * Note that the context is set when we initially
+		 * startup the ring, but if we stop and start, we need
+		 * to make sure it is setup for both the rx and
+		 * tx side of this queue pair.
+		 * The only failures in this call is clearing and setting
+		 * the context in the Admin Queue; and as we had a
+		 * previous context, we are OK with any errors that
+		 * might come in those calls.  So we can ignore the
+		 * return, but use it as part of a debug print.
+		 */
+		rc = i40e_setup_rx_hmc(itrq);
+		if (rc == B_FALSE)
+			i40e_debug_log(i40e,
+			    "Failed to set RX context for ring %d\n",
+			    itrq->itrq_index);
+		rc = i40e_setup_tx_hmc(itrq);
+		if (rc == B_FALSE)
+			i40e_debug_log(i40e,
+			    "Failed to set TX context for ring %d\n",
+			    itrq->itrq_index);
+	}
+
+	return (DDI_SUCCESS);
+}
+
+/*
  * Free all memory associated with all of the rings on this i40e instance. Note,
  * this is done as part of the GLDv3 stop routine.
  */
@@ -1149,6 +1369,11 @@ i40e_init_dma_attrs(i40e_t *i40e, boolean_t fma)
 	}
 }
 
+/*
+ * Put the rcb back on the free list.
+ * Note that the name is a bit misleading, as we don't really free
+ * anything.
+ */
 static void
 i40e_rcb_free(i40e_rx_data_t *rxd, i40e_rx_control_block_t *rcb)
 {
@@ -1166,14 +1391,18 @@ i40e_rcb_alloc(i40e_rx_data_t *rxd)
 	i40e_rx_control_block_t *rcb;
 
 	mutex_enter(&rxd->rxd_free_lock);
+try_again:
 	if (rxd->rxd_rcb_free == 0) {
 		mutex_exit(&rxd->rxd_free_lock);
 		return (NULL);
 	}
 	rxd->rxd_rcb_free--;
 	rcb = rxd->rxd_free_list[rxd->rxd_rcb_free];
-	VERIFY(rcb != NULL);
+	ASSERT(rcb != NULL);
 	rxd->rxd_free_list[rxd->rxd_rcb_free] = NULL;
+	/* Shouldn't be NULL, but not the end of the world */
+	if (rcb == NULL)
+		goto try_again;
 	mutex_exit(&rxd->rxd_free_lock);
 
 	return (rcb);
@@ -1280,17 +1509,20 @@ i40e_rx_bind(i40e_trqpair_t *itrq, i40e_rx_data_t *rxd, uint32_t index,
 	/* And make sure the handle is still usable; free the rcb if not */
 	/*
 	 * NEEDSWORK
-	 * There are lots of places where we check handles that don't make a whole
-	 * lot of sense.  It is *very* unlikely the handle will go bad unless the
-	 * hardware itself goes bad.  But in a non-fastpath, it might be worthwhile
-	 * to occasionaly check.  But is this a place.
+	 * There are lots of places where we check handles where it may
+	 * not be necessary.  It is *very* unlikely the handle will go bad
+	 * unless the hardware itself goes bad.  But in a non-fastpath,
+	 * or on buffer reclaim, it might be worthwhile to check.  But
+	 * is this the correct place.
 	 */
-	if (i40e_check_dma_handle(i40e, rcb->rcb_dma.dmab_dma_handle) != DDI_FM_OK) {
+	if (i40e_check_dma_handle(i40e,
+	    rcb->rcb_dma.dmab_dma_handle) != DDI_FM_OK) {
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		/*
 		 * NEEDSWORK
-		 * Sigh, this is wrong.  If the handle is no longer valid, neither
-		 * is the rcb.  This needs to be tossed and re-initialized.
+		 * Sigh, this is wrong.  If the handle is no longer valid,
+		 * neither is the rcb.
+		 * This probably needs to be tossed and re-initialized.
 		 */
 		i40e_rcb_free(rxd, rcb);
 		return (NULL);
@@ -1327,7 +1559,8 @@ i40e_rx_copy(i40e_trqpair_t *itrq, i40e_rx_data_t *rxd, uint32_t index,
 	I40E_DMA_SYNC(&rcb->rcb_dma, DDI_DMA_SYNC_FORKERNEL);
 
 	/* See the NEEDSWORK in i40e_rx_bind() */
-	if (i40e_check_dma_handle(i40e, rcb->rcb_dma.dmab_dma_handle) != DDI_FM_OK) {
+	if (i40e_check_dma_handle(i40e,
+	    rcb->rcb_dma.dmab_dma_handle) != DDI_FM_OK) {
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		return (NULL);
 	}
@@ -1477,6 +1710,16 @@ i40e_ring_rx(i40e_trqpair_t *itrq, int poll_bytes)
 	    (i40e->i40e_state & I40E_OVERTEMP) ||
 	    (i40e->i40e_state & I40E_SUSPENDED) ||
 	    (i40e->i40e_state & I40E_ERROR))
+		return (NULL);
+
+	/*
+	 * Another consideration: an unconfigured ring.
+	 * given that we have more rings than we will typically use,
+	 * we only allocate rings that the mac layer specifically starts.
+	 * so we really don't want to be fetching data into an unconfigured
+	 * ring.  So if we don't have an rxd_desc_area, return a NULL mp.
+	 */
+	if (rxd == NULL || rxd->rxd_desc_ring == NULL)
 		return (NULL);
 
 	/*
@@ -3003,8 +3246,8 @@ i40e_ring_tx(void *arg, mblk_t *mp)
 	I40E_WRITE_REG(hw, I40E_QTX_TAIL(itrq->itrq_index),
 	    itrq->itrq_desc_tail);
 
-	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
-	    DDI_FM_OK) {
+	if (i40e_check_acc_handle(i40e,
+	    i40e->i40e_osdep_space.ios_reg_handle) != DDI_FM_OK) {
 		/*
 		 * Note, we can't really go through and clean this up very well,
 		 * because the memory has been given to the device, so just

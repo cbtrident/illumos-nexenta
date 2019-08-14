@@ -557,6 +557,14 @@ typedef struct i40e_txq_stat {
  * represents a combination of both a transmit and receive ring, though they
  * should really be split apart into separate logical structures. Unfortunately,
  * during initial work we mistakenly joined them together.
+ *
+ * NOTE:
+ * We could really simplify DMA allocations if the handles were allocated
+ * per trqpair, rather than for each buffer.  They are not allocated or freed
+ * without the context of i40e_trqpair, so it would speed up the allocation
+ * process.  However, since we try to minimize how often we perform DMA
+ * allocations (for most usage, only once per os instance), the biggest
+ * benefit is that memory hashes are smaller.
  */
 typedef struct i40e_trqpair {
 	struct i40e *itrq_i40e;
@@ -850,8 +858,8 @@ typedef struct i40e {
 	link_state_t		i40e_link_state;
 	uint32_t		i40e_link_speed;	/* In Mbps */
 	link_duplex_t		i40e_link_duplex;
-	uint_t			i40e_sdu;		/* Current MTU */
-	uint_t			i40e_max_mtu;		/* Max MTU for this PF */
+	uint_t			i40e_sdu;	/* Current MTU */
+	uint_t			i40e_max_mtu;	/* Max MTU for this PF */
 	uint_t			i40e_frame_max;
 
 	/*
@@ -1041,6 +1049,10 @@ extern boolean_t i40e_startup_rings(i40e_t *);
 extern boolean_t i40e_shutdown_rings(i40e_t *);
 extern void i40e_get_hw_state(i40e_t *, i40e_hw_t *);
 extern void i40e_link_state_set(i40e_t *, link_state_t);
+extern int i40e_check_ring(i40e_trqpair_t *);
+extern int i40e_startup_ring(i40e_trqpair_t *);
+extern boolean_t i40e_setup_rx_hmc(i40e_trqpair_t *);
+extern boolean_t i40e_setup_tx_hmc(i40e_trqpair_t *);
 
 /*
  * DMA & buffer functions and attributes

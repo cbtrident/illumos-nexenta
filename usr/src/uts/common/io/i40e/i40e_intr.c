@@ -180,7 +180,9 @@
 void
 i40e_intr_set_itr(i40e_t *i40e, i40e_itr_index_t itr, uint_t val)
 {
+#ifdef I40E_RING_ALLOC_IN_ATTACH
 	int i;
+#endif
 	i40e_hw_t *hw = &i40e->i40e_hw_space;
 
 	VERIFY3U(val, <=, I40E_MAX_ITR);
@@ -196,9 +198,19 @@ i40e_intr_set_itr(i40e_t *i40e, i40e_itr_index_t itr, uint_t val)
 		return;
 	}
 
+#ifdef I40E_RING_ALLOC_IN_ATTACH
+	/*
+	 * NEEDSWORK
+	 * In this version of the driver, queues are not setup till mac
+	 * requests a ring (via the mri_open callback).  So we probably want
+	 * to defer most this action till that time too, but we may wish to
+	 * remember this work here.  May also be good to try and get some
+	 * CPU affinity on these interrupts, but that may be work for later.
+	 */
 	for (i = 0; i < i40e->i40e_num_trqpairs; i++) {
 		I40E_WRITE_REG(hw, I40E_PFINT_ITRN(itr, i), val);
 	}
+#endif
 }
 
 /*
@@ -479,7 +491,7 @@ i40e_intr_init_queue_msix(i40e_t *i40e)
 		boolean_t head = B_TRUE;
 
 		for (uint_t qidx = vec; qidx < i40e->i40e_num_trqpairs;
-		     qidx += intr_count) {
+		    qidx += intr_count) {
 			uint_t next_qidx = qidx + intr_count;
 
 			next_qidx = (next_qidx > i40e->i40e_num_trqpairs) ?
@@ -668,7 +680,8 @@ i40e_intr_adminq_work(i40e_t *i40e)
 		 * Disable link checks for NEX-6977. With the fibers unplugged
 		 * we can end up receiving too many link check interrupts,
 		 * saturating one CPU for each link. This can cause system hangs
-		 * at boot or shutdown when the system is running single-threaded.
+		 * at boot or shutdown when the system is running
+		 * single-threaded.
 		 *
 		 * case i40e_aqc_opc_get_link_status:
 		 *	mutex_enter(&i40e->i40e_general_lock);
@@ -722,8 +735,8 @@ i40e_intr_other_work(i40e_t *i40e)
 	uint32_t reg;
 
 	reg = I40E_READ_REG(hw, I40E_PFINT_ICR0);
-	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
-	    DDI_FM_OK) {
+	if (i40e_check_acc_handle(i40e,
+	    i40e->i40e_osdep_space.ios_reg_handle) != DDI_FM_OK) {
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		return;
 	}
@@ -777,7 +790,7 @@ i40e_intr_msix(void *arg1, void *arg2)
 	 * performed during i40e_map_intrs_to_vectors().
 	 */
 	for (uint_t i = vector_idx - 1; i < i40e->i40e_num_trqpairs;
-	     i += (i40e->i40e_intr_count - 1)) {
+	    i += (i40e->i40e_intr_count - 1)) {
 		i40e_trqpair_t *itrq = &i40e->i40e_trqpairs[i];
 
 		ASSERT3U(i, <, i40e->i40e_num_trqpairs);
@@ -808,8 +821,8 @@ i40e_intr_notx(i40e_t *i40e, boolean_t shared)
 	}
 
 	reg = I40E_READ_REG(hw, I40E_PFINT_ICR0);
-	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
-	    DDI_FM_OK) {
+	if (i40e_check_acc_handle(i40e,
+	    i40e->i40e_osdep_space.ios_reg_handle) != DDI_FM_OK) {
 		atomic_or_32(&i40e->i40e_state, I40E_ERROR);
 		return (DDI_INTR_CLAIMED);
 	}
