@@ -24,6 +24,7 @@
  */
 /*
  * Copyright (c) 2013, 2014 by Delphix. All rights reserved.
+ * Copyright 2021 Tintri by DDN Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -249,6 +250,14 @@ range_tree_add_fill(void *arg, uint64_t start, uint64_t size, uint64_t fill)
 		return;
 	}
 
+	/*
+	 * If this is a gap-supporting range tree, it is possible that we
+	 * are inserting into an existing segment. In this case simply
+	 * bump the fill count and call the remove / add callbacks. If the
+	 * new range will extend an existing segment, we remove the
+	 * existing one, apply the new extent to it and re-insert it using
+	 * the normal code paths.
+	 */
 	if (rt->rt_gap != 0) {
 		if (rs != NULL) {
 			if (rs->rs_start <= start && rs->rs_end >= end) {
@@ -264,15 +273,20 @@ range_tree_add_fill(void *arg, uint64_t start, uint64_t size, uint64_t fill)
 				}
 				return;
 			}
-			ASSERT0(fill);
-			if (rs->rs_start < start) {
-				ASSERT3U(end, >, rs->rs_end);
-				range_tree_add(rt, rs->rs_end, end -
-				    rs->rs_end);
-			} else {
-				ASSERT3U(rs->rs_start, >, start);
-				range_tree_add(rt, start, rs->rs_start - start);
-			}
+
+			avl_remove(&rt->rt_root, rs);
+			if (rt->rt_ops != NULL &&
+			    rt->rt_ops->rtop_remove != NULL)
+				rt->rt_ops->rtop_remove(rt, rs, rt->rt_arg);
+
+			rt->rt_space -= rs->rs_end - rs->rs_start;
+			fill += rs->rs_fill;
+			start = MIN(start, rs->rs_start);
+			end = MAX(end, rs->rs_end);
+			size = end - start;
+			range_tree_add_fill(rt, start, size, fill);
+
+			kmem_cache_free(range_seg_cache, rs);
 			return;
 		}
 	} else {
