@@ -293,8 +293,8 @@ vioscsi_tran_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 	/* fill in cmd_req */
 	cmd_req->lun[0] = 1;
 	cmd_req->lun[1] = ap->a_target;
-	cmd_req->lun[2] = (ap->a_lun >> 8) | 0x40;
-	cmd_req->lun[3] = (ap->a_lun & 0xff);
+	cmd_req->lun[2] = 0x40;
+	cmd_req->lun[3] = ap->a_lun;
 	cmd_req->tag = (unsigned long)pkt;
 	cmd_req->task_attr = 0;
 	cmd_req->prio = 0;
@@ -589,7 +589,7 @@ vioscsi_probe_lun(struct scsi_device *sd)
 	    NULL)) == NULL) {
 		goto error;
 	}
-	scsi_setup_cdb((union scsi_cdb *)tur_pkt->pkt_cdbp,
+	(void) scsi_setup_cdb((union scsi_cdb *)tur_pkt->pkt_cdbp,
 	    SCMD_TEST_UNIT_READY, 0, 0, 0);
 	tur_pkt->pkt_flags = FLAG_NOINTR | FLAG_NOPARITY;
 	if (vioscsi_send_pkt(tur_pkt) == B_FALSE)
@@ -719,7 +719,7 @@ vioscsi_config_lun(vioscsi_softc_t sc, int tgt, uint8_t lun,
 
 	if ((child = vioscsi_find_child(sc, tgt, lun)) != NULL) {
 		if (probe_rval == B_FALSE) {
-			ndi_devi_offline(child,
+			(void) ndi_devi_offline(child,
 			    NDI_DEVFS_CLEAN | NDI_DEVI_REMOVE | NDI_DEVI_GONE);
 			vioscsi_delete_child(sc, tgt, lun, child);
 			err = NDI_FAILURE;
