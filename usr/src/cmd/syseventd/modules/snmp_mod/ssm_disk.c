@@ -198,6 +198,7 @@ ssm_disk_handler(sysevent_t *ev)
 {
 	static const oid ssm_disk_trap_oid[] = { SSM_DISK_TRAP_OID };
 	const size_t ssm_disk_trap_len = OID_LENGTH(ssm_disk_trap_oid);
+	static const oid ssm_disk_hostname_oid[] = { SSM_DISK_HOSTNAME_OID };
 	static const oid ssm_disk_action_oid[] = { SSM_DISK_ACTION_OID };
 	static const oid ssm_disk_devname_oid[] = { SSM_DISK_DEVNAME_OID };
 	static const oid ssm_disk_encid_oid[] = { SSM_DISK_ENCID_OID };
@@ -238,6 +239,10 @@ ssm_disk_handler(sysevent_t *ev)
 		sdp = ssm_disk_remove(devname);
 	}
 
+	/* Hostname */
+	(void) memcpy(var_name, ssm_disk_hostname_oid, oid_len);
+	(void) snmp_varlist_add_variable(&notification_vars, var_name,
+	    var_len, ASN_OCTET_STR, hostname, strlen(hostname));
 	/* Disk action (0 - add, 1 - remove) */
 	(void) memcpy(var_name, ssm_disk_action_oid, oid_len);
 	(void) snmp_varlist_add_variable(&notification_vars, var_name,

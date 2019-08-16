@@ -21,6 +21,8 @@
 
 #include "snmp_mod.h"
 
+char hostname[MAXHOSTNAMELEN + 1];
+
 static struct ssm_handler {
 	const char *class;
 	const char *subclass;
@@ -59,6 +61,8 @@ static struct slm_mod_ops snmp_mod_ops = {
 struct slm_mod_ops *
 slm_init(void)
 {
+	(void) gethostname(hostname, MAXHOSTNAMELEN + 1);
+
 	/* Init SMA */
 	snmp_disable_log();
 	if (netsnmp_ds_set_boolean(NETSNMP_DS_APPLICATION_ID,

@@ -30,13 +30,17 @@
 
 #include <libsysevent.h>
 
+#include <netdb.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #include "syseventd.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+extern char hostname[MAXHOSTNAMELEN + 1];
 
 #define	SNMP_SUPPCONF	"syseventd-trapgen"
 
@@ -52,12 +56,13 @@ extern "C" {
 #define	SSM_DISK_OBJECT_OID	SSM_OBJECTS_OID, 1
 
 /* disk trap payload */
-#define	SSM_DISK_ACTION_OID	SSM_DISK_OBJECT_OID, 1
-#define	SSM_DISK_DEVNAME_OID	SSM_DISK_OBJECT_OID, 2
-#define	SSM_DISK_ENCID_OID	SSM_DISK_OBJECT_OID, 3
-#define	SSM_DISK_SLOTID_OID	SSM_DISK_OBJECT_OID, 4
-#define	SSM_DISK_ENCNAME_OID	SSM_DISK_OBJECT_OID, 5
-#define	SSM_DISK_SLOTNAME_OID	SSM_DISK_OBJECT_OID, 6
+#define	SSM_DISK_HOSTNAME_OID	SSM_DISK_OBJECT_OID, 1
+#define	SSM_DISK_ACTION_OID	SSM_DISK_OBJECT_OID, 2
+#define	SSM_DISK_DEVNAME_OID	SSM_DISK_OBJECT_OID, 3
+#define	SSM_DISK_ENCID_OID	SSM_DISK_OBJECT_OID, 4
+#define	SSM_DISK_SLOTID_OID	SSM_DISK_OBJECT_OID, 5
+#define	SSM_DISK_ENCNAME_OID	SSM_DISK_OBJECT_OID, 6
+#define	SSM_DISK_SLOTNAME_OID	SSM_DISK_OBJECT_OID, 7
 
 /* Handlers */
 extern void ssm_disk_init(void);
