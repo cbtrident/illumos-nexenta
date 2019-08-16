@@ -419,7 +419,7 @@ DRV_KMODS	+= virtio
 
 # Virtio block driver
 DRV_KMODS	+= vioblk
-DRV_KMODS	+= vioscsi
+#DRV_KMODS	+= vioscsi
 
 # Virtio network driver
 DRV_KMODS	+= vioif
