@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2016 Gary Mills
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright 2017 Joyent, Inc.
@@ -831,6 +831,7 @@ scan_ds_queue_insert(dsl_scan_t *scn, uint64_t dsobj, uint64_t txg)
 
 	mutex_enter(&scn->scn_queue_lock);
 	if (avl_find(&scn->scn_queue, sds, &where) != NULL) {
+		mutex_exit(&scn->scn_queue_lock);
 		kmem_free(sds, sizeof (*sds));
 		return (EEXIST);
 	}
