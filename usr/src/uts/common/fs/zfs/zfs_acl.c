@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -909,6 +909,10 @@ zfs_mode_compute(uint64_t fmode, zfs_acl_t *aclp,
 	    &access_mask, &iflags, &type)) {
 
 		if (!zfs_acl_valid_ace_type(type, iflags))
+			continue;
+
+		if (type == ACE_SYSTEM_AUDIT_ACE_TYPE ||
+		    type == ACE_SYSTEM_ALARM_ACE_TYPE)
 			continue;
 
 		entry_type = (iflags & ACE_TYPE_FLAGS);
