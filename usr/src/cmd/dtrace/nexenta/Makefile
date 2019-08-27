@@ -34,6 +34,7 @@ BINFILES = \
 	msload \
 	rspmon \
 	stackcollapse \
+	txg_full \
 	zfs-prefetch \
 	zilstat \
 	ziosnoop \
