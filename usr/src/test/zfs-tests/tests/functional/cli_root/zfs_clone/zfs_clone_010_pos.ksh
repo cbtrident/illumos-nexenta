@@ -16,6 +16,7 @@
 
 #
 # Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -215,18 +216,23 @@ log_must local_cleanup
 
 log_note "verify clone list truncated correctly"
 typeset -i j=200
+# max_proplen depends on ZFS_MAXPROPLEN:
+# defined in usr/src/lib/libzfs/common/libzfs.h
+# with default value 2048
+typeset -i max_proplen=2048
+typeset -i no_clones=$((1 + max_proplen / j))
+typeset name=$(printf "%${j}s" | tr '[:space:]' 'x')
 i=1
 fs=$TESTPOOL/$TESTFS1
 log_must zfs create $fs
 log_must zfs snapshot $fs@snap
-while((i < 7)); do
-	log_must zfs clone $fs@snap $fs/$TESTCLONE$(python -c 'print "x" * 200').$i
+while ((i != no_clones)); do
+	log_must zfs clone $fs@snap $fs/$TESTCLONE.$name.$i
 	((i=i+1))
-	((j=j+200))
 done
 clone_list=$(zfs list -o clones $fs@snap)
 char_count=$(echo "$clone_list" | tail -1 | wc | awk '{print $3}')
-[[ $char_count -eq 1024 ]] || \
+[[ $char_count -eq $max_proplen ]] || \
     log_fail "Clone list not truncated correctly. Unexpected character count" \
         "$char_count"
 
