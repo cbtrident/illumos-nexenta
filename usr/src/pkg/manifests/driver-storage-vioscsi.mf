@@ -28,6 +28,6 @@ set name=variant.arch value=$(ARCH)
 dir path=kernel group=sys
 dir path=kernel/drv group=sys
 dir path=kernel/drv/$(ARCH64) group=sys
-#driver name=vioscsi alias=pci1af4,1004 class=scsi-self-identifying
-#file path=kernel/drv/$(ARCH64)/vioscsi group=sys
+driver name=vioscsi alias=pci1af4,1004 class=scsi-self-identifying
+file path=kernel/drv/$(ARCH64)/vioscsi group=sys
 license lic_CDDL license=lic_CDDL

@@ -43,8 +43,7 @@ extern "C" {
 #include <sys/sunndi.h>
 #include <sys/stddef.h>
 
-#include <virtiovar.h>
-#include <virtioreg.h>
+#include <virtio.h>
 
 #define VIRTIO_SCSI_CDB_SIZE	32
 #define	VIRTIO_SCSI_SENSE_SIZE	96
@@ -96,6 +95,7 @@ extern "C" {
 
 #define VIOSCSI_MAX_TARGET     			256
 #define VIOSCSI_MAX_LUN				16 // KVM supports a lot more
+#define VIOSCSI_MIN_SEGS			3
 
 /*reasons of reset event */
 #define VIRTIO_SCSI_EVT_RESET_HARD		0
@@ -109,6 +109,10 @@ extern "C" {
 #define LUN_PROP                                "lun"
 #define COMPAT_PROP                             "compatible"
 
+#define	VIRTIO_SCSI_WANTED_FEATURES	(VIRTIO_SCSI_F_INOUT |		\
+					VIRTIO_SCSI_F_HOTPLUG |		\
+					VIRTIO_SCSI_F_CHANGE |		\
+					VIRTIO_SCSI_F_T10_PI)
 /* Data structures */
 
 #pragma pack(1)
@@ -175,7 +179,7 @@ typedef struct vioscsi_buffer {
 	ddi_acc_handle_t	vb_acch;  /* access handle for DMA buffer memory */
 	uint32_t		vb_ncookies; /* number of cookies */
 	uint32_t		vb_nwins; /* number of DMA windows NOTUSED */
-} *vioscsi_buffer_t;
+} vioscsi_buffer_t;
 
 typedef struct vioscsi_request {
 	
@@ -187,12 +191,7 @@ typedef struct vioscsi_request {
 	 * second one - for data payload
 	 */
 	struct vioscsi_buffer	vr_headers_buf;
-	
-	boolean_t		vr_dir; /* request direction (to/from HBA) NOTUSED */
-	
-	uint8_t			vr_scbp[DEFAULT_SCBLEN]; /* NOTUSED */
-	uint8_t			vr_cdbp[DEFAULT_CDBLEN]; /* NOTUSED */
-} *vioscsi_request_t;
+} vioscsi_request_t;
 
 typedef struct vioscsi_dev {
 	list_node_t		vd_node;
@@ -203,27 +202,25 @@ typedef struct vioscsi_dev {
 
 typedef struct vioscsi_softc {
 	dev_info_t		*vs_dip; /* mirrors virtio_softc->vs_dip */
-	struct virtio_softc	vs_virtio;
+	virtio_t		*vs_virtio;
 	uint64_t		vs_features;
 	
-	struct virtqueue	*vs_ctrl_vq;
-	struct virtqueue	*vs_event_vq;
-	struct virtqueue	*vs_rqst_vq;
+	virtio_queue_t		*vs_ctrl_vq;
+	virtio_queue_t		*vs_event_vq;
+	virtio_queue_t		*vs_rqst_vq;
 	
 	scsi_hba_tran_t		*vs_hba_tran;
 	boolean_t		vs_poll_done; /* true if the request is completed */
-	uint32_t		vs_max_channel;	/* Set, NOTUSED */
 	uint32_t		vs_max_target;
 	uint32_t		vs_max_lun;
 	uint32_t		vs_cdb_size;
-	uint32_t		vs_max_seg;	/* Set, NOTUSED */
+	uint32_t		vs_max_seg;
 	
 	/* ---- maximal number of requests ---- */
-	uint32_t		vs_max_req;	/* Set, NOTUSED */
 	kmutex_t		vs_devs_mutex;
 	list_t			vs_devs;
 	struct vioscsi_buffer	vs_events[4];	/* NOTUSED */
-} *vioscsi_softc_t;
+} vioscsi_softc_t;
 
 #ifdef __cplusplus
 }

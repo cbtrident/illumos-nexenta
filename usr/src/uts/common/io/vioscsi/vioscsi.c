@@ -120,17 +120,17 @@ vioscsi_tran_tgt_probe(struct scsi_device *sd, int (*waitfunc)(void))
 }
 
 static dev_info_t *
-vioscsi_find_child(vioscsi_softc_t sc, uint16_t tgt, uint8_t lun)
+vioscsi_find_child(vioscsi_softc_t *sc, uint16_t tgt, uint8_t lun)
 {
 	vioscsi_dev_t	*vd;
 
 	/*
 	 * Should rethink the search method if the driver needs to support
-	 * more than 8 or 9 virtual drives.
+	 * more than 8 or 9 virtual drives. Purely an issue of performance.
 	 */
 	mutex_enter(&sc->vs_devs_mutex);
 	for (vd = list_head(&sc->vs_devs); vd != NULL;
-	     vd = list_next(&sc->vs_devs, vd)) {
+	    vd = list_next(&sc->vs_devs, vd)) {
 		if (vd->vd_target == tgt && vd->vd_lun == lun) {
 			mutex_exit(&sc->vs_devs_mutex);
 			return (vd->vd_dip);
@@ -142,14 +142,14 @@ vioscsi_find_child(vioscsi_softc_t sc, uint16_t tgt, uint8_t lun)
 }
 
 static void
-vioscsi_delete_child(vioscsi_softc_t sc, uint16_t tgt, uint8_t lun,
+vioscsi_delete_child(vioscsi_softc_t *sc, uint16_t tgt, uint8_t lun,
     dev_info_t *child)
 {
 	vioscsi_dev_t	*vd;
 
 	mutex_enter(&sc->vs_devs_mutex);
 	for (vd = list_head(&sc->vs_devs); vd != NULL;
-	     vd = list_next(&sc->vs_devs, vd)) {
+	    vd = list_next(&sc->vs_devs, vd)) {
 		if (vd->vd_target == tgt && vd->vd_lun == lun) {
 			list_remove(&sc->vs_devs, vd);
 			kmem_free(vd, sizeof (*vd));
@@ -164,7 +164,7 @@ static int
 vioscsi_tran_tgt_init(dev_info_t *hba_dip,
     dev_info_t *tgt_dip, scsi_hba_tran_t *hba_tran, struct scsi_device *sd)
 {
-	vioscsi_softc_t sc = sd->sd_address.a_hba_tran->tran_hba_private;
+	vioscsi_softc_t *sc = sd->sd_address.a_hba_tran->tran_hba_private;
 	uint16_t tgt = sd->sd_address.a_target;
 	uint8_t lun = sd->sd_address.a_lun;
 
@@ -180,108 +180,33 @@ vioscsi_tran_tgt_free(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 {
 }
 
-static void
-vioscsi_load_indirect(struct scsi_pkt *pkt, struct vq_entry *ve)
+static int
+vioscsi_load_cookies(struct scsi_pkt *pkt, virtio_chain_t *vic)
 {
-	int			i;
+	int			rval;
 	ddi_dma_cookie_t	*dmac;
 
-	for (i = 0; i < pkt->pkt_numcookies; i ++) {
+	for (int i = 0; i < pkt->pkt_numcookies; i ++) {
 		dmac = &pkt->pkt_cookies[i];
-		virtio_ve_add_indirect_buf(ve, dmac->dmac_laddress,
-		    dmac->dmac_size, pkt->pkt_dma_flags & DDI_DMA_WRITE);
-	}
-}
-
-static struct vq_entry *
-vioscsi_add_entry(vioscsi_softc_t sc, ddi_dma_cookie_t *dmac, boolean_t write, struct vq_entry *ve_last)
-{
-	struct vq_entry	*ve;
-
-	if ((ve = vq_alloc_entry(sc->vs_rqst_vq)) == NULL) {
-		dev_debug(sc->vs_dip, CE_WARN, "No more ring space");
-		return (NULL);
-	}
-
-	virtio_ve_set(ve, dmac->dmac_laddress, dmac->dmac_size, write);
-	virtio_ventry_stick(ve_last, ve);
-
-	return (ve);
-}
-
-static boolean_t
-vioscsi_load_ring_entries(vioscsi_softc_t sc, vioscsi_request_t req)
-{
-	struct vq_entry		*ve,
-				*ve_head,
-				*ve_last;
-	vioscsi_buffer_t	req_buf = &req->vr_headers_buf;
-	struct scsi_pkt		*pkt = req->vr_req_pkt;
-	ddi_dma_cookie_t	*dmac;
-
-	if ((ve = vq_alloc_entry(sc->vs_rqst_vq)) == NULL) {
-		dev_debug(sc->vs_dip, CE_WARN, "No more ring space");
-		return (B_FALSE);
-	}
-
-	ve->qe_private = req;
-	req->vr_ve = ve;
-	ve_head = ve_last = ve;
-	/* ---- First the request header ---- */
-	virtio_ve_set(ve, req_buf->vb_dmac.dmac_laddress,
-	    sizeof (struct virtio_scsi_cmd_req), B_TRUE);
-
-	/* ---- Now add all outgoing write buffers ---- */
-	if (pkt->pkt_dma_flags & DDI_DMA_WRITE) {
-		for (int i = 0; i < pkt->pkt_numcookies; i++) {
-			dmac = &pkt->pkt_cookies[i];
-			ve_last = vioscsi_add_entry(sc, dmac,
-			    pkt->pkt_dma_flags & DDI_DMA_WRITE, ve_last);
-			if (ve_last == NULL) {
-				virtio_free_chain(ve_head);
-				return (B_FALSE);
-			}
+		if ((rval = virtio_chain_append(vic, dmac->dmac_laddress,
+		    dmac->dmac_size,
+		    pkt->pkt_dma_flags & DDI_DMA_WRITE ?
+		    VIRTIO_DIR_DEVICE_READS : VIRTIO_DIR_DEVICE_WRITES)) !=
+		    DDI_SUCCESS) {
+			return (rval);
 		}
 	}
-
-	if ((ve = vq_alloc_entry(sc->vs_rqst_vq)) == NULL) {
-		dev_debug(sc->vs_dip, CE_WARN, "No more ring space");
-		virtio_free_chain(ve_head);
-		return (B_FALSE);
-	}
-
-	/* ---- Now the SCSI sense buffer ---- */
-	virtio_ve_set(ve, req_buf->vb_dmac.dmac_laddress +
-	    sizeof (struct virtio_scsi_cmd_req),
-	    sizeof (struct virtio_scsi_cmd_resp), B_FALSE);
-	virtio_ventry_stick(ve_last, ve);
-	ve_last = ve;
-
-	/* ---- Finally any incoming read buffers ---- */
-	if (pkt->pkt_dma_flags & DDI_DMA_READ) {
-		for (int i = 0; i < pkt->pkt_numcookies; i++) {
-			dmac = &pkt->pkt_cookies[i];
-			ve_last = vioscsi_add_entry(sc, dmac,
-			    pkt->pkt_dma_flags & DDI_DMA_WRITE, ve_last);
-			if (ve_last == NULL) {
-				virtio_free_chain(ve_head);
-				return (B_FALSE);
-			}
-		}
-	}
-
-	virtio_push_chain(ve_head, B_TRUE);
-	return (B_TRUE);
+	return (DDI_SUCCESS);
 }
 
 static int
 vioscsi_tran_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 {
-	struct vq_entry		*ve;
-	vioscsi_request_t	req	= pkt->pkt_ha_private;
-	vioscsi_softc_t		sc	= ap->a_hba_tran->tran_hba_private;
+	vioscsi_request_t	*req	= pkt->pkt_ha_private;
+	vioscsi_softc_t		*sc	= ap->a_hba_tran->tran_hba_private;
 	struct virtio_scsi_cmd_req	*cmd_req;
-	vioscsi_buffer_t	req_buf	= &req->vr_headers_buf;
+	vioscsi_buffer_t	*req_buf	= &req->vr_headers_buf;
+	virtio_chain_t		*vic;
 
 	if (pkt->pkt_cdbp == NULL)
 		return (TRAN_BADPKT);
@@ -310,55 +235,60 @@ vioscsi_tran_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 	 * This requirement is indepentent of using chained ring entries or
 	 * one ring entry with indirect buffers.
 	 */
-	if (sc->vs_virtio.sc_features & VIRTIO_F_RING_INDIRECT_DESC) {
-		/* ---- allocate vq_entry ---- */
-		if ((ve = vq_alloc_entry(sc->vs_rqst_vq)) == NULL)
-			return (TRAN_BUSY);
 
-		/* ---- add request header ---- */
-		virtio_ve_add_indirect_buf(ve, req_buf->vb_dmac.dmac_laddress,
-		    sizeof (struct virtio_scsi_cmd_req), B_TRUE);
+	if ((vic = virtio_chain_alloc(sc->vs_rqst_vq, KM_NOSLEEP)) == NULL)
+		return (TRAN_BUSY);
 
-		/* ---- add write buffers ---- */
-		if (pkt->pkt_dma_flags & DDI_DMA_WRITE)
-			vioscsi_load_indirect(pkt, ve);
-
-		/* ---- add the response header ---- */
-		virtio_ve_add_indirect_buf(ve, req_buf->vb_dmac.dmac_laddress +
-		    sizeof (struct virtio_scsi_cmd_req),
-		    sizeof (struct virtio_scsi_cmd_resp), B_FALSE);
-
-		/* ---- add read buffers ---- */
-		if (pkt->pkt_dma_flags & DDI_DMA_READ)
-			vioscsi_load_indirect(pkt, ve);
-
-		ve->qe_private = req;
-		req->vr_ve = ve;
-		sc->vs_poll_done = B_FALSE;
-
-		/* ---- push vq_entry into the queue ---- */
-		virtio_push_chain(ve, B_TRUE);
-	} else {
-		if (vioscsi_load_ring_entries(sc, req) == B_FALSE)
-			return (TRAN_BUSY);
+	/* ---- add request header ---- */
+	if (virtio_chain_append(vic, req_buf->vb_dmac.dmac_laddress,
+	    sizeof (struct virtio_scsi_cmd_req), VIRTIO_DIR_DEVICE_READS) !=
+	    DDI_SUCCESS) {
+		goto fail;
 	}
+
+	/* ---- add write buffers ---- */
+	if (pkt->pkt_dma_flags & DDI_DMA_WRITE)
+		if (vioscsi_load_cookies(pkt, vic) != DDI_SUCCESS)
+			goto fail;
+
+	/* ---- add the response header ---- */
+	if (virtio_chain_append(vic, req_buf->vb_dmac.dmac_laddress +
+	    sizeof (struct virtio_scsi_cmd_req),
+	    sizeof (struct virtio_scsi_cmd_resp), VIRTIO_DIR_DEVICE_WRITES) !=
+	    DDI_SUCCESS) {
+		goto fail;
+	}
+
+	/* ---- add read buffers ---- */
+	if (pkt->pkt_dma_flags & DDI_DMA_READ)
+		if (vioscsi_load_cookies(pkt, vic) != DDI_SUCCESS)
+			goto fail;
+
+	virtio_chain_data_set(vic, req);
+	sc->vs_poll_done = B_FALSE;
+
+	/* ---- push chain into the queue ---- */
+	virtio_chain_submit(vic, B_TRUE);
 
 	if (pkt->pkt_flags & FLAG_NOINTR) {
 		int32_t	one_sec_wait = MICROSEC / 10;
 		/* ---- disable interrupts for a while ---- */
-		virtio_stop_vq_intr(sc->vs_rqst_vq);
+		virtio_interrupts_disable(sc->vs_virtio);
 
 		while (sc->vs_poll_done == B_FALSE && one_sec_wait--) {
-			(void) vioscsi_rqst_handler((caddr_t)&sc->vs_virtio,
-			    NULL);
+			(void) vioscsi_rqst_handler((caddr_t)sc, NULL);
 			drv_usecwait(10);
 		}
 
 		/* ---- After vioscsi_rqst_handler don't touch req ---- */
-		virtio_start_vq_intr(sc->vs_rqst_vq);
+		(void) virtio_interrupts_enable(sc->vs_virtio);
 	}
 
 	return (TRAN_ACCEPT);
+
+fail:
+	virtio_chain_free(vic);
+	return (TRAN_BUSY);
 }
 
 static int
@@ -368,7 +298,7 @@ vioscsi_tran_abort(struct scsi_address *ap, struct scsi_pkt *pkt)
 }
 
 static void
-vioscsi_buffer_release(vioscsi_buffer_t vb)
+vioscsi_buffer_release(vioscsi_buffer_t *vb)
 {
 	if (vb->vb_state != VIOSCSI_BUFFER_ALLOCATED)
 		return;
@@ -384,7 +314,7 @@ vioscsi_buffer_release(vioscsi_buffer_t vb)
 }
 
 static int
-vioscsi_buffer_setup(vioscsi_softc_t sc, vioscsi_buffer_t vb, size_t vb_size,
+vioscsi_buffer_setup(vioscsi_softc_t *sc, vioscsi_buffer_t *vb, size_t vb_size,
     int kmflags)
 {
 	size_t	len;
@@ -429,9 +359,9 @@ unbind_handle:
 static int
 vioscsi_req_construct(void *buffer, void *user_arg, int kmflags)
 {
-	vioscsi_softc_t sc = user_arg;
-	vioscsi_request_t req = buffer;
-	vioscsi_buffer_t buf;
+	vioscsi_softc_t *sc = user_arg;
+	vioscsi_request_t *req = buffer;
+	vioscsi_buffer_t *buf;
 
 	buf = &req->vr_headers_buf;
 
@@ -450,7 +380,7 @@ vioscsi_req_construct(void *buffer, void *user_arg, int kmflags)
 static void
 virtio_scsi_req_destruct(void *buffer, void *user_args)
 {
-	vioscsi_request_t req = buffer;
+	vioscsi_request_t *req = buffer;
 
 	vioscsi_buffer_release(&req->vr_headers_buf);
 }
@@ -481,8 +411,8 @@ static int
 vioscsi_tran_pkt_constructor(struct scsi_pkt *pkt, scsi_hba_tran_t *tran,
     int kmflags)
 {
-	vioscsi_request_t	req	= pkt->pkt_ha_private;
-	vioscsi_softc_t		sc	= tran->tran_hba_private;
+	vioscsi_request_t	*req	= pkt->pkt_ha_private;
+	vioscsi_softc_t		*sc	= tran->tran_hba_private;
 
 	(void) memset(req, 0, sizeof (*req));
 
@@ -492,8 +422,8 @@ vioscsi_tran_pkt_constructor(struct scsi_pkt *pkt, scsi_hba_tran_t *tran,
 static void
 vioscsi_tran_pkt_destructor(struct scsi_pkt *pkt, scsi_hba_tran_t *tran)
 {
-	vioscsi_request_t req = pkt->pkt_ha_private;
-	vioscsi_softc_t sc = tran->tran_hba_private;
+	vioscsi_request_t *req = pkt->pkt_ha_private;
+	vioscsi_softc_t *sc = tran->tran_hba_private;
 
 	virtio_scsi_req_destruct(req, sc);
 }
@@ -502,7 +432,7 @@ static int
 vioscsi_tran_getcap(struct scsi_address *ap, char *cap, int whom)
 {
 	int rval = 0;
-	vioscsi_softc_t sc = ap->a_hba_tran->tran_hba_private;
+	vioscsi_softc_t *sc = ap->a_hba_tran->tran_hba_private;
 
 	if (cap == NULL)
 		return (-1);
@@ -606,7 +536,7 @@ error:
 }
 
 static int
-vioscsi_config_child(vioscsi_softc_t sc, struct scsi_device *sd,
+vioscsi_config_child(vioscsi_softc_t *sc, struct scsi_device *sd,
     dev_info_t **ddip)
 {
 	char		*nodename	= NULL,
@@ -701,7 +631,7 @@ free_nodename:
 }
 
 static int
-vioscsi_config_lun(vioscsi_softc_t sc, int tgt, uint8_t lun,
+vioscsi_config_lun(vioscsi_softc_t *sc, int tgt, uint8_t lun,
     dev_info_t **ldip)
 {
 	struct scsi_device	sd;
@@ -783,7 +713,7 @@ static int
 vioscsi_tran_bus_config(dev_info_t *hba_dip, uint_t flags,
     ddi_bus_config_op_t op,  void *arg, dev_info_t **childs)
 {
-	vioscsi_softc_t	sc;
+	vioscsi_softc_t	*sc;
 	int		circ,
 			ret	= NDI_SUCCESS,
 			tgt,
@@ -874,26 +804,22 @@ vioscsi_event_handler(caddr_t arg1, caddr_t arg2)
 uint_t
 vioscsi_rqst_handler(caddr_t arg1, caddr_t arg2)
 {
-	struct virtio_softc *vsc = (void *) arg1;
-	vioscsi_softc_t sc = container_of(vsc, struct vioscsi_softc, vs_virtio);
-	struct vq_entry *ve;
-	vioscsi_request_t req;
+	vioscsi_softc_t *sc = (vioscsi_softc_t *)arg1;
+	vioscsi_request_t *req;
 	struct virtio_scsi_cmd_resp *resp;
 	struct scsi_arq_status *arqstat;
 	struct scsi_pkt *pkt;
-	uint32_t len;
-	vioscsi_buffer_t req_buf = NULL;
+	vioscsi_buffer_t *req_buf = NULL;
+	virtio_chain_t	*vic;
 
 	/* TODO: push request into the ready queue and schedule taskq */
-	while ((ve = virtio_pull_chain(sc->vs_rqst_vq, &len))) {
-		if ((req = ve->qe_private) == NULL) {
-			/* ---- DEBUG ---- */
-			cmn_err(CE_WARN, "%s: qe_private(%p) is NULL",
-			    __func__, (void *)ve);
+	while ((vic = virtio_queue_poll(sc->vs_rqst_vq)) != NULL) {
+		if ((req = virtio_chain_data(vic)) == NULL) {
+			dev_err(sc->vs_dip, CE_WARN, "%s: chain data is NULL",
+			    __func__);
 			return (DDI_INTR_CLAIMED);
 		}
 
-		ve->qe_private = NULL;
 		pkt = req->vr_req_pkt;
 		req_buf = &req->vr_headers_buf;
 
@@ -941,12 +867,12 @@ vioscsi_rqst_handler(caddr_t arg1, caddr_t arg2)
 			break;
 
 		case VIRTIO_SCSI_S_OVERRUN:
-			dev_debug(sc->vs_dip, CE_WARN, "OVERRUN");
+			dev_err(sc->vs_dip, CE_WARN, "OVERRUN");
 			pkt->pkt_reason = CMD_DATA_OVR;
 			break;
 
 		default:
-			dev_debug(sc->vs_dip, CE_WARN, "Unknown response: 0x%x",
+			dev_err(sc->vs_dip, CE_WARN, "Unknown response: 0x%x",
 			    resp->response);
 			pkt->pkt_reason = CMD_TRAN_ERR;
 			break;
@@ -959,40 +885,11 @@ vioscsi_rqst_handler(caddr_t arg1, caddr_t arg2)
 		 */
 		sc->vs_poll_done = B_TRUE;
 
-		virtio_free_chain(ve);
+		virtio_chain_free(vic);
 		scsi_hba_pkt_comp(pkt);
 		/* ---- Don't touch req after here ---- */
 	}
 	return (DDI_INTR_CLAIMED);
-}
-
-static uint_t
-vioscsi_config_handler(caddr_t arg1, caddr_t arg2)
-{
-	cmn_err(CE_WARN, "%s: noop", __func__);
-	return (DDI_INTR_CLAIMED);
-}
-
-static int
-vioscsi_register_ints(vioscsi_softc_t sc)
-{
-	int ret;
-
-	struct virtio_int_handler vioscsi_conf_h = {
-		vioscsi_config_handler
-	};
-
-	struct virtio_int_handler virtio_scsi_intr_h[] = {
-		{ vioscsi_control_handler },
-		{ vioscsi_event_handler },
-		{ vioscsi_rqst_handler },
-		{ NULL },
-	};
-
-	ret = virtio_register_ints(&sc->vs_virtio,
-	    &vioscsi_conf_h, virtio_scsi_intr_h);
-
-	return (ret);
 }
 
 static int
@@ -1000,7 +897,7 @@ vioscsi_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **resultp)
 {
 	int	rval		= DDI_SUCCESS,
 		minor		= getminor((dev_t)arg);
-	vioscsi_softc_t sc;
+	vioscsi_softc_t		*sc;
 
 	if ((sc = ddi_get_soft_state(vioscsi_state,
 	    ddi_get_instance(dip))) == NULL) {
@@ -1023,66 +920,14 @@ vioscsi_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **resultp)
 	return (rval);
 }
 
-static void
-vioscsi_show_features(const char *prefix, uint32_t features)
-{
-	char	buf[512],
-		*bufp	= buf,
-		*bufend	= buf + sizeof (buf);
-
-	bufp += snprintf(bufp, bufend - bufp, prefix);
-
-	bufp += virtio_show_features(features, bufp, bufend - bufp);
-
-	bufp += snprintf(bufp, bufend - bufp, "Vioscsi (0x%x ", features);
-
-	if (features & VIRTIO_SCSI_F_INOUT)
-		bufp += snprintf(bufp, bufend - bufp, "INOUT ");
-	if (features & VIRTIO_SCSI_F_HOTPLUG)
-		bufp += snprintf(bufp, bufend - bufp, "HOTPLUG ");
-	if (features & VIRTIO_SCSI_F_CHANGE)
-		bufp += snprintf(bufp, bufend - bufp, "CHANGE ");
-	if (features & VIRTIO_SCSI_F_T10_PI)
-		bufp += snprintf(bufp, bufend - bufp, "T10-PI ");
-
-	bufp += snprintf(bufp, bufend - bufp, ")");
-	*bufp = '\0';
-
-	cmn_err(CE_NOTE, "%s", buf);
-}
-
-
-static int
-vioscsi_dev_features(vioscsi_softc_t sc)
-{
-	uint32_t host_features;
-
-	host_features = virtio_negotiate_features(&sc->vs_virtio,
-	    VIRTIO_SCSI_F_INOUT | VIRTIO_SCSI_F_HOTPLUG |
-	    VIRTIO_SCSI_F_CHANGE | VIRTIO_SCSI_F_T10_PI |
-	    VIRTIO_F_RING_INDIRECT_DESC);
-
-	vioscsi_show_features("Host features: ", host_features);
-	vioscsi_show_features("Negotiated features: ",
-	    sc->vs_virtio.sc_features);
-
-	if (!(sc->vs_virtio.sc_features & VIRTIO_F_RING_INDIRECT_DESC)) {
-		dev_err(sc->vs_dip, CE_NOTE,
-		    "Host does not support RING_INDIRECT_DESC");
-	}
-
-	return (DDI_SUCCESS);
-}
-
 static int
 vioscsi_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 {
 	int			ret		 = DDI_SUCCESS,
-				instance,
-				indirect_count;
-	vioscsi_softc_t		sc;
-	struct virtio_softc	*vsc;
+				instance;
+	vioscsi_softc_t		*sc;
 	scsi_hba_tran_t		*hba_tran;
+	virtio_t		*vio;
 
 	instance = ddi_get_instance(devinfo);
 
@@ -1102,81 +947,52 @@ vioscsi_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	if (ret != DDI_SUCCESS)
 		return (ret);
 
+	if ((vio = virtio_init(devinfo, VIRTIO_SCSI_WANTED_FEATURES,
+	    B_TRUE)) == NULL) {
+		dev_err(devinfo, CE_WARN, "failed to start Virtio init");
+		return (DDI_FAILURE);
+	}
 	if (ddi_soft_state_zalloc(vioscsi_state, instance) != DDI_SUCCESS)
 		return (DDI_FAILURE);
 	if ((sc = ddi_get_soft_state(vioscsi_state, instance)) == NULL)
 		return (DDI_FAILURE);
 
-	vsc = &sc->vs_virtio;
+	sc->vs_virtio = vio;
 
 	/* ---- Duplicate for faster access / less typing ---- */
 	sc->vs_dip = devinfo;
-	vsc->sc_dev = devinfo;
 	list_create(&sc->vs_devs, sizeof (struct vioscsi_dev),
 	    offsetof(struct vioscsi_dev, vd_node));
 	mutex_init(&sc->vs_devs_mutex, NULL, MUTEX_DRIVER, NULL);
 
-	/* ---- map BAR0 ---- */
-	ret = ddi_regs_map_setup(devinfo, 1,
-	    (caddr_t *)&sc->vs_virtio.sc_io_addr, 0, 0, &virtio_scsi_acc_attr,
-	    &sc->vs_virtio.sc_ioh);
-
-	if (ret != DDI_SUCCESS) {
-		goto exit_sc;
-	}
-
-	virtio_device_reset(&sc->vs_virtio);
-	virtio_set_status(&sc->vs_virtio, VIRTIO_CONFIG_DEVICE_STATUS_ACK);
-	virtio_set_status(&sc->vs_virtio, VIRTIO_CONFIG_DEVICE_STATUS_DRIVER);
-
-	if (vioscsi_register_ints(sc)) {
-		goto enable_intrs_fail;
-	}
-
 	sc->vs_max_target = min(VIOSCSI_MAX_TARGET,
-	    virtio_read_device_config_2(&sc->vs_virtio,
-	    VIRTIO_SCSI_CFG_MAX_TARGET));
+	    virtio_dev_get16(vio, VIRTIO_SCSI_CFG_MAX_TARGET));
 
 	sc->vs_max_lun = min(VIOSCSI_MAX_LUN,
-	    virtio_read_device_config_4(&sc->vs_virtio,
-	    VIRTIO_SCSI_CFG_MAX_LUN));
+	    virtio_dev_get32(vio, VIRTIO_SCSI_CFG_MAX_LUN));
 
-	sc->vs_max_channel = virtio_read_device_config_4(&sc->vs_virtio,
-	    VIRTIO_SCSI_CFG_MAX_CHANNEL);
+	sc->vs_cdb_size = virtio_dev_get32(vio, VIRTIO_SCSI_CFG_CDB_SIZE);
 
-	sc->vs_max_req = sc->vs_max_lun *
-		virtio_read_device_config_4(&sc->vs_virtio,
-			VIRTIO_SCSI_CFG_CMD_PER_LUN);
+	sc->vs_max_seg = max(VIOSCSI_MIN_SEGS,
+	    virtio_dev_get32(vio, VIRTIO_SCSI_CFG_SEG_MAX));
 
-	sc->vs_cdb_size = virtio_read_device_config_4(&sc->vs_virtio,
-	    VIRTIO_SCSI_CFG_CDB_SIZE);
-
-	sc->vs_max_seg = virtio_read_device_config_4(&sc->vs_virtio,
-	    VIRTIO_SCSI_CFG_SEG_MAX);
-
-	if (vioscsi_dev_features(sc))
-		goto enable_intrs_fail;
-
-	/* allocate queues */
-
-	if (sc->vs_virtio.sc_features & VIRTIO_F_RING_INDIRECT_DESC) {
-		/* ---- 128 indirect descriptors seems to be enough ---- */
-		indirect_count = 128;
-	} else {
-		indirect_count = 0;
+	/* ---- allocate queues ---- */
+	if ((sc->vs_ctrl_vq = virtio_queue_alloc(vio, 0, "ctrl",
+	    vioscsi_control_handler, sc, B_FALSE, sc->vs_max_seg)) == NULL) {
+		goto fail;
+	}
+	if ((sc->vs_event_vq = virtio_queue_alloc(vio, 1, "event",
+	    vioscsi_event_handler, sc, B_FALSE, sc->vs_max_seg)) == NULL) {
+		goto fail;
+	}
+	if ((sc->vs_rqst_vq = virtio_queue_alloc(vio, 2, "io",
+	    vioscsi_rqst_handler, sc, B_FALSE, sc->vs_max_seg)) == NULL) {
+		goto fail;
 	}
 
-	if ((sc->vs_ctrl_vq = virtio_alloc_vq(&sc->vs_virtio, 0,
-	    0, indirect_count, "Virtio SCSI control queue")) == NULL) {
-		goto enable_intrs_fail;
-	}
-	if ((sc->vs_event_vq = virtio_alloc_vq(&sc->vs_virtio, 1,
-	    0, indirect_count, "Virtio SCSI event queue")) == NULL) {
-		goto release_control;
-	}
-	if ((sc->vs_rqst_vq = virtio_alloc_vq(&sc->vs_virtio, 2,
-	    0, indirect_count, "Virtio SCSI request queue")) == NULL) {
-		goto release_event;
+	if (virtio_init_complete(vio, 0) != DDI_SUCCESS) {
+		dev_err(devinfo, CE_WARN, "failed to complete Virtio init");
+		goto fail;
 	}
 
 	hba_tran = scsi_hba_tran_alloc(devinfo, SCSI_HBA_CANSLEEP);
@@ -1211,34 +1027,20 @@ vioscsi_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	    hba_tran, SCSI_HBA_TRAN_CLONE | SCSI_HBA_TRAN_CDB |
 	    SCSI_HBA_TRAN_SCB);
 	if (ret != DDI_SUCCESS) {
-		goto release_request;
+		goto fail;
 	}
 
 	ddi_report_dev(devinfo);
 
-	virtio_set_status(&sc->vs_virtio,
-	    VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK);
-	virtio_start_vq_intr(sc->vs_ctrl_vq);
-	virtio_start_vq_intr(sc->vs_event_vq);
-	virtio_start_vq_intr(sc->vs_rqst_vq);
-
-	ret = virtio_enable_ints(&sc->vs_virtio);
+	if (virtio_interrupts_enable(vio) != DDI_SUCCESS)
+		goto fail;
 
 	return (DDI_SUCCESS);
 
-release_request:
-	virtio_free_vq(sc->vs_rqst_vq);
-
-release_event:
-	virtio_free_vq(sc->vs_event_vq);
-
-release_control:
-	virtio_free_vq(sc->vs_ctrl_vq);
-
-enable_intrs_fail:
-	ddi_regs_map_free(&sc->vs_virtio.sc_ioh);
-
-exit_sc:
+fail:
+	if (vio != NULL)
+		(void) virtio_fini(vio, B_TRUE);
+	mutex_destroy(&sc->vs_devs_mutex);
 	ddi_soft_state_free(vioscsi_state, instance);
 	return (DDI_FAILURE);
 }
@@ -1251,7 +1053,7 @@ static int vioscsi_quiesce(dev_info_t *devinfo)
 static int
 vioscsi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 {
-	vioscsi_softc_t sc;
+	vioscsi_softc_t *sc;
 	int		instance;
 
 	instance = ddi_get_instance(dip);
@@ -1271,16 +1073,10 @@ vioscsi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 		return (DDI_FAILURE);
 	}
 
-	virtio_stop_vq_intr(sc->vs_rqst_vq);
-
-	virtio_release_ints(&sc->vs_virtio);
-
+	virtio_fini(sc->vs_virtio, B_FALSE);
 	if (scsi_hba_detach(dip) != DDI_SUCCESS)
 		return (DDI_FAILURE);
 
-	virtio_free_vq(sc->vs_rqst_vq);
-	virtio_free_vq(sc->vs_event_vq);
-	virtio_free_vq(sc->vs_ctrl_vq);
 	mutex_destroy(&sc->vs_devs_mutex);
 
 	ddi_soft_state_free(vioscsi_state, instance);
