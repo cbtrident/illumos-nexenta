@@ -3956,6 +3956,14 @@ static void i40e_parse_discover_capabilities(struct i40e_hw *hw, void *buff,
 	/* Always disable FCoE if compiled without the I40E_FCOE_ENA flag */
 	p->fcoe = FALSE;
 
+	valid_functions = p->valid_functions;
+	num_functions = 0;
+	while (valid_functions) {
+		if (valid_functions & 1)
+			num_functions++;
+		valid_functions >>= 1;
+	}
+
 	/* count the enabled ports (aka the "not disabled" ports) */
 	hw->num_ports = 0;
 	for (i = 0; i < 4; i++) {
@@ -3985,17 +3993,15 @@ static void i40e_parse_discover_capabilities(struct i40e_hw *hw, void *buff,
 						  &ocp_cfg_word0, TRUE, NULL);
 			if (status == I40E_SUCCESS &&
 			    (ocp_cfg_word0 & I40E_SR_OCP_ENABLED))
-				hw->num_ports = 4;
+				/* By all accounts, we cannot have more ports
+				 * than functions.  So we take the minimum
+				 * value between the number of detected
+				 * functions, and what we think is the minimum
+				 * value of ports.
+				 */
+				hw->num_ports = MIN(4, num_functions);
 			i40e_release_nvm(hw);
 		}
-	}
-
-	valid_functions = p->valid_functions;
-	num_functions = 0;
-	while (valid_functions) {
-		if (valid_functions & 1)
-			num_functions++;
-		valid_functions >>= 1;
 	}
 
 	/* partition id is 1-based, and functions are evenly spread
