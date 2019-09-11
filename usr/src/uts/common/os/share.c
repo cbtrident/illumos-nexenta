@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -609,8 +609,11 @@ nbl_share_conflict(vnode_t *vp, nbl_op_t op, caller_context_t *ct)
 			break;
 #endif
 		}
-		if (conflict)
+		if (conflict) {
+			DTRACE_PROBE1(conflict_shrl,
+			    struct shrlocklist *, shrl);
 			break;
+		}
 	}
 
 	mutex_exit(&vp->v_lock);
