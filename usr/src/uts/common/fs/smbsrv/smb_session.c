@@ -47,6 +47,16 @@ static volatile uint64_t smb_kids;
 uint32_t smb_keep_alive = SMB_PI_KEEP_ALIVE_MIN / 60;
 
 /*
+ * This is the maximum time we'll allow a "session" to exist with no
+ * authenticated smb_user_t objects on it.  This allows a client to
+ * logoff their "one and only" user session and then logon as some
+ * different user.  (There are some tests that do that.)  The same
+ * timeout mechanism also reduces the impact of clients that might
+ * open TCP connections but never authenticate.
+ */
+int smb_session_auth_tmo = 30; /* sec. */
+
+/*
  * There are many smbtorture test cases that send
  * racing requests, and where the tests fail if we
  * don't execute them in exactly the order sent.
@@ -485,6 +495,7 @@ void
 smb_session_receiver(smb_session_t *session)
 {
 	int	rc = 0;
+	timeout_id_t tmo = NULL;
 
 	SMB_SESSION_VALID(session);
 
@@ -504,6 +515,8 @@ smb_session_receiver(smb_session_t *session)
 
 	smb_rwx_rwenter(&session->s_lock, RW_WRITER);
 	session->s_state = SMB_SESSION_STATE_ESTABLISHED;
+	session->s_auth_tmo = timeout((tmo_func_t)smb_session_disconnect,
+	    session, SEC_TO_TICK(smb_session_auth_tmo));
 	smb_rwx_rwexit(&session->s_lock);
 
 	(void) smb_session_reader(session);
@@ -511,7 +524,13 @@ smb_session_receiver(smb_session_t *session)
 	smb_rwx_rwenter(&session->s_lock, RW_WRITER);
 	if (session->s_state != SMB_SESSION_STATE_TERMINATED)
 		session->s_state = SMB_SESSION_STATE_DISCONNECTED;
+	tmo = session->s_auth_tmo;
+	session->s_auth_tmo = NULL;
 	smb_rwx_rwexit(&session->s_lock);
+
+	/* Timeout callback takes s_lock. See untimeout(9f) */
+	if (tmo != NULL)
+		(void) untimeout(tmo);
 
 	smb_soshutdown(session->sock);
 
