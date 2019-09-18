@@ -23,8 +23,8 @@
 
 #
 # DESCRIPTION:
-#	Verify 'zfs list -t all -o name,origin,clones' prints the correct
-#	clone information
+#	Verify 'zfs list -t all -o name,origin,clones' and 'zfs get clones'
+#	prints the correct clones information
 #
 # STRATEGY:
 #	1. Create datasets
@@ -214,26 +214,50 @@ for ds in $datasets; do
 done
 log_must local_cleanup
 
-log_note "verify clone list truncated correctly"
+log_note "verify clones property for zfs list"
 typeset -i j=200
-# max_proplen depends on ZFS_MAXPROPLEN:
-# defined in usr/src/lib/libzfs/common/libzfs.h
-# with default value 2048
-typeset -i max_proplen=2048
-typeset -i no_clones=$((1 + max_proplen / j))
+typeset -i no_clones=$(( 128 + RANDOM % 128 ))
 typeset name=$(printf "%${j}s" | tr '[:space:]' 'x')
+typeset log_clones=$(mktemp -t log_clones.XXXXXX)
+typeset sort_clones=$(mktemp -t sort_clones.XXXXXX)
 i=1
 fs=$TESTPOOL/$TESTFS1
 log_must zfs create $fs
 log_must zfs snapshot $fs@snap
-while ((i != no_clones)); do
+while (( i <= no_clones )); do
 	log_must zfs clone $fs@snap $fs/$TESTCLONE.$name.$i
+	log_must eval "echo $fs/$TESTCLONE.$name.$i >> $log_clones"
 	((i=i+1))
 done
-clone_list=$(zfs list -o clones $fs@snap)
-char_count=$(echo "$clone_list" | tail -1 | wc | awk '{print $3}')
-[[ $char_count -eq $max_proplen ]] || \
-    log_fail "Clone list not truncated correctly. Unexpected character count" \
-        "$char_count"
+log_must eval "sort $log_clones > $sort_clones"
+rm -f $log_clones
+typeset list_cnt=$(zfs list -H -o clones $fs@snap | nawk -F',' '{print NF}')
+if (( list_cnt != no_clones )); then
+	log_fail "'zfs list -o clones' output is truncated." \
+	    "Expected number of clones: $no_clones, actual: $list_cnt"
+fi
+log_note "verify list of clones for zfs list"
+typeset list_clones=$(mktemp -t list_clones.XXXXXX)
+log_must eval "zfs list -H -o clones $fs@snap | tr ',' '\n' | sort > $list_clones"
+if ! cmp -s $sort_clones $list_clones; then
+	log_fail "'zfs list -o clones' output does not match the expected"
+	    "result: $(diff -u $sort_clones $list_clones)"
+fi
+rm -f $list_clones
+log_note "verify clones property for zfs get"
+typeset get_cnt=$(zfs get -H -o value clones $fs@snap | nawk -F',' '{print NF}')
+if (( get_cnt != no_clones )); then
+	log_fail "zfs get clones output is truncated." \
+	    "Expected number of clones: $no_clones, actual: $get_cnt"
+fi
+log_note "verify list of clones for zfs get"
+typeset get_clones=$(mktemp -t get_clones.XXXXXX)
+log_must eval "zfs get -H -o value clones $fs@snap | tr ',' '\n' | sort > $get_clones"
+if ! cmp -s $sort_clones $get_clones; then
+	log_fail "'zfs get clones' output does not match the expected"
+	    "result: $(diff -u $sort_clones $get_clones)"
+fi
+rm -f $get_clones $sort_clones
 
-log_pass "'zfs list -o name,origin,clones prints the correct clone information."
+log_pass "'zfs list -o name,origin,clones' and 'zfs get clones'" \
+    "prints the correct information."

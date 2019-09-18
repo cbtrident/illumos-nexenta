@@ -28,7 +28,7 @@
  * Copyright (c) 2013 Steven Hartland.  All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>.
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <assert.h>
@@ -1604,7 +1604,27 @@ get_callback(zfs_handle_t *zhp, void *data)
 		    pl == cbp->cb_proplist)
 			continue;
 
-		if (pl->pl_prop != ZPROP_INVAL) {
+		if (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT &&
+		    pl->pl_prop == ZFS_PROP_CLONES) {
+			char *strclones = NULL;
+			uint64_t numclones = zfs_prop_get_int(zhp,
+			    ZFS_PROP_NUMCLONES);
+			sourcetype = ZPROP_SRC_NONE;
+			strval = "-";
+			if (numclones > 0) {
+				size_t lenclones = numclones * \
+				    ZFS_MAX_DATASET_NAME_LEN;
+				strclones = safe_malloc(lenclones);
+				if (zfs_prop_get(zhp, pl->pl_prop, strclones,
+				    lenclones, NULL, NULL, 0, B_FALSE) == 0)
+					strval = strclones;
+			}
+			zprop_print_one_property(zfs_get_name(zhp), cbp,
+			    zfs_prop_to_name(pl->pl_prop),
+			    strval, sourcetype, NULL, NULL);
+			if (strclones != NULL)
+				free(strclones);
+		} else if (pl->pl_prop != ZPROP_INVAL) {
 			if (zfs_prop_get(zhp, pl->pl_prop, buf,
 			    sizeof (buf), &sourcetype, source,
 			    sizeof (source),
@@ -3061,6 +3081,7 @@ print_dataset(zfs_handle_t *zhp, list_cbdata_t *cb)
 	nvlist_t *userprops = zfs_get_user_props(zhp);
 	nvlist_t *propval;
 	char *propstr;
+	char *strclones = NULL;
 	boolean_t right_justify;
 
 	for (; pl != NULL; pl = pl->pl_next) {
@@ -3077,6 +3098,20 @@ print_dataset(zfs_handle_t *zhp, list_cbdata_t *cb)
 			(void) strlcpy(property, zfs_get_name(zhp),
 			    sizeof (property));
 			propstr = property;
+			right_justify = zfs_prop_align_right(pl->pl_prop);
+		} else if (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT &&
+		    pl->pl_prop == ZFS_PROP_CLONES) {
+			uint64_t numclones = zfs_prop_get_int(zhp,
+			    ZFS_PROP_NUMCLONES);
+			propstr = "-";
+			if (numclones > 0) {
+				size_t lenclones = numclones * \
+				    ZFS_MAX_DATASET_NAME_LEN;
+				strclones = safe_malloc(lenclones);
+				if (zfs_prop_get(zhp, pl->pl_prop, strclones,
+				    lenclones, NULL, NULL, 0, B_FALSE) == 0)
+					propstr = strclones;
+			}
 			right_justify = zfs_prop_align_right(pl->pl_prop);
 		} else if (pl->pl_prop != ZPROP_INVAL) {
 			if (zfs_prop_get(zhp, pl->pl_prop, property,
@@ -3121,6 +3156,9 @@ print_dataset(zfs_handle_t *zhp, list_cbdata_t *cb)
 			(void) printf("%*s", pl->pl_width, propstr);
 		else
 			(void) printf("%-*s", pl->pl_width, propstr);
+
+		if (strclones != NULL)
+			free(strclones);
 	}
 
 	(void) printf("\n");
