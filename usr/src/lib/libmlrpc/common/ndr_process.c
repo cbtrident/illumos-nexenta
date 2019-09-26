@@ -21,8 +21,9 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
  * Copyright 2012 Milan Jurik. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -1266,6 +1267,8 @@ ndr_outer_string(ndr_ref_t *outer_ref)
 			return (0);		/* error already set */
 
 		/*
+		 * Enforce bounds on: size_is, first_is, length_is
+		 *
 		 * In addition to the first_is check, we used to check that
 		 * size_is or size_is-1 was equal to length_is but Windows95
 		 * doesn't conform to this "rule" (see variable part below).
@@ -1280,8 +1283,16 @@ ndr_outer_string(ndr_ref_t *outer_ref)
 		 * size_is was the maximum path length rather than being
 		 * related to length_is.
 		 */
+		if (size_is > NDR_STRING_MAX) {
+			NDR_SET_ERROR(outer_ref, NDR_ERR_STRING_SIZING);
+			return (0);
+		}
 		if (first_is != 0) {
 			NDR_SET_ERROR(outer_ref, NDR_ERR_STRING_SIZING);
+			return (0);
+		}
+		if (length_is > size_is) {
+			NDR_SET_ERROR(outer_ref, NDR_ERR_STRLEN);
 			return (0);
 		}
 
