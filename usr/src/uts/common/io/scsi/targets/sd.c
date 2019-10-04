@@ -86,6 +86,7 @@ int sd_rot_delay			= 4; /* Default 4ms Rotation delay */
 int sd_qfull_throttle_enable		= TRUE;
 
 int sd_retry_on_reservation_conflict	= 1;
+int sd_retry_on_bus_reset		= 1;
 int sd_reinstate_resv_delay		= SD_REINSTATE_RESV_DELAY;
 int sd_enable_lun_reset			= FALSE;
 
@@ -18823,6 +18824,21 @@ sd_pkt_reason_cmd_tran_err(struct sd_lun *un, struct buf *bp,
 	}
 
 	SD_UPDATE_RESERVATION_STATUS(un, pktp);
+
+	/*
+	 * Abandon retries in case of bus reset if not enabled.
+	 * The actual status of the SCSI command can be undefined here.
+	 * Given that bus reset may take long and lun offline delays may be
+	 * long, it may be important to supply the client with the result
+	 * immediately to prevent from loss of data integrity.
+	 */
+	if ((pktp->pkt_statistics & STAT_BUS_RESET) != 0 &&
+	    sd_retry_on_bus_reset == 0) {
+		SD_ERROR(SD_LOG_IO, un,
+		    "sd_handle_tran_error: Bus Reset\n");
+		sd_return_failed_command(un, bp, EIO);
+		return;
+	}
 
 	sd_retry_command(un, bp, (SD_RETRIES_STANDARD | SD_RETRIES_ISOLATE),
 	    sd_print_retry_msg, NULL, EIO, SD_RESTART_TIMEOUT, NULL);
