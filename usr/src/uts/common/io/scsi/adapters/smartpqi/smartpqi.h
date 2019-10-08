@@ -64,6 +64,11 @@ extern "C" {
 #define	SYNC_CMDS_TIMEOUT_SECS			5
 #define	IO_SPACE				1
 #define	PQI_MAXTGTS				256
+/*
+ * Space needed in characters to display a 64bit value as hexidecimal plus
+ * a NULL character
+ */
+#define	DISPLAY_64BIT_LENGTH			17
 
 #define	PQI_MIN_MSIX_VECTORS			1
 #define	PQI_MAX_MSIX_VECTORS			16

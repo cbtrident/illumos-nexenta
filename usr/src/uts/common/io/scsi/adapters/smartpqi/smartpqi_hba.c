@@ -959,9 +959,10 @@ create_phys_lun(pqi_state_t s, pqi_device_t d,
 	char		**compatible	= NULL;
 	char		*nodename	= NULL;
 	char		*scsi_binding_set;
+	char		*guid_ptr;
 	int		ncompatible	= 0;
 	dev_info_t	*dip;
-	char		*wwn_str;
+	char		*wwn_str = NULL;
 	int		rval;
 
 	/* ---- get the 'scsi-binding-set' property ---- */
@@ -1013,11 +1014,17 @@ create_phys_lun(pqi_state_t s, pqi_device_t d,
 	    d->pd_wwid);
 	rval = ndi_prop_update_string(DDI_DEV_T_NONE, dip,
 	    SCSI_ADDR_PROP_TARGET_PORT, wwn_str);
-	kmem_free(wwn_str, MAX_NAME_PROP_SIZE);
 	if (rval != DDI_PROP_SUCCESS)
 		goto free_devi;
 
-	if (ddi_prop_update_string(DDI_DEV_T_NONE, dip, NDI_GUID, d->pd_guid) !=
+	if (d->pd_guid != NULL) {
+		guid_ptr = d->pd_guid;
+	} else {
+		(void) snprintf(wwn_str, MAX_NAME_PROP_SIZE, "%" PRIx64,
+		    d->pd_wwid);
+		guid_ptr = wwn_str;
+	}
+	if (ndi_prop_update_string(DDI_DEV_T_NONE, dip, NDI_GUID, guid_ptr) !=
 	    DDI_PROP_SUCCESS) {
 		goto free_devi;
 	}
@@ -1034,9 +1041,13 @@ create_phys_lun(pqi_state_t s, pqi_device_t d,
 		*childp = dip;
 
 	scsi_hba_nodename_compatible_free(nodename, compatible);
+	kmem_free(wwn_str, MAX_NAME_PROP_SIZE);
+
 	return (B_TRUE);
 
 free_devi:
+	if (wwn_str != NULL)
+		kmem_free(wwn_str, MAX_NAME_PROP_SIZE);
 	ndi_prop_remove_all(dip);
 	(void) ndi_devi_free(dip);
 	d->pd_dip = NULL;
@@ -1055,8 +1066,8 @@ create_virt_lun(pqi_state_t s, pqi_device_t d, struct scsi_inquiry *inq,
 	int		rval;
 	mdi_pathinfo_t	*pip		= NULL;
 	char		*guid_ptr;
-	char		wwid_str[17];
-	char		tgt_str[17];
+	char		wwid_str[DISPLAY_64BIT_LENGTH];
+	char		tgt_str[DISPLAY_64BIT_LENGTH];
 	int		instance = ddi_get_instance(s->s_dip);
 	dev_info_t	*lun_dip;
 	char		*old_guid;
