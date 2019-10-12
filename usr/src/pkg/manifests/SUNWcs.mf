@@ -62,6 +62,9 @@ dir path=etc/lib group=sys
 dir path=etc/logadm.d group=sys
 dir path=etc/mail group=mail
 dir path=etc/net group=sys
+dir path=etc/net-snmp
+dir path=etc/net-snmp/snmp
+dir path=etc/net-snmp/snmp/mibs
 dir path=etc/net/ticlts group=sys
 dir path=etc/net/ticots group=sys
 dir path=etc/net/ticotsord group=sys
@@ -393,6 +396,9 @@ file path=etc/mailcap preserve=true
 file path=etc/mime.types preserve=true
 file path=etc/mnttab group=root mode=0444 preserve=true
 file path=etc/motd group=sys preserve=true
+file path=etc/net-snmp/snmp/mibs/NEXENTA-MIB.txt mode=0444
+file path=etc/net-snmp/snmp/mibs/NEXENTA-SSM-MIB.txt mode=0444
+file path=etc/net-snmp/snmp/mibs/SUN-MIB.txt mode=0444
 file path=etc/net/ticlts/hosts group=sys
 file path=etc/net/ticlts/services group=sys preserve=true
 file path=etc/net/ticots/hosts group=sys

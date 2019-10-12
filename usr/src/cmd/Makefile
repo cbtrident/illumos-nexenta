@@ -26,7 +26,7 @@
 # Copyright (c) 2013 DEY Storage Systems, Inc. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Toomas Soome <tsoome@me.com>
-# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 # Copyright 2018 Gary Mills
 #
 
@@ -381,6 +381,7 @@ COMMON_SUBDIRS=		\
 	smbios		\
 	smbsrv		\
 	smserverd	\
+	snmp		\
 	soelim		\
 	sort		\
 	spell		\

@@ -22,8 +22,9 @@
 
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
 #
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+
 #
 # The default for payload-bearing actions in this package is to appear in the
 # global zone only.  See the include file for greater detail, as well as
@@ -48,9 +49,6 @@ dir path=etc/fm/fmd group=sys variant.opensolaris.zone=__NODEFAULT
 # Our additional /etc/logadm.conf entries are common to global and local zones
 #
 dir path=etc/logadm.d group=sys variant.opensolaris.zone=__NODEFAULT
-dir path=etc/net-snmp variant.opensolaris.zone=__NODEFAULT
-dir path=etc/net-snmp/snmp variant.opensolaris.zone=__NODEFAULT
-dir path=etc/net-snmp/snmp/mibs variant.opensolaris.zone=__NODEFAULT
 #
 # Our kernel driver is global zone only
 #

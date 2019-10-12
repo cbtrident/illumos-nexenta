@@ -13,29 +13,17 @@
 # Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
-LIBRARY=	snmp_mod
-
-MIBS=		NEXENTA-SSM-MIB.txt
+MIBS=		NEXENTA-MIB.txt \
+		SUN-MIB.txt
 
 include		$(SRC)/cmd/snmp/Makefile.snmp
-include		../Makefile.com
-
-OBJECTS=	snmp_mod.o \
-		ssm_disk.o
-
-CFLAGS +=	$(C_PICFLAGS)
-
-LDLIBS +=	-lavl -lnetsnmp -lnetsnmpagent -lnvpair
-LDLIBS +=	-L$(ROOT)/usr/lib/fm -R/usr/lib/fm -ltopo
 
 .KEEP_STATE:
 
-all:		$(DYNLIB)
+all:		$(MIBS)
 
-install:	all				\
-		$(ROOTLIBSYSEVENTDIR)		\
-		$(ROOTLIBDIR)			\
-		$(ROOTLIBS)			\
-		$(ROOTMIBS)
+clean:
 
-include		../Makefile.targ
+install:	all $(ROOTMIBS)
+
+include		$(SRC)/cmd/Makefile.targ

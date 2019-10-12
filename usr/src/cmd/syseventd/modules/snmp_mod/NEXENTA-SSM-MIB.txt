@@ -1,0 +1,109 @@
+--
+-- This file and its contents are supplied under the terms of the
+-- Common Development and Distribution License ("CDDL"), version 1.0.
+-- You may only use this file in accordance with the terms of version
+-- 1.0 of the CDDL.
+--
+-- A full copy of the text of the CDDL should have accompanied this
+-- source.  A copy of the CDDL is also available via the Internet at
+-- http://www.illumos.org/license/CDDL.
+--
+
+-- Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
+
+NEXENTA-SSM-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	ssm
+		FROM NEXENTA-MIB
+	MODULE-IDENTITY, NOTIFICATION-TYPE, OBJECT-TYPE, Unsigned32
+		FROM SNMPv2-SMI
+	TEXTUAL-CONVENTION, DisplayString
+		FROM SNMPv2-TC;
+
+nexentaSsmMIB MODULE-IDENTITY
+	LAST-UPDATED	"201907190000Z"
+	ORGANIZATION	"Nexenta by DDN, Inc."
+	CONTACT-INFO	"Support"
+	DESCRIPTION	"MIB exposing sysevents"
+	REVISION	"201907190000Z"
+	DESCRIPTION	"Initial revision"
+	::= { ssm 1 }
+
+nexentaSsmTraps OBJECT IDENTIFIER ::= { nexentaSsmMIB 1 0 }
+nexentaSsmObjects OBJECT IDENTIFIER ::= { nexentaSsmMIB 2 }
+
+NexentaSsmDiskAction ::= TEXTUAL-CONVENTION
+	STATUS          current
+	DESCRIPTION	"Represents disk action"
+	SYNTAX		INTEGER {
+				add(0),
+				remove(1)
+			}
+
+nexentaSsmDisk OBJECT IDENTIFIER ::= { nexentaSsmObjects 1 }
+
+nexentaSsmDiskHostname OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"Trap hostname"
+	::= { nexentaSsmDisk 1 }
+
+nexentaSsmDiskAction OBJECT-TYPE
+	SYNTAX		NexentaSsmDiskAction
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"Disk action"
+	::= { nexentaSsmDisk 2 }
+
+nexentaSsmDiskDevname OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"Disk devname"
+	::= { nexentaSsmDisk 3 }
+
+nexentaSsmDiskEnclosureId OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"Disk enclosure ID"
+	::= { nexentaSsmDisk 4 }
+
+nexentaSsmDiskSlotId OBJECT-TYPE
+	SYNTAX		INTEGER
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"Disk slot ID"
+	::= { nexentaSsmDisk 5 }
+
+nexentaSsmDiskEnclosureName OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"Disk enclosure name"
+	::= { nexentaSsmDisk 6 }
+
+nexentaSsmDiskSlotName OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"Disk slot name"
+	::= { nexentaSsmDisk 7 }
+
+nexentaSsmDiskTrap NOTIFICATION-TYPE
+	OBJECTS {
+		nexentaSsmDiskHostname,
+		nexentaSsmDiskAction,
+		nexentaSsmDiskDevname,
+		nexentaSsmDiskEnclosureId,
+		nexentaSsmDiskSlotId,
+		nexentaSsmDiskEnclosureName,
+		nexentaSsmDiskSlotName
+	}
+	STATUS		current
+	DESCRIPTION	"Trap notification that a disk event has occured"
+	::= { nexentaSsmTraps 1 }
+
+END

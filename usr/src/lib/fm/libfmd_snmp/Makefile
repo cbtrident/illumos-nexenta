@@ -29,7 +29,7 @@ include ../Makefile.lib
 FMHDRS = fmd_snmp.h
 HDRDIR = common
 
-SUBDIRS = $(MACH) 
+SUBDIRS = $(MACH)
 $(BUILD64)SUBDIRS += $(MACH64)
 
 MIBFILES = SUN-FM-MIB.mib SUN-IREPORT-MIB.mib
@@ -38,7 +38,6 @@ ROOTNETSNMPMIBDIR = $(ROOT)/etc/net-snmp/snmp/mibs
 ROOTMIBS = $(MIBFILES:%=$(ROOTNETSNMPMIBDIR)/%)
 
 $(ROOTMIBS) := FILEMODE = 0644
-$(ROOTNETSNMPMIBDIR) := DIRMODE = 0755
 
 all := TARGET = all
 clean := TARGET = clean
@@ -54,15 +53,12 @@ install: install_h install_mibs .WAIT $(SUBDIRS)
 
 install_h: $(ROOTFMHDRS)
 
-install_mibs: $(ROOTNETSNMPMIBDIR) $(ROOTMIBS)
+install_mibs: $(ROOTMIBS)
 
 check: $(CHECKHDRS)
 
 $(SUBDIRS): FRC
 	@cd $@; pwd; $(MAKE) $(TARGET)
-
-$(ROOTNETSNMPMIBDIR):
-	$(INS.dir)
 
 $(ROOTNETSNMPMIBDIR)/%: mibs/%
 	$(INS.file)

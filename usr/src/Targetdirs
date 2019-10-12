@@ -26,7 +26,7 @@
 # Copyright 2012 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
-# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 # Copyright 2017 RackTop Systems.
 #
 
@@ -138,6 +138,7 @@ DIRS= \
 	/etc/mail/cf/sh  \
 	/etc/net-snmp \
 	/etc/net-snmp/snmp \
+	/etc/net-snmp/snmp/mibs \
 	/etc/opt  \
 	/etc/rc0.d  \
 	/etc/rc1.d  \
