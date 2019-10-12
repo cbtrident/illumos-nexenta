@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2011-2020 Tintri by DDN, Inc.  All rights reserved.
+ * Copyright 2011-2021 Tintri by DDN, Inc.  All rights reserved.
  * Copyright 2020 RackTop Systems, Inc.
  */
 
@@ -1843,12 +1843,6 @@ typedef struct smb_request {
 	struct smb_request	*sr_postwork;
 
 	list_node_t		sr_waiters;	/* smb_notify.c */
-
-	/* Info from session service header */
-	uint32_t		sr_req_length; /* Excluding NBT header */
-
-	/* Request buffer excluding NBT header */
-	void			*sr_request_buf;
 
 	struct mbuf_chain	command;
 	struct mbuf_chain	reply;

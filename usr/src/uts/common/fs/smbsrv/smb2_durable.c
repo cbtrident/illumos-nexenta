@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2017-2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -56,7 +56,10 @@ uint32_t smb2_res_max_timeout = 300 * MILLISEC;	/* mSec. */
 
 uint32_t smb2_persist_timeout = 300 * MILLISEC;	/* mSec. */
 
-/* Max. size of the file used to store a CA handle. */
+/*
+ * Max. size of the file used to store a CA handle.
+ * Don't adjust this while the server is running.
+ */
 static uint32_t smb2_dh_max_cah_size = 64 * 1024;
 static uint32_t smb2_ca_info_version = 1;
 
@@ -77,8 +80,9 @@ struct nvlk {
 
 static void smb2_dh_import_share(void *);
 static smb_ofile_t *smb2_dh_import_handle(smb_request_t *, smb_node_t *,
-    uint64_t);
-static int smb2_dh_read_nvlist(smb_request_t *, smb_node_t *, struct nvlist **);
+    char *, uint64_t);
+static int smb2_dh_read_nvlist(smb_request_t *, smb_node_t *,
+    char *, struct nvlist **);
 static int smb2_dh_import_cred(smb_ofile_t *, char *);
 
 #define	DH_SN_SIZE 24	/* size of DH stream name buffers */
@@ -301,6 +305,7 @@ smb2_dh_import_share(void *arg)
 	smb_node_t	*snode;
 	cred_t		*kcr = zone_kcred();
 	smb_streaminfo_t *str_info = NULL;
+	char		*nvl_buf = NULL;
 	uint64_t	id;
 	smb_node_t	*str_node;
 	smb_odir_t	*od = NULL;
@@ -327,7 +332,6 @@ smb2_dh_import_share(void *arg)
 	/*
 	 * Create a temporary tree connect
 	 */
-	sr->arg.tcon.path = shr->shr_name;
 	sr->tid_tree = smb_tree_alloc(sr, shr, shr->shr_root_node,
 	    ACE_ALL_PERMS, 0);
 	if (sr->tid_tree == NULL) {
@@ -339,11 +343,9 @@ smb2_dh_import_share(void *arg)
 
 	/*
 	 * Get the buffers we'll use to read CA handle data.
-	 * Stash in sr_request_buf for smb2_dh_import_handle().
-	 * Also a buffer for the stream name info.
+	 * Also get a buffer for the stream name info.
 	 */
-	sr->sr_req_length = smb2_dh_max_cah_size;
-	sr->sr_request_buf = kmem_alloc(sr->sr_req_length, KM_SLEEP);
+	nvl_buf = kmem_alloc(smb2_dh_max_cah_size, KM_SLEEP);
 	str_info = kmem_alloc(sizeof (smb_streaminfo_t), KM_SLEEP);
 
 	/*
@@ -397,7 +399,7 @@ smb2_dh_import_share(void *arg)
 			    shr->shr_name, str_info->si_name, rc);
 			continue;
 		}
-		of = smb2_dh_import_handle(sr, str_node, id);
+		of = smb2_dh_import_handle(sr, str_node, nvl_buf, id);
 		smb_node_release(str_node);
 		if (of != NULL) {
 			smb_ofile_release(of);
@@ -416,7 +418,8 @@ out:
 
 	if (str_info != NULL)
 		kmem_free(str_info, sizeof (smb_streaminfo_t));
-	/* Let smb_request_free clean up sr->sr_request_buf */
+	if (nvl_buf != NULL)
+		kmem_free(nvl_buf, smb2_dh_max_cah_size);
 
 	/*
 	 * We did a (temporary, internal) tree connect above,
@@ -445,7 +448,7 @@ out:
  */
 static smb_ofile_t *
 smb2_dh_import_handle(smb_request_t *sr, smb_node_t *str_node,
-    uint64_t persist_id)
+    char *nvl_buf, uint64_t persist_id)
 {
 	uint8_t		client_uuid[UUID_LEN];
 	smb_tree_t	*tree = sr->tid_tree;
@@ -478,7 +481,7 @@ smb2_dh_import_handle(smb_request_t *sr, smb_node_t *str_node,
 	/*
 	 * Read and unpack the NVL
 	 */
-	rc = smb2_dh_read_nvlist(sr, str_node, &nvl);
+	rc = smb2_dh_read_nvlist(sr, str_node, nvl_buf, &nvl);
 	if (rc != 0)
 		return (NULL);
 
@@ -821,7 +824,7 @@ errout:
 
 static int
 smb2_dh_read_nvlist(smb_request_t *sr, smb_node_t *node,
-    struct nvlist **nvlpp)
+    char *fbuf, struct nvlist **nvlpp)
 {
 	smb_attr_t	attr;
 	iovec_t		iov;
@@ -841,7 +844,7 @@ smb2_dh_read_nvlist(smb_request_t *sr, smb_node_t *node,
 	}
 
 	if (attr.sa_vattr.va_size < 4 ||
-	    attr.sa_vattr.va_size > sr->sr_req_length) {
+	    attr.sa_vattr.va_size > smb2_dh_max_cah_size) {
 		cmn_err(CE_NOTE, "CA import (%s/%s) bad size=%" PRIu64,
 		    tree->t_resource, node->od_name,
 		    (uint64_t)attr.sa_vattr.va_size);
@@ -850,7 +853,7 @@ smb2_dh_read_nvlist(smb_request_t *sr, smb_node_t *node,
 	flen = (size_t)attr.sa_vattr.va_size;
 
 	bzero(&uio, sizeof (uio));
-	iov.iov_base = sr->sr_request_buf;
+	iov.iov_base = fbuf;
 	iov.iov_len = flen;
 	uio.uio_iov = &iov;
 	uio.uio_iovcnt = 1;
@@ -869,7 +872,7 @@ smb2_dh_read_nvlist(smb_request_t *sr, smb_node_t *node,
 		return (EIO);
 	}
 
-	rc = nvlist_unpack(sr->sr_request_buf, flen, nvlpp, KM_SLEEP);
+	rc = nvlist_unpack(fbuf, flen, nvlpp, KM_SLEEP);
 	if (rc != 0) {
 		cmn_err(CE_NOTE, "CA import (%s/%s) unpack, rc=%d",
 		    tree->t_resource, node->od_name, rc);
