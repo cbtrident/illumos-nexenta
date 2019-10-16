@@ -28,6 +28,10 @@
 	file.
 -->
 
+<!--
+ Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+-->
+
 <service_bundle type='manifest' name='SUNWcsr:network-install'>
 
 <service
@@ -45,6 +49,14 @@
 		restart_on='none'
 		type='service'>
 		<service_fmri value='svc:/network/ip-interface-management' />
+	</dependency>
+
+	<dependency
+		name='devices'
+		grouping='require_all'
+		restart_on='none'
+		type='service'>
+		<service_fmri value='svc:/system/device/local' />
 	</dependency>
 
 	<dependent name='physical_default'
