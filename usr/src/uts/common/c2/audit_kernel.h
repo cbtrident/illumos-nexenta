@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef _BSM_AUDIT_KERNEL_H
@@ -204,10 +204,22 @@ typedef struct t_audit_sacl {
 
 typedef enum sacl_audit_ctrl {
 	SACL_AUDIT_NONE = 0,
+	SACL_AUDIT_BACKUP,
 	SACL_AUDIT_ON,
 	SACL_AUDIT_ALL,
 	SACL_AUDIT_NO_SRC
 } sacl_audit_ctrl_t;
+
+#define	AU_SACL_NOTSET	(0x02000000L) /* use MAXIMUM_ALLOWED bit */
+#define	AU_SACL_MASK_NOTSET(sacl_mask)	\
+	((sacl_mask.tas_smask & AU_SACL_NOTSET) != 0)
+#define	AU_SACL_INIT_MASK(sacl_mask)	\
+	(sacl_mask.tas_smask = AU_SACL_NOTSET)
+#define	AU_SACL_CLEAR_MASK(sacl_mask)	\
+{					\
+	(sacl_mask).tas_smask = 0;	\
+	(sacl_mask).tas_fmask = 0;	\
+}
 
 /*
  * The structure t_audit_data hangs off of the thread structure. It contains

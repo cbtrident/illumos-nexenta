@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -766,6 +767,8 @@ typedef struct vsecattr {
 #define	VSA_ACECNT		0x0020
 #define	VSA_ACE_ALLTYPES	0x0040
 #define	VSA_ACE_ACLFLAGS	0x0080	/* get/set ACE ACL flags */
+#define	VSA_ACE_SYS		0x0100  /* setting SACL */
+#define	VSA_ACE_NOSACL		0x0200	/* caller can't handle SACLs */
 
 /*
  * Structure used by various vnode operations to determine

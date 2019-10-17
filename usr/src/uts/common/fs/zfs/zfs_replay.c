@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -339,7 +340,11 @@ zfs_replay_create_acl(void *arg1, void *arg2, boolean_t byteswap)
 			xva.xva_vattr.va_mask |= AT_XVATTR;
 			zfs_replay_xvattr(lrattr, &xva);
 		}
-		vsec.vsa_mask = VSA_ACE | VSA_ACE_ACLFLAGS;
+		/*
+		 * SACL inheritance happened before this was commited to log.
+		 * Set VSA_ACE_SYS to make sure it doesn't happen again.
+		 */
+		vsec.vsa_mask = VSA_ACE | VSA_ACE_ACLFLAGS | VSA_ACE_SYS;
 		vsec.vsa_aclentp = (caddr_t)(lracl + 1) + xvatlen;
 		vsec.vsa_aclcnt = lracl->lr_aclcnt;
 		vsec.vsa_aclentsz = lracl->lr_acl_bytes;
@@ -370,7 +375,11 @@ zfs_replay_create_acl(void *arg1, void *arg2, boolean_t byteswap)
 			xvatlen = ZIL_XVAT_SIZE(lrattr->lr_attr_masksize);
 			zfs_replay_xvattr(lrattr, &xva);
 		}
-		vsec.vsa_mask = VSA_ACE | VSA_ACE_ACLFLAGS;
+		/*
+		 * SACL inheritance happened before this was commited to log.
+		 * Set VSA_ACE_SYS to make sure it doesn't happen again.
+		 */
+		vsec.vsa_mask = VSA_ACE | VSA_ACE_ACLFLAGS | VSA_ACE_SYS;
 		vsec.vsa_aclentp = (caddr_t)(lracl + 1) + xvatlen;
 		vsec.vsa_aclcnt = lracl->lr_aclcnt;
 		vsec.vsa_aclentsz = lracl->lr_acl_bytes;

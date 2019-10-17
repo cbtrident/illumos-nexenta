@@ -145,6 +145,7 @@ do_lib1() {
 
 for lib in \
   libavl \
+  libnsl \
   libuutil \
   libcmdutils \
   libidmap \

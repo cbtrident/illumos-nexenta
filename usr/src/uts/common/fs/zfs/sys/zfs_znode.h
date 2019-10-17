@@ -22,7 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_SYS_FS_ZFS_ZNODE_H
@@ -88,6 +88,7 @@ extern "C" {
 #define	ZFS_ACL_AUTO_INHERIT	0x40		/* ACL should be inherited */
 #define	ZFS_BONUS_SCANSTAMP	0x80		/* Scanstamp in bonus area */
 #define	ZFS_NO_EXECS_DENIED	0x100		/* exec was given to everyone */
+#define	ZFS_ACL_NO_AUDIT_ACE	0x200		/* ACL has no AUDIT ACEs */
 
 #define	SA_ZPL_ATIME(z)		z->z_attr_table[ZPL_ATIME]
 #define	SA_ZPL_MTIME(z)		z->z_attr_table[ZPL_MTIME]

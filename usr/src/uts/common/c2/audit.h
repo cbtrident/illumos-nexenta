@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -41,6 +41,11 @@ extern "C" {
 #include <sys/msg.h>	/* for msqid_ds structure */
 #include <sys/atomic.h>	/* using atomics */
 #include <sys/secflags.h>
+#ifndef _KERNEL
+#include <bsm/audit_types.h>
+#else
+#include <c2/audit_types.h>
+#endif
 
 /*
  * Audit conditions, statements reguarding what's to be done with
@@ -81,29 +86,6 @@ extern "C" {
 #define	PAD_FAILURE	0x8000		/* fail audit event */
 #define	PAD_SPRIVUSE	0x0080		/* successfully used privileged */
 #define	PAD_FPRIVUSE	0x0100		/* failed use of privileged */
-
-/*
- * Some typedefs for the fundamentals
- */
-typedef uint_t au_asid_t;
-typedef uint_t  au_class_t;
-typedef ushort_t au_event_t;
-typedef ushort_t au_emod_t;
-typedef uid_t au_id_t;
-
-/*
- * An audit event mask.
- */
-#define	AU_MASK_ALL	0xFFFFFFFF	/* all bits on for unsigned int */
-#define	AU_MASK_NONE	0x0		/* all bits off = no:invalid class */
-
-struct au_mask {
-	unsigned int	am_success;	/* success bits */
-	unsigned int	am_failure;	/* failure bits */
-};
-typedef struct au_mask au_mask_t;
-#define	as_success am_success
-#define	as_failure am_failure
 
 /*
  * The structure of the terminal ID (ipv4)

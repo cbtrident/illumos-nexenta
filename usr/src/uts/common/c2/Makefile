@@ -20,16 +20,16 @@
 # CDDL HEADER END
 #
 #
-#ident	"%Z%%M%	%I%	%E% SMI"
-#
 # Copyright 1989-2003 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
+#
+# Copyright 2018 Nexenta by DDN, Inc. All rights reserved.
 #
 # include global definitions
 include ../../../Makefile.master
 
 HDRS=	audit.h audit_kernel.h audit_kevents.h audit_record.h \
-	audit_door_infc.h
+	audit_types.h audit_door_infc.h
 
 ROOTDIRS= $(ROOT)/usr/include/bsm
 

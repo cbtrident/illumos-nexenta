@@ -22,7 +22,7 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright 2011, 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2011, 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
 .KEEP_STATE:
@@ -41,7 +41,7 @@ OBJS += mdb_lex.o mdb_grammar.o
 .NO_PARALLEL:
 .PARALLEL: kmdb_modlinktest.o kmdb_terminfo.c $(ALLOBJS) $(ALLOBJS:%.o=%.ln)
 
-SRCINCDIRS	+= . .. ../.. ../../../common ../../../common/libstand
+SRCINCDIRS	+= . .. ../.. ../../../common ../../../common/libstand $(SRC)/uts/common
 OSINCDIRS	+= $(SRC)/uts/$(MMU) $(SRC)/uts/$(ISADIR)
 
 INCDIRS	= $(SRCINCDIRS) $(OSINCDIRS)

@@ -24,6 +24,7 @@
 #
 # Copyright (c) 2013 by Delphix. All rights reserved.
 # Copyright 2015, Joyent, Inc.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
 .KEEP_STATE:
@@ -117,7 +118,7 @@ CSTD			= $(CSTD_GNU99)
 
 CFLAGS			+= $(CCVERBOSE)
 CFLAGS64		+= $(CCVERBOSE)
-CPPFLAGS		+= $($(MDBTGT)_TGTFLAGS) -I../../../common
+CPPFLAGS		+= $($(MDBTGT)_TGTFLAGS) -I../../../common -I$(SRC)/uts/common
 LDFLAGS			+= $(ZTEXT)
 LDFLAGS64		+= $(ZTEXT)
 ASFLAGS			+= -P

@@ -27,8 +27,7 @@
 # Copyright (c) 2017, Joyent, Inc.
 # Copyright 2016 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
-# Copyright 2018 Nexenta Systems, Inc.
-# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2019 Nexenta by DDN, Inc. All Rights Reserved.
 #
 
 #
@@ -1113,7 +1112,8 @@ NFSSRV_OBJS +=	nfs_server.o	nfs_srv.o	nfs3_srv.o \
 		nfs_export.o	nfs_log.o	nfs_log_xdr.o \
 		nfs4_srv.o	nfs4_state.o	nfs4_srv_attr.o \
 		nfs4_srv_ns.o	nfs4_db.o	nfs4_srv_deleg.o \
-		nfs4_deleg_ops.o nfs4_srv_readdir.o nfs4_dispatch.o
+		nfs4_deleg_ops.o nfs4_srv_readdir.o nfs4_dispatch.o \
+		nfs4_audit.o
 
 SMBSRV_SHARED_OBJS += \
 		smb_cfg_util.o \

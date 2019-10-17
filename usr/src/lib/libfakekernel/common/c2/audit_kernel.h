@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef _BSM_AUDIT_KERNEL_H
@@ -47,6 +47,10 @@ typedef enum sacl_audit_ctrl {
 	SACL_AUDIT_ALL,
 	SACL_AUDIT_NO_SRC
 } sacl_audit_ctrl_t;
+
+#define	AU_SACL_NOTSET	(0x02000000L) /* use MAXIMUM_ALLOWED bit */
+#define	AU_SACL_MASK_NOTSET(tad) \
+	((tad->tad_sacl_mask.tas_smask & AU_SACL_NOTSET) != 0)
 
 struct t_audit_data {
 	sacl_audit_ctrl_t tad_sacl_ctrl;

@@ -22,7 +22,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All right reserved.
  */
 
 #include <stdio.h>
@@ -48,6 +48,8 @@
 #include <nfs/auth.h>
 #include <sharefs/share.h>
 #include <alloca.h>
+#include <bsm/adt.h>
+#include <bsm/adt_event.h>
 #include "../lib/sharetab.h"
 #include "mountd.h"
 
@@ -94,6 +96,32 @@ nfsauth_access(auth_req *argp, auth_res *result)
 	cln_fini(&cln);
 }
 
+static int
+nfsauth_auditinfo(audit_req *argp, audit_res *result)
+{
+	adt_session_data_t *ah = NULL;
+
+	if (adt_start_session(&ah, NULL, 0)) {
+		syslog(LOG_ERR, gettext("adt_start_session: %m"));
+		return (NFSAUTH_DR_NOAUDIT);
+	}
+
+	if (adt_set_user(ah, argp->req_uid, argp->req_gid, argp->req_uid,
+	    argp->req_gid, NULL, ADT_NEW)) {
+		syslog(LOG_ERR, gettext("adt_set_user: %m"));
+		(void) adt_end_session(ah);
+		return (NFSAUTH_DR_NOAUDIT);
+	}
+
+	adt_get_auid(ah, &result->res_auid);
+	adt_get_mask(ah, &result->res_amask);
+	adt_get_asid(ah, &result->res_asid);
+
+	(void) adt_end_session(ah);
+
+	return (NFSAUTH_DR_OKAY);
+}
+
 void
 nfsauth_func(void *cookie, char *dataptr, size_t arg_size, door_desc_t *dp,
     uint_t n_desc)
@@ -125,6 +153,7 @@ nfsauth_func(void *cookie, char *dataptr, size_t arg_size, door_desc_t *dp,
 	 */
 	switch (varg.vers) {
 	case V_PROTO:
+	case V_AUDIT:
 		ap = &varg.arg_u.arg;
 		break;
 
@@ -136,13 +165,21 @@ nfsauth_func(void *cookie, char *dataptr, size_t arg_size, door_desc_t *dp,
 		goto encres;
 	}
 
+	res.cmd = ap->cmd;
 	/*
 	 * Call the specified cmd
 	 */
 	switch (ap->cmd) {
 	case NFSAUTH_ACCESS:
-		nfsauth_access(&ap->areq, &res.ares);
+		nfsauth_access(&ap->req_u.areq, &res.res_u.ares);
 		res.stat = NFSAUTH_DR_OKAY;
+		break;
+	case NFSAUTH_AUDITINFO:
+		if (varg.vers < V_AUDIT) {
+			res.stat = NFSAUTH_DR_BADCMD;
+			break;
+		}
+		res.stat = nfsauth_auditinfo(&ap->req_u.ureq, &res.res_u.ures);
 		break;
 	default:
 		res.stat = NFSAUTH_DR_BADCMD;

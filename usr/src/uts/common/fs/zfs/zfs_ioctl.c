@@ -32,7 +32,7 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright 2017 RackTop Systems.
  * Copyright (c) 2017 Datto Inc.
@@ -5913,7 +5913,8 @@ zfs_ioc_smb_acl(zfs_cmd_t *zc)
 		vattr.va_uid = 0;
 		vattr.va_gid = 0;
 
-		vsec.vsa_mask = VSA_ACE;
+		/* The 'special file' doesn't need to inherit AUDIT ACEs. */
+		vsec.vsa_mask = VSA_ACE | VSA_ACE_SYS;
 		vsec.vsa_aclentp = &full_access;
 		vsec.vsa_aclentsz = sizeof (full_access);
 		vsec.vsa_aclcnt = 1;

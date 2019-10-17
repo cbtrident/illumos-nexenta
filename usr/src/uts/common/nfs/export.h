@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Jason King.
  */
@@ -229,6 +229,7 @@ struct ex_vol_rename {
  */
 struct auth_cache_clnt {
 	avl_node_t		authc_link;
+	int			authc_type;
 	struct netbuf		authc_addr;	/* address of the client */
 	krwlock_t		authc_lock;	/* protects authc_tree */
 	avl_tree_t		authc_tree;	/* auth_cache entries */
@@ -304,6 +305,19 @@ typedef enum auth_state {
 } auth_state_t;
 
 /*
+ * auth_cache entries contain identity mapping and access information for a
+ * given client on a particular export. They are read/created when a client
+ * accesses an export for the first time in a request.
+ *
+ * audit_cache entries contain audit information for a given client in a zone,
+ * not attached to any particular export. They are read/created when the
+ * credential is initialized at the beginning of an NFSv4 Compound.
+ *
+ * These are managed by different collections of audit_cache_clnt's, but
+ * use the same machinery for expiration and refreshing.
+ */
+
+/*
  * An authorization cache entry
  *
  * Either the state in auth_state will protect the
@@ -324,6 +338,20 @@ struct auth_cache {
 	auth_state_t		auth_state;
 	kmutex_t		auth_lock;
 	kcondvar_t		auth_cv;
+};
+
+struct audit_cache {
+	avl_node_t		audit_link;
+	struct auth_cache_clnt	*audit_clnt;
+	cred_t			*audit_clnt_cred;
+	au_id_t			auid;
+	au_mask_t		amask;
+	au_asid_t		asid;
+	time_t			audit_time;
+	time_t			audit_freshness;
+	auth_state_t		audit_state;
+	kmutex_t		audit_lock;
+	kcondvar_t		audit_cv;
 };
 
 #define	AUTH_TABLESIZE	32

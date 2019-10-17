@@ -24,7 +24,7 @@
 #
 
 #
-# Copyright 2011, 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2011, 2019 Nexenta by DDN, Inc. All rights reserved.
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright (c) 2012 Joyent, Inc. All rights reserved.
 #
@@ -94,7 +94,7 @@ SRCS += \
 	mdb_whatis.c
 
 $(NOT_RELEASE_BUILD)CPPFLAGS += -DDEBUG
-CPPFLAGS += -D_MDB -I. -I../.. -I../../../common
+CPPFLAGS += -D_MDB -I. -I../.. -I../../../common -I$(SRC)/uts/common
 
 CSTD=	$(CSTD_GNU99)
 C99LMODE=	-Xc99=%all

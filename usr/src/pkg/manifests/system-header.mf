@@ -24,7 +24,7 @@
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2013 Saso Kiselkov. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
-# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 #
 
@@ -329,6 +329,7 @@ file path=usr/include/bsm/audit.h
 file path=usr/include/bsm/audit_kernel.h
 file path=usr/include/bsm/audit_kevents.h
 file path=usr/include/bsm/audit_record.h
+file path=usr/include/bsm/audit_types.h
 file path=usr/include/bsm/audit_uevents.h
 file path=usr/include/bsm/devices.h
 file path=usr/include/bsm/libbsm.h
