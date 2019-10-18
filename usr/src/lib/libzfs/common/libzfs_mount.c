@@ -131,6 +131,12 @@ zfs_share_proto_t share_all_proto[] = {
 	PROTO_END
 };
 
+typedef enum {
+	PARENT_MOUNT_SUCCESS,
+	PARENT_MOUNT_PENDING,
+	PARENT_MOUNT_FAILED
+} parent_mount_status_t;
+
 /*
  * Search the sharetab for the given mountpoint and protocol, returning
  * a zfs_share_type_t value.
@@ -470,8 +476,10 @@ zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
 		/*
 		 * Unshare and unmount the filesystem
 		 */
-		if (zfs_unshare_proto(zhp, mntpt, share_all_proto) != 0)
+		if (zfs_unshare_proto(zhp, mntpt, share_all_proto) != 0) {
+			free(mntpt);
 			return (-1);
+		}
 
 		if (unmount_one(hdl, mntpt, flags, !IGNORE_NO_SUCH_PATH) != 0) {
 			free(mntpt);
@@ -1200,7 +1208,7 @@ typedef struct mount_task {
 	const char	*mp;
 	zfs_handle_t	*zh;
 	task_state_t	state;
-	int		error;
+	boolean_t	error;
 } mount_task_t;
 
 typedef struct mount_task_q {
@@ -1208,9 +1216,7 @@ typedef struct mount_task_q {
 	pthread_cond_t	q_cv;
 	libzfs_handle_t	*hdl;
 	const char	*mntopts;
-	const char	*error_mp;
-	zfs_handle_t	*error_zh;
-	int		error;
+	int		q_error;
 	int		q_length;
 	int		n_tasks; /* # TASK_TO_PROCESS */
 	int		flags;
@@ -1222,6 +1228,7 @@ mount_task_q_init(int argc, zfs_handle_t **handles, const char *mntopts,
     int flags, mount_task_q_t **task)
 {
 	mount_task_q_t *task_q;
+	char mntpnt[MAXPATHLEN];
 	int i, error;
 	size_t task_q_size;
 
@@ -1251,11 +1258,14 @@ mount_task_q_init(int argc, zfs_handle_t **handles, const char *mntopts,
 	task_q->flags = flags;
 	task_q->mntopts = mntopts;
 
-	/* we are not going to change the strings, so no need to strdup */
 	for (i = 0; i < argc; ++i) {
 		task_q->task[i].zh = handles[i];
 		task_q->task[i].state = TASK_TO_PROCESS;
-		task_q->error = 0;
+		task_q->task[i].error = B_TRUE;
+		task_q->q_error = 0;
+		verify(zfs_prop_get(handles[i], ZFS_PROP_MOUNTPOINT, mntpnt,
+		    sizeof (mntpnt), NULL, NULL, 0, B_FALSE) == 0);
+		task_q->task[i].mp = zfs_strdup(handles[i]->zfs_hdl, mntpnt);
 	}
 
 	*task = task_q;
@@ -1295,7 +1305,7 @@ umount_task_q_init(int argc, const char **argv, int flags,
 	for (i = 0; i < argc; ++i) {
 		task_q->task[i].mp = argv[i];
 		task_q->task[i].state = TASK_TO_PROCESS;
-		task_q->error = 0;
+		task_q->q_error = 0;
 	}
 
 	*task = task_q;
@@ -1304,6 +1314,22 @@ umount_task_q_init(int argc, const char **argv, int flags,
 
 static void
 mount_task_q_fini(mount_task_q_t *task_q)
+{
+	int i;
+
+	assert(task_q != NULL);
+
+	/* for mount task[i].mp was zfs_strdup'd. */
+	for (i = 0; i < task_q->q_length; ++i)
+		free((char *)task_q->task[i].mp);
+
+	(void) pthread_cond_destroy(&task_q->q_cv);
+	(void) pthread_mutex_destroy(&task_q->q_lock);
+	free(task_q);
+}
+
+static void
+umount_task_q_fini(mount_task_q_t *task_q)
 {
 	assert(task_q != NULL);
 	(void) pthread_cond_destroy(&task_q->q_cv);
@@ -1366,19 +1392,50 @@ child_umount_pending(int ind, mount_task_q_t *task_q)
 	return (B_FALSE);
 }
 
-static boolean_t
-parent_mount_pending(int ind, mount_task_q_t *task_q)
+/*
+ * Identify if there is a parent mount PENDING or FAILED.
+ */
+static parent_mount_status_t
+parent_mount_status(int ind, mount_task_q_t *task_q)
 {
 	int i;
+	mount_task_t *ptask;
+	const char *mp = task_q->task[ind].mp;
+
 	for (i = ind-1; i >= 0; --i) {
 		assert(task_state_valid(i, task_q));
-		if ((task_q->task[i].state != TASK_DONE) &&
-		    is_child_of(task_q->task[ind].zh->zfs_name,
-		    task_q->task[i].zh->zfs_name))
-			return (B_TRUE);
+		ptask = &(task_q->task[i]);
+
+		if (ptask->state != TASK_DONE) {
+			if (is_child_of(mp, ptask->mp)) {
+				return (PARENT_MOUNT_PENDING);
+			}
+		} else if (ptask->error != 0) {
+			if (is_child_of(mp, ptask->mp)) {
+				return (PARENT_MOUNT_FAILED);
+			}
+		}
 	}
 
-	return (B_FALSE);
+	return (PARENT_MOUNT_SUCCESS);
+}
+
+/*
+ * For serial mount, identify if there is a parent mount FAILED.
+ */
+static parent_mount_status_t
+parent_mount_status_serial(int ind, int *good, char *mntpnts[])
+{
+	int i;
+	char *mp = mntpnts[ind];
+
+	for (i = ind-1; i >= 0; --i) {
+		if ((good[i] == 0) && is_child_of(mp, mntpnts[i])) {
+			return (PARENT_MOUNT_FAILED);
+		}
+	}
+
+	return (PARENT_MOUNT_SUCCESS);
 }
 
 static void
@@ -1398,14 +1455,14 @@ unmounter(void *arg)
 		if ((error = pthread_mutex_lock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
 
-		if (task_q->error || task_q->n_tasks == 0) {
+		if (task_q->q_error != 0 || task_q->n_tasks == 0) {
 			(void) pthread_mutex_unlock(&task_q->q_lock);
 			break; /* Out of while() loop */
 		}
 
 		/* Find task ready for processing */
 		for (i = 0, task = NULL, t = -1; i < task_q->q_length; ++i) {
-			if (task_q->error) {
+			if (task_q->q_error != 0) {
 				/* Fatal error, stop processing */
 				done = 1;
 				break; /* Out of for() loop */
@@ -1437,11 +1494,12 @@ unmounter(void *arg)
 
 		error = pthread_mutex_unlock(&task_q->q_lock);
 
-		if (done || (task == NULL) || error || task_q->error)
+		if (done || (task == NULL) || error || task_q->q_error != 0)
 			break; /* Out of while() loop */
 
 		umount_err = umount2(task->mp, flags);
 		q_error = errno;
+
 		/*
 		 * It is possible someone has destroyed this dataset and
 		 * this case needs to be ignored
@@ -1459,17 +1517,21 @@ unmounter(void *arg)
 		task_next_stage(t, task_q);
 		assert(task_completed(t, task_q));
 
+		task->error = (umount_err != 0);
+
 		if (umount_err) {
+			zfs_error_aux(task_q->hdl, strerror(q_error));
+			(void) zfs_error_fmt(task_q->hdl, EZFS_UMOUNTFAILED,
+			    dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),
+			    task->mp);
+
 			/*
 			 * umount2() failed, cannot be busy because of mounted
 			 * children - we have checked above, so it is fatal
 			 */
 			assert(child_umount_pending(t, task_q) == B_FALSE);
-			task->error = q_error;
-			if (!task_q->error) {
-				task_q->error = task->error;
-				task_q->error_mp = task->mp;
-			}
+			if (task_q->q_error == 0)
+				task_q->q_error = q_error;
 			done = 1;
 		}
 
@@ -1483,6 +1545,7 @@ mounter(void *arg)
 {
 	mount_task_q_t *task_q = (mount_task_q_t *)arg;
 	int error = 0, done = 0;
+	parent_mount_status_t parent_status;
 	struct timespec timeout = {1, 0};
 
 	assert(task_q != NULL);
@@ -1491,25 +1554,19 @@ mounter(void *arg)
 
 	while (!error && !done) {
 		mount_task_t *task;
-		int i, t, mount_err, flags, q_error;
+		int i, t, flags;
 		const char *mntopts;
 
 		if ((error = pthread_mutex_lock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
 
-		if (task_q->error || task_q->n_tasks == 0) {
+		if (task_q->n_tasks == 0) {
 			(void) pthread_mutex_unlock(&task_q->q_lock);
 			break; /* Out of while() loop */
 		}
 
 		/* Find task ready for processing */
 		for (i = 0, task = NULL, t = -1; i < task_q->q_length; ++i) {
-			if (task_q->error) {
-				/* Fatal error, stop processing */
-				done = 1;
-				break; /* Out of for() loop */
-			}
-
 			if (task_completed(i, task_q))
 				continue; /* for() loop */
 
@@ -1518,8 +1575,10 @@ mounter(void *arg)
 				 * Cannot mount if some parents are not
 				 * mounted yet; come back later
 				 */
-				if ((parent_mount_pending(i, task_q)))
+				parent_status = parent_mount_status(i, task_q);
+				if (parent_status == PARENT_MOUNT_PENDING)
 					continue; /* for() loop */
+
 				/* Should be OK to mount now */
 				task_next_stage(i, task_q);
 				task = &task_q->task[i];
@@ -1535,7 +1594,7 @@ mounter(void *arg)
 		flags = task_q->flags;
 		mntopts = task_q->mntopts;
 
-		if (done || error || task_q->error) {
+		if (done || error) {
 			(void) pthread_mutex_unlock(&task_q->q_lock);
 			break; /* Out of while() loop */
 		}
@@ -1562,8 +1621,15 @@ mounter(void *arg)
 		if ((error = pthread_mutex_unlock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
 
-		mount_err = zfs_mount(task->zh, mntopts, flags);
-		q_error = errno;
+		/* do not attempt to mount if the parent mount failed */
+		if (parent_status == PARENT_MOUNT_FAILED) {
+			task->error = B_TRUE;
+		} else {
+			error = zfs_mount(task->zh, mntopts, flags);
+			task->error = (error != 0);
+			if ((error != 0) && (task_q->q_error == 0))
+				task_q->q_error = error;
+		}
 
 		if ((error = pthread_mutex_lock(&task_q->q_lock)) != 0)
 			break; /* Out of while() loop */
@@ -1572,15 +1638,6 @@ mounter(void *arg)
 		assert(t >= 0 && t < task_q->q_length);
 		task_next_stage(t, task_q);
 		assert(task_completed(t, task_q));
-
-		if (mount_err) {
-			task->error = q_error;
-			if (!task_q->error) {
-				task_q->error = task->error;
-				task_q->error_zh = task->zh;
-			}
-			done = 1;
-		}
 
 		/* wake any waiters */
 		(void) pthread_cond_broadcast(&task_q->q_cv);
@@ -1621,18 +1678,8 @@ int parallel_unmount(libzfs_handle_t *hdl, int argc, const char **argv,
 	tpool_wait(t);
 	tpool_destroy(t);
 
-	if (task_queue->error) {
-		/*
-		 * Tell ZFS!
-		 */
-		zfs_error_aux(hdl,
-		    strerror(error ? error : task_queue->error));
-		error = zfs_error_fmt(hdl, EZFS_UMOUNTFAILED,
-		    dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),
-		    error ? "datasets" : task_queue->error_mp);
-	}
-	if (task_queue)
-		mount_task_q_fini(task_queue);
+	error = task_queue->q_error;
+	umount_task_q_fini(task_queue);
 
 	return (error);
 }
@@ -1663,31 +1710,12 @@ int parallel_mount(get_all_cb_t *cb, int *good, const char *mntopts,
 
 	tpool_wait(t);
 	for (i = 0; i < cb->cb_used; ++i) {
-		good[i] = !task_queue->task[i].error;
-		if (!good[i]) {
-			zfs_handle_t *hdl = task_queue->error_zh;
-			zfs_error_aux(hdl->zfs_hdl,
-			    strerror(task_queue->task[i].error));
-			(void) zfs_error_fmt(hdl->zfs_hdl, EZFS_MOUNTFAILED,
-			    dgettext(TEXT_DOMAIN, "cannot mount '%s'"),
-			    task_queue->task[i].zh->zfs_name);
-		}
+		good[i] = task_queue->task[i].error ? 0 : 1;
 	}
 	tpool_destroy(t);
 
-	if (task_queue->error) {
-		zfs_handle_t *hdl = task_queue->error_zh;
-		/*
-		 * Tell ZFS!
-		 */
-		zfs_error_aux(hdl->zfs_hdl,
-		    strerror(error ? error : task_queue->error));
-		error = zfs_error_fmt(hdl->zfs_hdl, EZFS_MOUNTFAILED,
-		    dgettext(TEXT_DOMAIN, "cannot mount '%s'"),
-		    error ? "datasets" : hdl->zfs_name);
-	}
-	if (task_queue)
-		mount_task_q_fini(task_queue);
+	error = task_queue->q_error;
+	mount_task_q_fini(task_queue);
 
 	return (error);
 }
@@ -1700,7 +1728,7 @@ zpool_enable_datasets_ex(zpool_handle_t *zhp, const char *mntopts, int flags,
 	libzfs_handle_t *hdl = zhp->zpool_hdl;
 	zfs_handle_t *zfsp;
 	int i, ret = -1;
-	int *good;
+	int *good = NULL;
 	sa_init_selective_arg_t sharearg;
 
 	/*
@@ -1728,12 +1756,33 @@ zpool_enable_datasets_ex(zpool_handle_t *zhp, const char *mntopts, int flags,
 
 	ret = 0;
 	if (n_threads < 2) {
-		for (i = 0; i < cb.cb_used; i++) {
-			if (zfs_mount(cb.cb_handles[i], mntopts, flags) != 0)
-				ret = -1;
-			else
-				good[i] = 1;
+		char mntpnt[MAXPATHLEN];
+		char **mntpnts;
+		if ((mntpnts = zfs_alloc(zhp->zpool_hdl,
+		    cb.cb_used * sizeof (char *))) == NULL) {
+			free(good);
+			goto out;
 		}
+
+		for (i = 0; i < cb.cb_used; i++) {
+			verify(zfs_prop_get(cb.cb_handles[i],
+			    ZFS_PROP_MOUNTPOINT, mntpnt, sizeof (mntpnt),
+			    NULL, NULL, 0, B_FALSE) == 0);
+			mntpnts[i] =
+			    zfs_strdup(cb.cb_handles[i]->zfs_hdl, mntpnt);
+
+			/* do not attempt to mount if the parent mount failed */
+			if ((parent_mount_status_serial(i, good, mntpnts)
+			    == PARENT_MOUNT_SUCCESS) &&
+			    (zfs_mount(cb.cb_handles[i], mntopts, flags) == 0)) {
+				good[i] = 1;
+			} else {
+				ret = -1;
+			}
+		}
+		for (i = 0; i < cb.cb_used; i++)
+			free(mntpnts[i]);
+		free(mntpnts);
 	} else {
 		ret = parallel_mount(&cb, good, mntopts, flags, n_threads);
 	}
@@ -1745,9 +1794,9 @@ zpool_enable_datasets_ex(zpool_handle_t *zhp, const char *mntopts, int flags,
 	 */
 	sharearg.zhandle_arr = cb.cb_handles;
 	sharearg.zhandle_len = cb.cb_used;
-	ret = zfs_init_libshare_arg(hdl, SA_INIT_SHARE_API_SELECTIVE,
-	    &sharearg);
-	if (ret != 0) {
+	if (zfs_init_libshare_arg(hdl, SA_INIT_SHARE_API_SELECTIVE, &sharearg)
+	    != 0) {
+		ret = -1;
 		free(good);
 		goto out;
 	}
