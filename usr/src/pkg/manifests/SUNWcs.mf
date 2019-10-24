@@ -396,6 +396,7 @@ file path=etc/mailcap preserve=true
 file path=etc/mime.types preserve=true
 file path=etc/mnttab group=root mode=0444 preserve=true
 file path=etc/motd group=sys preserve=true
+file path=etc/net-snmp/snmp/mibs/NETWORK-SERVICES-MIB.txt mode=0444
 file path=etc/net-snmp/snmp/mibs/NEXENTA-MIB.txt mode=0444
 file path=etc/net-snmp/snmp/mibs/NEXENTA-SSM-MIB.txt mode=0444
 file path=etc/net-snmp/snmp/mibs/SUN-MIB.txt mode=0444

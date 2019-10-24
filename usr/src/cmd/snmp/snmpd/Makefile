@@ -13,7 +13,8 @@
 # Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
-MIBS=		NEXENTA-MIB.txt \
+MIBS=		NETWORK-SERVICES-MIB.txt \
+		NEXENTA-MIB.txt \
 		SUN-MIB.txt
 
 include		$(SRC)/cmd/snmp/Makefile.snmp
