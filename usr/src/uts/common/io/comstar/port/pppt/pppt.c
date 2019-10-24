@@ -703,6 +703,7 @@ pppt_xfer_read_complete(pppt_task_t *pppt_task, stmf_status_t status)
 {
 	pppt_buf_t		*pppt_buf;
 	stmf_data_buf_t		*dbuf;
+	scsi_task_t		*scsi_task;
 
 	/*
 	 * Caller should have taken a task hold (likely via pppt_task_lookup)
@@ -739,12 +740,18 @@ pppt_xfer_read_complete(pppt_task_t *pppt_task, stmf_status_t status)
 		}
 		pppt_task_rele(pppt_task);
 
-		if (pppt_lport_send_status(pppt_task->pt_stmf_task, 0)
-		    != STMF_SUCCESS) {
+		/*
+		 * Grab a reference to the scsi_task before calling
+		 * pppt_lport_send_status() because the pppt_task after
+		 * that call will be freed. If an error occurs
+		 * stmf_data_xfer_done() needs to be called with the scsi_task
+		 * pointer.
+		 */
+		scsi_task = pppt_task->pt_stmf_task;
+		if (pppt_lport_send_status(scsi_task, 0) != STMF_SUCCESS) {
 			/* Failed to send status */
 			dbuf->db_xfer_status = STMF_FAILURE;
-			stmf_data_xfer_done(pppt_task->pt_stmf_task, dbuf,
-			    STMF_IOF_LPORT_DONE);
+			stmf_data_xfer_done(scsi_task, dbuf, 0);
 		}
 	} else {
 		pppt_task_rele(pppt_task);
