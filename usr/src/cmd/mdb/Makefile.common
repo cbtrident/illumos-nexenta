@@ -22,7 +22,7 @@
 #
 # Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2016 Joyent, Inc.
-# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
 #
@@ -93,6 +93,7 @@ COMMON_MODULES_KVM = \
 	scsi_vhci \
 	sctp \
 	sd \
+	smartpqi \
 	smbfs \
 	smbsrv \
 	sockfs \
