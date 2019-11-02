@@ -25,7 +25,7 @@
  * Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -2946,7 +2946,7 @@ ql_un_init_pkt(opaque_t fca_handle, fc_packet_t *pkt)
 		EL(ha, "failed, FC_BADPACKET\n");
 		rval = FC_BADPACKET;
 	} else {
-		sp->magic_number = NULL;
+		sp->magic_number = 0;
 		ql_free_phys(ha, &sp->sg_dma);
 		rval = FC_SUCCESS;
 	}
@@ -5635,7 +5635,7 @@ ql_els_flogi(ql_adapter_state_t *ha, fc_packet_t *pkt)
 	} else {
 		tq = ql_d_id_to_queue(ha, d_id);
 	}
-	if ((tq != NULL) || (accept != NULL)) {
+	if ((tq != NULL) || (accept != 0)) {
 		/* Build ACC. */
 		pkt->pkt_state = FC_PKT_SUCCESS;
 		class3_param = (class_svc_param_t *)&acc.class_3;
@@ -10143,9 +10143,9 @@ ql_timer(void *arg)
 #endif
 				ha->idle_timer = 0;
 			}
-			if (ha->send_plogi_timer != NULL) {
+			if (ha->send_plogi_timer != 0) {
 				ha->send_plogi_timer--;
-				if (ha->send_plogi_timer == NULL) {
+				if (ha->send_plogi_timer == 0) {
 					set_flags |= SEND_PLOGI;
 				}
 			}
@@ -16775,8 +16775,8 @@ ql_alloc_phys(ql_adapter_state_t *ha, dma_mem_t *mem, int sleep)
 		    &mem->acc_handle) == DDI_SUCCESS) {
 			bzero(mem->bp, mem->size);
 			/* ensure we got what we asked for (32bit) */
-			if (dma_attr.dma_attr_addr_hi == NULL) {
-				if (mem->cookie.dmac_notused != NULL) {
+			if (dma_attr.dma_attr_addr_hi == 0) {
+				if (mem->cookie.dmac_notused != 0) {
 					EL(ha, "failed, ddi_dma_mem_alloc "
 					    "returned 64 bit DMA address\n");
 					ql_free_phys(ha, mem);

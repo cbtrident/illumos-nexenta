@@ -26,7 +26,7 @@
  */
 
 /*
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #pragma ident	"Copyright 2015 QLogic Corporation; ql_xioctl.c"
@@ -1975,7 +1975,7 @@ ql_enqueue_aen(ql_adapter_state_t *ha, uint16_t event_code, void *payload)
 	}
 	aen_queue = (EXT_ASYNC_EVENT *)xp->aen_tracking_queue;
 
-	if (aen_queue[xp->aen_q_tail].AsyncEventCode != NULL) {
+	if (aen_queue[xp->aen_q_tail].AsyncEventCode != 0) {
 		/* Need to change queue pointers to make room. */
 
 		/* Increment tail for adding new entry. */
@@ -9875,7 +9875,7 @@ ql_dump_cmd(ql_adapter_state_t *ha, EXT_IOCTL *cmd, int mode)
 
 	if (ha->ql_dump_state & QL_DUMP_VALID &&
 	    !(ha->ql_dump_state & QL_DUMP_UPLOADED) &&
-	    ha->ql_dump_state != NULL) {
+	    ha->ql_dump_state != 0) {
 		sdm_valid_dump = 1;
 	} else {
 		EL(ha, "dump does not exist for instance %d (%x, %p)\n",
