@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -922,7 +922,7 @@ aoe_tx_frame(aoe_frame_t *af)
 tx_frame:
 	ret_cookie = mac_tx(mac->am_cli_handle, af->af_netb, 0,
 	    MAC_TX_NO_ENQUEUE, &ret_mblk);
-	if (ret_cookie != NULL) {
+	if (ret_cookie != 0) {
 		mutex_enter(&mac->am_mutex);
 		(void) cv_reltimedwait(&mac->am_tx_cv, &mac->am_mutex,
 		    drv_usectohz(100000), TR_CLOCK_TICK);
