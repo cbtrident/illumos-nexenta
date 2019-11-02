@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/aoe.h>
@@ -1293,7 +1293,7 @@ aoeblk_reserve(void *arg, bd_xfer_t *xfer)
 	sc = eport->eport_client_private;
 	af = eport->eport_alloc_frame(eport, d->ad_unit_id, NULL, KM_SLEEP);
 	if (!af)
-		return (NULL);
+		return (0);
 	f = FRM2PRIV(af);
 	hlen = sizeof (*h);
 
@@ -1307,12 +1307,12 @@ aoeblk_reserve(void *arg, bd_xfer_t *xfer)
 		rhlen =  sizeof (*rh);
 	else {
 		eport->eport_release_frame(af);
-		return (NULL);
+		return (0);
 	}
 	af->af_netb = NULL;
 	if (!eport->eport_alloc_netb(af, hlen + rhlen, f->frm_hdr, KM_SLEEP)) {
 		eport->eport_release_frame(af);
-		return (NULL);
+		return (0);
 	}
 	free_mem -= hlen + rhlen;
 
