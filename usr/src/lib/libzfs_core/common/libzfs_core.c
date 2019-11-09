@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
@@ -228,8 +228,6 @@ lzc_pool_configs(uint64_t *generation, nvlist_t **configs)
 	if (ret == 0) {
 		*generation = fnvlist_lookup_uint64(*configs, "_generation");
 		fnvlist_remove(*configs, "_generation");
-	} else {
-		ASSERT3P(configs, ==, NULL);
 	}
 	nvlist_free(args);
 
