@@ -976,6 +976,12 @@ vioscsi_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	sc->vs_max_seg = max(VIOSCSI_MIN_SEGS,
 	    virtio_dev_get32(vio, VIRTIO_SCSI_CFG_SEG_MAX));
 
+	/*
+	 * Take the maximum number of segments and subtract two which are needed
+	 * for the command packet and sense buffer.
+	 */
+	virtio_scsi_data_dma_attr.dma_attr_sgllen = sc->vs_max_seg - 2;
+
 	/* ---- allocate queues ---- */
 	if ((sc->vs_ctrl_vq = virtio_queue_alloc(vio, 0, "ctrl",
 	    vioscsi_control_handler, sc, B_FALSE, sc->vs_max_seg)) == NULL) {
