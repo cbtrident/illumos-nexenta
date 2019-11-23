@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -99,6 +99,7 @@ smb2_qfs_volume(smb_request_t *sr)
 	smb_node_t *snode;
 	fsid_t fsid;
 	uint32_t LabelLength;
+	int rc;
 
 	if (!STYPE_ISDSK(tree->t_res_type))
 		return (NT_STATUS_INVALID_PARAMETER);
@@ -111,14 +112,16 @@ smb2_qfs_volume(smb_request_t *sr)
 	/*
 	 * NT has the "supports objects" flag set to 1.
 	 */
-	(void) smb_mbc_encodef(
-	    &sr->raw_data, "qllb.U",
-	    0LL,	/* Volume creation time (q) */
+	rc = smb_mbc_encodef(
+	    &sr->raw_data, "Tllb.U",
+	    &tree->t_create_time,	/*	(T) */
 	    fsid.val[0],	/* serial no.   (l) */
 	    LabelLength,		/*	(l) */
 	    0,		/* Supports objects	(b) */
 	    /* reserved				(.) */
 	    tree->t_volume);		/*	(U) */
+	if (rc != 0)
+		return (NT_STATUS_BUFFER_OVERFLOW);
 
 	return (0);
 }
@@ -140,12 +143,14 @@ smb2_qfs_size(smb_request_t *sr)
 	if (rc)
 		return (smb_errno2status(rc));
 
-	(void) smb_mbc_encodef(
+	rc = smb_mbc_encodef(
 	    &sr->raw_data, "qqll",
 	    fssize.fs_caller_units,
 	    fssize.fs_caller_avail,
 	    fssize.fs_sectors_per_unit,
 	    fssize.fs_bytes_per_sector);
+	if (rc != 0)
+		return (NT_STATUS_BUFFER_OVERFLOW);
 
 	return (0);
 }
@@ -167,13 +172,15 @@ smb2_qfs_fullsize(smb_request_t *sr)
 	if (rc)
 		return (smb_errno2status(rc));
 
-	(void) smb_mbc_encodef(
+	rc = smb_mbc_encodef(
 	    &sr->raw_data, "qqqll",
 	    fssize.fs_caller_units,
 	    fssize.fs_caller_avail,
 	    fssize.fs_volume_avail,
 	    fssize.fs_sectors_per_unit,
 	    fssize.fs_bytes_per_sector);
+	if (rc != 0)
+		return (NT_STATUS_BUFFER_OVERFLOW);
 
 	return (0);
 }
@@ -187,6 +194,7 @@ smb2_qfs_device(smb_request_t *sr)
 	smb_tree_t *tree = sr->tid_tree;
 	uint32_t DeviceType;
 	uint32_t Characteristics;
+	int rc;
 
 	if (!STYPE_ISDSK(tree->t_res_type))
 		return (NT_STATUS_INVALID_PARAMETER);
@@ -194,10 +202,12 @@ smb2_qfs_device(smb_request_t *sr)
 	DeviceType = FILE_DEVICE_DISK;
 	Characteristics = FILE_DEVICE_IS_MOUNTED;
 
-	(void) smb_mbc_encodef(
+	rc = smb_mbc_encodef(
 	    &sr->raw_data, "ll",
 	    DeviceType,
 	    Characteristics);
+	if (rc != 0)
+		return (NT_STATUS_BUFFER_OVERFLOW);
 
 	return (0);
 }
@@ -212,6 +222,7 @@ smb2_qfs_attr(smb_request_t *sr)
 	char *fsname;
 	uint32_t namelen;
 	uint32_t FsAttr;
+	int rc;
 
 	/* This call is OK on all tree types. */
 	switch (tree->t_res_type & STYPE_MASK) {
@@ -246,12 +257,14 @@ smb2_qfs_attr(smb_request_t *sr)
 	if (tree->t_flags & SMB_TREE_SPARSE)
 		FsAttr |= FILE_SUPPORTS_SPARSE_FILES;
 
-	(void) smb_mbc_encodef(
+	rc = smb_mbc_encodef(
 	    &sr->raw_data, "lllU",
 	    FsAttr,
 	    MAXNAMELEN-1,
 	    namelen,
 	    fsname);
+	if (rc != 0)
+		return (NT_STATUS_BUFFER_OVERFLOW);
 
 	return (0);
 }
@@ -263,6 +276,7 @@ uint32_t
 smb2_qfs_control(smb_request_t *sr)
 {
 	smb_tree_t *tree = sr->tid_tree;
+	int rc;
 
 	if (!STYPE_ISDSK(tree->t_res_type))
 		return (NT_STATUS_INVALID_PARAMETER);
@@ -274,7 +288,7 @@ smb2_qfs_control(smb_request_t *sr)
 		return (NT_STATUS_VOLUME_NOT_UPGRADED);
 	}
 
-	(void) smb_mbc_encodef(
+	rc = smb_mbc_encodef(
 	    &sr->raw_data, "qqqqqll",
 	    0,		/* free space start filtering - MUST be 0 */
 	    0,		/* free space threshold - MUST be 0 */
@@ -283,6 +297,8 @@ smb2_qfs_control(smb_request_t *sr)
 	    SMB_QUOTA_UNLIMITED,	/* default quota limit */
 	    FILE_VC_QUOTA_ENFORCE,	/* fs control flag */
 	    0);				/* pad bytes */
+	if (rc != 0)
+		return (NT_STATUS_BUFFER_OVERFLOW);
 
 	return (0);
 }
@@ -323,7 +339,10 @@ smb2_qfs_obj_id(smb_request_t *sr)
 #define	SSINFO_OFFSET_UNKNOWN		0xffffffff
 // For "Alignment" fields below
 
-/* We have to lie to Windows Hyper-V about our logical record size. */
+/*
+ * We have to lie to Windows Hyper-V about our logical record size,
+ * because with larger sizes it fails setting up a virtual disk.
+ */
 int smb2_max_logical_sector_size = 4096;
 
 /*
@@ -360,7 +379,7 @@ smb2_qfs_sectorsize(smb_request_t *sr)
 	smb_fssize_t		fssize;
 	smb_tree_t *tree = sr->tid_tree;
 	uint32_t lbps, pbps;
-	uint32_t flags;
+	uint32_t flags, unk;
 	int rc;
 
 	if (!STYPE_ISDSK(tree->t_res_type))
@@ -369,23 +388,14 @@ smb2_qfs_sectorsize(smb_request_t *sr)
 	rc = smb_fssize(sr, &fssize);
 	if (rc)
 		return (smb_errno2status(rc));
+
+	// PhysicalBytesPerSector
 	pbps = fssize.fs_bytes_per_sector;
+
+	// LogicalBytesPerSector
 	lbps = fssize.fs_sectors_per_unit * pbps;
 	if (lbps > smb2_max_logical_sector_size)
 		lbps = smb2_max_logical_sector_size;
-
-	// LogicalBytesPerSector
-	(void) smb_mbc_encodef(&sr->raw_data, "l", lbps);
-
-	// PhysicalBytesPerSectorForAtomicity
-	(void) smb_mbc_encodef(&sr->raw_data, "l", pbps);
-
-	// PhysicalBytesPerSectorForPerformance
-	// Using logical size here.
-	(void) smb_mbc_encodef(&sr->raw_data, "l", lbps);
-
-	// FileSystemEffectivePhysicalBytesPerSectorForAtomicity
-	(void) smb_mbc_encodef(&sr->raw_data, "l", pbps);
 
 	// Flags
 	// We include "no seek penalty" because our files are
@@ -394,15 +404,24 @@ smb2_qfs_sectorsize(smb_request_t *sr)
 	flags = SSINFO_FLAGS_ALIGNED_DEVICE |
 		SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE |
 		SSINFO_FLAGS_NO_SEEK_PENALTY;
-	(void) smb_mbc_encodef(&sr->raw_data, "l", flags);
 
 	// ByteOffsetForSectorAlignment
 	// ByteOffsetForPartitionAlignment
 	// Just say "unknown" for these two.
-	(void) smb_mbc_encodef(
-	    &sr->raw_data, "l",
-	    SSINFO_OFFSET_UNKNOWN,
-	    SSINFO_OFFSET_UNKNOWN);
+	unk = SSINFO_OFFSET_UNKNOWN;
+
+	rc = smb_mbc_encodef(
+	    &sr->raw_data,
+	    "lllllll",
+	    lbps, // LogicalBytesPerSector
+	    pbps, // PhysicalBytesPerSectorForAtomicity
+	    lbps, // PhysicalBytesPerSectorForPerformance
+	    pbps, // FileSystemEffectivePhysicalBytesPerSectorForAtomicity
+	    flags,
+	    unk, unk);
+
+	if (rc != 0)
+		return (NT_STATUS_BUFFER_OVERFLOW);
 
 	return (0);
 }
