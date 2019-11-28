@@ -1729,9 +1729,8 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 				mutex_enter(exi_ksp->ks_lock);
 				kstat_runq_enter(KSTAT_IO_PTR(exi_ksp));
 				mutex_exit(exi_ksp->ks_lock);
-			} else {
-				rw_exit(&ne->exported_lock);
 			}
+			rw_exit(&ne->exported_lock);
 
 			publicfh_ok = PUBLICFH_CHECK(ne, disp, exi, fsid, xfid);
 			/*
@@ -1936,6 +1935,8 @@ done:
 	}
 
 	if (exi_ksp != NULL) {
+		rw_enter(&ne->exported_lock, RW_READER);
+
 		mutex_enter(exi_ksp->ks_lock);
 		KSTAT_IO_PTR(exi_ksp)->nwritten += pos;
 		KSTAT_IO_PTR(exi_ksp)->writes++;
