@@ -23,7 +23,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
  */
 
 /*
@@ -93,7 +93,7 @@ static int mptsas_get_raid_wwid(mptsas_t *mpt, mptsas_raidvol_t *raidvol);
 
 extern int mptsas_check_dma_handle(ddi_dma_handle_t handle);
 extern int mptsas_check_acc_handle(ddi_acc_handle_t handle);
-extern mptsas_target_t *mptsas_tgt_alloc(refhash_t *, uint16_t,
+extern mptsas_target_t *mptsas_tgt_alloc(mptsas_t *, uint16_t,
     uint64_t, uint32_t, mptsas_phymask_t, uint8_t);
 
 static int
@@ -217,7 +217,7 @@ mptsas_raidconf_page_0_cb(mptsas_t *mpt, caddr_t page_memp,
 			/*
 			 * RAID uses phymask of 0.
 			 */
-			ptgt = mptsas_tgt_alloc(mpt->m_targets,
+			ptgt = mptsas_tgt_alloc(mpt,
 			    voldevhandle, raidwwn, 0, 0, 0);
 
 			raidconfig->m_raidvol[vol].m_raidtgt =
@@ -267,6 +267,16 @@ mptsas_get_raid_info(mptsas_t *mpt)
 	 */
 	bzero(mpt->m_raidconfig, sizeof (mpt->m_raidconfig));
 	mpt->m_num_raid_configs = 0;
+
+	/*
+	 * This elimates a bunch of mptsas_access_config_page() calls
+	 * that seem to need to be polled (well according to the comments
+	 * in mptsas_access_config_page()). I'm not totally convinced, but
+	 * for us (Tegile) this is a way to avoid polling during target
+	 * insertion or resets.
+	 */
+	if (mpt->m_ir_capable == 0)
+		return (rval);
 
 	configindex = 0;
 	confignum = 0xff;
@@ -333,36 +343,36 @@ mptsas_raidvol_page_0_cb(mptsas_t *mpt, caddr_t page_memp,
 	raidvol->m_raidlevel = voltype;
 
 	if (statusflags & MPI2_RAIDVOL0_STATUS_FLAG_QUIESCED) {
-		mptsas_log(mpt, CE_NOTE, "Volume %d is quiesced",
+		mptsas_log(mpt, CE_NOTE, "?Volume %d is quiesced\n",
 		    raidvol->m_raidhandle);
 	}
 
 	if (statusflags &
 	    MPI2_RAIDVOL0_STATUS_FLAG_RESYNC_IN_PROGRESS) {
-		mptsas_log(mpt, CE_NOTE, "Volume %d is resyncing",
+		mptsas_log(mpt, CE_NOTE, "?Volume %d is resyncing\n",
 		    raidvol->m_raidhandle);
 	}
 
 	resync_flag = MPI2_RAIDVOL0_STATUS_FLAG_RESYNC_IN_PROGRESS;
 	switch (volstate) {
 	case MPI2_RAID_VOL_STATE_OPTIMAL:
-		mptsas_log(mpt, CE_NOTE, "Volume %d is "
-		    "optimal", raidvol->m_raidhandle);
+		mptsas_log(mpt, CE_NOTE, "?Volume %d is "
+		    "optimal\n", raidvol->m_raidhandle);
 		break;
 	case MPI2_RAID_VOL_STATE_DEGRADED:
 		if ((statusflags & resync_flag) == 0) {
 			mptsas_log(mpt, CE_WARN, "Volume %d "
-			    "is degraded",
+			    "is degraded\n",
 			    raidvol->m_raidhandle);
 		}
 		break;
 	case MPI2_RAID_VOL_STATE_FAILED:
 		mptsas_log(mpt, CE_WARN, "Volume %d is "
-		    "failed", raidvol->m_raidhandle);
+		    "failed\n", raidvol->m_raidhandle);
 		break;
 	case MPI2_RAID_VOL_STATE_MISSING:
 		mptsas_log(mpt, CE_WARN, "Volume %d is "
-		    "missing", raidvol->m_raidhandle);
+		    "missing\n", raidvol->m_raidhandle);
 		break;
 	default:
 		break;
@@ -465,7 +475,6 @@ mptsas_get_raid_wwid(mptsas_t *mpt, mptsas_raidvol_t *raidvol)
 		sas_wwn = MPTSAS_RAID_WWID(sas_wwn);
 		raidvol->m_raidwwid = sas_wwn;
 	}
-
 	return (rval);
 }
 
@@ -567,6 +576,7 @@ mptsas_get_physdisk_settings(mptsas_t *mpt, mptsas_raidvol_t *raidvol,
 void
 mptsas_raid_action_system_shutdown(mptsas_t *mpt)
 {
+	mptsas_reply_pqueue_t		*rpqp;
 	pMpi2RaidActionRequest_t	action;
 	uint8_t				ir_active = FALSE, reply_type;
 	uint8_t				function, found_reply = FALSE;
@@ -607,7 +617,7 @@ mptsas_raid_action_system_shutdown(mptsas_t *mpt)
 	 */
 	if (slots->m_slot[MPTSAS_TM_SLOT(mpt)] != NULL) {
 		mptsas_log(mpt, CE_WARN, "RAID Action slot in use.  Cancelling"
-		    " System Shutdown RAID Action.");
+		    " System Shutdown RAID Action.\n");
 		return;
 	}
 
@@ -631,6 +641,7 @@ mptsas_raid_action_system_shutdown(mptsas_t *mpt)
 
 	/*
 	 * Send RAID Action.
+	 * Defaults to MSIxIndex of 0, so check reply q 0 below.
 	 */
 	(void) ddi_dma_sync(mpt->m_dma_req_frame_hdl, 0, 0,
 	    DDI_DMA_SYNC_FORDEV);
@@ -644,6 +655,7 @@ mptsas_raid_action_system_shutdown(mptsas_t *mpt)
 	 * we don't want to leave it hanging if it's coming.  Poll because
 	 * interrupts are disabled when this function is called.
 	 */
+	rpqp = mpt->m_rep_post_queues;
 	for (cnt = 0; cnt < 5000; cnt++) {
 		/*
 		 * Check for a reply.
@@ -652,7 +664,7 @@ mptsas_raid_action_system_shutdown(mptsas_t *mpt)
 		    DDI_DMA_SYNC_FORCPU);
 
 		reply_desc_union = (pMpi2ReplyDescriptorsUnion_t)
-		    MPTSAS_GET_NEXT_REPLY(mpt, mpt->m_post_index);
+		    MPTSAS_GET_NEXT_REPLY(rpqp, rpqp->rpq_index);
 
 		if (ddi_get32(mpt->m_acc_post_queue_hdl,
 		    &reply_desc_union->Words.Low) == 0xFFFFFFFF ||
@@ -727,20 +739,21 @@ clear_and_continue:
 		 * Clear the reply descriptor for re-use and increment index.
 		 */
 		ddi_put64(mpt->m_acc_post_queue_hdl,
-		    &((uint64_t *)(void *)mpt->m_post_queue)[mpt->m_post_index],
+		    &((uint64_t *)(void *)rpqp->rpq_queue)[rpqp->rpq_index],
 		    0xFFFFFFFFFFFFFFFF);
 		(void) ddi_dma_sync(mpt->m_dma_post_queue_hdl, 0, 0,
 		    DDI_DMA_SYNC_FORDEV);
 
 		/*
-		 * Update the global reply index and keep looking for the
+		 * Update the reply index and keep looking for the
 		 * reply if not found yet.
 		 */
-		if (++mpt->m_post_index == mpt->m_post_queue_depth) {
-			mpt->m_post_index = 0;
+		if (++rpqp->rpq_index == mpt->m_post_queue_depth) {
+			rpqp->rpq_index = 0;
 		}
+
 		ddi_put32(mpt->m_datap, &mpt->m_reg->ReplyPostHostIndex,
-		    mpt->m_post_index);
+		    rpqp->rpq_index);
 		if (!found_reply) {
 			continue;
 		}

@@ -11,6 +11,8 @@
 
 /*
  * Copyright 2014 Joyent, Inc.  All rights reserved.
+ * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
  */
 
 #include <sys/scsi/adapters/mpt_sas/mptsas_hash.h>

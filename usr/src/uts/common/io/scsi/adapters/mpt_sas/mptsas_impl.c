@@ -21,10 +21,9 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
- * Copyright 2014 OmniTI Computer Consulting, Inc. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
  * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
- * Copyright (c) 2017, Joyent, Inc.
+ * Copyright 2014 OmniTI Computer Consulting, Inc. All rights reserved.
  */
 
 /*
@@ -69,6 +68,7 @@
 #include <sys/note.h>
 #include <sys/scsi/scsi.h>
 #include <sys/pci.h>
+#include <sys/sdt.h>
 
 #pragma pack(1)
 #include <sys/scsi/adapters/mpt_sas/mpi/mpi2_type.h>
@@ -90,6 +90,13 @@
  * FMA header files.
  */
 #include <sys/fm/io/ddi.h>
+
+#if defined(MPTSAS_DEBUG)
+extern uint32_t mptsas_debug_flags;
+extern uint32_t mptsas_dbglog_imask;
+uint32_t mptsas_fail_next_tm_request;
+extern void prom_printf(const char *, ...);
+#endif
 
 /*
  *  prototypes
@@ -176,7 +183,8 @@ mptsas_destroy_ioc_event_cmd(mptsas_t *mpt)
 	 */
 	while (ioc_cmd != NULL) {
 		if (ioc_cmd->m_event_cmd.cmd_flags & CFLAG_CMDACK) {
-			NDBG20(("destroy!! remove Ack Flag ioc_cmd\n"));
+			NDBG20(("%d: destroy!! remove Ack Flag ioc_cmd\n",
+			    mpt->m_instance));
 			if ((mpt->m_ioc_event_cmdq =
 			    ioc_cmd->m_event_linkp) == NULL)
 				mpt->m_ioc_event_cmdtail =
@@ -189,7 +197,8 @@ mptsas_destroy_ioc_event_cmd(mptsas_t *mpt)
 			 * it's not ack cmd, so continue to check next one
 			 */
 
-			NDBG20(("destroy!! it's not Ack Flag, continue\n"));
+			NDBG20(("%d: destroy!! it's not Ack Flag, continue\n",
+			    mpt->m_instance));
 			ioc_cmd = ioc_cmd->m_event_linkp;
 		}
 
@@ -259,7 +268,7 @@ mptsas_start_config_page_access(mptsas_t *mpt, mptsas_cmd_t *cmd)
 			direction = MPI2_SGE_FLAGS_HOST_TO_IOC;
 		}
 		ddi_put32(mpt->m_acc_req_frame_hdl, &sge->Address.Low,
-		    (uint32_t)cmd->cmd_dma_addr);
+		    (uint32_t)(cmd->cmd_dma_addr&0xfffffffful));
 		ddi_put32(mpt->m_acc_req_frame_hdl, &sge->Address.High,
 		    (uint32_t)(cmd->cmd_dma_addr >> 32));
 	}
@@ -281,7 +290,7 @@ mptsas_start_config_page_access(mptsas_t *mpt, mptsas_cmd_t *cmd)
 	    DDI_DMA_SYNC_FORDEV);
 	request_desc = (cmd->cmd_slot << 16) +
 	    MPI2_REQ_DESCRIPT_FLAGS_DEFAULT_TYPE;
-	cmd->cmd_rfm = NULL;
+	cmd->cmd_rfm = 0;
 	MPTSAS_START_CMD(mpt, request_desc);
 	if ((mptsas_check_dma_handle(mpt->m_dma_req_frame_hdl) !=
 	    DDI_SUCCESS) ||
@@ -312,17 +321,14 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 	boolean_t		free_dma = B_FALSE;
 
 	va_start(ap, callback);
+	NDBG26(("%d: access_config_page(type=0x%x, num=0x%x, addr=0x%x)",
+	    mpt->m_instance, page_type, page_number, page_address));
 	ASSERT(mutex_owned(&mpt->m_mutex));
 
 	/*
 	 * Get a command from the pool.
 	 */
-	if ((rval = (mptsas_request_from_pool(mpt, &cmd, &pkt))) == -1) {
-		mptsas_log(mpt, CE_NOTE, "command pool is full for config "
-		    "page request");
-		rval = DDI_FAILURE;
-		goto page_done;
-	}
+	mptsas_request_from_pool(mpt, &cmd, &pkt);
 	config_flags |= MPTSAS_REQUEST_POOL_CMD;
 
 	bzero((caddr_t)cmd, sizeof (*cmd));
@@ -350,7 +356,7 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 	/*
 	 * Save the config header request message in a slot.
 	 */
-	if (mptsas_save_cmd(mpt, cmd) == TRUE) {
+	if (mptsas_save_ioccmd(mpt, cmd) == TRUE) {
 		cmd->cmd_flags |= CFLAG_PREPARED;
 		mptsas_start_config_page_access(mpt, cmd);
 	} else {
@@ -367,6 +373,7 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 	if ((page_type == MPI2_CONFIG_EXTPAGETYPE_RAID_CONFIG) ||
 	    (page_type == MPI2_CONFIG_PAGETYPE_RAID_VOLUME) ||
 	    (page_type == MPI2_CONFIG_PAGETYPE_RAID_PHYSDISK)) {
+		config_flags |= MPTSAS_DID_POLLED;
 		(void) mptsas_poll(mpt, cmd, pkt->pkt_time * 1000);
 	} else {
 		while ((cmd->cmd_flags & CFLAG_FINISHED) == 0) {
@@ -392,7 +399,7 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 		(void) ddi_dma_sync(mpt->m_dma_reply_frame_hdl, 0, 0,
 		    DDI_DMA_SYNC_FORCPU);
 		reply = (pMpi2ConfigReply_t)(mpt->m_reply_frame + (cmd->cmd_rfm
-		    - (mpt->m_reply_frame_dma_addr & 0xffffffffu)));
+		    - (mpt->m_reply_frame_dma_addr&0xfffffffful)));
 		config.page_type = ddi_get8(mpt->m_acc_reply_frame_hdl,
 		    &reply->Header.PageType);
 		config.page_number = ddi_get8(mpt->m_acc_reply_frame_hdl,
@@ -412,9 +419,9 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 		    &reply->IOCLogInfo);
 
 		if (iocstatus) {
-			NDBG13(("mptsas_access_config_page header: "
-			    "IOCStatus=0x%x, IOCLogInfo=0x%x", iocstatus,
-			    iocloginfo));
+			NDBG13(("%d: access_config_page header: "
+			    "IOCStatus=0x%x, IOCLogInfo=0x%x",
+			    mpt->m_instance, iocstatus, iocloginfo));
 			rval = DDI_FAILURE;
 			goto page_done;
 		}
@@ -433,6 +440,13 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 		rval = DDI_FAILURE;
 		goto page_done;
 	}
+	if (pkt->pkt_reason != CMD_CMPLT) {
+		mptsas_log(mpt, CE_WARN, "mptsas_access_config_page: Bad pkt "
+		    "reason 0x%x(%s)", pkt->pkt_reason,
+		    scsi_rname(pkt->pkt_reason));
+		rval = DDI_FAILURE;
+		goto page_done;
+	}
 
 	/*
 	 * Put the reply frame back on the free queue, increment the free
@@ -440,17 +454,16 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 	 * if this reply is an ADDRESS reply.
 	 */
 	if (config_flags & MPTSAS_ADDRESS_REPLY) {
-		ddi_put32(mpt->m_acc_free_queue_hdl,
-		    &((uint32_t *)(void *)mpt->m_free_queue)[mpt->m_free_index],
-		    cmd->cmd_rfm);
-		(void) ddi_dma_sync(mpt->m_dma_free_queue_hdl, 0, 0,
-		    DDI_DMA_SYNC_FORDEV);
-		if (++mpt->m_free_index == mpt->m_free_queue_depth) {
-			mpt->m_free_index = 0;
-		}
-		ddi_put32(mpt->m_datap, &mpt->m_reg->ReplyFreeHostIndex,
-		    mpt->m_free_index);
+		mptsas_return_replyframe(mpt, cmd->cmd_rfm);
 		config_flags &= (~MPTSAS_ADDRESS_REPLY);
+	}
+	if (cmd->cmd_flags & CFLAG_PREPARED) {
+		/* The poll wait could have timed out */
+		if (config_flags & MPTSAS_DID_POLLED) {
+			(void) mptsas_secure_cmd_from_slots(mpt->m_active,
+			    cmd->cmd_slot);
+		}
+		mptsas_deref_ioccmd(mpt, cmd);
 	}
 
 	/*
@@ -466,9 +479,9 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 	if (mptsas_dma_addr_create(mpt, attrs,
 	    &cmd->cmd_dmahandle, &accessp, &page_memp,
 	    len, &cookie) == FALSE) {
-		rval = DDI_FAILURE;
 		mptsas_log(mpt, CE_WARN,
 		    "mptsas_dma_addr_create(len=0x%x) failed", (int)len);
+		rval = DDI_FAILURE;
 		goto page_done;
 	}
 	/* NOW we can safely call mptsas_dma_addr_destroy(). */
@@ -492,12 +505,17 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 	pkt->pkt_ha_private	= (opaque_t)&config;
 	pkt->pkt_flags		= FLAG_HEAD;
 	pkt->pkt_time		= 60;
-	cmd->cmd_flags		= CFLAG_PREPARED | CFLAG_CMDIOC | CFLAG_CONFIG;
+	cmd->cmd_flags		= CFLAG_CMDIOC | CFLAG_CONFIG;
 
 	/*
 	 * Send the config page request.  cmd is re-used from header request.
 	 */
-	mptsas_start_config_page_access(mpt, cmd);
+	if (mptsas_save_ioccmd(mpt, cmd) == TRUE) {
+		cmd->cmd_flags |= CFLAG_PREPARED;
+		mptsas_start_config_page_access(mpt, cmd);
+	} else {
+		mptsas_waitq_add(mpt, cmd);
+	}
 
 	/*
 	 * If this is a request for a RAID info page, or any page called during
@@ -537,7 +555,7 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 		(void) ddi_dma_sync(cmd->cmd_dmahandle, 0, 0,
 		    DDI_DMA_SYNC_FORCPU);
 		reply = (pMpi2ConfigReply_t)(mpt->m_reply_frame + (cmd->cmd_rfm
-		    - (mpt->m_reply_frame_dma_addr & 0xffffffffu)));
+		    - (mpt->m_reply_frame_dma_addr&0xfffffffful)));
 		iocstatus = ddi_get16(mpt->m_acc_reply_frame_hdl,
 		    &reply->IOCStatus);
 		iocstatus = MPTSAS_IOCSTATUS(iocstatus);
@@ -545,8 +563,19 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 		    &reply->IOCLogInfo);
 	}
 
-	if (callback(mpt, page_memp, accessp, iocstatus, iocloginfo, ap)
-	    != DDI_SUCCESS) {
+	if (pkt->pkt_reason == CMD_RESET) {
+		mptsas_log(mpt, CE_WARN, "ioc reset abort config request");
+		rval = DDI_FAILURE;
+	}
+	if (pkt->pkt_reason != CMD_CMPLT) {
+		mptsas_log(mpt, CE_WARN, "mptsas_access_config_page:2 Bad pkt "
+		    "reason 0x%x(%s)", pkt->pkt_reason,
+		    scsi_rname(pkt->pkt_reason));
+		rval = DDI_FAILURE;
+		goto page_done;
+	}
+
+	if (callback(mpt, page_memp, accessp, iocstatus, iocloginfo, ap)) {
 		rval = DDI_FAILURE;
 		goto page_done;
 	}
@@ -566,11 +595,6 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 		rval = DDI_FAILURE;
 		goto page_done;
 	}
-	if (pkt->pkt_reason == CMD_RESET) {
-		mptsas_log(mpt, CE_WARN, "ioc reset abort config request");
-		rval = DDI_FAILURE;
-		goto page_done;
-	}
 
 page_done:
 	va_end(ap);
@@ -580,46 +604,48 @@ page_done:
 	 * if this reply is an ADDRESS reply.
 	 */
 	if (config_flags & MPTSAS_ADDRESS_REPLY) {
-		ddi_put32(mpt->m_acc_free_queue_hdl,
-		    &((uint32_t *)(void *)mpt->m_free_queue)[mpt->m_free_index],
-		    cmd->cmd_rfm);
-		(void) ddi_dma_sync(mpt->m_dma_free_queue_hdl, 0, 0,
-		    DDI_DMA_SYNC_FORDEV);
-		if (++mpt->m_free_index == mpt->m_free_queue_depth) {
-			mpt->m_free_index = 0;
-		}
-		ddi_put32(mpt->m_datap, &mpt->m_reg->ReplyFreeHostIndex,
-		    mpt->m_free_index);
+		mptsas_return_replyframe(mpt, cmd->cmd_rfm);
 	}
 
 	if (free_dma)
 		mptsas_dma_addr_destroy(&cmd->cmd_dmahandle, &accessp);
 
 	if (cmd && (cmd->cmd_flags & CFLAG_PREPARED)) {
-		mptsas_remove_cmd(mpt, cmd);
-		config_flags &= (~MPTSAS_REQUEST_POOL_CMD);
+		/* The poll wait could have timed out */
+		if (config_flags & MPTSAS_DID_POLLED) {
+			(void) mptsas_secure_cmd_from_slots(mpt->m_active,
+			    cmd->cmd_slot);
+		}
+		mptsas_deref_ioccmd(mpt, cmd);
 	}
 	if (config_flags & MPTSAS_REQUEST_POOL_CMD)
 		mptsas_return_to_pool(mpt, cmd);
 
+	/*
+	 * If there was a timeout increment a count of these failures.
+	 * The count is checked against a maximum allowed number in
+	 * mptsas_watch() and if it goes above the maximum a reset will be
+	 * attempted from there.
+	 */
 	if (config_flags & MPTSAS_CMD_TIMEOUT) {
-		mpt->m_softstate &= ~MPTSAS_SS_MSG_UNIT_RESET;
-		if ((mptsas_restart_ioc(mpt)) == DDI_FAILURE) {
-			mptsas_log(mpt, CE_WARN, "mptsas_restart_ioc failed");
-		}
+		DTRACE_PROBE2(failed__config, mptsas_t *, mpt, int, rval);
+		mpt->m_failed_cfg_cmds++;
 	}
 
+	mptsas_doneq_apempty(mpt);
 	return (rval);
 }
 
 int
 mptsas_send_config_request_msg(mptsas_t *mpt, uint8_t action, uint8_t pagetype,
-    uint32_t pageaddress, uint8_t pagenumber, uint8_t pageversion,
-    uint8_t pagelength, uint32_t SGEflagslength, uint64_t SGEaddress)
+	uint32_t pageaddress, uint8_t pagenumber, uint8_t pageversion,
+	uint8_t pagelength, uint32_t SGEflagslength, uint64_t SGEaddress)
 {
 	pMpi2ConfigRequest_t	config;
 	int			send_numbytes;
 
+	NDBG26(("%d: send_config_request_msg(type=0x%x, addr=0x%x, "
+	    "num=0x%x)", mpt->m_instance, pagetype, pageaddress, pagenumber));
 	bzero(mpt->m_hshk_memp, sizeof (MPI2_CONFIG_REQUEST));
 	config = (pMpi2ConfigRequest_t)mpt->m_hshk_memp;
 	ddi_put8(mpt->m_hshk_acc_hdl, &config->Function, MPI2_FUNCTION_CONFIG);
@@ -632,7 +658,8 @@ mptsas_send_config_request_msg(mptsas_t *mpt, uint8_t action, uint8_t pagetype,
 	ddi_put32(mpt->m_hshk_acc_hdl,
 	    &config->PageBufferSGE.MpiSimple.FlagsLength, SGEflagslength);
 	ddi_put32(mpt->m_hshk_acc_hdl,
-	    &config->PageBufferSGE.MpiSimple.u.Address64.Low, SGEaddress);
+	    &config->PageBufferSGE.MpiSimple.u.Address64.Low,
+	    SGEaddress&0xfffffffful);
 	ddi_put32(mpt->m_hshk_acc_hdl,
 	    &config->PageBufferSGE.MpiSimple.u.Address64.High,
 	    SGEaddress >> 32);
@@ -650,9 +677,9 @@ mptsas_send_config_request_msg(mptsas_t *mpt, uint8_t action, uint8_t pagetype,
 
 int
 mptsas_send_extended_config_request_msg(mptsas_t *mpt, uint8_t action,
-    uint8_t extpagetype, uint32_t pageaddress, uint8_t pagenumber,
-    uint8_t pageversion, uint16_t extpagelength,
-    uint32_t SGEflagslength, uint64_t SGEaddress)
+	uint8_t extpagetype, uint32_t pageaddress, uint8_t pagenumber,
+	uint8_t pageversion, uint16_t extpagelength,
+	uint32_t SGEflagslength, uint64_t SGEaddress)
 {
 	pMpi2ConfigRequest_t	config;
 	int			send_numbytes;
@@ -671,7 +698,8 @@ mptsas_send_extended_config_request_msg(mptsas_t *mpt, uint8_t action,
 	ddi_put32(mpt->m_hshk_acc_hdl,
 	    &config->PageBufferSGE.MpiSimple.FlagsLength, SGEflagslength);
 	ddi_put32(mpt->m_hshk_acc_hdl,
-	    &config->PageBufferSGE.MpiSimple.u.Address64.Low, SGEaddress);
+	    &config->PageBufferSGE.MpiSimple.u.Address64.Low,
+	    SGEaddress&0xfffffffful);
 	ddi_put32(mpt->m_hshk_acc_hdl,
 	    &config->PageBufferSGE.MpiSimple.u.Address64.High,
 	    SGEaddress >> 32);
@@ -719,7 +747,7 @@ mptsas_ioc_wait_for_doorbell(mptsas_t *mpt)
 
 int
 mptsas_send_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
-    ddi_acc_handle_t accessp)
+	ddi_acc_handle_t accessp)
 {
 	int	i;
 
@@ -732,7 +760,8 @@ mptsas_send_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 	    ((numbytes / 4) << MPI2_DOORBELL_ADD_DWORDS_SHIFT)));
 
 	if (mptsas_ioc_wait_for_doorbell(mpt)) {
-		NDBG19(("mptsas_send_handshake failed.  Doorbell not ready\n"));
+		NDBG19(("%d: send_handshake failed.  Doorbell not "
+		    "ready\n", mpt->m_instance));
 		return (-1);
 	}
 
@@ -742,8 +771,8 @@ mptsas_send_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 	ddi_put32(mpt->m_datap, &mpt->m_reg->HostInterruptStatus, 0);
 
 	if (mptsas_ioc_wait_for_response(mpt)) {
-		NDBG19(("mptsas_send_handshake failed.  Doorbell not "
-		    "cleared\n"));
+		NDBG19(("%d: send_handshake failed.  Doorbell not "
+		    "cleared\n", mpt->m_instance));
 		return (-1);
 	}
 
@@ -754,8 +783,8 @@ mptsas_send_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 		ddi_put32(mpt->m_datap, &mpt->m_reg->Doorbell,
 		    ddi_get32(accessp, (uint32_t *)((void *)(memp))));
 		if (mptsas_ioc_wait_for_response(mpt)) {
-			NDBG19(("mptsas_send_handshake failed posting "
-			    "message\n"));
+			NDBG19(("%d: send_handshake failed posting "
+			    "message\n", mpt->m_instance));
 			return (-1);
 		}
 	}
@@ -771,7 +800,7 @@ mptsas_send_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 
 int
 mptsas_get_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
-    ddi_acc_handle_t accessp)
+	ddi_acc_handle_t accessp)
 {
 	int		i, totalbytes, bytesleft;
 	uint16_t	val;
@@ -780,7 +809,8 @@ mptsas_get_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 	 * wait for doorbell
 	 */
 	if (mptsas_ioc_wait_for_doorbell(mpt)) {
-		NDBG19(("mptsas_get_handshake failed.  Doorbell not ready\n"));
+		NDBG19(("%d: get_handshake failed.  Doorbell not "
+		    "ready", mpt->m_instance));
 		return (-1);
 	}
 
@@ -793,8 +823,8 @@ mptsas_get_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 		    &mpt->m_reg->Doorbell) & MPI2_DOORBELL_DATA_MASK);
 		ddi_put32(mpt->m_datap, &mpt->m_reg->HostInterruptStatus, 0);
 		if (mptsas_ioc_wait_for_doorbell(mpt)) {
-			NDBG19(("mptsas_get_handshake failure getting initial"
-			    " data\n"));
+			NDBG19(("%d: get_handshake failure getting "
+			    "initial data", mpt->m_instance));
 			return (-1);
 		}
 		ddi_put16(accessp, (uint16_t *)((void *)(memp)), val);
@@ -822,8 +852,8 @@ mptsas_get_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 		    &mpt->m_reg->Doorbell) & MPI2_DOORBELL_DATA_MASK);
 		ddi_put32(mpt->m_datap, &mpt->m_reg->HostInterruptStatus, 0);
 		if (mptsas_ioc_wait_for_doorbell(mpt)) {
-			NDBG19(("mptsas_get_handshake failure getting"
-			    " main data\n"));
+			NDBG19(("%d: get_handshake failure getting"
+			    " main data", mpt->m_instance));
 			return (-1);
 		}
 		ddi_put16(accessp, (uint16_t *)((void *)(memp)), val);
@@ -843,8 +873,9 @@ mptsas_get_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 			ddi_put32(mpt->m_datap,
 			    &mpt->m_reg->HostInterruptStatus, 0);
 			if (mptsas_ioc_wait_for_doorbell(mpt)) {
-				NDBG19(("mptsas_get_handshake failure getting "
-				    "extra garbage data\n"));
+				NDBG19(("%d: get_handshake failure "
+				    "getting extra garbage data",
+				    mpt->m_instance));
 				return (-1);
 			}
 		}
@@ -861,7 +892,7 @@ mptsas_get_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 	return (0);
 }
 
-int
+static int
 mptsas_kick_start(mptsas_t *mpt)
 {
 	int		polls = 0;
@@ -887,16 +918,14 @@ mptsas_kick_start(mptsas_t *mpt)
 	drv_usecwait(50000);
 
 	/*
-	 * Poll, waiting for Reset Adapter bit to clear.  300 Seconds max
-	 * (600000 * 500 = 300,000,000 uSeconds, 300 seconds).
+	 * Poll, waiting for Reset Adapter bit to clear.  30 Seconds max
+	 * (60000 * 500 = 30,000,000 uSeconds, 30 seconds).
 	 * If no more adapter (all FF's), just return failure.
 	 */
-	for (polls = 0; polls < 600000; polls++) {
+	for (polls = 0; polls < 60000; polls++) {
 		diag_reg = ddi_get32(mpt->m_datap,
 		    &mpt->m_reg->HostDiagnostic);
 		if (diag_reg == 0xFFFFFFFF) {
-			mptsas_fm_ereport(mpt, DDI_FM_DEVICE_NO_RESPONSE);
-			ddi_fm_service_impact(mpt->m_dip, DDI_SERVICE_LOST);
 			return (DDI_FAILURE);
 		}
 		if (!(diag_reg & MPI2_DIAG_RESET_ADAPTER)) {
@@ -904,12 +933,19 @@ mptsas_kick_start(mptsas_t *mpt)
 		}
 		drv_usecwait(500);
 	}
-	if (polls == 600000) {
-		mptsas_fm_ereport(mpt, DDI_FM_DEVICE_NO_RESPONSE);
-		ddi_fm_service_impact(mpt->m_dip, DDI_SERVICE_LOST);
+	if (polls == 60000) {
 		return (DDI_FAILURE);
 	}
 
+#if defined(MPTSAS_DEBUG)
+	if (quiesce_active) {
+		prom_printf("%d: mptsas_kick_start() , reset cleared in %d "
+		    "MSec\n", mpt->m_instance, polls/2);
+	} else {
+		NDBG26(("%d: mptsas_kick_start() , reset cleared in %d "
+		    "MSec\n", mpt->m_instance, polls/2));
+	}
+#endif
 	/*
 	 * Check if adapter is in Host Boot Mode.  If so, restart adapter
 	 * assuming the HCB points to good FW.
@@ -940,13 +976,11 @@ mptsas_kick_start(mptsas_t *mpt)
 	    MPI2_WRSEQ_FLUSH_KEY_VALUE);
 
 	/*
-	 * Wait 60 seconds max for FW to come to ready state.
+	 * Wait 30 seconds max for FW to come to ready state.
 	 */
-	for (polls = 0; polls < 60000; polls++) {
+	for (polls = 0; polls < 30000; polls++) {
 		ioc_state = ddi_get32(mpt->m_datap, &mpt->m_reg->Doorbell);
 		if (ioc_state == 0xFFFFFFFF) {
-			mptsas_fm_ereport(mpt, DDI_FM_DEVICE_NO_RESPONSE);
-			ddi_fm_service_impact(mpt->m_dip, DDI_SERVICE_LOST);
 			return (DDI_FAILURE);
 		}
 		if ((ioc_state & MPI2_IOC_STATE_MASK) ==
@@ -955,12 +989,19 @@ mptsas_kick_start(mptsas_t *mpt)
 		}
 		drv_usecwait(1000);
 	}
-	if (polls == 60000) {
-		mptsas_fm_ereport(mpt, DDI_FM_DEVICE_NO_RESPONSE);
-		ddi_fm_service_impact(mpt->m_dip, DDI_SERVICE_LOST);
+	if (polls == 30000) {
 		return (DDI_FAILURE);
 	}
 
+#if defined(MPTSAS_DEBUG)
+	if (quiesce_active) {
+		prom_printf("%d: mptsas_kick_start() , Ready in %d MSec\n",
+		    mpt->m_instance, polls);
+	} else {
+		NDBG26(("%d: mptsas_kick_start() , Ready in %d MSec\n",
+		    mpt->m_instance, polls));
+	}
+#endif
 	/*
 	 * Clear the ioc ack events queue.
 	 */
@@ -1003,23 +1044,32 @@ mptsas_ioc_reset(mptsas_t *mpt, int first_time)
 			ddi_put32(mpt->m_datap, &mpt->m_reg->Doorbell,
 			    (reset_msg << MPI2_DOORBELL_FUNCTION_SHIFT));
 			if (mptsas_ioc_wait_for_response(mpt)) {
-				NDBG19(("mptsas_ioc_reset failure sending "
-				    "message_unit_reset\n"));
+				NDBG19(("%d: ioc_reset failure sending "
+				    "message_unit_reset", mpt->m_instance));
 				goto hard_reset;
 			}
 
 			/*
-			 * Wait no more than 60 seconds for chip to become
+			 * Wait no more than 30 seconds for chip to become
 			 * ready.
 			 */
 			while ((ddi_get32(mpt->m_datap, &mpt->m_reg->Doorbell) &
 			    MPI2_IOC_STATE_READY) == 0x0) {
 				drv_usecwait(1000);
-				if (polls++ > 60000) {
+				if (polls++ > 30000) {
 					goto hard_reset;
 				}
 			}
 
+#if defined(MPTSAS_DEBUG)
+			if (quiesce_active) {
+				prom_printf("%d: mptsas_ioc_reset(), Ready "
+				    "in %d MSec\n", mpt->m_instance, polls);
+			} else {
+				NDBG26(("%d: mptsas_ioc_reset(), Ready "
+				    "in %d MSec\n", mpt->m_instance, polls));
+			}
+#endif
 			/*
 			 * Save the last reset mode done on IOC which will be
 			 * helpful while resuming from suspension.
@@ -1038,36 +1088,33 @@ mptsas_ioc_reset(mptsas_t *mpt, int first_time)
 hard_reset:
 	mpt->m_softstate &= ~MPTSAS_DID_MSG_UNIT_RESET;
 	if (mptsas_kick_start(mpt) == DDI_FAILURE) {
-		mptsas_fm_ereport(mpt, DDI_FM_DEVICE_NO_RESPONSE);
-		ddi_fm_service_impact(mpt->m_dip, DDI_SERVICE_LOST);
+		if (quiesce_active == 0) {
+			mptsas_fm_ereport(mpt, DDI_FM_DEVICE_NO_RESPONSE);
+			ddi_fm_service_impact(mpt->m_dip, DDI_SERVICE_LOST);
+		}
 		return (MPTSAS_RESET_FAIL);
 	}
 	return (MPTSAS_SUCCESS_HARDRESET);
 }
 
 
-int
+void
 mptsas_request_from_pool(mptsas_t *mpt, mptsas_cmd_t **cmd,
     struct scsi_pkt **pkt)
 {
-	m_event_struct_t	*ioc_cmd = NULL;
+	m_event_struct_t	*ioc_cmd;
 
 	ioc_cmd = kmem_zalloc(M_EVENT_STRUCT_SIZE, KM_SLEEP);
-	if (ioc_cmd == NULL) {
-		return (DDI_FAILURE);
-	}
 	ioc_cmd->m_event_linkp = NULL;
 	mptsas_ioc_event_cmdq_add(mpt, ioc_cmd);
 	*cmd = &(ioc_cmd->m_event_cmd);
 	*pkt = &(ioc_cmd->m_event_pkt);
-
-	return (DDI_SUCCESS);
 }
 
 void
 mptsas_return_to_pool(mptsas_t *mpt, mptsas_cmd_t *cmd)
 {
-	m_event_struct_t	*ioc_cmd = NULL;
+	m_event_struct_t	*ioc_cmd;
 
 	ioc_cmd = mptsas_ioc_event_find_by_cmd(mpt, cmd);
 	if (ioc_cmd == NULL) {
@@ -1076,19 +1123,18 @@ mptsas_return_to_pool(mptsas_t *mpt, mptsas_cmd_t *cmd)
 
 	mptsas_ioc_event_cmdq_delete(mpt, ioc_cmd);
 	kmem_free(ioc_cmd, M_EVENT_STRUCT_SIZE);
-	ioc_cmd = NULL;
 }
 
 /*
  * NOTE: We should be able to queue TM requests in the controller to make this
  * a lot faster.  If resetting all targets, for example, we can load the hi
  * priority queue with its limit and the controller will reply as they are
- * completed.  This way, we don't have to poll for one reply at a time.
+ * completed.  This way, we don't have to wait for one reply at a time.
  * Think about enhancing this later.
  */
 int
 mptsas_ioc_task_management(mptsas_t *mpt, int task_type, uint16_t dev_handle,
-    int lun, uint8_t *reply, uint32_t reply_size, int mode)
+    int lun, uint8_t *reply, uint32_t reply_size, int mode, boolean_t wait)
 {
 	/*
 	 * In order to avoid allocating variables on the stack,
@@ -1098,24 +1144,46 @@ mptsas_ioc_task_management(mptsas_t *mpt, int task_type, uint16_t dev_handle,
 	 */
 
 	pMpi2SCSITaskManagementRequest_t	task;
-	int					rval = FALSE;
+	int					rval = TRUE;
 	mptsas_cmd_t				*cmd;
 	struct scsi_pkt				*pkt;
 	mptsas_slots_t				*slots = mpt->m_active;
-	uint64_t				request_desc, i;
+	uint64_t				request_desc;
 	pMPI2DefaultReply_t			reply_msg;
 
-	/*
-	 * Can't start another task management routine.
-	 */
-	if (slots->m_slot[MPTSAS_TM_SLOT(mpt)] != NULL) {
-		mptsas_log(mpt, CE_WARN, "Can only start 1 task management"
-		    " command at a time");
+	if (mpt->m_in_reset == TRUE) {
 		return (FALSE);
 	}
 
+#ifdef MPTSAS_DEBUG
+	if (mptsas_fail_next_tm_request != 0) {
+		mptsas_fail_next_tm_request = 0;
+		return (FALSE);
+	}
+#endif
+	ASSERT(reply == NULL || wait == B_TRUE);
+
 	cmd = &(mpt->m_event_task_mgmt.m_event_cmd);
 	pkt = &(mpt->m_event_task_mgmt.m_event_pkt);
+
+	/*
+	 * Can't start another task management routine until  the slot
+	 * is clear.
+	 */
+	while (slots->m_slot[MPTSAS_TM_SLOT(mpt)] != NULL ||
+	    cmd->cmd_rfm != 0) {
+		if (wait) {
+			cv_wait(&mpt->m_tm_cv, &mpt->m_mutex);
+			if (mpt->m_in_reset == TRUE) {
+				return (FALSE);
+			}
+		} else {
+			return (FALSE);
+		}
+	}
+
+	NDBG26(("%d: ioc_task_management(type=0x%x)", mpt->m_instance,
+	    task_type));
 
 	bzero((caddr_t)cmd, sizeof (*cmd));
 	bzero((caddr_t)pkt, scsi_pkt_size());
@@ -1123,16 +1191,23 @@ mptsas_ioc_task_management(mptsas_t *mpt, int task_type, uint16_t dev_handle,
 	pkt->pkt_cdbp		= (opaque_t)&cmd->cmd_cdb[0];
 	pkt->pkt_scbp		= (opaque_t)&cmd->cmd_scb;
 	pkt->pkt_ha_private	= (opaque_t)cmd;
-	pkt->pkt_flags		= (FLAG_NOINTR | FLAG_HEAD);
-	pkt->pkt_time		= 60;
+	pkt->pkt_flags		= FLAG_HEAD;
+	pkt->pkt_time		= 30;
 	pkt->pkt_address.a_target = dev_handle;
 	pkt->pkt_address.a_lun = (uchar_t)lun;
 	cmd->cmd_pkt		= pkt;
 	cmd->cmd_scblen		= 1;
 	cmd->cmd_flags		= CFLAG_TM_CMD;
 	cmd->cmd_slot		= MPTSAS_TM_SLOT(mpt);
+	cmd->cmd_tgt_addr	= refhash_linear_search(mpt->m_targets,
+	    mptsas_target_eval_devhdl, &dev_handle);
 
 	slots->m_slot[MPTSAS_TM_SLOT(mpt)] = cmd;
+
+	/* Set timeout */
+	cmd->cmd_active_expiration = gethrtime() +
+	    (hrtime_t)pkt->pkt_time * NANOSEC;
+	mptsas_insert_expiration(&mpt->m_active_ioccmdq, cmd);
 
 	/*
 	 * Store the TM message in memory location corresponding to the TM slot
@@ -1161,57 +1236,100 @@ mptsas_ioc_task_management(mptsas_t *mpt, int task_type, uint16_t dev_handle,
 	request_desc = (cmd->cmd_slot << 16) +
 	    MPI2_REQ_DESCRIPT_FLAGS_HIGH_PRIORITY;
 	MPTSAS_START_CMD(mpt, request_desc);
-	rval = mptsas_poll(mpt, cmd, MPTSAS_POLL_TIME);
 
-	if (pkt->pkt_reason == CMD_INCOMPLETE)
+	if (!wait)
+		return (TRUE);
+
+	cmd->cmd_flags |= CFLAG_TM_WAIT;
+	while ((cmd->cmd_flags & CFLAG_FINISHED) == 0) {
+		cv_wait(&mpt->m_tm_cv, &mpt->m_mutex);
+	}
+
+	if ((cmd->cmd_flags & CFLAG_TIMEOUT) ||
+	    pkt->pkt_reason == CMD_INCOMPLETE || pkt->pkt_reason == CMD_RESET) {
 		rval = FALSE;
+	}
 
 	/*
 	 * If a reply frame was used and there is a reply buffer to copy the
 	 * reply data into, copy it.  If this fails, log a message, but don't
 	 * fail the TM request.
 	 */
-	if (cmd->cmd_rfm && reply) {
-		(void) ddi_dma_sync(mpt->m_dma_reply_frame_hdl, 0, 0,
-		    DDI_DMA_SYNC_FORCPU);
-		reply_msg = (pMPI2DefaultReply_t)
-		    (mpt->m_reply_frame + (cmd->cmd_rfm -
-		    (mpt->m_reply_frame_dma_addr & 0xffffffffu)));
-		if (reply_size > sizeof (MPI2_SCSI_TASK_MANAGE_REPLY)) {
-			reply_size = sizeof (MPI2_SCSI_TASK_MANAGE_REPLY);
-		}
-		mutex_exit(&mpt->m_mutex);
-		for (i = 0; i < reply_size; i++) {
-			if (ddi_copyout((uint8_t *)reply_msg + i, reply + i, 1,
-			    mode)) {
-				mptsas_log(mpt, CE_WARN, "failed to copy out "
-				    "reply data for TM request");
-				break;
+	if (cmd->cmd_rfm) {
+		if (reply != NULL && rval != FALSE) {
+			(void) ddi_dma_sync(mpt->m_dma_reply_frame_hdl, 0, 0,
+			    DDI_DMA_SYNC_FORCPU);
+			reply_msg = (pMPI2DefaultReply_t)
+			    (mpt->m_reply_frame + (cmd->cmd_rfm -
+			    (mpt->m_reply_frame_dma_addr&0xfffffffful)));
+			if (reply_size > sizeof (MPI2_SCSI_TASK_MANAGE_REPLY)) {
+				reply_size =
+				    sizeof (MPI2_SCSI_TASK_MANAGE_REPLY);
 			}
+			mutex_exit(&mpt->m_mutex);
+			if (ddi_copyout((uint8_t *)reply_msg, reply,
+			    reply_size, mode)) {
+				mptsas_log(mpt, CE_WARN, "failed to "
+				    "copy out reply data for TM "
+				    "request");
+			}
+			mutex_enter(&mpt->m_mutex);
 		}
-		mutex_enter(&mpt->m_mutex);
+		mptsas_return_replyframe(mpt, cmd->cmd_rfm);
+		cmd->cmd_rfm = 0;
+		cv_broadcast(&mpt->m_tm_cv);
 	}
 
 	/*
-	 * clear the TM slot before returning
-	 */
-	slots->m_slot[MPTSAS_TM_SLOT(mpt)] = NULL;
-
-	/*
-	 * If we lost our task management command
-	 * we need to reset the ioc
+	 * If we lost our task management command increment a count of these
+	 * failures. The count is checked against a maximum allowed number in
+	 * mptsas_watch() and if it goes above the maximum a reset will be
+	 * attempted from there.
 	 */
 	if (rval == FALSE) {
-		mptsas_log(mpt, CE_WARN, "mptsas_ioc_task_management failed "
-		    "try to reset ioc to recovery!");
-		mpt->m_softstate &= ~MPTSAS_SS_MSG_UNIT_RESET;
-		if (mptsas_restart_ioc(mpt)) {
-			mptsas_log(mpt, CE_WARN, "mptsas_restart_ioc failed");
-			rval = FAILED;
-		}
+		DTRACE_PROBE2(failed__tm, mptsas_t *, mpt, int, rval);
+		mpt->m_failed_tm_cmds++;
 	}
 
+	NDBG26(("%d: ioc_task_management complete (type=0x%x) rval 0x%x",
+	    mpt->m_instance, task_type, rval));
 	return (rval);
+}
+
+/*
+ * Called when task management command completes from the interrupt
+ * routine while holding the m_mutex. The slot should already have been
+ * cleared. After tidying up do cv_broadcast() to wake up a thread waiting
+ * in the above function.
+ */
+void
+mptsas_cmplt_task_management(mptsas_t *mpt)
+{
+	mptsas_cmd_t	*cmd;
+
+	cmd = &(mpt->m_event_task_mgmt.m_event_cmd);
+
+	NDBG26(("%d: cmplt_task_management, cflags 0x%x",
+	    mpt->m_instance, cmd->cmd_flags));
+
+	/* Clean up timeout */
+	if (cmd->cmd_active_expiration != 0) {
+		TAILQ_REMOVE(&mpt->m_active_ioccmdq, cmd,
+		    cmd_active_link);
+		cmd->cmd_active_expiration = 0;
+	}
+
+	/*
+	 * If this was a don't wait command check to see if we need to
+	 * return a frame. Otherwise the data is needed in
+	 * mptsas_ioc_task_management().
+	 */
+	if ((cmd->cmd_flags & CFLAG_TM_WAIT) == 0 && cmd->cmd_rfm != 0) {
+		mptsas_return_replyframe(mpt, cmd->cmd_rfm);
+		cmd->cmd_rfm = 0;
+	}
+
+	cv_broadcast(&mpt->m_tm_cv);
 }
 
 /*
@@ -1314,27 +1432,23 @@ mptsas_update_flash(mptsas_t *mpt, caddr_t ptrbuffer, uint32_t size,
 	int			rvalue = 0;
 	uint64_t		request_desc;
 
-	if (mpt->m_MPI25 && !mptsas_enable_mpi25_flashupdate) {
+	if (mpt->m_MPI25) {
 		/*
 		 * The code is there but not tested yet.
 		 * User has to know there are risks here.
 		 */
 		mptsas_log(mpt, CE_WARN, "mptsas_update_flash(): "
 		    "Updating firmware through MPI 2.5 has not been "
-		    "tested yet!  "
-		    "To enable set mptsas_enable_mpi25_flashupdate to 1.");
-		return (-1);
-	} /* Otherwise, you pay your money and you take your chances. */
-
-	if ((rvalue = (mptsas_request_from_pool(mpt, &cmd, &pkt))) == -1) {
-		mptsas_log(mpt, CE_WARN, "mptsas_update_flash(): allocation "
-		    "failed. event ack command pool is full");
-		return (rvalue);
+		    "tested yet!\n"
+		    "To enable set mptsas_enable_mpi25_flashupdate to 1\n");
+		if (!mptsas_enable_mpi25_flashupdate)
+			return (-1);
 	}
+
+	mptsas_request_from_pool(mpt, &cmd, &pkt);
 
 	bzero((caddr_t)cmd, sizeof (*cmd));
 	bzero((caddr_t)pkt, scsi_pkt_size());
-	cmd->ioc_cmd_slot = (uint32_t)rvalue;
 
 	/*
 	 * dynamically create a customized dma attribute structure
@@ -1373,7 +1487,7 @@ mptsas_update_flash(mptsas_t *mpt, caddr_t ptrbuffer, uint32_t size,
 	/*
 	 * Save the command in a slot
 	 */
-	if (mptsas_save_cmd(mpt, cmd) == FALSE) {
+	if (mptsas_save_ioccmd(mpt, cmd) == FALSE) {
 		mptsas_dma_addr_destroy(&flsh_dma_handle, &flsh_accessp);
 		mptsas_return_to_pool(mpt, cmd);
 		return (-1);
@@ -1400,21 +1514,25 @@ mptsas_update_flash(mptsas_t *mpt, caddr_t ptrbuffer, uint32_t size,
 	    DDI_DMA_SYNC_FORDEV);
 	request_desc = (cmd->cmd_slot << 16) +
 	    MPI2_REQ_DESCRIPT_FLAGS_DEFAULT_TYPE;
-	cmd->cmd_rfm = NULL;
+	cmd->cmd_rfm = 0;
 	MPTSAS_START_CMD(mpt, request_desc);
 
-	rvalue = 0;
-	(void) cv_reltimedwait(&mpt->m_fw_cv, &mpt->m_mutex,
-	    drv_usectohz(60 * MICROSEC), TR_CLOCK_TICK);
-	if (!(cmd->cmd_flags & CFLAG_FINISHED)) {
+	while ((cmd->cmd_flags & CFLAG_FINISHED) == 0) {
+		cv_wait(&mpt->m_fw_cv, &mpt->m_mutex);
+	}
+
+	mptsas_deref_ioccmd(mpt, cmd);
+	if (cmd->cmd_flags & CFLAG_TIMEOUT || pkt->pkt_reason == CMD_RESET) {
 		mpt->m_softstate &= ~MPTSAS_SS_MSG_UNIT_RESET;
-		if ((mptsas_restart_ioc(mpt)) == DDI_FAILURE) {
-			mptsas_log(mpt, CE_WARN, "mptsas_restart_ioc failed");
+		if ((mptsas_restart_ioc(mpt, "mptsas_update_flash() failed")) ==
+		    DDI_FAILURE) {
+			mptsas_log(mpt, CE_WARN,
+			    "mptsas_update_flash: restart_ioc failed");
 		}
 		rvalue = -1;
 	}
-	mptsas_remove_cmd(mpt, cmd);
 	mptsas_dma_addr_destroy(&flsh_dma_handle, &flsh_accessp);
+	mptsas_return_to_pool(mpt, cmd);
 
 	return (rvalue);
 }
@@ -1951,21 +2069,10 @@ mptsas_get_sas_io_unit_page_hndshk(mptsas_t *mpt)
 	uint32_t		readpage1 = 0, retrypage0 = 0;
 	uint16_t		iocstatus;
 	uint8_t			port_flags, page_number, action;
-	uint32_t		reply_size;
+	uint32_t		reply_size = max(page0_size, page1_size);
 	uint_t			state;
 	int			rval = DDI_FAILURE;
 	boolean_t		free_recv = B_FALSE, free_page = B_FALSE;
-
-	/*
-	 * We want to find a reply_size that's large enough for the page0 and
-	 * page1 sizes and resistant to increase in the number of phys.
-	 */
-	reply_size = MAX(page0_size, page1_size);
-	if (P2ROUNDUP(reply_size, 256) <= reply_size) {
-		mptsas_log(mpt, CE_WARN, "mptsas_get_sas_io_unit_page_hndsk: "
-		    "cannot size reply size");
-		goto cleanup;
-	}
 
 	/*
 	 * Initialize our "state machine".  This is a bit convoluted,
@@ -1973,7 +2080,8 @@ mptsas_get_sas_io_unit_page_hndshk(mptsas_t *mpt)
 	 * times.
 	 */
 
-	NDBG20(("mptsas_get_sas_io_unit_page_hndshk enter"));
+	NDBG20(("%d: get_sas_io_unit_page_hndshk enter",
+	    mpt->m_instance));
 	ASSERT(mutex_owned(&mpt->m_mutex));
 	state = IOUC_READ_PAGE0;
 
@@ -1983,7 +2091,6 @@ mptsas_get_sas_io_unit_page_hndshk(mptsas_t *mpt)
 	 */
 	recv_dma_attrs = mpt->m_msg_dma_attr;
 	recv_dma_attrs.dma_attr_sgllen = 1;
-	recv_dma_attrs.dma_attr_granular = (sizeof (MPI2_CONFIG_REPLY));
 
 	if (mptsas_dma_addr_create(mpt, recv_dma_attrs,
 	    &recv_dma_handle, &recv_accessp, &recv_memp,
@@ -1997,7 +2104,6 @@ mptsas_get_sas_io_unit_page_hndshk(mptsas_t *mpt)
 
 	page_dma_attrs = mpt->m_msg_dma_attr;
 	page_dma_attrs.dma_attr_sgllen = 1;
-	page_dma_attrs.dma_attr_granular = reply_size;
 
 	if (mptsas_dma_addr_create(mpt, page_dma_attrs,
 	    &page_dma_handle, &page_accessp, &page_memp,
@@ -2129,12 +2235,11 @@ mptsas_get_sas_io_unit_page_hndshk(mptsas_t *mpt)
 				goto cleanup;
 			}
 			if (num_phys > mpt->m_num_phys) {
-				mptsas_log(mpt, CE_WARN, "Number of phys "
+				mptsas_log(mpt, CE_NOTE, "!Number of phys "
 				    "reported by HBA SAS IO Unit Page 0 (%u) "
 				    "is greater than that reported by the "
 				    "manufacturing information (%u). Driver "
-				    "phy count limited to %u. Please contact "
-				    "the firmware vendor about this.", num_phys,
+				    "phy count limited to %u.", num_phys,
 				    mpt->m_num_phys, mpt->m_num_phys);
 				num_phys = mpt->m_num_phys;
 			} else if (num_phys < mpt->m_num_phys) {
@@ -2169,9 +2274,10 @@ mptsas_get_sas_io_unit_page_hndshk(mptsas_t *mpt)
 
 				if (port_flags & DISCOVERY_IN_PROGRESS) {
 					retrypage0++;
-					NDBG20(("Discovery in progress, can't "
-					    "verify IO unit config, then NO.%d"
-					    " times retry", retrypage0));
+					NDBG20(("%d: Discovery in progress, "
+					    "can't verify IO unit config, then"
+					    " NO.%d times retry",
+					    mpt->m_instance, retrypage0));
 					break;
 				} else {
 					retrypage0 = 0;
@@ -2229,7 +2335,7 @@ mptsas_get_sas_io_unit_page_hndshk(mptsas_t *mpt)
 				goto cleanup;
 			}
 			if (num_phys > mpt->m_num_phys) {
-				mptsas_log(mpt, CE_WARN, "Number of phys "
+				mptsas_log(mpt, CE_NOTE, "?Number of phys "
 				    "reported by HBA SAS IO Unit Page 1 (%u) "
 				    "is greater than that reported by the "
 				    "manufacturing information (%u). Limiting "
@@ -2379,8 +2485,9 @@ mptsas_get_manufacture_page5(mptsas_t *mpt)
 
 	bzero(page_memp, sizeof (MPI2_CONFIG_PAGE_MAN_5));
 	m5 = (pMpi2ManufacturingPage5_t)page_memp;
-	NDBG20(("mptsas_get_manufacture_page5: paddr 0x%p",
-	    (void *)(uintptr_t)page_cookie.dmac_laddress));
+	NDBG20(("%d: get_manufacture_page5: paddr 0x%x%08x",
+	    mpt->m_instance, (uint32_t)(page_cookie.dmac_laddress>>32),
+	    (uint32_t)(page_cookie.dmac_laddress&0xfffffffful)));
 
 	/*
 	 * Give reply address to IOC to store config page in and send
@@ -2449,8 +2556,9 @@ mptsas_get_manufacture_page5(mptsas_t *mpt)
 		    ddi_driver_name(mpt->m_dip), ddi_get_instance(mpt->m_dip)));
 	}
 
-	mptsas_log(mpt, CE_NOTE, "Initiator WWNs: 0x%016llx-0x%016llx",
-	    (unsigned long long)mpt->un.m_base_wwid,
+	mptsas_log(mpt, CE_NOTE,
+	    "!mptsas%d: Initiator WWNs: 0x%016llx-0x%016llx",
+	    mpt->m_instance, (unsigned long long)mpt->un.m_base_wwid,
 	    (unsigned long long)mpt->un.m_base_wwid + mpt->m_num_phys - 1);
 
 	if ((mptsas_check_dma_handle(recv_dma_handle) != DDI_SUCCESS) ||
@@ -2601,9 +2709,9 @@ mptsas_sasphypage_1_cb(mptsas_t *mpt, caddr_t page_memp,
 
 	if ((iocstatus != MPI2_IOCSTATUS_SUCCESS) &&
 	    (iocstatus != MPI2_IOCSTATUS_CONFIG_INVALID_PAGE)) {
-		mptsas_log(mpt, CE_WARN, "%s "
+		mptsas_log(mpt, CE_WARN, "mptsas_get_sas_expander_page1 "
 		    "config: IOCStatus=0x%x, IOCLogInfo=0x%x",
-		    __func__, iocstatus, iocloginfo);
+		    iocstatus, iocloginfo);
 		rval = DDI_FAILURE;
 		return (rval);
 	}
@@ -2856,93 +2964,6 @@ done:
 	if (free_page)
 		mptsas_dma_addr_destroy(&page_dma_handle, &page_accessp);
 	MPTSAS_ENABLE_INTR(mpt);
-
-	return (rval);
-}
-
-static int
-mptsas_enclosurepage_0_cb(mptsas_t *mpt, caddr_t page_memp,
-    ddi_acc_handle_t accessp, uint16_t iocstatus, uint32_t iocloginfo,
-    va_list ap)
-{
-	uint32_t 			page_address;
-	pMpi2SasEnclosurePage0_t	encpage, encout;
-
-	if ((iocstatus != MPI2_IOCSTATUS_SUCCESS) &&
-	    (iocstatus != MPI2_IOCSTATUS_CONFIG_INVALID_PAGE)) {
-		mptsas_log(mpt, CE_WARN, "mptsas_get_enclsourepage0 "
-		    "header: IOCStatus=0x%x, IOCLogInfo=0x%x",
-		    iocstatus, iocloginfo);
-		return (DDI_FAILURE);
-	}
-
-	page_address = va_arg(ap, uint32_t);
-	encout = va_arg(ap, pMpi2SasEnclosurePage0_t);
-	encpage = (pMpi2SasEnclosurePage0_t)page_memp;
-
-	/*
-	 * The INVALID_PAGE status is normal if using GET_NEXT_HANDLE and there
-	 * are no more pages.  If everything is OK up to this point but the
-	 * status is INVALID_PAGE, change rval to FAILURE and quit.  Also,
-	 * signal that enclosure traversal is complete.
-	 */
-	if (iocstatus == MPI2_IOCSTATUS_CONFIG_INVALID_PAGE) {
-		if ((page_address & MPI2_SAS_DEVICE_PGAD_FORM_MASK) ==
-		    MPI2_SAS_DEVICE_PGAD_FORM_GET_NEXT_HANDLE) {
-			mpt->m_done_traverse_enc = 1;
-		}
-		return (DDI_FAILURE);
-	}
-
-	encout->Header.PageVersion = ddi_get8(accessp,
-	    &encpage->Header.PageVersion);
-	encout->Header.PageNumber = ddi_get8(accessp,
-	    &encpage->Header.PageNumber);
-	encout->Header.PageType = ddi_get8(accessp, &encpage->Header.PageType);
-	encout->Header.ExtPageLength = ddi_get16(accessp,
-	    &encpage->Header.ExtPageLength);
-	encout->Header.ExtPageType = ddi_get8(accessp,
-	    &encpage->Header.ExtPageType);
-
-	encout->EnclosureLogicalID.Low = ddi_get32(accessp,
-	    &encpage->EnclosureLogicalID.Low);
-	encout->EnclosureLogicalID.High = ddi_get32(accessp,
-	    &encpage->EnclosureLogicalID.High);
-	encout->Flags = ddi_get16(accessp, &encpage->Flags);
-	encout->EnclosureHandle = ddi_get16(accessp, &encpage->EnclosureHandle);
-	encout->NumSlots = ddi_get16(accessp, &encpage->NumSlots);
-	encout->StartSlot = ddi_get16(accessp, &encpage->StartSlot);
-	encout->EnclosureLevel = ddi_get8(accessp, &encpage->EnclosureLevel);
-	encout->SEPDevHandle = ddi_get16(accessp, &encpage->SEPDevHandle);
-
-	return (DDI_SUCCESS);
-}
-
-/*
- * Request information about the SES enclosures.
- */
-int
-mptsas_get_enclosure_page0(mptsas_t *mpt, uint32_t page_address,
-    mptsas_enclosure_t *mep)
-{
-	int rval = DDI_SUCCESS;
-	Mpi2SasEnclosurePage0_t	encpage;
-
-	ASSERT(MUTEX_HELD(&mpt->m_mutex));
-
-	bzero(&encpage, sizeof (encpage));
-	rval = mptsas_access_config_page(mpt,
-	    MPI2_CONFIG_ACTION_PAGE_READ_CURRENT,
-	    MPI2_CONFIG_EXTPAGETYPE_ENCLOSURE, 0, page_address,
-	    mptsas_enclosurepage_0_cb, page_address, &encpage);
-
-	if (rval == DDI_SUCCESS) {
-		mep->me_enchdl = encpage.EnclosureHandle;
-		mep->me_flags = encpage.Flags;
-		mep->me_nslots = encpage.NumSlots;
-		mep->me_fslot = encpage.StartSlot;
-		mep->me_slotleds = NULL;
-	}
 
 	return (rval);
 }

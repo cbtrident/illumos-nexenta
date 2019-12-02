@@ -22,9 +22,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
- * Copyright (c) 2017, Joyent, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
  */
 
 /*
@@ -56,7 +55,7 @@
 
 /*
  * mptsas_init - This file contains all the functions used to initialize
- * MPT2.0 based hardware.
+ * MPT2.0/2.5 based hardware.
  */
 
 #if defined(lint) || defined(DEBUG)
@@ -77,10 +76,16 @@
 #include <sys/scsi/adapters/mpt_sas/mpi/mpi2_ioc.h>
 #include <sys/scsi/adapters/mpt_sas/mpi/mpi2_tool.h>
 #pragma pack()
+
 /*
  * private header files.
  */
 #include <sys/scsi/adapters/mpt_sas/mptsas_var.h>
+
+#if defined(MPTSAS_DEBUG)
+extern uint32_t mptsas_debug_flags;
+extern uint32_t mptsas_dbglog_imask;
+#endif
 
 static int mptsas_ioc_do_get_facts(mptsas_t *mpt, caddr_t memp, int var,
 	ddi_acc_handle_t accessp);
@@ -139,17 +144,19 @@ mptsas_devid_type_string(mptsas_t *mpt)
 	case MPI25_MFGPAGE_DEVID_SAS3108_6:
 		return ("SAS3108");
 	case MPI26_MFGPAGE_DEVID_SAS3216:
+		return ("SAS3216");
 	case MPI26_MFGPAGE_DEVID_SAS3316_1:
 	case MPI26_MFGPAGE_DEVID_SAS3316_2:
 	case MPI26_MFGPAGE_DEVID_SAS3316_3:
 	case MPI26_MFGPAGE_DEVID_SAS3316_4:
-		return ("SAS3216");
+		return ("SAS3316");
 	case MPI26_MFGPAGE_DEVID_SAS3224:
+		return ("SAS3224");
 	case MPI26_MFGPAGE_DEVID_SAS3324_1:
 	case MPI26_MFGPAGE_DEVID_SAS3324_2:
 	case MPI26_MFGPAGE_DEVID_SAS3324_3:
 	case MPI26_MFGPAGE_DEVID_SAS3324_4:
-		return ("SAS3224");
+		return ("SAS3324");
 	case MPI26_MFGPAGE_DEVID_SAS3408:
 		return ("SAS3408");
 	case MPI26_MFGPAGE_DEVID_SAS3416:
@@ -176,10 +183,11 @@ mptsas_devid_type_string(mptsas_t *mpt)
 int
 mptsas_ioc_get_facts(mptsas_t *mpt)
 {
+	NDBG26(("%d: ioc_get_facts()", mpt->m_instance));
 	/*
 	 * Send get facts messages
 	 */
-	if (mptsas_do_dma(mpt, sizeof (MPI2_IOC_FACTS_REQUEST), NULL,
+	if (mptsas_do_dma(mpt, sizeof (MPI2_IOC_FACTS_REQUEST), 0,
 	    mptsas_ioc_do_get_facts)) {
 		return (DDI_FAILURE);
 	}
@@ -187,7 +195,7 @@ mptsas_ioc_get_facts(mptsas_t *mpt)
 	/*
 	 * Get facts reply messages
 	 */
-	if (mptsas_do_dma(mpt, sizeof (MPI2_IOC_FACTS_REPLY), NULL,
+	if (mptsas_do_dma(mpt, sizeof (MPI2_IOC_FACTS_REPLY), 0,
 	    mptsas_ioc_do_get_facts_reply)) {
 		return (DDI_FAILURE);
 	}
@@ -238,6 +246,7 @@ mptsas_ioc_do_get_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
 	int			simple_sge_next;
 	uint32_t		capabilities;
 	uint16_t		msgversion;
+	char			*who;
 
 	bzero(memp, sizeof (*factsreply));
 	factsreply = (void *)memp;
@@ -263,16 +272,38 @@ mptsas_ioc_do_get_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
 	mpt->m_fwversion = ddi_get32(accessp, &factsreply->FWVersion.Word);
 	mpt->m_productid = ddi_get16(accessp, &factsreply->ProductID);
 
+	switch (ddi_get8(accessp, &factsreply->WhoInit)) {
+	case MPI2_WHOINIT_NOT_INITIALIZED: who = "not initialized"; break;
+	case MPI2_WHOINIT_SYSTEM_BIOS: who = "Sys BIOS"; break;
+	case MPI2_WHOINIT_ROM_BIOS: who = "ROM BIOS"; break;
+	case MPI2_WHOINIT_PCI_PEER: who = "PCI Peer"; break;
+	case MPI2_WHOINIT_HOST_DRIVER: who = "Host Driver"; break;
+	case MPI2_WHOINIT_MANUFACTURER: who = "Manufacturer"; break;
+	default: who = "Unknown"; break;
+	}
 
 	(void) sprintf(buf, "%u.%u.%u.%u",
 	    ddi_get8(accessp, &factsreply->FWVersion.Struct.Major),
 	    ddi_get8(accessp, &factsreply->FWVersion.Struct.Minor),
 	    ddi_get8(accessp, &factsreply->FWVersion.Struct.Unit),
 	    ddi_get8(accessp, &factsreply->FWVersion.Struct.Dev));
-	mptsas_log(mpt, CE_NOTE, "MPT Firmware version v%s (%s)",
-	    buf, mptsas_devid_type_string(mpt));
+	mptsas_log(mpt, CE_NOTE, "?MPT Firmware version v%s (%s), "
+	    "Last initialized - %s\n",
+	    buf, mptsas_devid_type_string(mpt), who);
 	(void) ddi_prop_update_string(DDI_DEV_T_NONE, mpt->m_dip,
 	    "firmware-version", buf);
+
+	/*
+	 * Record maximum values.
+	 */
+	mpt->m_max_initiators = ddi_get16(accessp, &factsreply->MaxInitiators);
+	mpt->m_max_targets = ddi_get16(accessp, &factsreply->MaxTargets);
+	mpt->m_max_sas_expanders = ddi_get16(accessp,
+	    &factsreply->MaxSasExpanders);
+	mpt->m_max_enclosures = ddi_get16(accessp, &factsreply->MaxEnclosures);
+	mpt->m_max_devhandle = ddi_get16(accessp, &factsreply->MaxDevHandle);
+	mpt->m_min_devhandle = ddi_get16(accessp, &factsreply->MinDevHandle);
+	mpt->m_ioc_exceptions = ddi_get16(accessp, &factsreply->IOCExceptions);
 
 	/*
 	 * Set up request info.
@@ -307,6 +338,9 @@ mptsas_ioc_do_get_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
 	 * calculated queue size is larger than allowed, subtract a
 	 * multiple of 16 from m_max_requests, m_max_replies, and
 	 * m_reply_free_depth.
+	 *
+	 * There is no indication in the spec that you can reduce the
+	 * queue size if you have many.
 	 */
 	queueSize = mpt->m_max_requests + numReplyFrames + 1;
 	if (queueSize % 16) {
@@ -333,24 +367,48 @@ mptsas_ioc_do_get_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
 	    &factsreply->MaxChainDepth);
 	mpt->m_ioc_capabilities = ddi_get32(accessp,
 	    &factsreply->IOCCapabilities);
+	mpt->m_max_msix_vectors = ddi_get8(accessp,
+	    &factsreply->MaxMSIxVectors);
+	if (mpt->m_max_msix_vectors != 0 &&
+	    !(mpt->m_ioc_capabilities & MPI2_IOCFACTS_CAPABILITY_MSI_X_INDEX)) {
+		mptsas_log(mpt, CE_NOTE,
+		    "?MaxMSIxVectors is 0x%x, but capability bit not set "
+		    "(0x%x)?\n", mpt->m_max_msix_vectors,
+		    mpt->m_ioc_capabilities);
+	}
 
 	/*
 	 * Set flag to check for SAS3 support.
 	 */
 	msgversion = ddi_get16(accessp, &factsreply->MsgVersion);
-	if (msgversion >= MPI2_VERSION_02_05) {
-		mptsas_log(mpt, CE_NOTE, "SAS 3 supported Version (0x%x)",
-		    msgversion);
+	mptsas_log(mpt, CE_NOTE, "?mpt_sas%d MPI Version 0x%x\n",
+	    mpt->m_instance, msgversion);
+	switch (msgversion) {
+	case MPI2_VERSION_02_05:
+	case MPI2_VERSION_02_06:
+		mptsas_log(mpt, CE_NOTE, "?mpt_sas%d SAS 3 Supported\n",
+		    mpt->m_instance);
 		mpt->m_MPI25 = TRUE;
-	} else {
-		mptsas_log(mpt, CE_NOTE, "MPI Version 0x%x", msgversion);
+		break;
+	case MPI2_VERSION_02_00:
+		break;
+	default:
+		/* Give it fighting chance of working */
+		if (msgversion > MPI2_VERSION_02_06)
+			mpt->m_MPI25 = TRUE;
+		mptsas_log(mpt, CE_WARN,
+		    "mpt_sas%d Unsupported MPI VERSION 0x%x\n",
+		    mpt->m_instance, msgversion);
+		break;
 	}
 
 	/*
 	 * Calculate max frames per request based on DMA S/G length.
 	 */
 	simple_sge_main = MPTSAS_MAX_FRAME_SGES64(mpt) - 1;
-	simple_sge_next = mpt->m_req_frame_size / MPTSAS_SGE_SIZE(mpt) - 1;
+	simple_sge_next = mpt->m_req_frame_size /
+	    (mpt->m_MPI25 ? sizeof (MPI2_IEEE_SGE_SIMPLE64) :
+	    sizeof (MPI2_SGE_SIMPLE64)) - 1;
 
 	mpt->m_max_request_frames = (MPTSAS_MAX_DMA_SEGS -
 	    simple_sge_main) / simple_sge_next + 1;
@@ -363,7 +421,7 @@ mptsas_ioc_do_get_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
 	 * Check if controller supports FW diag buffers and set flag to enable
 	 * each type.
 	 */
-	capabilities = ddi_get32(accessp, &factsreply->IOCCapabilities);
+	capabilities = mpt->m_ioc_capabilities;
 	if (capabilities & MPI2_IOCFACTS_CAPABILITY_DIAG_TRACE_BUFFER) {
 		mpt->m_fw_diag_buffer_list[MPI2_DIAG_BUF_TYPE_TRACE].enabled =
 		    TRUE;
@@ -398,6 +456,7 @@ mptsas_ioc_do_get_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
 int
 mptsas_ioc_get_port_facts(mptsas_t *mpt, int port)
 {
+	NDBG26(("%d: ioc_get_port_facts()", mpt->m_instance));
 	/*
 	 * Send get port facts message
 	 */
@@ -475,6 +534,7 @@ mptsas_ioc_do_get_port_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
 int
 mptsas_ioc_enable_port(mptsas_t *mpt)
 {
+	NDBG26(("%d: ioc_enable_port()", mpt->m_instance));
 	/*
 	 * Send enable port message
 	 */
@@ -555,12 +615,13 @@ mptsas_ioc_do_enable_port_reply(mptsas_t *mpt, caddr_t memp, int var,
 int
 mptsas_ioc_enable_event_notification(mptsas_t *mpt)
 {
+	NDBG26(("%d: ioc_enable_event_notification()", mpt->m_instance));
 	ASSERT(mutex_owned(&mpt->m_mutex));
 
 	/*
 	 * Send enable event notification message
 	 */
-	if (mptsas_do_dma(mpt, sizeof (MPI2_EVENT_NOTIFICATION_REQUEST), NULL,
+	if (mptsas_do_dma(mpt, sizeof (MPI2_EVENT_NOTIFICATION_REQUEST), 0,
 	    mptsas_ioc_do_enable_event_notification)) {
 		return (DDI_FAILURE);
 	}
@@ -568,7 +629,7 @@ mptsas_ioc_enable_event_notification(mptsas_t *mpt)
 	/*
 	 * Get enable event reply message
 	 */
-	if (mptsas_do_dma(mpt, sizeof (MPI2_EVENT_NOTIFICATION_REPLY), NULL,
+	if (mptsas_do_dma(mpt, sizeof (MPI2_EVENT_NOTIFICATION_REPLY), 0,
 	    mptsas_ioc_do_enable_event_notification_reply)) {
 		return (DDI_FAILURE);
 	}
@@ -638,10 +699,11 @@ mptsas_ioc_do_enable_event_notification_reply(mptsas_t *mpt, caddr_t memp,
 int
 mptsas_ioc_init(mptsas_t *mpt)
 {
+	NDBG26(("%d: ioc_init()", mpt->m_instance));
 	/*
 	 * Send ioc init message
 	 */
-	if (mptsas_do_dma(mpt, sizeof (MPI2_IOC_INIT_REQUEST), NULL,
+	if (mptsas_do_dma(mpt, sizeof (MPI2_IOC_INIT_REQUEST), 0,
 	    mptsas_do_ioc_init)) {
 		return (DDI_FAILURE);
 	}
@@ -649,7 +711,7 @@ mptsas_ioc_init(mptsas_t *mpt)
 	/*
 	 * Get ioc init reply message
 	 */
-	if (mptsas_do_dma(mpt, sizeof (MPI2_IOC_INIT_REPLY), NULL,
+	if (mptsas_do_dma(mpt, sizeof (MPI2_IOC_INIT_REPLY), 0,
 	    mptsas_do_ioc_init_reply)) {
 		return (DDI_FAILURE);
 	}
@@ -676,6 +738,9 @@ mptsas_do_ioc_init(mptsas_t *mpt, caddr_t memp, int var,
 	ddi_put8(accessp, &init->WhoInit, MPI2_WHOINIT_HOST_DRIVER);
 	ddi_put16(accessp, &init->MsgVersion, MPI2_VERSION);
 	ddi_put16(accessp, &init->HeaderVersion, MPI2_HEADER_VERSION);
+	if (mpt->m_intr_type == DDI_INTR_TYPE_MSIX) {
+		ddi_put8(accessp, &init->HostMSIxVectors, mpt->m_intr_cnt);
+	}
 	ddi_put16(accessp, &init->SystemRequestFrameSize,
 	    mpt->m_req_frame_size / 4);
 	ddi_put16(accessp, &init->ReplyDescriptorPostQueueDepth,
@@ -685,7 +750,7 @@ mptsas_do_ioc_init(mptsas_t *mpt, caddr_t memp, int var,
 
 	/*
 	 * These addresses are set using the DMA cookie addresses from when the
-	 * memory was allocated.  Sense buffer hi address should be 0.
+	 * memory was allocated.
 	 */
 	ddi_put32(accessp, &init->SenseBufferAddressHigh,
 	    (uint32_t)(mpt->m_req_sense_dma_addr >> 32));
@@ -760,7 +825,8 @@ mptsas_do_ioc_init_reply(mptsas_t *mpt, caddr_t memp, int var,
 
 	if ((ddi_get32(mpt->m_datap, &mpt->m_reg->Doorbell)) &
 	    MPI2_IOC_STATE_OPERATIONAL) {
-		mptsas_log(mpt, CE_NOTE, "IOC Operational");
+		mptsas_log(mpt, CE_NOTE,
+		    "?mptsas%d: IOC Operational.\n", mpt->m_instance);
 	} else {
 		return (DDI_FAILURE);
 	}

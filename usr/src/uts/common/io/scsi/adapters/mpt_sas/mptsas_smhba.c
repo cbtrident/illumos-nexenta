@@ -21,10 +21,11 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
+ * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
  */
 /*
- * This file contains SM-HBA support for MPT SAS driver
+ * This file contains SM-HBA support for MPT SAS3 driver
  */
 
 #if defined(lint) || defined(DEBUG)
@@ -345,6 +346,16 @@ mptsas_create_phy_stats(mptsas_t *mpt, char *iport, dev_info_t *dip)
 
 			ps = (sas_phy_stats_t *)phyp->phy_stats->ks_data;
 
+			kstat_named_init(&ps->seconds_since_last_reset,
+			    "SecondsSinceLastReset", KSTAT_DATA_ULONGLONG);
+			kstat_named_init(&ps->tx_frames,
+			    "TxFrames", KSTAT_DATA_ULONGLONG);
+			kstat_named_init(&ps->rx_frames,
+			    "RxFrames", KSTAT_DATA_ULONGLONG);
+			kstat_named_init(&ps->tx_words,
+			    "TxWords", KSTAT_DATA_ULONGLONG);
+			kstat_named_init(&ps->rx_words,
+			    "RxWords", KSTAT_DATA_ULONGLONG);
 			kstat_named_init(&ps->invalid_dword_count,
 			    "InvalidDwordCount", KSTAT_DATA_ULONGLONG);
 			kstat_named_init(&ps->running_disparity_error_count,
