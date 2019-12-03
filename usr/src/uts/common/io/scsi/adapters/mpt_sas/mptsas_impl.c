@@ -610,7 +610,7 @@ page_done:
 	if (free_dma)
 		mptsas_dma_addr_destroy(&cmd->cmd_dmahandle, &accessp);
 
-	if (cmd && (cmd->cmd_flags & CFLAG_PREPARED)) {
+	if (cmd->cmd_flags & CFLAG_PREPARED) {
 		/* The poll wait could have timed out */
 		if (config_flags & MPTSAS_DID_POLLED) {
 			(void) mptsas_secure_cmd_from_slots(mpt->m_active,

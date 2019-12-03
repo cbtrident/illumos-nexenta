@@ -13260,7 +13260,7 @@ mptsas_diag_register(mptsas_t *mpt, mptsas_fw_diag_register_t *diag_register,
 		mptsas_log(mpt, CE_WARN, "Check of DMA handle failed in "
 		    "mptsas_diag_register.");
 		ddi_fm_service_impact(mpt->m_dip, DDI_SERVICE_UNAFFECTED);
-			status = DDI_FAILURE;
+		status = DDI_FAILURE;
 	}
 
 	/*
