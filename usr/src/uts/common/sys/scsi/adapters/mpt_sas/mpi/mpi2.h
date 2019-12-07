@@ -252,9 +252,6 @@ typedef volatile struct _MPI2_SYSTEM_INTERFACE_REGS
     U32         RequestDescriptorPostHigh;  /* 0xC4 */
     U32         AtomicRequestDescriptorPost;/* 0xC8 */ /* MPI v2.6 and later; reserved in earlier versions */
     U32         Reserved7[13];              /* 0xCC */
-    U32	        Reserved8[128];             /* 0x100 */
-    U32         Reserved10[3];              /* 0x300 */
-    U32         SuppReplyPostHostIndex[32]; /* 0x30C */
 } MPI2_SYSTEM_INTERFACE_REGS, MPI2_POINTER PTR_MPI2_SYSTEM_INTERFACE_REGS,
   Mpi2SystemInterfaceRegs_t, MPI2_POINTER pMpi2SystemInterfaceRegs_t;
 

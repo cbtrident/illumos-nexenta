@@ -21,16 +21,15 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
- * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
  * SM-HBA interfaces/definitions for MPT SAS driver.
  */
 
-#ifndef _MPTSAS3_SMHBA_H
-#define	_MPTSAS3_SMHBA_H
+#ifndef _MPTSAS_SMHBA_H
+#define	_MPTSAS_SMHBA_H
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -80,4 +79,4 @@ int mptsas_smhba_phy_state_update(mptsas_t *mpt, uint8_t phy);
 #ifdef	__cplusplus
 }
 #endif
-#endif	/* _MPTSAS3_SMHBA_H */
+#endif	/* _MPTSAS_SMHBA_H */

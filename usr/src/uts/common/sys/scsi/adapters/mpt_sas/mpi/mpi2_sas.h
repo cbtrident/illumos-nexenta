@@ -122,12 +122,6 @@
 #define MPI2_SAS_DEVICE_INFO_EDGE_EXPANDER      (0x00000002)
 #define MPI2_SAS_DEVICE_INFO_FANOUT_EXPANDER    (0x00000003)
 
-#define MPI2_SAS_DEVICE_INFO_VIRTSES (			\
-	    MPI2_SAS_DEVICE_INFO_SEP |			\
-	    MPI2_SAS_DEVICE_INFO_LSI_DEVICE |		\
-	    MPI2_SAS_DEVICE_INFO_DIRECT_ATTACH |	\
-	    MPI2_SAS_DEVICE_INFO_SSP_TARGET |		\
-	    MPI2_SAS_DEVICE_INFO_END_DEVICE)
 
 /*****************************************************************************
 *

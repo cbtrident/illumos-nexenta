@@ -11,12 +11,10 @@
 
 /*
  * Copyright 2014 Joyent, Inc.  All rights reserved.
- * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
  */
 
-#ifndef	_SYS_SCSI_ADAPTERS_MPTSAS3_HASH_H
-#define	_SYS_SCSI_ADAPTERS_MPTSAS3_HASH_H
+#ifndef	_SYS_SCSI_ADAPTERS_MPTHASH_H
+#define	_SYS_SCSI_ADAPTERS_MPTHASH_H
 
 #include <sys/types.h>
 #include <sys/list.h>
@@ -60,4 +58,4 @@ extern void *refhash_first(refhash_t *);
 extern void *refhash_next(refhash_t *, void *);
 extern boolean_t refhash_obj_valid(refhash_t *hp, const void *);
 
-#endif	/* _SYS_SCSI_ADAPTERS_MPTSAS3_HASH_H */
+#endif	/* _SYS_SCSI_ADAPTERS_MPTHASH_H */
