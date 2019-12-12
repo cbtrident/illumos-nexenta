@@ -665,9 +665,10 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 static void
 fail_outstanding_cmds(pqi_state_t s)
 {
-	pqi_device_t	devp;
-	int		i;
+	pqi_device_t		devp;
+	int			i;
 	pqi_queue_group_t	*qg;
+	pqi_io_request_t	*io;
 
 	ASSERT(MUTEX_HELD(&s->s_mutex));
 	if (s->s_sync_io != NULL) {
@@ -680,7 +681,22 @@ fail_outstanding_cmds(pqi_state_t s)
 		qg = &s->s_queue_groups[i];
 		mutex_enter(&qg->submit_lock[RAID_PATH]);
 		mutex_enter(&qg->submit_lock[AIO_PATH]);
+
 		qg->qg_active = B_FALSE;
+
+		/*
+		 * Remove the requests from the pending list to prevent
+		 * pqi_start_io() from attempting to load request onto
+		 * the hardware queue since the referenced command structure
+		 * will be freed during the call to pqi_fail_driv_cmds().
+		 * These I/O requests will be freed in the state machine
+		 * when the commands are failed by pqi_fail_drive_cmds().
+		 */
+		while ((io = list_head(&qg->request_list[RAID_PATH])) != NULL)
+			list_remove(&qg->request_list[RAID_PATH], io);
+		while ((io = list_head(&qg->request_list[AIO_PATH])) != NULL)
+			list_remove(&qg->request_list[AIO_PATH], io);
+
 		mutex_exit(&qg->submit_lock[AIO_PATH]);
 		mutex_exit(&qg->submit_lock[RAID_PATH]);
 	}
