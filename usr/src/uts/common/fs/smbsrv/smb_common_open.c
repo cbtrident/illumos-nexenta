@@ -937,6 +937,10 @@ create:
 		/* Last component was not found. */
 		dnode = op->fqi.fq_dnode;
 
+		if ((op->desired_access & ACCESS_SYSTEM_SECURITY) != 0 &&
+		    !smb_user_has_security_priv(sr->uid_user, sr->user_cr))
+			return (NT_STATUS_ACCESS_DENIED);
+
 		if (is_dir == 0)
 			is_stream = smb_is_stream_name(pn->pn_path);
 

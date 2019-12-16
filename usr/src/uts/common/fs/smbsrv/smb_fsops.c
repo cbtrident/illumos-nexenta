@@ -516,12 +516,20 @@ smb_fsop_create_file(smb_request_t *sr, cred_t *cr,
 		 * converted to FS format. No inheritance.
 		 */
 		secinfo = smb_sd_get_secinfo(op->sd);
+
+		if ((secinfo & SMB_SACL_SECINFO) != 0 &&
+		    !smb_user_has_security_priv(sr->uid_user, cr))
+			return (NT_STATUS_PRIVILEGE_NOT_HELD);
+
 		smb_fssd_init(&fs_sd, secinfo, 0);
 
 		status = smb_sd_tofs(op->sd, &fs_sd);
 		if (status == NT_STATUS_SUCCESS) {
-			rc = smb_fsop_create_with_sd(sr, cr, dnode,
-			    name, attr, ret_snode, &fs_sd);
+			rc = smb_fsop_sdinherit(sr, dnode, &fs_sd);
+			if (rc == 0)
+				rc = smb_fsop_create_with_sd(sr, cr, dnode,
+				    name, attr, ret_snode, &fs_sd);
+
 		} else {
 			rc = EINVAL;
 		}
@@ -532,7 +540,7 @@ smb_fsop_create_file(smb_request_t *sr, cred_t *cr,
 		 * Server applies Windows inheritance rules,
 		 * see smb_fsop_sdinherit() comments as to why.
 		 */
-		smb_fssd_init(&fs_sd, SMB_ACL_SECINFO, 0);
+		smb_fssd_init(&fs_sd, 0, 0);
 		rc = smb_fsop_sdinherit(sr, dnode, &fs_sd);
 		if (rc == 0) {
 			rc = smb_fsop_create_with_sd(sr, cr, dnode,
@@ -666,12 +674,19 @@ smb_fsop_mkdir(
 		 * converted to FS format. No inheritance.
 		 */
 		secinfo = smb_sd_get_secinfo(op->sd);
+
+		if ((secinfo & SMB_SACL_SECINFO) != 0 &&
+		    !smb_user_has_security_priv(sr->uid_user, cr))
+			return (NT_STATUS_PRIVILEGE_NOT_HELD);
+
 		smb_fssd_init(&fs_sd, secinfo, SMB_FSSD_FLAGS_DIR);
 
 		status = smb_sd_tofs(op->sd, &fs_sd);
 		if (status == NT_STATUS_SUCCESS) {
-			rc = smb_fsop_create_with_sd(sr, cr, dnode,
-			    name, attr, ret_snode, &fs_sd);
+			rc = smb_fsop_sdinherit(sr, dnode, &fs_sd);
+			if (rc == 0)
+				rc = smb_fsop_create_with_sd(sr, cr, dnode,
+				    name, attr, ret_snode, &fs_sd);
 		}
 		else
 			rc = EINVAL;
@@ -682,7 +697,7 @@ smb_fsop_mkdir(
 		 * Server applies Windows inheritance rules,
 		 * see smb_fsop_sdinherit() comments as to why.
 		 */
-		smb_fssd_init(&fs_sd, SMB_ACL_SECINFO, SMB_FSSD_FLAGS_DIR);
+		smb_fssd_init(&fs_sd, 0, SMB_FSSD_FLAGS_DIR);
 		rc = smb_fsop_sdinherit(sr, dnode, &fs_sd);
 		if (rc == 0) {
 			rc = smb_fsop_create_with_sd(sr, cr, dnode,
@@ -1764,10 +1779,7 @@ smb_fsop_access(smb_request_t *sr, cred_t *cr, smb_node_t *snode,
 		 * it's not part of DACL. It's only granted via proper
 		 * privileges.
 		 */
-		if ((sr->uid_user->u_privileges &
-		    (SMB_USER_PRIV_BACKUP |
-		    SMB_USER_PRIV_RESTORE |
-		    SMB_USER_PRIV_SECURITY)) == 0)
+		if (!smb_user_has_security_priv(sr->uid_user, cr))
 			return (NT_STATUS_PRIVILEGE_NOT_HELD);
 
 		faccess &= ~ACCESS_SYSTEM_SECURITY;
@@ -2651,39 +2663,50 @@ smb_fsop_sdinherit(smb_request_t *sr, smb_node_t *dnode, smb_fssd_t *fs_sd)
 	acl_t *sacl = NULL;
 	int is_dir;
 	int error;
+	uint32_t secinfo;
+	smb_fssd_t pfs_sd;
 
 	ASSERT(fs_sd);
 
-	if (sr->tid_tree->t_acltype != ACE_T) {
-		/*
-		 * No forced inheritance for non-ZFS filesystems.
-		 */
-		fs_sd->sd_secinfo = 0;
-		return (0);
-	}
+	secinfo = fs_sd->sd_secinfo;
 
+	/* Anything to do? */
+	if ((secinfo & SMB_ACL_SECINFO) == SMB_ACL_SECINFO)
+		return (0);
+
+	/*
+	 * No forced inheritance for non-ZFS filesystems.
+	 */
+	if (sr->tid_tree->t_acltype != ACE_T)
+		return (0);
+
+	smb_fssd_init(&pfs_sd, SMB_ACL_SECINFO, fs_sd->sd_flags);
 
 	/* Fetch parent directory's ACL */
-	error = smb_fsop_sdread(sr, zone_kcred(), dnode, fs_sd);
+	error = smb_fsop_sdread(sr, zone_kcred(), dnode, &pfs_sd);
 	if (error) {
 		return (error);
 	}
 
 	is_dir = (fs_sd->sd_flags & SMB_FSSD_FLAGS_DIR);
-	dacl = smb_fsacl_inherit(fs_sd->sd_zdacl, is_dir, SMB_DACL_SECINFO,
-	    sr->user_cr);
-	sacl = smb_fsacl_inherit(fs_sd->sd_zsacl, is_dir, SMB_SACL_SECINFO,
-	    sr->user_cr);
+	if ((secinfo & SMB_DACL_SECINFO) == 0) {
+		dacl = smb_fsacl_inherit(pfs_sd.sd_zdacl, is_dir,
+		    SMB_DACL_SECINFO, sr->user_cr);
+		fs_sd->sd_zdacl = dacl;
+		if (dacl != NULL)
+			fs_sd->sd_secinfo |= SMB_DACL_SECINFO;
+	}
 
-	if (sacl == NULL)
-		fs_sd->sd_secinfo &= ~SMB_SACL_SECINFO;
+	if ((secinfo & SMB_SACL_SECINFO) == 0) {
+		sacl = smb_fsacl_inherit(pfs_sd.sd_zsacl, is_dir,
+		    SMB_SACL_SECINFO, sr->user_cr);
+		fs_sd->sd_zsacl = sacl;
+		if (sacl != NULL)
+			fs_sd->sd_secinfo |= SMB_SACL_SECINFO;
+	}
 
-	smb_fsacl_free(fs_sd->sd_zdacl);
-	smb_fsacl_free(fs_sd->sd_zsacl);
-
-	fs_sd->sd_zdacl = dacl;
-	fs_sd->sd_zsacl = sacl;
-
+	smb_fsacl_free(pfs_sd.sd_zdacl);
+	smb_fsacl_free(pfs_sd.sd_zsacl);
 	return (0);
 }
 #endif	/* _KERNEL */
