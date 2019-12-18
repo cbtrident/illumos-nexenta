@@ -14,6 +14,7 @@
  * Copyright 2016 Tegile Systems, Inc. All rights reserved.
  * Copyright (c) 2016 The MathWorks, Inc.  All rights reserved.
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2020 Racktop Systems.
  */
 
 /*
@@ -3200,12 +3201,12 @@ nvme_fill_prp(nvme_cmd_t *cmd, bd_xfer_t *xfer)
 		return (DDI_FAILURE);
 
 	cmd->nc_sqe.sqe_dptr.d_prp[0] = xfer->x_dmac.dmac_laddress;
-	ddi_dma_nextcookie(xfer->x_dmah, &xfer->x_dmac);
 
 	if (xfer->x_ndmac == 1) {
 		cmd->nc_sqe.sqe_dptr.d_prp[1] = 0;
 		return (DDI_SUCCESS);
 	} else if (xfer->x_ndmac == 2) {
+		ddi_dma_nextcookie(xfer->x_dmah, &xfer->x_dmac);
 		cmd->nc_sqe.sqe_dptr.d_prp[1] = xfer->x_dmac.dmac_laddress;
 		return (DDI_SUCCESS);
 	}
@@ -3232,8 +3233,8 @@ nvme_fill_prp(nvme_cmd_t *cmd, bd_xfer_t *xfer)
 	for (prp = (uint64_t *)cmd->nc_dma->nd_memp;
 	    xfer->x_ndmac > 0;
 	    prp++, xfer->x_ndmac--) {
-		*prp = xfer->x_dmac.dmac_laddress;
 		ddi_dma_nextcookie(xfer->x_dmah, &xfer->x_dmac);
+		*prp = xfer->x_dmac.dmac_laddress;
 	}
 
 	(void) ddi_dma_sync(cmd->nc_dma->nd_dmah, 0, cmd->nc_dma->nd_len,
