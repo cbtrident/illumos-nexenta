@@ -169,6 +169,7 @@ pci_xcap_locate(ddi_acc_handle_t h, uint16_t id, uint16_t *base_p)
 {
 	uint16_t status, base;
 	uint32_t xcaps_hdr;
+	int loop_limit = PCIE_EXT_CAP_NEXT_PTR_MASK;
 
 	status = pci_config_get16(h, PCI_CONF_STAT);
 
@@ -186,6 +187,16 @@ pci_xcap_locate(ddi_acc_handle_t h, uint16_t id, uint16_t *base_p)
 			*base_p = base;
 			return (DDI_SUCCESS);
 		}
+
+		/*
+		 * Currently KVM has a problem with this register for NVMe
+		 * devices operating in passthru mode. The value returned
+		 * will toggle between two values over and over again causing
+		 * the system to hang. We use a loop limiter to prevent that
+		 * case.
+		 */
+		if (--loop_limit == 0)
+			break;
 	}
 
 	*base_p = PCI_CAP_NEXT_PTR_NULL;
