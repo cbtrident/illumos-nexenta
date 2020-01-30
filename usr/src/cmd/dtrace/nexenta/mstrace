@@ -1,0 +1,80 @@
+#!/usr/sbin/dtrace -s
+
+/*
+ * This file and its contents are supplied under the terms of the
+ * Common Development and Distribution License ("CDDL"), version 1.0.
+ * You may only use this file in accordance with the terms of version
+ * 1.0 of the CDDL.
+ *
+ * A full copy of the text of the CDDL should have accompanied this
+ * source.  A copy of the CDDL is also available via the Internet at
+ * http://www.illumos.org/license/CDDL.
+ */
+
+/*
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ */
+
+/*
+ * Trace the count of calls to metaslab_trace_add per trace type
+ * every interval seconds, optionally for a specified pool.
+ *
+ * If poolname is not specified the default is total counts for all pools.
+ * If interval is not specified, default is 10 sec.
+ *
+ * usage:	mstrace [<poolname>  [<interval sec]]
+ * example:	mstrace - equivalent to mstrace all 10
+ * example:	mstrace testpool 5
+ */
+
+#pragma D option defaultargs
+#pragma D option quiet
+
+dtrace:::BEGIN
+{
+	poolname= ($$1 == NULL) ? "all" : $$1;
+	interval = ($2 == 0) ? 10 : $2;
+
+	printf("Tracing counts of metaslab allocation status every %ds for pool: %s\n",
+		   interval, poolname);
+
+}
+
+fbt::metaslab_trace_add:entry
+/ (poolname == "all") || ((metaslab_group_t *)arg1)->mg_vd->vdev_spa->spa_name == poolname /
+{
+	why = (uint64_t)arg5;
+	if (why == (uint64_t)-1) {
+		@whys["ALLOC_FAILURE"] = count();
+	} else if (why == (uint64_t)-2) {
+		@whys["TOO_SMALL"] = count();
+	} else if (why == (uint64_t)-3) {
+		@whys["FORCE_GANG"] = count();
+	} else if (why == (uint64_t)-4) {
+		@whys["NOT_ALLOCATABLE"] = count();
+	} else if (why == (uint64_t)-5) {
+		@whys["GROUP_FAILURE"] = count();
+	} else if (why ==(uint64_t)-6) {
+		@whys["ENOSPC"] = count();
+	} else if (why == (uint64_t)-7) {
+		@whys["CONDENSING"] = count();
+	} else if (why == (uint64_t)-7) {
+		@whys["VDEV_ERROR"] = count();
+	} else {
+		@whys["SUCCESS"] = count();
+	}
+}
+
+tick-1s
+/ --interval == 0 /
+{
+	printf("%Y", walltimestamp);
+	printa(@whys);
+	clear(@whys);
+
+	interval = ($2 == 0) ? 10 : $2;
+}
+
+dtrace:::END
+{
+}

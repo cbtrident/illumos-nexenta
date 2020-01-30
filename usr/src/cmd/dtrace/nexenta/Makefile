@@ -11,7 +11,7 @@
 
 #
 # Copyright 2018 Nexenta Systems, Inc. All rights reserved.
-# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
 include $(SRC)/cmd/Makefile.cmd
@@ -32,6 +32,7 @@ BINFILES = \
 	nfsutil \
 	nfswizard \
 	msload \
+	mstrace \
 	rspmon \
 	stackcollapse \
 	txg_full \
