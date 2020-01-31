@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -25,10 +26,36 @@
 #
 
 #
-# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
-export DISK1=$(echo $DISKS | awk '{print $1}')
-export DISK2=$(echo $DISKS | awk '{print $2}')
-export DISK3=$(echo $DISKS | awk '{print $3}')
+. $STF_SUITE/include/libtest.shlib
+. $STF_SUITE/tests/functional/cli_root/zpool_scrub/zpool_scrub.cfg
+
+#
+# DESCRIPTION:
+#	When scrubbing, replace device should stop scrub and start resilvering.
+#
+# STRATEGY:
+#	1. Setup filesys with data.
+#	2. Start a scrub
+#	3. Set zfs_scan_suspend_progress to pause the scrub
+#	4. Do a replace, clear zfs_scan_suspend_progress, and verify the scrub stops and the resilver starts
+#	5. After the resilver finishes, verify there's no checksum errors
+#
+
+verify_runnable "global"
+
+log_assert "When scrubbing, replace device should stop scrub and start resilvering."
+
+log_must zpool scrub $TESTPOOL
+log_must zpool replace $TESTPOOL $DISK2 $DISK3
+log_must is_pool_resilvering $TESTPOOL
+
+while ! is_pool_resilvered $TESTPOOL; do
+	sleep 1
+done
+
+log_must check_state $TESTPOOL "$DISK3" "online"
+
+log_pass "When scrubbing, replace device should stop scrub and start resilvering."

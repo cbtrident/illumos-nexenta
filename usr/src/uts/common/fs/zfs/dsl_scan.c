@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2016 Gary Mills
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright 2017 Joyent, Inc.
@@ -148,7 +148,9 @@ uint64_t zfs_scan_mem_lim_soft_max = 128 << 20;	/* bytes */
 
 int zfs_scan_min_time_ms = 1000; /* min millisecs to scrub per txg */
 int zfs_free_min_time_ms = 1000; /* min millisecs to free per txg */
+int zfs_scrub_min_time_ms = 1000; /* min millisecs to scrub per txg */
 int zfs_resilver_min_time_ms = 3000; /* min millisecs to resilver per txg */
+int zfs_scan_suspend_progress = 0; /* set to prevent scans from progressing */
 boolean_t zfs_no_scrub_io = B_FALSE; /* set to disable scrub i/o */
 boolean_t zfs_no_scrub_prefetch = B_FALSE; /* set to disable scrub prefetch */
 enum ddt_class zfs_scrub_ddt_class_max = DDT_CLASS_DUPLICATE;
@@ -428,6 +430,16 @@ dsl_scan_setup_check(void *arg, dmu_tx_t *tx)
 	if (dsl_scan_is_running(scn))
 		return (SET_ERROR(EBUSY));
 
+	/*
+	 * We are here because a user has requested scrub.
+	 * 'scn_restart_txg != 0' means resilver has been
+	 * scheduled for the txg and in this case scrub
+	 * should not be issued
+	 */
+	if (dmu_tx_is_syncing(tx) && scn->scn_restart_txg != 0 &&
+	    scn->scn_restart_txg > tx->tx_txg)
+		return (SET_ERROR(EBUSY));
+
 	return (0);
 }
 
@@ -470,6 +482,7 @@ dsl_scan_setup_sync(void *arg, dmu_tx_t *tx)
 		    &scn->scn_phys.scn_min_txg, &scn->scn_phys.scn_max_txg)) {
 			spa_event_notify(spa, NULL, NULL,
 			    ESC_ZFS_RESILVER_START);
+			scn->scn_phys.scn_func = POOL_SCAN_RESILVER;
 		} else {
 			spa_event_notify(spa, NULL, NULL, ESC_ZFS_SCRUB_START);
 		}
@@ -506,7 +519,8 @@ dsl_scan_setup_sync(void *arg, dmu_tx_t *tx)
 
 	spa_history_log_internal(spa, "scan setup", tx,
 	    "func=%u mintxg=%llu maxtxg=%llu",
-	    *funcp, scn->scn_phys.scn_min_txg, scn->scn_phys.scn_max_txg);
+	    scn->scn_phys.scn_func, scn->scn_phys.scn_min_txg,
+	    scn->scn_phys.scn_max_txg);
 }
 
 /* ARGSUSED */
@@ -2129,6 +2143,14 @@ dsl_scan_sync(dsl_pool_t *dp, dmu_tx_t *tx)
 		zfs_dbgmsg("restarting scan func=%u txg=%llu",
 		    func, tx->tx_txg);
 		dsl_scan_setup_sync(&func, tx);
+	} else if (dsl_scan_scrubbing(dp) &&
+	    vdev_resilver_needed(spa->spa_root_vdev, NULL, NULL)) {
+		/*
+		 * The active scrub needs to be canceled
+		 * if resilvering is required to avoid checksum errors
+		 */
+		dsl_scan_done(scn, B_FALSE, tx);
+		dsl_scan_sync_state(scn, tx, SYNC_MANDATORY);
 	}
 
 	/*
@@ -2272,6 +2294,28 @@ dsl_scan_sync(dsl_pool_t *dp, dmu_tx_t *tx)
 
 	if (!dsl_scan_is_running(scn))
 		return;
+
+	/*
+	 * zfs_scan_suspend_progress can be set to disable scan progress.
+	 * We don't want to spin the txg_sync thread, so we add a delay
+	 * here to simulate the time spent doing a scan. This is mostly
+	 * useful for testing and debugging.
+	 */
+	if (zfs_scan_suspend_progress) {
+		uint64_t scan_time_ns = gethrtime() - scn->scn_sync_start_time;
+		int mintime = (scn->scn_phys.scn_func == POOL_SCAN_RESILVER) ?
+		    zfs_resilver_min_time_ms : zfs_scrub_min_time_ms;
+
+		while (zfs_scan_suspend_progress &&
+		    !txg_sync_waiting(scn->scn_dp) &&
+		    !spa_shutting_down(scn->scn_dp->dp_spa) &&
+		    NSEC2MSEC(scan_time_ns) < mintime) {
+			delay(hz);
+			scan_time_ns = gethrtime() - scn->scn_sync_start_time;
+		}
+
+		return;
+	}
 
 	if (!zfs_scan_direct) {
 		if (!scn->scn_is_sorted)
