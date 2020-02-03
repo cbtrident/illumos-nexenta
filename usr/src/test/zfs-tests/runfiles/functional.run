@@ -1,4 +1,4 @@
-#
+
 # This file and its contents are supplied under the terms of the
 # Common Development and Distribution License ("CDDL"), version 1.0.
 # You may only use this file in accordance with the terms of version
@@ -519,13 +519,13 @@ tests = ['utils_test_001_pos', 'utils_test_002_pos', 'utils_test_003_pos',
     'utils_test_004_pos', 'utils_test_005_pos', 'utils_test_006_pos',
     'utils_test_007_pos', 'utils_test_008_pos', 'utils_test_009_pos']
 
-[/opt/zfs-tests/tests/functional/wbc]
-tests = ['wbc_001_pos', 'wbc_002_pos', 'wbc_003_pos', 'wbc_004_pos',
-    'wbc_005_neg', 'wbc_006_neg', 'wbc_007_neg', 'wbc_008_pos',
-    'wbc_009_pos', 'wbc_010_neg', 'wbc_011_neg', 'wbc_012_pos',
-    'wbc_013_neg', 'wbc_014_pos', 'wbc_015_neg', 'wbc_016_pos',
-    'wbc_017_neg']
-timeout = 7200
+#[/opt/zfs-tests/tests/functional/wbc]
+#tests = ['wbc_001_pos', 'wbc_002_pos', 'wbc_003_pos', 'wbc_004_pos',
+#    'wbc_005_neg', 'wbc_006_neg', 'wbc_007_neg', 'wbc_008_pos',
+#    'wbc_009_pos', 'wbc_010_neg', 'wbc_011_neg', 'wbc_012_pos',
+#    'wbc_013_neg', 'wbc_014_pos', 'wbc_015_neg', 'wbc_016_pos',
+#    'wbc_017_neg']
+#timeout = 7200
 
 [/opt/zfs-tests/tests/functional/write_dirs]
 tests = ['write_dirs_001_pos', 'write_dirs_002_pos']

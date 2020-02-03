@@ -550,13 +550,13 @@ tests = ['vdev_zaps_001_pos', 'vdev_zaps_002_pos', 'vdev_zaps_003_pos',
     'vdev_zaps_004_pos', 'vdev_zaps_005_pos', 'vdev_zaps_006_pos',
     'vdev_zaps_007_pos']
 
-[/opt/zfs-tests/tests/functional/wbc]
-tests = ['wbc_001_pos', 'wbc_002_pos', 'wbc_003_pos', 'wbc_004_pos',
-    'wbc_005_neg', 'wbc_006_neg', 'wbc_007_neg', 'wbc_008_pos',
-    'wbc_009_pos', 'wbc_010_neg', 'wbc_011_neg', 'wbc_012_pos',
-    'wbc_013_neg', 'wbc_014_pos', 'wbc_015_neg', 'wbc_016_pos',
-    'wbc_017_neg']
-timeout = 7200
+#[/opt/zfs-tests/tests/functional/wbc]
+#tests = ['wbc_001_pos', 'wbc_002_pos', 'wbc_003_pos', 'wbc_004_pos',
+#    'wbc_005_neg', 'wbc_006_neg', 'wbc_007_neg', 'wbc_008_pos',
+#    'wbc_009_pos', 'wbc_010_neg', 'wbc_011_neg', 'wbc_012_pos',
+#    'wbc_013_neg', 'wbc_014_pos', 'wbc_015_neg', 'wbc_016_pos',
+#    'wbc_017_neg']
+#timeout = 7200
 
 [/opt/zfs-tests/tests/functional/write_dirs]
 tests = ['write_dirs_001_pos', 'write_dirs_002_pos']
