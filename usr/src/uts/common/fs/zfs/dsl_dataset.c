@@ -27,7 +27,7 @@
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2016, OmniTI Computer Consulting, Inc. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/dmu_objset.h>
@@ -3142,6 +3142,11 @@ promote_hold(dsl_dataset_promote_arg_t *ddpa, dsl_pool_t *dp, void *tag)
 	if (error != 0)
 		return (error);
 	dd = ddpa->ddpa_clone->ds_dir;
+
+	if (DS_IS_INCONSISTENT(ddpa->ddpa_clone)) {
+		dsl_dataset_rele(ddpa->ddpa_clone, tag);
+		return (SET_ERROR(EBUSY));
+	}
 
 	if (ddpa->ddpa_clone->ds_is_snapshot ||
 	    !dsl_dir_is_clone(dd)) {

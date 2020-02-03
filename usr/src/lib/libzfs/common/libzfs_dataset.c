@@ -31,7 +31,7 @@
  * Copyright (c) 2013 Martin Matuska. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
  * Copyright 2017-2018 RackTop Systems.
  */
@@ -3882,6 +3882,12 @@ zfs_promote(zfs_handle_t *zhp)
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "snapshots can not be promoted"));
 		return (zfs_error(hdl, EZFS_BADTYPE, errbuf));
+	}
+
+	if (zhp->zfs_dmustats.dds_inconsistent != 0) {
+		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+		    "not fully received"));
+		return (zfs_error(hdl, EZFS_BUSY, errbuf));
 	}
 
 	if (zhp->zfs_dmustats.dds_origin[0] == '\0') {

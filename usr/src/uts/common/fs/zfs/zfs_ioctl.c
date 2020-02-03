@@ -32,7 +32,7 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright 2017 RackTop Systems.
  * Copyright (c) 2017 Datto Inc.
@@ -5428,6 +5428,12 @@ zfs_ioc_promote(zfs_cmd_t *zc)
 	if (error != 0) {
 		dsl_pool_rele(dp, FTAG);
 		return (error);
+	}
+
+	if (DS_IS_INCONSISTENT(ds)) {
+		dsl_dataset_rele(ds, FTAG);
+		dsl_pool_rele(dp, FTAG);
+		return (SET_ERROR(EBUSY));
 	}
 
 	if (!dsl_dir_is_clone(ds->ds_dir)) {

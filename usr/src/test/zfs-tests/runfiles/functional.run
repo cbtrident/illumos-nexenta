@@ -141,7 +141,7 @@ tests = ['zfs_mount_001_pos', 'zfs_mount_002_pos', 'zfs_mount_003_pos',
 [/opt/zfs-tests/tests/functional/cli_root/zfs_promote]
 tests = ['zfs_promote_001_pos', 'zfs_promote_002_pos', 'zfs_promote_003_pos',
     'zfs_promote_004_pos', 'zfs_promote_005_pos', 'zfs_promote_006_neg',
-    'zfs_promote_007_neg', 'zfs_promote_008_pos']
+    'zfs_promote_007_neg', 'zfs_promote_008_pos', 'zfs_promote_009_neg']
 
 [/opt/zfs-tests/tests/functional/cli_root/zfs_property]
 tests = ['zfs_written_property_001_pos']
