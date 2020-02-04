@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 #include <sys/autosnap.h>
 #include <sys/dmu_objset.h>
@@ -1303,11 +1303,10 @@ zfs_collect_ds_resume(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 	list_insert_tail(ds_list, ds_node);
 
 	/*
-	 * if the resumed dataset is not a clone then
 	 * the incremental snapshot must be here
 	 */
-	if (!ds_node->is_clone && from_guid != 0 &&
-	    avl_numnodes(&ds_node->snapshots) != 2) {
+	if (from_guid != 0 && avl_numnodes(&ds_node->snapshots) != 2 &&
+	    (!ds_node->is_clone || ds_node->origin_guid != from_guid)) {
 		err = SET_ERROR(ENODEV);
 		goto out;
 	}
@@ -1337,22 +1336,16 @@ zfs_collect_ds_resume(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 	}
 
 	/*
-	 * For a cloned dataset AVL should contain 2 nodes:
-	 *  - from_snap or origin_snap
+	 * For a cloned dataset AVL contain 2 nodes:
+	 *  - from_snap (have to be found early) or origin_snap
 	 *  - to_snap
 	 *
 	 *  If there is only one node, then this is initial
-	 *  replication of a clone, so we need to prepare
-	 *  origin_snap node
+	 *  replication of the clone and need to prepare origin_snap node
 	 *
 	 */
 	if (ds_node->is_clone && avl_numnodes(&ds_node->snapshots) != 2) {
 		dsl_dataset_t *snap_ds = NULL;
-
-		if (ds_node->origin_guid != from_guid) {
-			err = SET_ERROR(ENOLINK);
-			goto out;
-		}
 
 		err = dsl_dataset_hold(dp, ds_node->origin_name,
 		    ds_node, &snap_ds);
