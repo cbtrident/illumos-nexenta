@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -65,7 +65,7 @@ function constrain_ashift
 }
 
 filevdev=/var/tmp/filevdev.txt
-log_must mkfile 128M $filevdev
+log_must mkfile 256M $filevdev
 
 for val in 0 $MIN_ASHIFT $((MIN_ASHIFT-1)) $MAX_ASHIFT $((MAX_ASHIFT+1))
 do

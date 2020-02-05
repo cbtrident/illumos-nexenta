@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -41,7 +41,7 @@ log_onexit cleanup
 log_assert "zpool create can set 'align' property"
 
 filevdev=/var/tmp/filevdev.txt
-log_must mkfile 128M $filevdev
+log_must mkfile 256M $filevdev
 
 for align in ${good[@]}
 do
