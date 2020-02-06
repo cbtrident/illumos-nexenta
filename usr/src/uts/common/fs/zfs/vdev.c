@@ -598,7 +598,7 @@ vdev_alloc(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent, uint_t id,
 		    alloctype == VDEV_ALLOC_SPLIT ||
 		    alloctype == VDEV_ALLOC_ROOTPOOL);
 
-		vd->vdev_mg = metaslab_group_create(mc, vd);
+		vd->vdev_mg = metaslab_group_create(mc, vd, spa->spa_alloc_count);
 	}
 
 	if (vd->vdev_ops->vdev_op_leaf &&
@@ -978,7 +978,6 @@ vdev_metaslab_init(vdev_t *vd, uint64_t txg)
 
 	vd->vdev_ms = mspp;
 	vd->vdev_ms_count = newc;
-
 	for (m = oldc; m < newc; m++) {
 		uint64_t object = 0;
 

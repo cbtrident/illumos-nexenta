@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
@@ -381,6 +381,8 @@ int spa_asize_inflation = 24;
 int spa_slop_shift = 5;
 uint64_t spa_min_slop = 128 * 1024 * 1024;
 
+int spa_allocators = 4;
+
 static void spa_trimstats_create(spa_t *spa);
 static void spa_trimstats_destroy(spa_t *spa);
 
@@ -677,6 +679,17 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 		spa_active_count++;
 	}
 
+	spa->spa_alloc_count = spa_allocators;
+	spa->spa_alloc_locks = kmem_zalloc(spa->spa_alloc_count *
+	    sizeof (kmutex_t), KM_SLEEP);
+	spa->spa_alloc_trees = kmem_zalloc(spa->spa_alloc_count *
+	    sizeof (avl_tree_t), KM_SLEEP);
+	for (int i = 0; i < spa->spa_alloc_count; i++) {
+		mutex_init(&spa->spa_alloc_locks[i], NULL, MUTEX_DEFAULT, NULL);
+		avl_create(&spa->spa_alloc_trees[i], zio_bookmark_compare,
+		    sizeof (zio_t), offsetof(zio_t, io_alloc_node));
+	}
+
 	/*
 	 * Every pool starts with the default cachefile
 	 */
@@ -771,6 +784,15 @@ spa_remove(spa_t *spa)
 			spa_strfree(dp->scd_path);
 		kmem_free(dp, sizeof (spa_config_dirent_t));
 	}
+
+	for (int i = 0; i < spa->spa_alloc_count; i++) {
+		avl_destroy(&spa->spa_alloc_trees[i]);
+		mutex_destroy(&spa->spa_alloc_locks[i]);
+	}
+	kmem_free(spa->spa_alloc_locks, spa->spa_alloc_count *
+	    sizeof (kmutex_t));
+	kmem_free(spa->spa_alloc_trees, spa->spa_alloc_count *
+	    sizeof (avl_tree_t));
 
 	list_destroy(&spa->spa_config_list);
 
