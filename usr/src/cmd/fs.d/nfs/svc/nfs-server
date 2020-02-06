@@ -23,7 +23,7 @@
 #
 # Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
-# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
 # Start/stop processes required for server NFS
@@ -85,29 +85,15 @@ case "$1" in
 		exit $SMF_EXIT_ERR_FATAL
 	fi
 
-        NFS_OPTS=
-        if [ -f /opt/HAC/bin/rsf.sh ]; then
-                . /opt/HAC/bin/rsf.sh
+	NFS_OPTS=
 
-                if [ -f "$PRODUCT_CONFIG" ]; then
-                        RSF_MNTS=$(/usr/bin/grep MOUNT_POINT "$PRODUCT_CONFIG" |\
-                            /usr/bin/sed -e 's/^.*MOUNT_POINT.*\"\(.*\)\"$/\1/')
+	# If RSF is installed we need to get the nfsd start options from RSF
+	# so we have a list of pools under cluster control when starting nfsd.
+	if [ -f "/opt/HAC/RSF-1/bin/get_nfs_server_state_options" ]; then
+		NFS_OPTS=`/opt/HAC/RSF-1/bin/get_nfs_server_state_options`
+	fi
 
-                        for RSF_MNT in $RSF_MNTS; do
-                                MATCH=$(/usr/bin/cat /etc/mnttab |\
-                                    /usr/bin/awk '{print $2}' |\
-                                    /usr/bin/egrep "^$RSF_MNT\$")
-
-                                if [ -n "$MATCH" ]; then
-                                        /usr/bin/mkdir -p "$RSF_MNT/.nfs"
-                                        /usr/bin/chown daemon:daemon "$RSF_MNT/.nfs"
-                                        NFS_OPTS="$NFS_OPTS -s $RSF_MNT/.nfs"
-                                fi
-                        done
-                fi
-        fi
-
-        /usr/lib/nfs/nfsd $NFS_OPTS
+	/usr/lib/nfs/nfsd $NFS_OPTS
 	rc=$?
 	if [ $rc != 0 ]; then
 		/usr/sbin/svcadm mark -t maintenance svc:/network/nfs/server
