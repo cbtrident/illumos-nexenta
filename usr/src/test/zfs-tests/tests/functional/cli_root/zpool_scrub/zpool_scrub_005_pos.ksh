@@ -27,6 +27,7 @@
 
 #
 # Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -57,5 +58,9 @@ done
 log_must zpool scrub $TESTPOOL
 log_must zpool detach $TESTPOOL $DISK1
 log_must zpool attach $TESTPOOL $DISK2 $DISK1
+
+while ! is_pool_resilvered $TESTPOOL; do
+	sleep 1
+done
 
 log_pass "When scrubbing, detach device should not break system."
