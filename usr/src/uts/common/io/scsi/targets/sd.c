@@ -28,7 +28,7 @@
  * Copyright (c) 2011 Bayard G. Bell.  All rights reserved.
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -20415,7 +20415,6 @@ sd_start_stop_unit_task(void *arg)
 	 */
 	if (un->un_f_power_condition_supported) {
 		mutex_enter(SD_MUTEX(un));
-		ASSERT(SD_PM_IS_LEVEL_VALID(un, un->un_power_level));
 		power_level = sd_pwr_pc.ran_perf[un->un_power_level]
 		    > 0 ? un->un_power_level : SD_SPINDLE_ACTIVE;
 		mutex_exit(SD_MUTEX(un));

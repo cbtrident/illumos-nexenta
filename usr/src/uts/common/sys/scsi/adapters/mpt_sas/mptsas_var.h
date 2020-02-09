@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2017, Joyent, Inc.
  * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
  */
@@ -222,6 +222,7 @@ typedef	struct mptsas_target {
 		uint16_t		m_devhdl;
 		uint32_t		m_deviceinfo;
 		uint8_t			m_phynum;
+		uint8_t			m_configing_luns;
 		uint32_t		m_dups;
 		mptsas_active_cmdq_t	m_active_cmdq;
 		int32_t			m_t_throttle;

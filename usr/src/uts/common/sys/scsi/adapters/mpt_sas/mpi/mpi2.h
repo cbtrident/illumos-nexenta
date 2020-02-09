@@ -32,6 +32,7 @@
  *  Copyright (c) 2000-2015 LSI Corporation.
  *  Copyright (c) 2013-2016 Avago Technologies
  *  All rights reserved.
+ *  Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  *
  *
  *           Name:  mpi2.h
@@ -835,6 +836,12 @@ typedef union _MPI2_REPLY_DESCRIPTORS_UNION
 #define MPI2_IOCLOGINFO_TYPE_ISCSI              (0x4)
 #define MPI2_IOCLOGINFO_LOG_DATA_MASK           (0x0FFFFFFF)
 
+/*****************************************************************************
+ * Specific definitions for the SAS nexus loss and delay retry
+*****************************************************************************/
+
+#define	MPI2_SAS_LOGINFO_NEXUS_LOSS				0x31170000
+#define	MPI2_SAS_LOGINFO_MASK					0xFFFF0000
 
 /*****************************************************************************
 *
