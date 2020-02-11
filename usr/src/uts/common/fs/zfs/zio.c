@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/sysmacros.h>
@@ -1500,11 +1500,18 @@ zio_write_compress(zio_t *zio)
 			}
 		}
 
-		if (zio->io_smartcomp.sc_result != NULL) {
+		IMPLY(zio->io_smartcomp.sc_result == NULL,
+		    zio->io_smartcomp.sc_ask == NULL);
+
+		/*
+		 * All-zero data (psize == 0) should not be taken
+		 * into account, because ZFS doesn't allocate space
+		 * for the data.
+		 * (see a comment in zio_compress_data())
+		 */
+		if (zio->io_smartcomp.sc_result != NULL && psize != 0) {
 			zio->io_smartcomp.sc_result(
 			    zio->io_smartcomp.sc_userinfo, zio);
-		} else {
-			ASSERT(zio->io_smartcomp.sc_ask == NULL);
 		}
 
 		/*

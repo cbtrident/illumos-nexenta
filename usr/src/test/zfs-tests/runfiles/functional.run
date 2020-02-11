@@ -335,7 +335,7 @@ user =
 
 [/opt/zfs-tests/tests/functional/compression]
 tests = ['compress_001_pos', 'compress_002_pos', 'compress_003_pos',
-    'compress_004_pos']
+    'compress_004_pos', 'compress_005_pos']
 
 [/opt/zfs-tests/tests/functional/ctime]
 tests = ['ctime_001_pos' ]
