@@ -3357,7 +3357,12 @@ mptsas_scsi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 			rval = mptsas_check_tgt_intransition(ptgt,
 			    cmd->cmd_pkt_flags);
 			if (rval != TRAN_ACCEPT) {
+				mptsas_set_pkt_reason(mpt, cmd, CMD_DEV_GONE,
+				    STAT_ABORTED);
+				mptsas_doneq_add(mpt, cmd);
+				mptsas_doneq_empty(mpt);
 				mutex_exit(&mpt->m_tx_waitq_mutex);
+				rval = TRAN_ACCEPT;
 				return (rval);
 			}
 			if (mpt->m_tx_draining) {
@@ -3378,6 +3383,12 @@ mptsas_scsi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 		rval = mptsas_check_tgt_intransition(ptgt, cmd->cmd_pkt_flags);
 		if (rval == TRAN_ACCEPT) {
 			mptsas_accept_pkt(mpt, cmd);
+		} else {
+			mptsas_set_pkt_reason(mpt, cmd, CMD_DEV_GONE,
+			    STAT_ABORTED);
+			mptsas_doneq_add(mpt, cmd);
+			mptsas_doneq_empty(mpt);
+			rval = TRAN_ACCEPT;
 		}
 		mutex_exit(&mpt->m_mutex);
 	}
@@ -3438,6 +3449,12 @@ mptsas_accept_txwq_and_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 	rval = mptsas_check_tgt_intransition(ptgt, cmd->cmd_pkt_flags);
 	if (rval == TRAN_ACCEPT) {
 		mptsas_accept_pkt(mpt, cmd);
+	} else {
+		mptsas_set_pkt_reason(mpt, cmd, CMD_DEV_GONE,
+		    STAT_ABORTED);
+		mptsas_doneq_add(mpt, cmd);
+		mptsas_doneq_empty(mpt);
+		rval = TRAN_ACCEPT;
 	}
 
 	return (rval);
@@ -3583,7 +3600,8 @@ mptsas_accept_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 	 * This is temporary and, if target is still attached, the device
 	 * handles will be re-assigned when firmware reset completes.
 	 */
-	if (ptgt->m_devhdl == MPTSAS_INVALID_DEVHDL) {
+	if (ptgt->m_devhdl == MPTSAS_INVALID_DEVHDL ||
+		    ptgt->m_dr_flag == MPTSAS_DR_INTRANSITION) {
 		if (mpt->m_in_reset) {
 			mptsas_set_pkt_reason(mpt, cmd, CMD_RESET,
 			    STAT_BUS_RESET);
@@ -7441,8 +7459,8 @@ mptsas_handle_event_sync(void *args)
 						topo_tail->next = topo_node;
 						topo_tail = topo_node;
 					}
-					mutex_exit(&mpt->m_tx_waitq_mutex);
 				}
+				mutex_exit(&mpt->m_tx_waitq_mutex);
 				break;
 			}
 			case MPI2_EVENT_SAS_TOPO_RC_PHY_CHANGED:
@@ -7740,8 +7758,8 @@ mptsas_handle_event_sync(void *args)
 						topo_tail->next = topo_node;
 						topo_tail = topo_node;
 					}
-					mutex_exit(&mpt->m_tx_waitq_mutex);
 				}
+				mutex_exit(&mpt->m_tx_waitq_mutex);
 				break;
 			}
 			case MPI2_EVENT_IR_CHANGE_RC_UNHIDE:
