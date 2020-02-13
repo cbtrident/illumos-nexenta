@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2016 Toomas Soome <tsoome@me.com>
@@ -3490,8 +3490,15 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
 		mutex_exit(&spa_namespace_lock);
 	}
 
-	if (open_with_activation)
+	if (open_with_activation) {
 		wbc_activate(spa, B_FALSE);
+		/*
+		 * state change events aren't raised until the load
+		 * successfully completes, so raise one now in case
+		 * of any transitions to HEALTHY.
+		 */
+		spa_event_notify(spa, NULL, NULL, ESC_ZFS_STATE_CHANGE);
+	}
 
 	*spapp = spa;
 

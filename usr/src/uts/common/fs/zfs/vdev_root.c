@@ -25,6 +25,7 @@
 
 /*
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -107,7 +108,15 @@ vdev_root_state_change(vdev_t *vd, int faulted, int degraded)
 		vdev_set_state(vd, B_FALSE, VDEV_STATE_HEALTHY, VDEV_AUX_NONE);
 	}
 
-	spa_event_notify(vd->vdev_spa, NULL, NULL, ESC_ZFS_STATE_CHANGE);
+	/*
+	 * Do not raise state change events until pool is successfully loaded.
+	 * This avoids a loop where on a FAULTY pool a state change event during
+	 * a failing pool open triggers the recipient to query for pool info
+	 * which causes a pool open which raises another state change event
+	 * and so on, looping endlessly.
+	 */
+	if (spa_load_state(vd->vdev_spa) == SPA_LOAD_NONE)
+		spa_event_notify(vd->vdev_spa, NULL, NULL, ESC_ZFS_STATE_CHANGE);
 }
 
 vdev_ops_t vdev_root_ops = {
