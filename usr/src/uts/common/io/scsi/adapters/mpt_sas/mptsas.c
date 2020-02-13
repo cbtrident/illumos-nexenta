@@ -211,8 +211,8 @@ static void mptsas_prepare_pkt(mptsas_cmd_t *cmd);
 static void mptsas_accept_pkt(mptsas_t *mpt, mptsas_cmd_t *sp);
 static int mptsas_accept_txwq_and_pkt(mptsas_t *mpt, mptsas_cmd_t *sp);
 static void mptsas_accept_tx_waitq(mptsas_t *mpt);
-static int mptsas_check_tgt_intransition(mptsas_target_t *ptgt,
-    int cmd_pkt_flags);
+static int mptsas_check_tgt_intransition(mptsas_t *mpt,
+    mptsas_cmd_t *cmd);
 
 static int mptsas_do_detach(dev_info_t *dev);
 static int mptsas_do_scsi_reset(mptsas_t *mpt, uint16_t devhdl);
@@ -3348,20 +3348,20 @@ mptsas_scsi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 			rval = mptsas_accept_txwq_and_pkt(mpt, cmd);
 			mutex_exit(&mpt->m_mutex);
 		} else {
+			mutex_enter(&mpt->m_mutex);
 			mutex_enter(&mpt->m_tx_waitq_mutex);
 			/*
 			 * ptgt->m_dr_flag is protected by m_mutex or
 			 * m_tx_waitq_mutex. In this case, m_tx_waitq_mutex
 			 * is acquired.
 			 */
-			rval = mptsas_check_tgt_intransition(ptgt,
-			    cmd->cmd_pkt_flags);
+			rval = mptsas_check_tgt_intransition(mpt, cmd);
 			if (rval != TRAN_ACCEPT) {
 				mptsas_set_pkt_reason(mpt, cmd, CMD_DEV_GONE,
 				    STAT_ABORTED);
+				mutex_exit(&mpt->m_tx_waitq_mutex);
 				mptsas_doneq_add(mpt, cmd);
 				mptsas_doneq_empty(mpt);
-				mutex_exit(&mpt->m_tx_waitq_mutex);
 				rval = TRAN_ACCEPT;
 				return (rval);
 			}
@@ -3370,22 +3370,20 @@ mptsas_scsi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 				*mpt->m_tx_waitqtail = cmd;
 				mpt->m_tx_waitqtail = &cmd->cmd_linkp;
 				mutex_exit(&mpt->m_tx_waitq_mutex);
+				mutex_exit(&mpt->m_mutex);
 			} else { /* drain the queue */
 				mpt->m_tx_draining = 1;
 				mutex_exit(&mpt->m_tx_waitq_mutex);
-				mutex_enter(&mpt->m_mutex);
 				rval = mptsas_accept_txwq_and_pkt(mpt, cmd);
 				mutex_exit(&mpt->m_mutex);
 			}
 		}
 	} else {
 		mutex_enter(&mpt->m_mutex);
-		rval = mptsas_check_tgt_intransition(ptgt, cmd->cmd_pkt_flags);
+		rval = mptsas_check_tgt_intransition(mpt, cmd);
 		if (rval == TRAN_ACCEPT) {
 			mptsas_accept_pkt(mpt, cmd);
 		} else {
-			mptsas_set_pkt_reason(mpt, cmd, CMD_DEV_GONE,
-			    STAT_ABORTED);
 			mptsas_doneq_add(mpt, cmd);
 			mptsas_doneq_empty(mpt);
 			rval = TRAN_ACCEPT;
@@ -3397,28 +3395,22 @@ mptsas_scsi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 }
 
 static int
-mptsas_check_tgt_intransition(mptsas_target_t *ptgt, int cmd_pkt_flags)
+mptsas_check_tgt_intransition(mptsas_t *mpt, mptsas_cmd_t *cmd)
 {
+	mptsas_target_t *ptgt = cmd->cmd_tgt_addr;
 	/*
 	 * ptgt->m_dr_flag is protected by m_mutex or
 	 * m_tx_waitq_mutex.
 	 */
 	if (ptgt->m_dr_flag == MPTSAS_DR_INTRANSITION) {
-		if ((cmd_pkt_flags & FLAG_NOQUEUE) &&
+		if ((cmd->cmd_pkt_flags & FLAG_NOQUEUE) &&
 		    ptgt->m_configing_luns == 0) {
-			/*
-			 * The command should be allowed to retry by returning
-			 * TRAN_BUSY to stall the I/O's which come from
-			 * scsi_vhci since the device/path is in unstable state
-			 * now. However we must not do this if the target is
-			 * currently attempting to configure luns.
-			 */
+			mptsas_set_pkt_reason(mpt, cmd, CMD_RESET,
+			    STAT_BUS_RESET);
 			return (TRAN_BUSY);
 		} else {
-			/*
-			 * The device is offline, just fail the command by
-			 * return TRAN_FATAL_ERROR.
-			 */
+			mptsas_set_pkt_reason(mpt, cmd, CMD_DEV_GONE,
+			    STAT_TERMINATED);
 			return (TRAN_FATAL_ERROR);
 		}
 	}
@@ -3432,7 +3424,6 @@ static int
 mptsas_accept_txwq_and_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 {
 	int rval;
-	mptsas_target_t	*ptgt = cmd->cmd_tgt_addr;
 
 	ASSERT(mutex_owned(&mpt->m_mutex));
 	/*
@@ -3442,19 +3433,15 @@ mptsas_accept_txwq_and_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 	mutex_enter(&mpt->m_tx_waitq_mutex);
 	mptsas_accept_tx_waitq(mpt);
 	mutex_exit(&mpt->m_tx_waitq_mutex);
-	/*
-	 * ptgt->m_dr_flag is protected by m_mutex or m_tx_waitq_mutex
-	 * in this case, m_mutex is acquired.
-	 */
-	rval = mptsas_check_tgt_intransition(ptgt, cmd->cmd_pkt_flags);
+
+	rval = mptsas_check_tgt_intransition(mpt, cmd);
 	if (rval == TRAN_ACCEPT) {
 		mptsas_accept_pkt(mpt, cmd);
 	} else {
-		mptsas_set_pkt_reason(mpt, cmd, CMD_DEV_GONE,
-		    STAT_ABORTED);
 		mptsas_doneq_add(mpt, cmd);
 		mptsas_doneq_empty(mpt);
 		rval = TRAN_ACCEPT;
+		return (rval);
 	}
 
 	return (rval);
