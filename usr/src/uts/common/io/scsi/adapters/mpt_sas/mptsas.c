@@ -5632,6 +5632,16 @@ mptsas_check_scsi_io_error(mptsas_t *mpt, pMpi2SCSIIOReply_t reply,
 	pkt->pkt_stop = gethrtime();
 	*(pkt->pkt_scbp) = scsi_status;
 
+	if (loginfo == 0x31170000) {
+		/*
+		 * If loginfo PL_LOGINFO_CODE_IO_DEVICE_MISSING_DELAY_RETRY
+		 * 0x31170000 is returned, it means the device missing delay
+		 * is in progress. The command needs to retry later.
+		 */
+		*(pkt->pkt_scbp) = STATUS_BUSY;
+		return;
+	}
+
 	if ((scsi_state & MPI2_SCSI_STATE_NO_SCSI_STATUS) &&
 	    ((ioc_status & MPI2_IOCSTATUS_MASK) ==
 	    MPI2_IOCSTATUS_SCSI_DEVICE_NOT_THERE)) {
@@ -5790,48 +5800,7 @@ mptsas_check_scsi_io_error(mptsas_t *mpt, pMpi2SCSIIOReply_t reply,
 				    STAT_BUS_RESET);
 			}
 			break;
-		case MPI2_IOCSTATUS_SCSI_IOC_TERMINATED: /* 0x4b */
-		{
-			/*
-			 * Check for loginfo 'nexus loss' LogInfo code from
-			 * firmware. It means the command was terminated
-			 * because device is not there or is spinning up.
-			 */
-			if ((ioc_status &
-			    MPI2_IOCSTATUS_FLAG_LOG_INFO_AVAILABLE) &&
-			    ((loginfo & MPI2_SAS_LOGINFO_MASK) ==
-			    MPI2_SAS_LOGINFO_NEXUS_LOSS)) {
-				sas_wwn = ptgt->m_addr.mta_wwn;
-				phy = ptgt->m_phynum;
-				if (sas_wwn == 0) {
-					(void) sprintf(wwn_str,
-					    "p%x", phy);
-				} else {
-					(void) sprintf(wwn_str,
-					    "w%016"PRIx64, sas_wwn);
-				}
-				mptsas_log(mpt, CE_NOTE,
-				    "log info 0x%x received for target "
-				    "%d WWN=(%s), "
-				    "scsi_status=0x%x, ioc_status=0x%x, "
-				    "scsi_state=0x%x",
-				    loginfo, Tgt(cmd), wwn_str, scsi_status,
-				    ioc_status, scsi_state);
-				/*
-				 *  Mark the command command terminated.
-				 *  Upper level will retry but packet
-				 *  competion routine will be called in
-				 *  the process to prevent stuck I/O
-				 *  threads.
-				 */
-				mptsas_set_pkt_reason(mpt, cmd,
-				    CMD_TERMINATED, STAT_TERMINATED);
-				break;
-			}
-			mptsas_set_pkt_reason(mpt,
-			    cmd, CMD_RESET, STAT_DEV_RESET);
-			break;
-		}
+		case MPI2_IOCSTATUS_SCSI_IOC_TERMINATED:
 		case MPI2_IOCSTATUS_SCSI_EXT_TERMINATED:
 			mptsas_set_pkt_reason(mpt,
 			    cmd, CMD_RESET, STAT_DEV_RESET);
@@ -6599,7 +6568,7 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 	uint8_t		phy, flags;
 	char		*addr = NULL;
 	dev_info_t	*lundip;
-	int		circ1 = 0;
+	int			circ = 0, circ1 = 0;
 	char		attached_wwnstr[MPTSAS_WWN_STRLEN];
 
 	NDBG20(("mptsas%d handle_topo_change enter, devhdl 0x%x,"
@@ -6701,7 +6670,17 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 			    &lundip);
 			ndi_devi_exit(parent, circ1);
 		} else {
+			/*
+			 * hold nexus for bus configure
+			 */
+			ndi_devi_enter(scsi_vhci_dip, &circ);
+			ndi_devi_enter(parent, &circ1);
 			rval = mptsas_config_target(parent, ptgt);
+			/*
+			 * release nexus for bus configure
+			 */
+			ndi_devi_exit(parent, circ1);
+			ndi_devi_exit(scsi_vhci_dip, circ);
 
 			/*
 			 * If this is a SATA device, make sure that the
@@ -6817,9 +6796,25 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 			 */
 			(void) mptsas_get_raid_info(mpt);
 		}
+
+		/*
+		 * Abort all outstanding commands on the device
+		 */
+		rval = mptsas_do_scsi_reset(mpt, devhdl);
+		if (rval) {
+			NDBG20(("mptsas%d handle_topo_change to reset target "
+			    "before offline devhdl:%x, phymask:%x, rval:%x",
+			    mpt->m_instance, ptgt->m_devhdl,
+			ptgt->m_addr.mta_phymask, rval));
+		}
+
 		mutex_exit(&mpt->m_mutex);
 
+		ndi_devi_enter(scsi_vhci_dip, &circ);
+		ndi_devi_enter(parent, &circ1);
 		rval = mptsas_offline_target(parent, addr);
+		ndi_devi_exit(parent, circ1);
+		ndi_devi_exit(scsi_vhci_dip, circ);
 		NDBG20(("mptsas%d handle_topo_change to offline devhdl:%x, "
 		    "phymask:%x, rval:%x", mpt->m_instance,
 		    ptgt->m_devhdl, ptgt->m_addr.mta_phymask, rval));
@@ -7153,7 +7148,7 @@ mptsas_handle_event_sync(void *args)
 		pMpi2EventDataSasTopologyChangeList_t	sas_topo_change_list;
 		uint8_t				num_entries, expstatus, phy;
 		uint8_t				phystatus, physport, state, i;
-		uint8_t				start_phy_num, link_rate, odr;
+		uint8_t				start_phy_num, link_rate;
 		uint16_t			dev_handle, reason_code;
 		uint16_t			enc_handle, expd_handle;
 		char				string[80], curr[80], prev[80];
@@ -7424,30 +7419,27 @@ mptsas_handle_event_sync(void *args)
 				 * context.
 				 */
 				mutex_enter(&mpt->m_tx_waitq_mutex);
-				odr = atomic_swap_8(&ptgt->m_dr_flag,
-				    MPTSAS_DR_INTRANSITION);
-
-				if (odr != MPTSAS_DR_INTRANSITION) {
-					topo_node = kmem_zalloc(
-					sizeof (mptsas_topo_change_list_t),
-						KM_SLEEP);
-					topo_node->mpt = mpt;
-					topo_node->un.phymask =
-						ptgt->m_addr.mta_phymask;
-					topo_node->event =
-						MPTSAS_DR_EVENT_OFFLINE_TARGET;
-					topo_node->devhdl = dev_handle;
-					topo_node->flags = flags;
-					topo_node->object = NULL;
-					if (topo_head == NULL) {
-						topo_head = topo_tail =
-						    topo_node;
-					} else {
-						topo_tail->next = topo_node;
-						topo_tail = topo_node;
-					}
-				}
+				ptgt->m_dr_flag = MPTSAS_DR_INTRANSITION;
 				mutex_exit(&mpt->m_tx_waitq_mutex);
+
+				topo_node = kmem_zalloc(
+				sizeof (mptsas_topo_change_list_t),
+				    KM_SLEEP);
+				topo_node->mpt = mpt;
+				topo_node->un.phymask =
+				    ptgt->m_addr.mta_phymask;
+				topo_node->event =
+				    MPTSAS_DR_EVENT_OFFLINE_TARGET;
+				topo_node->devhdl = dev_handle;
+				topo_node->flags = flags;
+				topo_node->object = NULL;
+				if (topo_head == NULL) {
+					topo_head = topo_tail =
+					    topo_node;
+				} else {
+					topo_tail->next = topo_node;
+					topo_tail = topo_node;
+				}
 				break;
 			}
 			case MPI2_EVENT_SAS_TOPO_RC_PHY_CHANGED:
@@ -7618,7 +7610,7 @@ mptsas_handle_event_sync(void *args)
 		mptsas_topo_change_list_t		*topo_tail = NULL;
 		mptsas_topo_change_list_t		*topo_node = NULL;
 		mptsas_target_t		*ptgt;
-		uint8_t				num_entries, i, reason, odr;
+		uint8_t				num_entries, i, reason;
 		uint16_t			volhandle, diskhandle;
 
 		irChangeList = (pMpi2EventDataIrConfigChangeList_t)
@@ -7683,31 +7675,27 @@ mptsas_handle_event_sync(void *args)
 				 * Update DR flag immediately avoid I/O failure
 				 */
 				mutex_enter(&mpt->m_tx_waitq_mutex);
-				odr = atomic_swap_8(&ptgt->m_dr_flag,
-				    MPTSAS_DR_INTRANSITION);
-
-				if (odr != MPTSAS_DR_INTRANSITION) {
-					topo_node = kmem_zalloc(
-					sizeof (mptsas_topo_change_list_t),
-						KM_SLEEP);
-					topo_node->mpt = mpt;
-					topo_node->un.phymask =
-						ptgt->m_addr.mta_phymask;
-					topo_node->event =
-						MPTSAS_DR_EVENT_OFFLINE_TARGET;
-					topo_node->devhdl = volhandle;
-					topo_node->flags =
-					MPTSAS_TOPO_FLAG_RAID_ASSOCIATED;
-					topo_node->object = (void *)ptgt;
-					if (topo_head == NULL) {
-						topo_head = topo_tail =
-						    topo_node;
-					} else {
-						topo_tail->next = topo_node;
-						topo_tail = topo_node;
-					}
-				}
+				ptgt->m_dr_flag = MPTSAS_DR_INTRANSITION;
 				mutex_exit(&mpt->m_tx_waitq_mutex);
+
+				topo_node = kmem_zalloc
+				    (sizeof (mptsas_topo_change_list_t),
+				    KM_SLEEP);
+				topo_node->mpt = mpt;
+				topo_node->un.phymask =
+				    ptgt->m_addr.mta_phymask;
+				topo_node->event =
+				    MPTSAS_DR_EVENT_OFFLINE_TARGET;
+				topo_node->devhdl = volhandle;
+				topo_node->flags =
+				    MPTSAS_TOPO_FLAG_RAID_ASSOCIATED;
+				topo_node->object = (void *)ptgt;
+				if (topo_head == NULL) {
+					topo_head = topo_tail = topo_node;
+				} else {
+					topo_tail->next = topo_node;
+					topo_tail = topo_node;
+				}
 				break;
 			}
 			case MPI2_EVENT_IR_CHANGE_RC_PD_CREATED:
@@ -7722,31 +7710,27 @@ mptsas_handle_event_sync(void *args)
 				 * Update DR flag immediately avoid I/O failure
 				 */
 				mutex_enter(&mpt->m_tx_waitq_mutex);
-				odr = atomic_swap_8(&ptgt->m_dr_flag,
-				    MPTSAS_DR_INTRANSITION);
-
-				if (odr != MPTSAS_DR_INTRANSITION) {
-					topo_node = kmem_zalloc(
-					sizeof (mptsas_topo_change_list_t),
-						KM_SLEEP);
-					topo_node->mpt = mpt;
-					topo_node->un.phymask =
-						ptgt->m_addr.mta_phymask;
-					topo_node->event =
-						MPTSAS_DR_EVENT_OFFLINE_TARGET;
-					topo_node->devhdl = diskhandle;
-					topo_node->flags =
-				MPTSAS_TOPO_FLAG_RAID_PHYSDRV_ASSOCIATED;
-					topo_node->object = (void *)ptgt;
-					if (topo_head == NULL) {
-						topo_head = topo_tail =
-						    topo_node;
-					} else {
-						topo_tail->next = topo_node;
-						topo_tail = topo_node;
-					}
-				}
+				ptgt->m_dr_flag = MPTSAS_DR_INTRANSITION;
 				mutex_exit(&mpt->m_tx_waitq_mutex);
+
+				topo_node = kmem_zalloc
+				    (sizeof (mptsas_topo_change_list_t),
+				    KM_SLEEP);
+				topo_node->mpt = mpt;
+				topo_node->un.phymask =
+				    ptgt->m_addr.mta_phymask;
+				topo_node->event =
+				    MPTSAS_DR_EVENT_OFFLINE_TARGET;
+				topo_node->devhdl = diskhandle;
+				topo_node->flags =
+				    MPTSAS_TOPO_FLAG_RAID_PHYSDRV_ASSOCIATED;
+				topo_node->object = (void *)ptgt;
+				if (topo_head == NULL) {
+					topo_head = topo_tail = topo_node;
+				} else {
+					topo_tail->next = topo_node;
+					topo_tail = topo_node;
+				}
 				break;
 			}
 			case MPI2_EVENT_IR_CHANGE_RC_UNHIDE:
@@ -7759,8 +7743,8 @@ mptsas_handle_event_sync(void *args)
 				 * can get the physport/phynum after SAS
 				 * Device Page0 request for the devhdl.
 				 */
-				topo_node = kmem_zalloc(
-				    sizeof (mptsas_topo_change_list_t),
+				topo_node = kmem_zalloc
+				    (sizeof (mptsas_topo_change_list_t),
 				    KM_SLEEP);
 				topo_node->mpt = mpt;
 				topo_node->un.phymask = 0;
