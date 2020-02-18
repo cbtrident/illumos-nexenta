@@ -532,6 +532,7 @@ rfs4_ss_getstate(vnode_t *dvp, rfs4_ss_pn_t *ss_pn)
 	uio.uio_segflg = UIO_SYSSPACE;
 	uio.uio_loffset = 0;
 	uio.uio_resid = sizeof (int) + NFS4_VERIFIER_SIZE + sizeof (uint_t);
+	uio.uio_extflg = UIO_COPY_CACHED;
 
 	if (err = VOP_READ(vp, &uio, FREAD, CRED(), NULL)) {
 		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
@@ -572,6 +573,7 @@ rfs4_ss_getstate(vnode_t *dvp, rfs4_ss_pn_t *ss_pn)
 	uio.uio_iovcnt = 1;
 	uio.uio_segflg = UIO_SYSSPACE;
 	uio.uio_resid = cl_ss->cl_id4.id_len = id_len;
+	uio.uio_extflg = UIO_COPY_CACHED;
 
 	if (err = VOP_READ(vp, &uio, FREAD, CRED(), NULL)) {
 		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
@@ -633,6 +635,7 @@ rfs4_ss_oldstate(rfs4_oldstate_t *oldstate, char *statedir, char *destdir)
 		uio.uio_segflg = UIO_SYSSPACE;
 		uio.uio_loffset = dirchunk_offset;
 		uio.uio_resid = RFS4_SS_DIRSIZE;
+		uio.uio_extflg = UIO_COPY_CACHED;
 
 		err = VOP_READDIR(dvp, &uio, CRED(), &dir_eof, NULL, 0);
 		VOP_RWUNLOCK(dvp, V_WRITELOCK_FALSE, NULL);
