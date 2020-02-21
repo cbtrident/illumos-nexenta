@@ -23,7 +23,7 @@
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <assert.h>
@@ -639,6 +639,22 @@ zfs_fm_recv(fmd_hdl_t *hdl, fmd_event_t *ep, nvlist_t *nvl, const char *class)
 		    pool_guid, er_when.ertv_sec, er_when.ertv_nsec,
 		    pool_load.ertv_sec, pool_load.ertv_nsec);
 	}
+
+	/*
+	 * If this is a statechange resource ereport and there is no
+	 * open case, discard it. These are only sent when a device
+	 * transitions to HEALTHY, to close any associated open case.
+	 *
+	 * These are discarded before the pool load time check, as in
+	 * certain FAULTY pool cases the pool load time check can result
+	 * in another of these events, causing endless looping.
+	 */
+	if ((zcp == NULL) &&
+	    fmd_nvl_class_match(hdl, nvl, "resource.fs.zfs.statechange")) {
+		zfs_stats.resource_drops.fmds_value.ui64++;
+		return;
+	}
+
 
 	/*
 	 * Avoid falsely accusing a pool of being faulty.  Do so by
