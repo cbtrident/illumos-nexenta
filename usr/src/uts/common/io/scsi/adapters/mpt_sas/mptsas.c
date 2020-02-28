@@ -3362,6 +3362,7 @@ mptsas_scsi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 				mutex_exit(&mpt->m_tx_waitq_mutex);
 				mptsas_doneq_add(mpt, cmd);
 				mptsas_doneq_empty(mpt);
+				mutex_exit(&mpt->m_mutex);
 				rval = TRAN_ACCEPT;
 				return (rval);
 			}
