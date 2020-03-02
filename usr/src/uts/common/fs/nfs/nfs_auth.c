@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2015 by Delphix. All rights reserved.
  */
 
@@ -288,15 +288,22 @@ nfsauth_zone_shutdown(zoneid_t zoneid, void *data)
 		refreshq_auth_node_t *ran;
 
 		while ((ran = list_remove_head(&ren->ren_authlist)) != NULL) {
-			struct auth_cache *p = ran->ran_auth;
-			if (p->auth_state == NFS_AUTH_INVALID)
-				nfsauth_free_node(p);
+			if (ren->ren_exi != NULL) {
+				struct auth_cache *p = ran->ran_auth;
+				if (p->auth_state == NFS_AUTH_INVALID)
+					nfsauth_free_node(p);
+			} else {
+				struct audit_cache *p = ran->ran_auth;
+				if (p->audit_state == NFS_AUTH_INVALID)
+					nfsaudit_free_node(p);
+			}
 			strfree(ran->ran_netid);
 			kmem_free(ran, sizeof (*ran));
 		}
 
 		list_destroy(&ren->ren_authlist);
-		exi_rele(&ren->ren_exi);
+		if (ren->ren_exi != NULL)
+			exi_rele(&ren->ren_exi);
 		kmem_free(ren, sizeof (*ren));
 	}
 }
