@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/sid.h>
@@ -150,10 +150,9 @@ smb_fsop_create_with_sd(smb_request_t *sr, cred_t *cr,
 
 	do_audit = smb_audit_init(sr);
 	if (smb_tree_has_feature(sr->tid_tree, SMB_TREE_ACLONCREATE)) {
-		if (fs_sd->sd_secinfo & SMB_ACL_SECINFO) {
-			dacl = fs_sd->sd_zdacl;
-			sacl = fs_sd->sd_zsacl;
-			ASSERT(dacl || sacl);
+		dacl = fs_sd->sd_zdacl;
+		sacl = fs_sd->sd_zsacl;
+		if (dacl != NULL || sacl != NULL) {
 			if (dacl && sacl) {
 				acl = smb_fsacl_merge(dacl, sacl);
 			} else if (dacl) {
@@ -513,7 +512,8 @@ smb_fsop_create_file(smb_request_t *sr, cred_t *cr,
 	if (op->sd) {
 		/*
 		 * SD sent by client in Windows format. Needs to be
-		 * converted to FS format. No inheritance.
+		 * converted to FS format. Inherit DACL/SACL if they're not
+		 * specified.
 		 */
 		secinfo = smb_sd_get_secinfo(op->sd);
 
@@ -671,7 +671,8 @@ smb_fsop_mkdir(
 	if (op->sd) {
 		/*
 		 * SD sent by client in Windows format. Needs to be
-		 * converted to FS format. No inheritance.
+		 * converted to FS format. Inherit DACL/SACL if they're not
+		 * specified.
 		 */
 		secinfo = smb_sd_get_secinfo(op->sd);
 
@@ -2543,6 +2544,8 @@ smb_fsop_sdmerge(smb_request_t *sr, smb_node_t *snode, smb_fssd_t *fs_sd)
  * owner has been specified. Callers should translate this to
  * STATUS_INVALID_OWNER which is not the normal mapping for EPERM
  * in upper layers, so EPERM is mapped to EBADE.
+ *
+ * If 'overwrite' is non-zero, then the existing ACL is ignored.
  */
 int
 smb_fsop_sdwrite(smb_request_t *sr, cred_t *cr, smb_node_t *snode,
@@ -2608,14 +2611,13 @@ smb_fsop_sdwrite(smb_request_t *sr, cred_t *cr, smb_node_t *snode,
 	}
 
 	if (fs_sd->sd_secinfo & SMB_ACL_SECINFO) {
-		if (overwrite == 0) {
+		if (overwrite == 0)
 			error = smb_fsop_sdmerge(sr, snode, fs_sd);
-			if (error)
-				return (error);
-		}
 
-		error = smb_fsop_aclwrite(sr, cr, snode, fs_sd);
-		if (error) {
+		if (error == 0)
+			error = smb_fsop_aclwrite(sr, cr, snode, fs_sd);
+
+		if (error != 0) {
 			/*
 			 * Revert uid/gid changes if required.
 			 */
@@ -2693,16 +2695,12 @@ smb_fsop_sdinherit(smb_request_t *sr, smb_node_t *dnode, smb_fssd_t *fs_sd)
 		dacl = smb_fsacl_inherit(pfs_sd.sd_zdacl, is_dir,
 		    SMB_DACL_SECINFO, sr->user_cr);
 		fs_sd->sd_zdacl = dacl;
-		if (dacl != NULL)
-			fs_sd->sd_secinfo |= SMB_DACL_SECINFO;
 	}
 
 	if ((secinfo & SMB_SACL_SECINFO) == 0) {
 		sacl = smb_fsacl_inherit(pfs_sd.sd_zsacl, is_dir,
 		    SMB_SACL_SECINFO, sr->user_cr);
 		fs_sd->sd_zsacl = sacl;
-		if (sacl != NULL)
-			fs_sd->sd_secinfo |= SMB_SACL_SECINFO;
 	}
 
 	smb_fsacl_free(pfs_sd.sd_zdacl);
