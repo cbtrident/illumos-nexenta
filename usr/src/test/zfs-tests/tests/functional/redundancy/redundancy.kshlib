@@ -26,6 +26,7 @@
 
 #
 # Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -164,9 +165,43 @@ function is_healthy
 		l_scan=$(zpool status -x $pool | grep "scan:")
 		l_scan=${l_scan##*"with"}
 		errnum=$(echo $l_scan | awk '{print $1}')
-
-		return $errnum
+		(( $errnum == 0 )) && return 0
 	fi
+
+	return 1
+}
+
+#
+# Wait for the pool status to transition from ONLINE
+#
+# Use after injecting errors, to wait for FMD to update the
+# pool status, otherwise subsequent zpool clear will not
+# issue a scrub.
+# Do not wait forever, to avoid hanging test.
+#
+# $1 pool name
+#
+function wait_notonline
+{
+	typeset -i counter=0
+	typeset pool=$1
+	typeset pool_state;
+
+	while true; do
+		pool_state=$(zpool get -Ho value health $pool)
+
+		if [[ "$pool_state" != "ONLINE" ]] then
+			break
+		fi
+
+		((counter += 1))
+		if [ $counter -gt 30 ]; then
+			echo "wait_notonline timeout"
+			break
+		fi
+
+		log_must sleep 2
+	done
 }
 
 #
@@ -214,6 +249,44 @@ function get_vdevs #pool cnt
 }
 
 #
+# wait for current scrub to complete
+#
+# In order to be sure we're not acting on an old scrubbed status,
+# pass in the scan status from before initiating the scrub
+#
+# $1 pool name
+# $2-n scan status
+#
+function wait_for_scrub
+{
+	typeset pool=$1
+	shift
+	typeset prev_status=$@
+
+	typeset -i counter=0
+	while true; do
+		status=$(zpool status $pool | grep "scan")
+		scrubbed=$(echo $status | grep "scrub repaired")
+		is_scrubbed=$?
+		
+		if [[ $is_scrubbed == 0 ]] && [[ "$status" != "$prev_status" ]]; then
+			zpool status $pool
+			break
+		fi
+
+		((counter += 1))
+		if [ $counter -gt 30 ]; then
+			echo "wait_for_scrub timeout"
+			break
+		fi
+
+		log_must sleep 2
+	done
+
+	return 0
+}
+
+#
 # Synchronize all the data in pool
 #
 # $1 pool name
@@ -226,21 +299,17 @@ function sync_pool #pool
 	log_must sleep 2
 	# Flush all the pool data.
 	typeset -i ret
+	typeset old_status=$(zpool status $pool | grep "scan")
 	zpool scrub $pool >/dev/null 2>&1
 	ret=$?
 	(( $ret != 0 )) && \
 		log_fail "zpool scrub $pool failed."
 
-	while ! is_pool_scrubbed $pool; do
-		if is_pool_resilvered $pool ; then
-			log_fail "$pool should not be resilver completed."
-		fi
-		log_must sleep 2
-	done
+	wait_for_scrub $pool "$old_status"
 }
 
 #
-# Create and replace the same name virtual device files
+# Create and replace the virtual device files
 #
 # $1 pool name
 # $2-n virtual device files
@@ -252,8 +321,8 @@ function replace_missing_devs
 
 	typeset vdev
 	for vdev in $@; do
-		log_must mkfile $MINVDEVSIZE $vdev
-		log_must zpool replace -f $pool $vdev $vdev
+		log_must mkfile $MINVDEVSIZE ${vdev}A
+		log_must zpool replace -f $pool $vdev ${vdev}A
 		while true; do
 			if ! is_pool_resilvered $pool ; then
 				log_must sleep 2
@@ -295,6 +364,7 @@ function damage_devs
 	fi
 
 	sync_pool $pool
+	wait_notonline $pool
 }
 
 #
@@ -306,7 +376,9 @@ function clear_errors
 {
 	typeset pool=$1
 
+	typeset old_status=$(zpool status $pool | grep "scan")
 	log_must zpool clear $pool
+	wait_for_scrub $pool "$old_status"
 
 	if ! is_healthy $pool ; then
 		log_note "$pool should be healthy."
