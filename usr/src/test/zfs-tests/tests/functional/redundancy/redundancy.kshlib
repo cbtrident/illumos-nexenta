@@ -185,12 +185,12 @@ function wait_notonline
 {
 	typeset -i counter=0
 	typeset pool=$1
-	typeset pool_state;
+	typeset pool_state
 
 	while true; do
 		pool_state=$(zpool get -Ho value health $pool)
 
-		if [[ "$pool_state" != "ONLINE" ]] then
+		if [[ "$pool_state" != "ONLINE" ]]; then
 			break
 		fi
 
