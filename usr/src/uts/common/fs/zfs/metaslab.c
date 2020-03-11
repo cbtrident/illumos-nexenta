@@ -23,7 +23,7 @@
  * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -3597,7 +3597,7 @@ metaslab_claim_dva(spa_t *spa, const dva_t *dva, uint64_t txg)
 	mutex_enter(&msp->ms_lock);
 
 	if ((txg != 0 && spa_writeable(spa)) || !msp->ms_loaded)
-		error = metaslab_activate(msp, 0, METASLAB_WEIGHT_SECONDARY);
+		error = metaslab_activate(msp, 0, METASLAB_WEIGHT_CLAIM);
 
 	/*
 	 * No need to fail in that case; someone else has activated the
