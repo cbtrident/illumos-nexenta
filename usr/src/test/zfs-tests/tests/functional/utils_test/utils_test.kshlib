@@ -26,6 +26,7 @@
 
 #
 # Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 . $STF_SUITE/tests/functional/utils_test/utils_test.cfg
 
@@ -46,5 +47,47 @@ function populate_dir # num_files
 		log_must file_write -o create -c $WRITE_COUNT \
 		    -f $TESTDIR/$TESTFILE.$filenum -b $BLOCKSZ -d $DATA
 		(( filenum = filenum + 1 ))
+	done
+}
+
+#
+# mount the specified ZFS filesystem, retrying up to $MOUNT_RETRY times
+#
+# $1 filesystem to mount
+#
+function mount_with_retry
+{
+	typeset filesys=$1
+	typeset -i i=0
+
+	while true; do
+		zfs mount $filesys
+		(( $? == 0 )) && return 0
+
+		(( i == $MOUNT_RETRY )) && return 1
+
+		log_must sleep 2
+		((i += 1))
+	done
+}
+
+#
+# unmount the specified ZFS filesystem, retrying up to $MOUNT_RETRY times
+#
+# $1 filesystem|mountpoint to unmount
+#
+function unmount_with_retry
+{
+	typeset filesys=$1
+	typeset -i i=0
+
+	while true; do
+		zfs unmount $filesys
+		(( $? == 0 )) && return 0
+
+		(( i == $MOUNT_RETRY )) && return 1
+
+		log_must sleep 2
+		((i += 1))
 	done
 }

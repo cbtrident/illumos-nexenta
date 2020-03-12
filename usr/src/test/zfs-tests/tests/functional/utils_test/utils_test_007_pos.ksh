@@ -27,6 +27,7 @@
 
 #
 # Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -48,7 +49,7 @@ function cleanup
 {
 	ismounted $TESTPOOL/$TESTFS
 	(( $? != 0 )) && \
-		log_must zfs mount $TESTPOOL/$TESTFS
+		log_must mount_with_retry $TESTPOOL/$TESTFS
 
 	rm -rf $TESTDIR/*
 }
@@ -59,7 +60,7 @@ log_assert "Ensure that the fstyp(1M) utility succeeds on a ZFS file system."
 
 populate_dir $NUM_FILES
 
-log_must zfs unmount $TESTDIR
+log_must unmount_with_retry $TESTDIR
 
 if ! $(is_physical_device $DISK); then
 	log_must fstyp $DISK
