@@ -1000,6 +1000,7 @@ be_prepare_efi_part(char *disk, char *vname)
 	}
 
 	(void) snprintf(outfile, sizeof (outfile), "%s/%s", efidir, EFIBOOT);
+	(void) chmod(outfile, S_IRUSR | S_IWUSR);
 	if ((outfp = fopen(outfile, "a")) == NULL) {
 		be_print_err(gettext("%s: failed to create "
 		    "%s\n"), __func__, outfile);
@@ -1015,6 +1016,7 @@ be_prepare_efi_part(char *disk, char *vname)
 			ret = BE_ERR_BOOTFILE_INST;
 		}
 	}
+	(void) chmod(outfile, S_IRUSR | S_IRGRP | S_IROTH);
 done:
 	free(mountpoint);
 	if (infp != NULL)
