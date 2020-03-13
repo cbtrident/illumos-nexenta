@@ -3599,6 +3599,13 @@ metaslab_claim_dva(spa_t *spa, const dva_t *dva, uint64_t txg)
 	if ((txg != 0 && spa_writeable(spa)) || !msp->ms_loaded)
 		error = metaslab_activate(msp, 0, METASLAB_WEIGHT_SECONDARY);
 
+	/*
+	 * No need to fail in that case; someone else has activated the
+	 * metaslab, but that doesn't preclude us from using it.
+	 */
+	if (error == EBUSY)
+		error = 0;
+
 	if (error == 0 && !range_tree_contains(msp->ms_tree, offset, size))
 		error = SET_ERROR(ENOENT);
 
