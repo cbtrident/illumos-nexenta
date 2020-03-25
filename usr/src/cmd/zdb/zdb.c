@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2017 RackTop Systems.
  */
 
@@ -1108,18 +1108,18 @@ dump_dtl(vdev_t *vd, int indent)
 static void
 dump_history(spa_t *spa)
 {
-	nvlist_t **events = NULL;
 	uint64_t resid, len, off = 0;
 	uint64_t buflen;
-	uint_t num = 0;
 	int error;
-	time_t tsec;
-	struct tm t;
-	char tbuf[30];
-	char internalstr[MAXPATHLEN];
+
+	hist_cbdata_t cb;
+	cb.internal = (dump_opt['h'] > 1);
+	cb.longfmt = (dump_opt['h'] > 2);
 
 	buflen = SPA_MAXBLOCKSIZE;
 	char *buf = umem_alloc(buflen, UMEM_NOFAIL);
+
+	(void) printf("History for '%s':\n", spa->spa_name);
 	do {
 		len = buflen;
 
@@ -1127,7 +1127,8 @@ dump_history(spa_t *spa)
 			break;
 		}
 
-		error = zpool_history_unpack(buf, len, &resid, &events, &num);
+		error = zpool_history_apply(buf, len, &resid,
+		    zfs_print_history_record, &cb);
 		if (error != 0) {
 			break;
 		}
@@ -1138,9 +1139,10 @@ dump_history(spa_t *spa)
 			 buflen *= 2;
 			 buf = umem_alloc(buflen, UMEM_NOFAIL);
 			 if (buf == NULL) {
-				(void) fprintf(stderr, "Unable to read history: %s\n",
-				    strerror(error));
-				goto err;
+				(void) fprintf(stderr,
+				    "Unable to read history: %s\n",
+				    strerror(ENOMEM));
+				return;
 			 }
 		}
 	} while (len != 0);
@@ -1149,55 +1151,8 @@ dump_history(spa_t *spa)
 	if (error != 0) {
 		(void) fprintf(stderr, "Unable to read history: %s\n",
 		    strerror(error));
-		goto err;
 	}
-
-	(void) printf("\nHistory:\n");
-	for (unsigned i = 0; i < num; i++) {
-		uint64_t time, txg, ievent;
-		char *cmd, *intstr;
-		boolean_t printed = B_FALSE;
-
-		if (nvlist_lookup_uint64(events[i], ZPOOL_HIST_TIME,
-		    &time) != 0)
-			goto next;
-		if (nvlist_lookup_string(events[i], ZPOOL_HIST_CMD,
-		    &cmd) != 0) {
-			if (nvlist_lookup_uint64(events[i],
-			    ZPOOL_HIST_INT_EVENT, &ievent) != 0)
-				goto next;
-			verify(nvlist_lookup_uint64(events[i],
-			    ZPOOL_HIST_TXG, &txg) == 0);
-			verify(nvlist_lookup_string(events[i],
-			    ZPOOL_HIST_INT_STR, &intstr) == 0);
-			if (ievent >= ZFS_NUM_LEGACY_HISTORY_EVENTS)
-				goto next;
-
-			(void) snprintf(internalstr,
-			    sizeof (internalstr),
-			    "[internal %s txg:%ju] %s",
-			    zfs_history_event_names[ievent], (uintmax_t)txg,
-			    intstr);
-			cmd = internalstr;
-		}
-		tsec = time;
-		(void) localtime_r(&tsec, &t);
-		(void) strftime(tbuf, sizeof (tbuf), "%F.%T", &t);
-		(void) printf("%s %s\n", tbuf, cmd);
-		printed = B_TRUE;
-
-next:
-		if (dump_opt['h'] > 1) {
-			if (!printed)
-				(void) printf("unrecognized record:\n");
-			dump_nvlist(events[i], 2);
-		}
-	}
-err:
-	for (unsigned i = 0; i < num; i++) {
-		nvlist_free(events[i]);
-	}
-	free(events);
+	(void) printf("\n");
 }
 
 /*ARGSUSED*/

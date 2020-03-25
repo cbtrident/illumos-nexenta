@@ -24,7 +24,7 @@
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2017 Datto Inc.
  */
 
@@ -3816,14 +3816,9 @@ get_history(zpool_handle_t *zhp, char *buf, uint64_t *off, uint64_t *len)
 	return (0);
 }
 
-/*
- * Process the buffer of nvlists, unpacking and storing each nvlist record
- * into 'records'.  'leftover' is set to the number of bytes that weren't
- * processed as there wasn't a complete record.
- */
 int
-zpool_history_unpack(char *buf, uint64_t bytes_read, uint64_t *leftover,
-    nvlist_t ***records, uint_t *numrecords)
+zpool_history_apply(char *buf, uint64_t bytes_read, uint64_t *leftover,
+    zpool_hist_f func, void *data)
 {
 	uint64_t reclen;
 	nvlist_t *nv;
@@ -3844,31 +3839,21 @@ zpool_history_unpack(char *buf, uint64_t bytes_read, uint64_t *leftover,
 		bytes_read -= sizeof (reclen) + reclen;
 		buf += sizeof (reclen) + reclen;
 
-		/* add record to nvlist array */
-		(*numrecords)++;
-		if (ISP2(*numrecords + 1)) {
-			*records = realloc(*records,
-			    *numrecords * 2 * sizeof (nvlist_t *));
-		}
-		(*records)[*numrecords - 1] = nv;
+		/* apply callback function to the record */
+		func(nv, data);
 	}
 
 	*leftover = bytes_read;
 	return (0);
 }
 
-/*
- * Retrieve the command history of a pool.
- */
 int
-zpool_get_history(zpool_handle_t *zhp, nvlist_t **nvhisp)
+zpool_iter_history(zpool_handle_t *zhp, zpool_hist_f func, void *data)
 {
 	char *buf;
 	int buflen = 128 * 1024;
 	uint64_t off = 0;
-	nvlist_t **records = NULL;
-	uint_t numrecords = 0;
-	int err, i;
+	int err;
 
 	buf = malloc(buflen);
 	if (buf == NULL)
@@ -3884,8 +3869,9 @@ zpool_get_history(zpool_handle_t *zhp, nvlist_t **nvhisp)
 		if (!bytes_read)
 			break;
 
-		if ((err = zpool_history_unpack(buf, bytes_read,
-		    &leftover, &records, &numrecords)) != 0)
+		/* apply callback function to each record obtained so far */
+		if ((err = zpool_history_apply(buf, bytes_read, &leftover,
+		    func, data)) != 0)
 			break;
 		off -= leftover;
 		if (leftover == bytes_read) {
@@ -3904,15 +3890,6 @@ zpool_get_history(zpool_handle_t *zhp, nvlist_t **nvhisp)
 	} while (1);
 
 	free(buf);
-
-	if (!err) {
-		verify(nvlist_alloc(nvhisp, NV_UNIQUE_NAME, 0) == 0);
-		verify(nvlist_add_nvlist_array(*nvhisp, ZPOOL_HIST_RECORD,
-		    records, numrecords) == 0);
-	}
-	for (i = 0; i < numrecords; i++)
-		nvlist_free(records[i]);
-	free(records);
 
 	return (err);
 }

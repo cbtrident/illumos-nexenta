@@ -26,7 +26,7 @@
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2017 Datto Inc.
  */
 
@@ -406,19 +406,29 @@ extern nvlist_t *zpool_find_import(libzfs_handle_t *, int, char **);
 extern nvlist_t *zpool_find_import_cached(libzfs_handle_t *, const char *,
     char *, uint64_t);
 
+
+/*
+ * Pool history functions
+ */
+typedef struct hist_cbdata {
+	boolean_t longfmt;
+	boolean_t internal;
+} hist_cbdata_t;
+
+extern const char *zfs_history_event_names[];
+typedef void(*zpool_hist_f)(nvlist_t *, void *);
+extern int zpool_iter_history(zpool_handle_t *, zpool_hist_f, void *);
+extern int zpool_history_apply(char *, uint64_t, uint64_t *, zpool_hist_f,
+    void *);
+extern void zfs_print_history_record(nvlist_t *, void *);
+
 /*
  * Miscellaneous pool functions
  */
 struct zfs_cmd;
-
-extern const char *zfs_history_event_names[];
-
 extern char *zpool_vdev_name(libzfs_handle_t *, zpool_handle_t *, nvlist_t *,
     boolean_t verbose);
 extern int zpool_upgrade(zpool_handle_t *, uint64_t);
-extern int zpool_get_history(zpool_handle_t *, nvlist_t **);
-extern int zpool_history_unpack(char *, uint64_t, uint64_t *,
-    nvlist_t ***, uint_t *);
 extern int zpool_stage_history(libzfs_handle_t *, const char *);
 extern void zpool_obj_to_path(zpool_handle_t *, uint64_t, uint64_t, char *,
     size_t len);

@@ -22,7 +22,7 @@
 #
 # Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2011, 2014 by Delphix. All rights reserved.
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
 #
@@ -111,6 +111,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	zfs_nicestrtonum;
 	zfs_open;
 	zfs_path_to_zhandle;
+	zfs_print_history_record;
 	zfs_promote;
 	zfs_prop_align_right;
 	zfs_prop_column_name;
@@ -205,20 +206,20 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	zpool_get_errlog;
 	zpool_get_features;
 	zpool_get_handle;
-	zpool_get_history;
 	zpool_get_name;
 	zpool_get_physpath;
 	zpool_get_prop;
 	zpool_get_prop_int;
 	zpool_get_state;
 	zpool_get_status;
-	zpool_history_unpack;
+	zpool_history_apply;
 	zpool_import;
 	zpool_import_props;
 	zpool_import_status;
 	zpool_in_use;
 	zpool_is_bootable;
 	zpool_iter;
+	zpool_iter_history;
 	zpool_label_disk;
 	zpool_log_history;
 	zpool_mount_datasets;

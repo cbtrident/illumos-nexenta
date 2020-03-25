@@ -26,7 +26,7 @@
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Prasad Joshi (sTec). All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>.
- * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2017 Datto Inc.
  */
 
@@ -5627,11 +5627,10 @@ zpool_do_upgrade(int argc, char **argv)
 	return (ret);
 }
 
-typedef struct hist_cbdata {
+typedef struct lcl_hist_cbdata {
+	hist_cbdata_t cb;
 	boolean_t first;
-	boolean_t longfmt;
-	boolean_t internal;
-} hist_cbdata_t;
+} lcl_hist_cbdata_t;
 
 /*
  * Print out the command history for a specific pool.
@@ -5639,120 +5638,16 @@ typedef struct hist_cbdata {
 static int
 get_history_one(zpool_handle_t *zhp, void *data)
 {
-	nvlist_t *nvhis;
-	nvlist_t **records;
-	uint_t numrecords;
-	int ret, i;
-	hist_cbdata_t *cb = (hist_cbdata_t *)data;
+	int ret;
 
-	cb->first = B_FALSE;
+	lcl_hist_cbdata_t *cbdata = (lcl_hist_cbdata_t *)data;
+	cbdata->first = B_FALSE;
 
 	(void) printf(gettext("History for '%s':\n"), zpool_get_name(zhp));
-
-	if ((ret = zpool_get_history(zhp, &nvhis)) != 0)
+	ret = zpool_iter_history(zhp, zfs_print_history_record, &cbdata->cb);
+	if (ret != 0)
 		return (ret);
-
-	verify(nvlist_lookup_nvlist_array(nvhis, ZPOOL_HIST_RECORD,
-	    &records, &numrecords) == 0);
-	for (i = 0; i < numrecords; i++) {
-		nvlist_t *rec = records[i];
-		char tbuf[30] = "";
-
-		if (nvlist_exists(rec, ZPOOL_HIST_TIME)) {
-			time_t tsec;
-			struct tm t;
-
-			tsec = fnvlist_lookup_uint64(records[i],
-			    ZPOOL_HIST_TIME);
-			(void) localtime_r(&tsec, &t);
-			(void) strftime(tbuf, sizeof (tbuf), "%F.%T", &t);
-		}
-
-		if (nvlist_exists(rec, ZPOOL_HIST_CMD)) {
-			(void) printf("%s %s", tbuf,
-			    fnvlist_lookup_string(rec, ZPOOL_HIST_CMD));
-		} else if (nvlist_exists(rec, ZPOOL_HIST_INT_EVENT)) {
-			int ievent =
-			    fnvlist_lookup_uint64(rec, ZPOOL_HIST_INT_EVENT);
-			if (!cb->internal)
-				continue;
-			if (ievent >= ZFS_NUM_LEGACY_HISTORY_EVENTS) {
-				(void) printf("%s unrecognized record:\n",
-				    tbuf);
-				dump_nvlist(rec, 4);
-				continue;
-			}
-			(void) printf("%s [internal %s txg:%lld] %s", tbuf,
-			    zfs_history_event_names[ievent],
-			    fnvlist_lookup_uint64(rec, ZPOOL_HIST_TXG),
-			    fnvlist_lookup_string(rec, ZPOOL_HIST_INT_STR));
-		} else if (nvlist_exists(rec, ZPOOL_HIST_INT_NAME)) {
-			if (!cb->internal)
-				continue;
-			(void) printf("%s [txg:%lld] %s", tbuf,
-			    fnvlist_lookup_uint64(rec, ZPOOL_HIST_TXG),
-			    fnvlist_lookup_string(rec, ZPOOL_HIST_INT_NAME));
-			if (nvlist_exists(rec, ZPOOL_HIST_DSNAME)) {
-				(void) printf(" %s (%llu)",
-				    fnvlist_lookup_string(rec,
-				    ZPOOL_HIST_DSNAME),
-				    fnvlist_lookup_uint64(rec,
-				    ZPOOL_HIST_DSID));
-			}
-			(void) printf(" %s", fnvlist_lookup_string(rec,
-			    ZPOOL_HIST_INT_STR));
-		} else if (nvlist_exists(rec, ZPOOL_HIST_IOCTL)) {
-			if (!cb->internal)
-				continue;
-			(void) printf("%s ioctl %s\n", tbuf,
-			    fnvlist_lookup_string(rec, ZPOOL_HIST_IOCTL));
-			if (nvlist_exists(rec, ZPOOL_HIST_INPUT_NVL)) {
-				(void) printf("    input:\n");
-				dump_nvlist(fnvlist_lookup_nvlist(rec,
-				    ZPOOL_HIST_INPUT_NVL), 8);
-			}
-			if (nvlist_exists(rec, ZPOOL_HIST_OUTPUT_NVL)) {
-				(void) printf("    output:\n");
-				dump_nvlist(fnvlist_lookup_nvlist(rec,
-				    ZPOOL_HIST_OUTPUT_NVL), 8);
-			}
-			if (nvlist_exists(rec, ZPOOL_HIST_ERRNO)) {
-				(void) printf("    errno: %lld\n",
-				    fnvlist_lookup_int64(rec,
-				    ZPOOL_HIST_ERRNO));
-			}
-		} else {
-			if (!cb->internal)
-				continue;
-			(void) printf("%s unrecognized record:\n", tbuf);
-			dump_nvlist(rec, 4);
-		}
-
-		if (!cb->longfmt) {
-			(void) printf("\n");
-			continue;
-		}
-		(void) printf(" [");
-		if (nvlist_exists(rec, ZPOOL_HIST_WHO)) {
-			uid_t who = fnvlist_lookup_uint64(rec, ZPOOL_HIST_WHO);
-			struct passwd *pwd = getpwuid(who);
-			(void) printf("user %d ", (int)who);
-			if (pwd != NULL)
-				(void) printf("(%s) ", pwd->pw_name);
-		}
-		if (nvlist_exists(rec, ZPOOL_HIST_HOST)) {
-			(void) printf("on %s",
-			    fnvlist_lookup_string(rec, ZPOOL_HIST_HOST));
-		}
-		if (nvlist_exists(rec, ZPOOL_HIST_ZONE)) {
-			(void) printf(":%s",
-			    fnvlist_lookup_string(rec, ZPOOL_HIST_ZONE));
-		}
-		(void) printf("]");
-		(void) printf("\n");
-	}
 	(void) printf("\n");
-	nvlist_free(nvhis);
 
 	return (ret);
 }
@@ -5765,7 +5660,7 @@ get_history_one(zpool_handle_t *zhp, void *data)
 int
 zpool_do_history(int argc, char **argv)
 {
-	hist_cbdata_t cbdata = { 0 };
+	lcl_hist_cbdata_t cbdata = { 0 };
 	int ret;
 	int c;
 
@@ -5774,10 +5669,10 @@ zpool_do_history(int argc, char **argv)
 	while ((c = getopt(argc, argv, "li")) != -1) {
 		switch (c) {
 		case 'l':
-			cbdata.longfmt = B_TRUE;
+			cbdata.cb.longfmt = B_TRUE;
 			break;
 		case 'i':
-			cbdata.internal = B_TRUE;
+			cbdata.cb.internal = B_TRUE;
 			break;
 		case '?':
 			(void) fprintf(stderr, gettext("invalid option '%c'\n"),

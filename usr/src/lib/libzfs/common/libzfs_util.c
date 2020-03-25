@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
  * Copyright (c) 2017 Datto Inc.
@@ -47,9 +47,11 @@
 #include <sys/mntent.h>
 #include <sys/types.h>
 #include <libcmdutils.h>
+#include <pwd.h>
 
 #include <libzfs.h>
 #include <libzfs_core.h>
+#include <zfs_comutil.h>
 
 #include "libzfs_impl.h"
 #include "zfs_prop.h"
@@ -2049,4 +2051,107 @@ zfs_get_hole_count(const char *path, uint64_t *count, uint64_t *bs)
 		return (errno);
 	}
 	return (0);
+}
+
+/*
+ *
+ */
+void
+zfs_print_history_record(nvlist_t *rec, void *data)
+{
+	hist_cbdata_t *cb = (hist_cbdata_t *)data;
+
+	char tbuf[30] = { '\0' };
+
+	if (nvlist_exists(rec, ZPOOL_HIST_TIME)) {
+		time_t tsec;
+		struct tm t;
+
+		tsec = fnvlist_lookup_uint64(rec, ZPOOL_HIST_TIME);
+		(void) localtime_r(&tsec, &t);
+		(void) strftime(tbuf, sizeof (tbuf), "%F.%T", &t);
+	}
+
+	if (nvlist_exists(rec, ZPOOL_HIST_CMD)) {
+		(void) printf("%s %s", tbuf,
+		    fnvlist_lookup_string(rec, ZPOOL_HIST_CMD));
+	} else if (nvlist_exists(rec, ZPOOL_HIST_INT_EVENT)) {
+		uint64_t ievent =
+		    fnvlist_lookup_uint64(rec, ZPOOL_HIST_INT_EVENT);
+		if (!cb->internal)
+			return;
+		if (ievent >= ZFS_NUM_LEGACY_HISTORY_EVENTS) {
+			(void) printf("%s unrecognized record:\n",
+			    tbuf);
+			dump_nvlist(rec, 4);
+			return;
+		}
+		(void) printf("%s [internal %s txg:%"PRIu64"] %s", tbuf,
+		    zfs_history_event_names[ievent],
+		    fnvlist_lookup_uint64(rec, ZPOOL_HIST_TXG),
+		    fnvlist_lookup_string(rec, ZPOOL_HIST_INT_STR));
+	} else if (nvlist_exists(rec, ZPOOL_HIST_INT_NAME)) {
+		if (!cb->internal)
+			return;
+		(void) printf("%s [txg:%"PRIu64"] %s", tbuf,
+		    fnvlist_lookup_uint64(rec, ZPOOL_HIST_TXG),
+		    fnvlist_lookup_string(rec, ZPOOL_HIST_INT_NAME));
+		if (nvlist_exists(rec, ZPOOL_HIST_DSNAME)) {
+			(void) printf(" %s (%"PRIu64")",
+			    fnvlist_lookup_string(rec,
+			    ZPOOL_HIST_DSNAME),
+			    fnvlist_lookup_uint64(rec,
+			    ZPOOL_HIST_DSID));
+		}
+		(void) printf(" %s", fnvlist_lookup_string(rec,
+		    ZPOOL_HIST_INT_STR));
+	} else if (nvlist_exists(rec, ZPOOL_HIST_IOCTL)) {
+		if (!cb->internal)
+			return;
+		(void) printf("%s ioctl %s\n", tbuf,
+		    fnvlist_lookup_string(rec, ZPOOL_HIST_IOCTL));
+		if (nvlist_exists(rec, ZPOOL_HIST_INPUT_NVL)) {
+			(void) printf("    input:\n");
+			dump_nvlist(fnvlist_lookup_nvlist(rec,
+			    ZPOOL_HIST_INPUT_NVL), 8);
+		}
+		if (nvlist_exists(rec, ZPOOL_HIST_OUTPUT_NVL)) {
+			(void) printf("    output:\n");
+			dump_nvlist(fnvlist_lookup_nvlist(rec,
+			    ZPOOL_HIST_OUTPUT_NVL), 8);
+		}
+		if (nvlist_exists(rec, ZPOOL_HIST_ERRNO)) {
+			(void) printf("    errno: %"PRId64"\n",
+			    fnvlist_lookup_int64(rec,
+			    ZPOOL_HIST_ERRNO));
+		}
+	} else {
+		if (!cb->internal)
+			return;
+		(void) printf("%s unrecognized record:\n", tbuf);
+		dump_nvlist(rec, 4);
+	}
+
+	if (!cb->longfmt) {
+		(void) printf("\n");
+		return;
+	}
+
+	(void) printf(" [");
+	if (nvlist_exists(rec, ZPOOL_HIST_WHO)) {
+		uid_t who = fnvlist_lookup_uint64(rec, ZPOOL_HIST_WHO);
+		(void) printf("user %d ", (int)who);
+		struct passwd *pwd = getpwuid(who);
+		if (pwd != NULL)
+			(void) printf("(%s) ", pwd->pw_name);
+	}
+	if (nvlist_exists(rec, ZPOOL_HIST_HOST)) {
+		(void) printf("on %s",
+		    fnvlist_lookup_string(rec, ZPOOL_HIST_HOST));
+	}
+	if (nvlist_exists(rec, ZPOOL_HIST_ZONE)) {
+		(void) printf(":%s",
+		    fnvlist_lookup_string(rec, ZPOOL_HIST_ZONE));
+	}
+	(void) printf("]\n");
 }
