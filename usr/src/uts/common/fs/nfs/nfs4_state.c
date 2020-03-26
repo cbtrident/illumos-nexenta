@@ -24,8 +24,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/systm.h>
@@ -3733,14 +3732,16 @@ rfs4_check_stateid(int mode, vnode_t *vp,
 						rfs4_state_rele_nounlock(sp);
 					return (NFS4ERR_OLD_STATEID);
 				}
-				/* Ensure specified filehandle matches */
-				if (lsp->rls_state->rs_finfo->rf_vp != vp) {
-					rfs4_lo_state_rele(lsp, FALSE);
-					if (sp != NULL)
-						rfs4_state_rele_nounlock(sp);
-					return (NFS4ERR_BAD_STATEID);
-				}
 			}
+
+			/* Ensure specified filehandle matches */
+			if (lsp->rls_state->rs_finfo->rf_vp != vp) {
+				rfs4_lo_state_rele(lsp, FALSE);
+				if (sp != NULL)
+					rfs4_state_rele_nounlock(sp);
+				return (NFS4ERR_BAD_STATEID);
+			}
+
 			if (ct != NULL) {
 				ct->cc_sysid =
 				    lsp->rls_locker->rl_client->rc_sysidt;
@@ -3784,6 +3785,13 @@ rfs4_check_stateid(int mode, vnode_t *vp,
 			if (sp->rs_closed == TRUE) {
 				rfs4_state_rele_nounlock(sp);
 				return (NFS4ERR_OLD_STATEID);
+			}
+
+			if (ct != NULL) {
+				rfs4_openowner_t *oo = sp->rs_owner;
+				ASSERT(oo != NULL);
+				ct->cc_sysid = oo->ro_client->rc_sysidt;
+				ct->cc_pid = rfs4_dbe_getid(oo->ro_dbe);
 			}
 
 			if (do_access)
