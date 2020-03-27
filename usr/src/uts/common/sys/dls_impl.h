@@ -62,6 +62,8 @@ struct dls_link_s {				/* Protected by */
 	uint_t			dl_zone_ref;
 	link_tagmode_t		dl_tagmode;		/* atomic */
 	uint_t			dl_nonip_cnt;		/* SL */
+	link_state_t		dl_last_ls;
+	link_state_t		dl_last_lls;
 };
 
 typedef struct dls_head_s {

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc.  All rights reserved.
  */
 
 /*
@@ -30,6 +30,7 @@ static struct ssm_handler {
 } ssm_handlers[] = {
 	{ EC_DEV_ADD, ESC_DISK, ssm_disk_handler },
 	{ EC_DEV_REMOVE, ESC_DISK, ssm_disk_handler },
+	{ EC_DATALINK, ESC_DATALINK_LINK_STATE, ssm_datalink_handler },
 	{ "", "", NULL }
 };
 

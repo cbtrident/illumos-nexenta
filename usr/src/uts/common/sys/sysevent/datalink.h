@@ -25,10 +25,10 @@ extern "C" {
 #endif
 
 /*
- * Event schema for EC_DATALINK_LINK_STATE
+ * Event schema for ESC_DATALINK_LINK_STATE
  *
  *	Event Class	- EC_DATALINK
- *	Event Sub-Class	- EC_DATALINK_LINK_STATE
+ *	Event Sub-Class	- ESC_DATALINK_LINK_STATE
  *
  *	Attribute Name	- DATALINK_EV_LINK_NAME
  *	Attribute Type	- SE_DATA_TYPE_STRING
@@ -38,6 +38,10 @@ extern "C" {
  *	Attribute Type	- SE_DATA_TYPE_INT32
  *	Attribute Value	- [datalink_id_t for the device]
  *
+ *	Attribute Name	- DATALINK_EV_LINK_STATE
+ *	Attribute Type	- SE_DATA_TYPE_INT32
+ *	Attribute Value	- [link_state_t for the device ]
+ *
  *	Attribute Name	- DATALINK_EV_ZONE_ID
  *	Attribute Type	- SE_DATA_TYPE_INT32
  *	Attribute Value	- [zoneid_t of the zone the datalink is in]
@@ -45,6 +49,7 @@ extern "C" {
 
 #define	DATALINK_EV_LINK_NAME		"link"
 #define	DATALINK_EV_LINK_ID		"linkid"
+#define	DATALINK_EV_LINK_STATE		"state"
 #define	DATALINK_EV_ZONE_ID		"zone"
 
 #ifdef __cplusplus

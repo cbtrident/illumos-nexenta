@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
 LIBRARY=	snmp_mod
@@ -21,6 +21,7 @@ include		$(SRC)/cmd/snmp/Makefile.snmp
 include		../Makefile.com
 
 OBJECTS=	snmp_mod.o \
+		ssm_datalink.o \
 		ssm_disk.o
 
 CFLAGS +=	$(C_PICFLAGS)

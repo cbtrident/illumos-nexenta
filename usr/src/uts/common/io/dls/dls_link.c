@@ -39,6 +39,9 @@
 #include	<sys/sysevent/eventdefs.h>
 #include	<sys/sysevent/datalink.h>
 
+int dls_link_notify_state = 0;
+int dls_link_notify_state_low = 1;
+
 static kmem_cache_t	*i_dls_link_cachep;
 mod_hash_t		*i_dls_link_hash;
 static uint_t		i_dls_link_count;
@@ -608,9 +611,30 @@ dls_link_notify(void *arg, mac_notify_type_t type)
 	nvlist_t	*nvp;
 	sysevent_t	*event;
 	sysevent_id_t	eid;
+	link_state_t	*old, new;
 
-	if (type != MAC_NOTE_LINK && type != MAC_NOTE_LOWLINK)
+	switch (type) {
+	case MAC_NOTE_LINK:
+		if (!dls_link_notify_state)
+			return;
+		old = &dlp->dl_last_ls;
+		new = mac_stat_get(dlp->dl_mh, MAC_STAT_LINK_STATE);
+		break;
+	case MAC_NOTE_LOWLINK:
+		if (!dls_link_notify_state_low)
+			return;
+		old = &dlp->dl_last_lls;
+		new = mac_stat_get(dlp->dl_mh, MAC_STAT_LOWLINK_STATE);
+		break;
+	default:
 		return;
+	}
+
+	/* We are only interested in *->UP or UP->DOWN transitions */
+	if (new == *old || (new != LINK_STATE_UP && (new != LINK_STATE_DOWN ||
+	    *old != LINK_STATE_UP)))
+		return;
+	*old = new;
 
 	/*
 	 * If we can't find a devnet handle for this link, then there is no user
@@ -631,6 +655,7 @@ dls_link_notify(void *arg, mac_notify_type_t type)
 	    dls_devnet_link(dhp)) == 0);
 	VERIFY(nvlist_add_int32(nvp, DATALINK_EV_ZONE_ID,
 	    dls_devnet_getzid(dhp)) == 0);
+	VERIFY(nvlist_add_int32(nvp, DATALINK_EV_LINK_STATE, new) == 0);
 
 	dls_devnet_rele_tmp(dhp);
 
@@ -641,7 +666,6 @@ dls_link_notify(void *arg, mac_notify_type_t type)
 
 	(void) log_sysevent(event, SE_SLEEP, &eid);
 	sysevent_free(event);
-
 }
 
 static void
@@ -709,6 +733,8 @@ i_dls_link_create(const char *name, dls_link_t **dlpp)
 	if (err != 0)
 		goto bail;
 
+	dlp->dl_last_ls = mac_stat_get(dlp->dl_mh, MAC_STAT_LINK_STATE);
+	dlp->dl_last_lls = mac_stat_get(dlp->dl_mh, MAC_STAT_LOWLINK_STATE);
 	dlp->dl_mnh = mac_notify_add(dlp->dl_mh, dls_link_notify, dlp);
 
 	DTRACE_PROBE2(dls__primary__client, char *, dlp->dl_name, void *,

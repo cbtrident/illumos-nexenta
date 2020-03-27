@@ -10,19 +10,13 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SNMP_MOD_H
 #define	_SNMP_MOD_H
 
-#include <sys/avl.h>
-#include <sys/fm/protocol.h>
 #include <sys/sysevent/eventdefs.h>
-
-#include <fm/libtopo.h>
-#include <fm/topo_hc.h>
-#include <fm/topo_list.h>
 
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
@@ -31,8 +25,6 @@
 #include <libsysevent.h>
 
 #include <netdb.h>
-#include <pthread.h>
-#include <unistd.h>
 
 #include "syseventd.h"
 
@@ -50,10 +42,12 @@ extern char hostname[MAXHOSTNAMELEN + 1];
 /* notification trap definitions */
 #define	SSM_TRAPS_OID		SSM_OID, 1, 0
 #define	SSM_DISK_TRAP_OID	SSM_TRAPS_OID, 1
+#define	SSM_DATALINK_TRAP_OID	SSM_TRAPS_OID, 2
 
 /* notification object definitions */
 #define	SSM_OBJECTS_OID		SSM_OID, 2
 #define	SSM_DISK_OBJECT_OID	SSM_OBJECTS_OID, 1
+#define	SSM_DATALINK_OBJECT_OID	SSM_OBJECTS_OID, 2
 
 /* disk trap payload */
 #define	SSM_DISK_HOSTNAME_OID	SSM_DISK_OBJECT_OID, 1
@@ -64,10 +58,17 @@ extern char hostname[MAXHOSTNAMELEN + 1];
 #define	SSM_DISK_ENCNAME_OID	SSM_DISK_OBJECT_OID, 6
 #define	SSM_DISK_SLOTNAME_OID	SSM_DISK_OBJECT_OID, 7
 
+/* datalink trap payload */
+#define	SSM_DATALINK_HOSTNAME_OID SSM_DATALINK_OBJECT_OID, 1
+#define	SSM_DATALINK_NAME_OID	SSM_DATALINK_OBJECT_OID, 2
+#define	SSM_DATALINK_STATE_OID	SSM_DATALINK_OBJECT_OID, 3
+
 /* Handlers */
 extern void ssm_disk_init(void);
 extern void ssm_disk_fini(void);
 extern void ssm_disk_handler(sysevent_t *);
+
+extern void ssm_datalink_handler(sysevent_t *);
 
 #ifdef __cplusplus
 }

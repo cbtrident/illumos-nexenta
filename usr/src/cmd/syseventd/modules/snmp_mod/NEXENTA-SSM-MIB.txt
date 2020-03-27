@@ -9,7 +9,7 @@
 -- http://www.illumos.org/license/CDDL.
 --
 
--- Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
+-- Copyright 2020 Nexenta by DDN, Inc.  All rights reserved.
 
 NEXENTA-SSM-MIB DEFINITIONS ::= BEGIN
 
@@ -22,16 +22,19 @@ IMPORTS
 		FROM SNMPv2-TC;
 
 nexentaSsmMIB MODULE-IDENTITY
-	LAST-UPDATED	"201907190000Z"
+	LAST-UPDATED	"202003260000Z"
 	ORGANIZATION	"Nexenta by DDN, Inc."
 	CONTACT-INFO	"Support"
 	DESCRIPTION	"MIB exposing sysevents"
-	REVISION	"201907190000Z"
-	DESCRIPTION	"Initial revision"
+	REVISION	"202003260000Z"
+	DESCRIPTION	"none"
 	::= { ssm 1 }
 
 nexentaSsmTraps OBJECT IDENTIFIER ::= { nexentaSsmMIB 1 0 }
 nexentaSsmObjects OBJECT IDENTIFIER ::= { nexentaSsmMIB 2 }
+
+nexentaSsmDisk OBJECT IDENTIFIER ::= { nexentaSsmObjects 1 }
+nexentaSsmDatalink OBJECT IDENTIFIER ::= { nexentaSsmObjects 2 }
 
 NexentaSsmDiskAction ::= TEXTUAL-CONVENTION
 	STATUS          current
@@ -40,8 +43,6 @@ NexentaSsmDiskAction ::= TEXTUAL-CONVENTION
 				add(0),
 				remove(1)
 			}
-
-nexentaSsmDisk OBJECT IDENTIFIER ::= { nexentaSsmObjects 1 }
 
 nexentaSsmDiskHostname OBJECT-TYPE
 	SYNTAX		DisplayString
@@ -92,6 +93,35 @@ nexentaSsmDiskSlotName OBJECT-TYPE
 	DESCRIPTION	"Disk slot name"
 	::= { nexentaSsmDisk 7 }
 
+NexentaSsmDatalinkState ::= TEXTUAL-CONVENTION
+	STATUS          current
+	DESCRIPTION	"Represents datalink state"
+	SYNTAX		INTEGER {
+				down(0),
+				up(1)
+			}
+
+nexentaSsmDatalinkHostname OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"Trap hostname"
+	::= { nexentaSsmDatalink 1 }
+
+nexentaSsmDatalinkName OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"Datalink name"
+	::= { nexentaSsmDatalink 2 }
+
+nexentaSsmDatalinkState OBJECT-TYPE
+	SYNTAX		NexentaSsmDatalinkState
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"Datalink state"
+	::= { nexentaSsmDatalink 3 }
+
 nexentaSsmDiskTrap NOTIFICATION-TYPE
 	OBJECTS {
 		nexentaSsmDiskHostname,
@@ -103,7 +133,17 @@ nexentaSsmDiskTrap NOTIFICATION-TYPE
 		nexentaSsmDiskSlotName
 	}
 	STATUS		current
-	DESCRIPTION	"Trap notification that a disk event has occured"
+	DESCRIPTION	"Disk event notification trap"
 	::= { nexentaSsmTraps 1 }
+
+nexentaSsmDatalinkTrap NOTIFICATION-TYPE
+	OBJECTS {
+		nexentaSsmDatalinkHostname,
+		nexentaSsmDatalinkName,
+		nexentaSsmDatalinkState
+	}
+	STATUS		current
+	DESCRIPTION	"Datalink state change notification trap"
+	::= { nexentaSsmTraps 2 }
 
 END

@@ -15,6 +15,16 @@
 
 #include "snmp_mod.h"
 
+#include <sys/avl.h>
+#include <sys/fm/protocol.h>
+
+#include <fm/libtopo.h>
+#include <fm/topo_hc.h>
+#include <fm/topo_list.h>
+
+#include <pthread.h>
+#include <unistd.h>
+
 static avl_tree_t ssm_disk_tree;
 static pthread_mutex_t ssm_disk_tree_lock = PTHREAD_MUTEX_INITIALIZER;
 

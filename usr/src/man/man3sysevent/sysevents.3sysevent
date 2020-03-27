@@ -11,7 +11,7 @@
 .\"
 .\" Copyright 2019 Joyent, Inc.
 .\"
-.Dd July 15, 2019
+.Dd March 31, 2020
 .Dt SYSEVENTS 3SYSEVENT
 .Os
 .Sh NAME
@@ -71,6 +71,8 @@ The event has the following payload:
 Indicates the name of the data link that had the event.
 .It Dv DATALINK_EV_LINK_ID - int32
 Indicates the data link's logical ID that is used by the kernel.
+.It Dv DATALINK_EV_LINK_STATE - int32
+Indicates the data link's state after the event.
 .It Dv DATALINK_EV_ZONE_ID - int32
 Indicates the ID of the zone that the data link belongs to.
 .El
