@@ -3816,6 +3816,110 @@ get_history(zpool_handle_t *zhp, char *buf, uint64_t *off, uint64_t *len)
 	return (0);
 }
 
+/*
+ * Process the buffer of nvlists, unpacking and storing each nvlist record
+ * into 'records'.  'leftover' is set to the number of bytes that weren't
+ * processed as there wasn't a complete record.
+ */
+int
+zpool_history_unpack(char *buf, uint64_t bytes_read, uint64_t *leftover,
+    nvlist_t ***records, uint_t *numrecords)
+{
+	uint64_t reclen;
+	nvlist_t *nv;
+	int i;
+
+	while (bytes_read > sizeof (reclen)) {
+
+		/* get length of packed record (stored as little endian) */
+		for (i = 0, reclen = 0; i < sizeof (reclen); i++)
+			reclen += (uint64_t)(((uchar_t *)buf)[i]) << (8*i);
+
+		if (bytes_read < sizeof (reclen) + reclen)
+			break;
+
+		/* unpack record */
+		if (nvlist_unpack(buf + sizeof (reclen), reclen, &nv, 0) != 0)
+			return (ENOMEM);
+		bytes_read -= sizeof (reclen) + reclen;
+		buf += sizeof (reclen) + reclen;
+
+		/* add record to nvlist array */
+		(*numrecords)++;
+		if (ISP2(*numrecords + 1)) {
+			*records = realloc(*records,
+			    *numrecords * 2 * sizeof (nvlist_t *));
+		}
+		(*records)[*numrecords - 1] = nv;
+	}
+
+	*leftover = bytes_read;
+	return (0);
+}
+
+/*
+ * Retrieve the command history of a pool.
+ */
+int
+zpool_get_history(zpool_handle_t *zhp, nvlist_t **nvhisp)
+{
+	char *buf;
+	int buflen = 128 * 1024;
+	uint64_t off = 0;
+	nvlist_t **records = NULL;
+	uint_t numrecords = 0;
+	int err, i;
+
+	buf = malloc(buflen);
+	if (buf == NULL)
+		return (ENOMEM);
+	do {
+		uint64_t bytes_read = buflen;
+		uint64_t leftover;
+
+		if ((err = get_history(zhp, buf, &off, &bytes_read)) != 0)
+			break;
+
+		/* if nothing else was read in, we're at EOF, just return */
+		if (!bytes_read)
+			break;
+
+		if ((err = zpool_history_unpack(buf, bytes_read,
+		    &leftover, &records, &numrecords)) != 0)
+			break;
+		off -= leftover;
+		if (leftover == bytes_read) {
+			/*
+			 * no progress made, because buffer is not big enough
+			 * to hold this record; resize and retry.
+			 */
+			buflen *= 2;
+			free(buf);
+			buf = malloc(buflen);
+			if (buf == NULL)
+				return (ENOMEM);
+		}
+
+		/* CONSTCOND */
+	} while (1);
+
+	free(buf);
+
+	if (!err) {
+		verify(nvlist_alloc(nvhisp, NV_UNIQUE_NAME, 0) == 0);
+		verify(nvlist_add_nvlist_array(*nvhisp, ZPOOL_HIST_RECORD,
+		    records, numrecords) == 0);
+	}
+	for (i = 0; i < numrecords; i++)
+		nvlist_free(records[i]);
+	free(records);
+
+	return (err);
+}
+
+/*
+ * Apply "func" to each history record in buf
+ */
 int
 zpool_history_apply(char *buf, uint64_t bytes_read, uint64_t *leftover,
     zpool_hist_f func, void *data)
@@ -3847,6 +3951,13 @@ zpool_history_apply(char *buf, uint64_t bytes_read, uint64_t *leftover,
 	return (0);
 }
 
+/*
+ * Apply "func" to each history record for a pool
+ * Calls get_history() to get a buffer full of history records via
+ * an ioctl to the kernel, then zpool_history_apply() to apply "func"
+ * to each recorrd obtained. Repeat until all history records have been
+ * processed.
+ */
 int
 zpool_iter_history(zpool_handle_t *zhp, zpool_hist_f func, void *data)
 {

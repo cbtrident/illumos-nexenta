@@ -421,6 +421,10 @@ extern int zpool_iter_history(zpool_handle_t *, zpool_hist_f, void *);
 extern int zpool_history_apply(char *, uint64_t, uint64_t *, zpool_hist_f,
     void *);
 extern void zfs_print_history_record(nvlist_t *, void *);
+/* deprecated */
+extern int zpool_get_history(zpool_handle_t *, nvlist_t **);
+extern int zpool_history_unpack(char *, uint64_t, uint64_t *,
+    nvlist_t ***, uint_t *);
 
 /*
  * Miscellaneous pool functions
