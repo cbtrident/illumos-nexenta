@@ -43,10 +43,6 @@
 #include <sys/pkp_hash.h> /* for PKP_HASH_SIZE */
 #endif /* _KERNEL */
 
-#ifdef _KERNEL
-#include <sys/pkp_hash.h> /* for PKP_HASH_SIZE */
-#endif /* _KERNEL */
-
 #ifdef	__cplusplus
 extern "C" {
 #endif
