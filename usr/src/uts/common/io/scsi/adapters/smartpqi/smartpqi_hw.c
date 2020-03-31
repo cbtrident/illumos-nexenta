@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -48,6 +48,7 @@ static void lun_reset_complete(pqi_io_request_t *io, void *ctx);
  * []------------------------------------------------------------------[]
  */
 
+int pqi_do_reset_lun = -1;
 /*
  * pqi_watchdog -- interrupt count and/or heartbeat must increase over time.
  */
@@ -55,6 +56,7 @@ void
 pqi_watchdog(void *v)
 {
 	pqi_state_t	s = v;
+	pqi_device_t	d;
 	uint32_t	hb;
 
 	if (pqi_is_offline(s))
@@ -76,6 +78,17 @@ pqi_watchdog(void *v)
 		pqi_do_scan = 0;
 		s->s_rescan = timeout(pqi_do_rescan, (void *)s,
 		    drv_usectohz(MICROSEC));
+	}
+	if (pqi_do_reset_lun != -1) {
+		d = list_head(&s->s_devnodes);
+		while (d != NULL) {
+			if (d->pd_target == pqi_do_reset_lun) {
+				pqi_do_reset_lun = -1;
+				pqi_lun_reset(s, d);
+				break;
+			}
+			d = list_next(&s->s_devnodes, d);
+		}
 	}
 }
 
@@ -101,19 +114,20 @@ pqi_start_io(pqi_state_t s, pqi_queue_group_t *qg, pqi_path_t path,
 	int		sending		= 0;
 
 	mutex_enter(&qg->submit_lock[path]);
-	if (io != NULL)
+	if (io != NULL) {
+		io->io_queue_group = qg;
+		io->io_queue_path = path;
 		list_insert_tail(&qg->request_list[path], io);
+	}
 
 
 	iq_pi = qg->iq_pi_copy[path];
-	while ((io = list_head(&qg->request_list[path])) != NULL) {
+	while ((io = list_remove_head(&qg->request_list[path])) != NULL) {
 
 		/* ---- Primary cause for !active is controller failure ---- */
 		if (qg->qg_active == B_FALSE && io->io_cmd) {
-			list_remove(&qg->request_list[path], io);
-			mutex_enter(&io->io_cmd->pc_device->pd_mutex);
-			pqi_fail_cmd(io->io_cmd, CMD_DEV_GONE, STAT_TERMINATED);
-			mutex_exit(&io->io_cmd->pc_device->pd_mutex);
+			(void) pqi_fail_cmd(io->io_cmd, CMD_DEV_GONE,
+			    STAT_TERMINATED);
 			continue;
 		}
 
@@ -127,8 +141,12 @@ pqi_start_io(pqi_state_t s, pqi_queue_group_t *qg, pqi_path_t path,
 		iq_ci = *qg->iq_ci[path];
 
 		if (elem_needed > free_elem_count(iq_pi, iq_ci,
-		    s->s_num_elements_per_iq))
+		    s->s_num_elements_per_iq)) {
+			list_insert_head(&qg->request_list[path], io);
 			break;
+		}
+
+		(void) pqi_cmd_action(io->io_cmd, PQI_CMD_START);
 
 		io->io_pi = iq_pi;
 		rqst->iu_id = qg->oq_id;
@@ -156,14 +174,8 @@ pqi_start_io(pqi_state_t s, pqi_queue_group_t *qg, pqi_path_t path,
 			    0, iu_len - copy_to_end, DDI_DMA_SYNC_FORDEV);
 		}
 		sending += elem_needed;
-		if (io->io_cmd != NULL)
-			pqi_cmd_sm(io->io_cmd, PQI_CMD_STARTED, B_TRUE);
-		else if ((rqst->iu_type == PQI_REQUEST_IU_RAID_PATH_IO) &&
-		    (s->s_debug_level & (DBG_LVL_CDB | DBG_LVL_RQST)))
-			pqi_dump_io(io);
 
 		iq_pi = (iq_pi + elem_needed) % s->s_num_elements_per_iq;
-		list_remove(&qg->request_list[path], io);
 	}
 
 	qg->submit_count += sending;
@@ -191,10 +203,13 @@ pqi_transport_command(pqi_state_t s, pqi_cmd_t cmd)
 		io = setup_raid_request(s, cmd);
 	}
 
-	if (io == NULL)
+	if (io == NULL) {
+		atomic_inc_32(&cmd->pc_device->pd_busy);
 		return (TRAN_BUSY);
+	}
 
 	cmd->pc_io_rqst = io;
+	(void) pqi_cmd_action(cmd, PQI_CMD_QUEUE);
 
 	pqi_start_io(s, &s->s_queue_groups[PQI_DEFAULT_QUEUE_GROUP],
 	    path, io);
@@ -245,47 +260,57 @@ pqi_event_worker(void *v)
 
 /*
  * pqi_fail_cmd -- given a reason and stats the command is failed.
- *
- * NOTE: pqi_device->pd_mutex must be held. Also note that during the
- * call to pqi_cmd_sm() the lock will be dropped and reacquired.
  */
-void
+pqi_cmd_action_t
 pqi_fail_cmd(pqi_cmd_t cmd, uchar_t reason, uint_t stats)
 {
 	struct scsi_pkt		*pkt	= CMD2PKT(cmd);
 
-	ASSERT(MUTEX_HELD(&cmd->pc_device->pd_mutex));
-
 	pkt->pkt_reason = reason;
 	pkt->pkt_statistics = stats;
 
-	pqi_cmd_sm(cmd, PQI_CMD_FATAL, B_FALSE);
+	return (pqi_cmd_action_nolock(cmd, PQI_CMD_FAIL));
 }
 
 void
-pqi_fail_drive_cmds(pqi_device_t devp)
+pqi_fail_drive_cmds(pqi_device_t d, uchar_t reason)
 {
-	pqi_cmd_t	cmd;
+	pqi_cmd_t	c,
+			next_c;
+	uint32_t	killed = 0;
 
-restart:
-	mutex_enter(&devp->pd_mutex);
-	while ((cmd = list_head(&devp->pd_cmd_list)) != NULL) {
+	mutex_enter(&d->pd_mutex);
 
-		if (cmd->pc_flags & PQI_FLAG_FINISHING) {
+	c = list_head(&d->pd_cmd_list);
+	while (c != NULL) {
+		next_c = list_next(&d->pd_cmd_list, c);
+		if (pqi_fail_cmd(c, reason, STAT_BUS_RESET) !=
+		    PQI_CMD_START) {
 			/*
-			 * This will be a very short wait since
-			 * raid_io_complete is a quick function that will
-			 * call pqi_cmd_sm() which removes the command
-			 * from pd_cmd_list.
+			 * The command can't be terminated in the driver because
+			 * it was already handed off to the HBA and the driver
+			 * will have to wait for completion. The reason is
+			 * that the HBA indicates slots are complete, not a
+			 * pointer to a command. If the code were to cancel
+			 * an outstanding command that slot could be reused
+			 * by another command and when the completion interrupt
+			 * arrives the driver would signal that a command had
+			 * completed when in fact it was a prior command that
+			 * had been canceled.
+			 *
+			 * Should the command fail to complete due to an HBA
+			 * error the command will be forced through to
+			 * completion during a timeout scan that occurs on
+			 * another thread.
 			 */
-			mutex_exit(&devp->pd_mutex);
-			drv_usecwait(100);
-			goto restart;
+			killed++;
+			list_remove(&d->pd_cmd_list, c);
 		}
-		pqi_fail_cmd(cmd, CMD_DEV_GONE, STAT_TERMINATED);
+		c = next_c;
 	}
 
-	mutex_exit(&devp->pd_mutex);
+	d->pd_killed += killed;
+	mutex_exit(&d->pd_mutex);
 }
 
 uint32_t
@@ -321,7 +346,7 @@ typedef struct reset_closure {
  * would be the interrupt thread. So, start a task to reset the device and
  * wait for completion.
  */
-boolean_t
+void
 pqi_lun_reset(pqi_state_t s, pqi_device_t d)
 {
 	reset_closure_t	r = kmem_alloc(sizeof (struct reset_closure), KM_SLEEP);
@@ -329,7 +354,6 @@ pqi_lun_reset(pqi_state_t s, pqi_device_t d)
 	r->rc_s = s;
 	r->rc_d = d;
 	(void) ddi_taskq_dispatch(s->s_events_taskq, lun_reset_worker, r, 0);
-	return (B_TRUE);
 }
 
 /*
@@ -347,18 +371,27 @@ lun_reset_worker(void *v)
 	pqi_io_request_t		*io;
 	ksema_t				sema;
 	pqi_task_management_rqst_t	*rqst;
+	struct pqi_cmd			cmd;
 
 	s = r->rc_s;
 	d = r->rc_d;
-	kmem_free(r, sizeof (*r));
-	sema_p(&s->s_sync_rqst);
-	s->s_sync_expire = gethrtime() + (SYNC_CMDS_TIMEOUT_SECS * NANOSEC);
 
+	pqi_fail_drive_cmds(d, CMD_RESET);
 	sema_init(&sema, 0, NULL, SEMA_DRIVER, NULL);
 
-	io = pqi_alloc_io(s);
+	bzero(&cmd, sizeof (cmd));
+	mutex_init(&cmd.pc_mutex, NULL, MUTEX_DRIVER, NULL);
+
+	if ((io = pqi_alloc_io(s)) == NULL)
+		return;
 	io->io_cb = lun_reset_complete;
 	io->io_context = &sema;
+	io->io_cmd = &cmd;
+	cmd.pc_io_rqst = io;
+	cmd.pc_softc = s;
+	cmd.pc_device = &s->s_special_device;
+
+	(void) pqi_cmd_action(&cmd, PQI_CMD_QUEUE);
 
 	rqst = io->io_iu;
 	(void) memset(rqst, 0, sizeof (*rqst));
@@ -370,16 +403,14 @@ lun_reset_worker(void *v)
 	    sizeof (rqst->lun_number));
 	rqst->task_management_function = SOP_TASK_MANAGEMENT_LUN_RESET;
 
-	s->s_sync_io = io;
 	pqi_start_io(s, &s->s_queue_groups[PQI_DEFAULT_QUEUE_GROUP], RAID_PATH,
 	    io);
 
 	sema_p(&sema);
-	pqi_free_io(io);
-	s->s_sync_io = NULL;
-	s->s_sync_expire = 0;
 
-	sema_v(&s->s_sync_rqst);
+	(void) pqi_cmd_action(&cmd, PQI_CMD_CMPLT);
+	mutex_destroy(&cmd.pc_mutex);
+	kmem_free(r, sizeof (*r));
 }
 
 /*ARGSUSED*/
@@ -600,6 +631,7 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 {
 	pqi_cmd_t	cmd = io->io_cmd;
 	struct scsi_pkt	*pkt = CMD2PKT(cmd);
+	boolean_t	pkt_ok = B_FALSE;
 
 	if (cmd->pc_flags & (PQI_FLAG_IO_READ | PQI_FLAG_IO_IOPB))
 		(void) ddi_dma_sync(cmd->pc_dmahdl, 0, 0, DDI_DMA_SYNC_FORCPU);
@@ -624,6 +656,7 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 		pkt->pkt_reason = CMD_CMPLT;
 		pkt->pkt_resid = 0;
 		pkt->pkt_statistics = 0;
+		pkt_ok = B_TRUE;
 		break;
 
 	case PQI_DATA_IN_OUT_ERROR:
@@ -652,58 +685,27 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 		break;
 	}
 
+	if (pkt_ok == B_FALSE)
+		atomic_inc_32(&cmd->pc_device->pd_sense_errors);
+
 	if (special_error_check(cmd) == B_TRUE) {
 		pkt->pkt_reason = CMD_DEV_GONE;
 		pkt->pkt_statistics = STAT_TERMINATED;
-
-		pqi_cmd_sm(cmd, PQI_CMD_FATAL, B_TRUE);
-	} else {
-		pqi_cmd_sm(cmd, PQI_CMD_CMPLT, B_TRUE);
 	}
+	(void) pqi_cmd_action(cmd, PQI_CMD_CMPLT);
 }
 
 static void
 fail_outstanding_cmds(pqi_state_t s)
 {
 	pqi_device_t		devp;
-	int			i;
-	pqi_queue_group_t	*qg;
-	pqi_io_request_t	*io;
 
 	ASSERT(MUTEX_HELD(&s->s_mutex));
-	if (s->s_sync_io != NULL) {
-		s->s_sync_io->io_status = PQI_DATA_IN_OUT_UNSOLICITED_ABORT;
-		(s->s_sync_io->io_cb)(s->s_sync_io,
-		    s->s_sync_io->io_context);
-	}
 
-	for (i = 0; i < s->s_num_queue_groups; i++) {
-		qg = &s->s_queue_groups[i];
-		mutex_enter(&qg->submit_lock[RAID_PATH]);
-		mutex_enter(&qg->submit_lock[AIO_PATH]);
-
-		qg->qg_active = B_FALSE;
-
-		/*
-		 * Remove the requests from the pending list to prevent
-		 * pqi_start_io() from attempting to load request onto
-		 * the hardware queue since the referenced command structure
-		 * will be freed during the call to pqi_fail_driv_cmds().
-		 * These I/O requests will be freed in the state machine
-		 * when the commands are failed by pqi_fail_drive_cmds().
-		 */
-		while ((io = list_head(&qg->request_list[RAID_PATH])) != NULL)
-			list_remove(&qg->request_list[RAID_PATH], io);
-		while ((io = list_head(&qg->request_list[AIO_PATH])) != NULL)
-			list_remove(&qg->request_list[AIO_PATH], io);
-
-		mutex_exit(&qg->submit_lock[AIO_PATH]);
-		mutex_exit(&qg->submit_lock[RAID_PATH]);
-	}
-
+	pqi_fail_drive_cmds(&s->s_special_device, CMD_TRAN_ERR);
 	for (devp = list_head(&s->s_devnodes); devp != NULL;
 	    devp = list_next(&s->s_devnodes, devp)) {
-		pqi_fail_drive_cmds(devp);
+		pqi_fail_drive_cmds(devp, CMD_TRAN_ERR);
 	}
 }
 
@@ -835,8 +837,23 @@ read_heartbeat_counter(pqi_state_t s)
 static void
 take_ctlr_offline(pqi_state_t s)
 {
-	int		circ	= 0;
-	int		circ1	= 0;
+	int			circ	= 0;
+	int			circ1	= 0;
+	pqi_device_t		d;
+	pqi_cmd_t		c;
+	pqi_io_request_t	*io;
+
+	d = &s->s_special_device;
+	mutex_enter(&d->pd_mutex);
+	while ((c = list_remove_head(&d->pd_cmd_list)) != NULL) {
+		io = c->pc_io_rqst;
+		io->io_status = PQI_DATA_IN_OUT_ERROR;
+
+		mutex_exit(&d->pd_mutex);
+		(io->io_cb)(io, io->io_context);
+		mutex_enter(&d->pd_mutex);
+	}
+	mutex_exit(&d->pd_mutex);
 
 	mutex_enter(&s->s_mutex);
 	s->s_offline = 1;

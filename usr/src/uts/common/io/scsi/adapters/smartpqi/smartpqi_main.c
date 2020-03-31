@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -219,6 +219,8 @@ smartpqi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	    offsetof(struct pqi_device, pd_list));
 	list_create(&s->s_mem_check, sizeof (struct mem_check),
 	    offsetof(struct mem_check, m_node));
+	list_create(&s->s_special_device.pd_cmd_list, sizeof (struct pqi_cmd),
+		offsetof(struct pqi_cmd, pc_list));
 
 	/* ---- Initialize mutex used in interrupt handler ---- */
 	mutex_init(&s->s_mutex, NULL, MUTEX_DRIVER,
@@ -226,9 +228,9 @@ smartpqi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	mutex_init(&s->s_mem_mutex, NULL, MUTEX_DRIVER, NULL);
 	mutex_init(&s->s_io_mutex, NULL, MUTEX_DRIVER, NULL);
 	mutex_init(&s->s_intr_mutex, NULL, MUTEX_DRIVER, NULL);
+	mutex_init(&s->s_special_device.pd_mutex, NULL, MUTEX_DRIVER, NULL);
 	cv_init(&s->s_quiescedvar, NULL, CV_DRIVER, NULL);
 	cv_init(&s->s_io_condvar, NULL, CV_DRIVER, NULL);
-	sema_init(&s->s_sync_rqst, 1, NULL, SEMA_DRIVER, NULL);
 
 	m = pqi_alloc_mem_len(256);
 	(void) snprintf(m.mem, m.len, "smartpqi_cache%d", instance);

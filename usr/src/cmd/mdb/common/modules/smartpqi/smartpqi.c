@@ -92,22 +92,25 @@ display_scsi_status(struct scsi_arq_status scsi_status)
 }
 
 static char *
-cmd_state_str(pqi_cmd_state_t state, char *tmpstr, int tmplen)
+cmd_action_str(pqi_cmd_action_t action, char *tmpstr, int tmplen)
 {
-	switch (state) {
-	case PQI_CMD_UNINIT: return ("Uninitialized");
-	case PQI_CMD_CONSTRUCT: return ("Construct");
-	case PQI_CMD_INIT: return ("Init");
-	case PQI_CMD_QUEUED: return ("Queued");
-	case PQI_CMD_STARTED: return ("Started");
-	case PQI_CMD_CMPLT: return ("Completed");
-	case PQI_CMD_FATAL: return ("Fatal");
-	case PQI_CMD_DESTRUCT: return ("Destruct");
+	switch (action) {
+	case PQI_CMD_UNINIT:
+		return ("UNINIT");
+	case PQI_CMD_QUEUE:
+		return ("QUEUE");
+	case PQI_CMD_START:
+		return ("START");
+	case PQI_CMD_CMPLT:
+		return ("COMPLETE");
+	case PQI_CMD_TIMEOUT:
+		return ("TIMEOUT");
+	case PQI_CMD_FAIL:
+		return ("FAIL");
 	default:
-		(void) mdb_snprintf(tmpstr, tmplen, "BAD STATE <0x%x>", state);
+		(void) mdb_snprintf(tmpstr, tmplen, "BAD ACTION <0x%x>", action);
 		return (tmpstr);
 	}
-
 }
 
 struct scsi_key_strings pqi_cmds[] = {
@@ -215,9 +218,9 @@ display_cmd(pqi_cmd_t cmdp)
 
 	tmplen = sizeof (tmpstr);
 	display_cdb(cmdp->pc_cdb);
-	mdb_printf("    current state\t\t\t%s\n", cmd_state_str(cmdp->pc_cmd_state, tmpstr,
+	mdb_printf("    cur action\t\t\t%s\n", cmd_action_str(cmdp->pc_cur_action, tmpstr,
 	    tmplen));
-	mdb_printf("    last state\t\t\t\t%s\n", cmd_state_str(cmdp->pc_last_state, tmpstr,
+	mdb_printf("    last action\t\t\t%s\n", cmd_action_str(cmdp->pc_last_action, tmpstr,
 	    tmplen));
 	display_scsi_status(cmdp->pc_cmd_scb);
 	mdb_printf("    pc_dma_count\t\t\t%d\n", cmdp->pc_dma_count);
@@ -452,27 +455,11 @@ pqi_display_devices(list_t s_devnodes, pqi_state_t drvp, uint_t dev_verbose)
 static void
 pqi_display_instance(pqi_state_t pqi_statep)
 {
-	int			rval;
-	pqi_io_request_t	pqi_io;
-
 	mdb_printf("s_dip\t\t\t\t\t0x%p\n", pqi_statep->s_dip);
 	mdb_printf("s_flags\t\t\t\t\t0x%x\n", pqi_statep->s_flags);
 	mdb_printf("s_firmware_version\t\t\t%s\n",
 	    pqi_statep->s_firmware_version);
 
-	if (pqi_statep->s_sync_io != NULL) {
-		mdb_printf("---- PQI s_sync_io ----\n");
-		rval = mdb_vread(&pqi_io, sizeof (pqi_io_request_t),
-		    (uintptr_t)pqi_statep->s_sync_io);
-		if (rval == -1) {
-			mdb_warn(" cannot read IO request structure\n");
-		} else if (rval == sizeof (pqi_io_request_t)) {
-			display_io_request(&pqi_io);
-		} else {
-			mdb_warn("Unable to read IO request for cntlr %d\n",
-			    pqi_statep->s_instance);
-		}
-	}
 	mdb_printf("s_offline\t\t\t\t%s\ns_enable_mpxio\t\t\t\t%s\n",
 	    bool_to_str(pqi_statep->s_offline), bool_to_str(pqi_statep->s_enable_mpxio));
 	mdb_printf("s_debug level\t\t\t\t%d\n", pqi_statep->s_debug_level);

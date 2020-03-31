@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -140,15 +140,7 @@ pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 		if (io->io_cmd != NULL) {
 			pqi_cmd_t	cmd = io->io_cmd;
 
-			mutex_enter(&cmd->pc_device->pd_mutex);
-			if (cmd->pc_flags & PQI_FLAG_ABORTED) {
-				mutex_exit(&cmd->pc_device->pd_mutex);
-				response_cnt++;
-				oq_ci = (oq_ci + 1) % s->s_num_elements_per_oq;
-				continue;
-			}
 			cmd->pc_flags |= PQI_FLAG_FINISHING;
-			mutex_exit(&cmd->pc_device->pd_mutex);
 		}
 
 		io->io_iu_type = rsp->header.iu_type;
@@ -323,7 +315,7 @@ process_raid_io_error(pqi_io_request_t *io)
 
 	if ((ei = io->io_error_info) != NULL) {
 		io->io_status = ei->data_out_result;
-		if ((cmd = io->io_cmd) == NULL)
+		if ((cmd = io->io_cmd) == NULL || cmd->pc_pkt == NULL)
 			return;
 
 		pkt = cmd->pc_pkt;

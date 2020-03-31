@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -20,17 +20,182 @@
 
 /* ---- Forward declarations for support/utility functions ---- */
 static void reinit_io(pqi_io_request_t *io);
-static char *cmd_state_str(pqi_cmd_state_t state);
 static void dump_raid(pqi_state_t s, void *v, pqi_index_t idx);
 static void dump_aio(void *v);
 static void show_error_detail(pqi_state_t s);
+static void cmd_start_time(pqi_cmd_t c);
 static void cmd_finish_task(void *v);
+
 
 /*
  * []------------------------------------------------------------------[]
  * | Entry points for this file						|
  * []------------------------------------------------------------------[]
  */
+
+static void
+cmd_remove_group(pqi_cmd_t c)
+{
+	pqi_io_request_t	*io = c->pc_io_rqst;
+
+	/*
+	 * This would be a good place to send a SCSI TASK MANAGEMENT
+	 * command to cancel an individual command, but we don't
+	 * have any documentation on the HBA to describe how that
+	 * might be done.
+	 */
+	if (io != NULL) {
+		pqi_queue_group_t	*qg = io->io_queue_group;
+		int			path = io->io_queue_path;
+
+		mutex_enter(&qg->submit_lock[path]);
+		if (list_link_active(&io->io_list_node)) {
+			list_remove(&qg->request_list[path], io);
+		}
+		mutex_exit(&qg->submit_lock[path]);
+	}
+}
+
+pqi_cmd_action_t
+pqi_cmd_action_nolock(pqi_cmd_t c, pqi_cmd_action_t a)
+{
+	pqi_device_t	d = c->pc_device;
+	pqi_state_t	s = c->pc_softc;
+	struct scsi_pkt	*pkt;
+
+	mutex_enter(&c->pc_mutex);
+	c->pc_last_action = c->pc_cur_action;
+	c->pc_cur_action = a;
+	switch (a) {
+	case PQI_CMD_QUEUE:
+		list_insert_tail(&d->pd_cmd_list, c);
+
+		/*
+		 * Set the start time now in case the HBA hangs. That will
+		 * allow the timeout processing to handle these commands, which
+		 * in theory have been started but not really started, without
+		 * the need for special handling logic in the timeout scan.
+		 */
+		cmd_start_time(c);
+		break;
+
+	case PQI_CMD_START:
+		/*
+		 * Now that the command is actually being sent to the HBA
+		 * reset the start so that a timeout will occur only after
+		 * the HBA has had the command for some amount of time as
+		 * defined by the SCSI packet.
+		 */
+		cmd_start_time(c);
+		break;
+
+	case PQI_CMD_FAIL:
+		if (c->pc_last_action == PQI_CMD_START) {
+			/*
+			 * There's no means to cancel a command that has
+			 * been passed to the HBA, at least none without more
+			 * documentation. So, if the command has been passed
+			 * to the HBA the queue slot must remain active until
+			 * the command completes. If it fails to complete
+			 * then it will be freed by cmd_timeout_scan() when
+			 * the action is PQI_CMD_TIMEOUT. So, for now keep
+			 * the action as being PQI_CMD_START.
+			 */
+			a = PQI_CMD_START;
+		} else {
+			cmd_remove_group(c);
+			list_remove(&d->pd_cmd_list, c);
+
+			pkt = CMD2PKT(c);
+			if (pkt == NULL) {
+				pqi_io_request_t	*io = c->pc_io_rqst;
+
+				io->io_status = PQI_DATA_IN_OUT_TIMEOUT;
+				(*io->io_cb)(io, io->io_context);
+				pqi_free_io(c->pc_io_rqst);
+				c->pc_io_rqst = NULL;
+			} else {
+				pqi_free_io(c->pc_io_rqst);
+				c->pc_io_rqst = NULL;
+				mutex_exit(&c->pc_mutex);
+				(void) ddi_taskq_dispatch(s->s_complete_taskq,
+					cmd_finish_task, c, 0);
+				return (a);
+			}
+		}
+		break;
+
+	case PQI_CMD_TIMEOUT:
+		cmd_remove_group(c);
+		list_remove(&d->pd_cmd_list, c);
+
+		/*
+		 * Internal commands to the driver will not have a SCSI packet
+		 * associated.
+		 */
+		pkt = CMD2PKT(c);
+		if (pkt == NULL) {
+			pqi_io_request_t	*io = c->pc_io_rqst;
+
+			io->io_status = PQI_DATA_IN_OUT_TIMEOUT;
+			(*io->io_cb)(io, io->io_context);
+			pqi_free_io(c->pc_io_rqst);
+			c->pc_io_rqst = NULL;
+		} else {
+			pqi_free_io(c->pc_io_rqst);
+			c->pc_io_rqst = NULL;
+			mutex_exit(&c->pc_mutex);
+			(void) ddi_taskq_dispatch(s->s_complete_taskq,
+			    cmd_finish_task, c, 0);
+			return (a);
+		}
+		break;
+
+	case PQI_CMD_CMPLT:
+		if (c->pc_last_action == PQI_CMD_TIMEOUT)
+			break;
+
+		list_remove(&d->pd_cmd_list, c);
+
+		pqi_free_io(c->pc_io_rqst);
+		c->pc_io_rqst = NULL;
+		if (CMD2PKT(c) != NULL) {
+			/*
+			 * ddi_taskq_dispatch doesn't always start a separate
+			 * thread. Under some conditions this will turn into
+			 * a direct call to cmd_finish_task(). That in turn
+			 * calls into the SCSA layer which can call
+			 * tran_ini_pkt which will eventually try to call
+			 * pqi_cmd_action(). So, need to drop the mutex before
+			 * making the call to ddi_taskq_dispatch and then
+			 * return.
+			 */
+			mutex_exit(&c->pc_mutex);
+			(void) ddi_taskq_dispatch(s->s_complete_taskq,
+			    cmd_finish_task, c, 0);
+			return (a);
+		}
+		break;
+
+	default:
+		cmn_err(CE_PANIC, "%s: Unknown action request: %d", __func__, a);
+	}
+	mutex_exit(&c->pc_mutex);
+	return (a);
+}
+
+pqi_cmd_action_t
+pqi_cmd_action(pqi_cmd_t c, pqi_cmd_action_t a)
+{
+	pqi_device_t		d = c->pc_device;
+	pqi_cmd_action_t	rval;
+
+	mutex_enter(&d->pd_mutex);
+	rval = pqi_cmd_action_nolock(c, a);
+	mutex_exit(&d->pd_mutex);
+
+	return (rval);
+}
 
 int
 pqi_is_offline(pqi_state_t s)
@@ -125,134 +290,6 @@ pqi_dump_io(pqi_io_request_t *io)
 		dump_raid(s, io->io_iu, io->io_pi);
 	}
 }
-
-/*
- * pqi_cmd_sm -- state machine for command
- *
- * NOTE: PQI_CMD_CMPLT and PQI_CMD_FATAL will drop the pd_mutex and regain
- * it even if grab_lock==B_FALSE.
- */
-void
-pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock)
-{
-	pqi_device_t	devp = cmd->pc_device;
-	pqi_state_t	s = cmd->pc_softc;
-
-	if (cmd->pc_softc->s_debug_level & DBG_LVL_STATE) {
-		cmn_err(CE_NOTE, "%s: cmd=%p (%s) -> (%s)\n", __func__,
-		    (void *)cmd, cmd_state_str(cmd->pc_cmd_state),
-		    cmd_state_str(new_state));
-	}
-	cmd->pc_last_state = cmd->pc_cmd_state;
-	cmd->pc_cmd_state = new_state;
-	switch (new_state) {
-	case PQI_CMD_UNINIT:
-		break;
-
-	case PQI_CMD_CONSTRUCT:
-		break;
-
-	case PQI_CMD_INIT:
-		break;
-
-	case PQI_CMD_QUEUED:
-		if (cmd->pc_last_state == PQI_CMD_STARTED)
-			break;
-		if (grab_lock == B_TRUE)
-			mutex_enter(&devp->pd_mutex);
-		cmd->pc_start_time = gethrtime();
-		cmd->pc_expiration = cmd->pc_start_time +
-		    ((hrtime_t)cmd->pc_pkt->pkt_time * NANOSEC);
-		devp->pd_active_cmds++;
-		atomic_inc_32(&s->s_cmd_queue_len);
-		list_insert_tail(&devp->pd_cmd_list, cmd);
-		if (grab_lock == B_TRUE)
-			mutex_exit(&devp->pd_mutex);
-		break;
-
-	case PQI_CMD_STARTED:
-		if (s->s_debug_level & (DBG_LVL_CDB | DBG_LVL_RQST))
-			pqi_dump_io(cmd->pc_io_rqst);
-		break;
-
-	case PQI_CMD_CMPLT:
-		if (grab_lock == B_TRUE)
-			mutex_enter(&devp->pd_mutex);
-
-		if ((cmd->pc_flags & PQI_FLAG_ABORTED) == 0) {
-			list_remove(&devp->pd_cmd_list, cmd);
-
-			devp->pd_active_cmds--;
-			atomic_dec_32(&s->s_cmd_queue_len);
-			pqi_free_io(cmd->pc_io_rqst);
-
-			cmd->pc_flags &= ~PQI_FLAG_FINISHING;
-			(void) ddi_taskq_dispatch(s->s_complete_taskq,
-			    cmd_finish_task, cmd, 0);
-		}
-
-		if (grab_lock == B_TRUE)
-			mutex_exit(&devp->pd_mutex);
-
-		break;
-
-	case PQI_CMD_FATAL:
-		if ((cmd->pc_last_state == PQI_CMD_QUEUED) ||
-		    (cmd->pc_last_state == PQI_CMD_STARTED)) {
-			if (grab_lock == B_TRUE)
-				mutex_enter(&devp->pd_mutex);
-
-			cmd->pc_flags |= PQI_FLAG_ABORTED;
-
-			/*
-			 * If this call came from aio_io_complete() when
-			 * dealing with a drive offline the flags will contain
-			 * PQI_FLAG_FINISHING so just clear it here to be
-			 * safe.
-			 */
-			cmd->pc_flags &= ~PQI_FLAG_FINISHING;
-
-			list_remove(&devp->pd_cmd_list, cmd);
-
-			devp->pd_active_cmds--;
-			atomic_dec_32(&s->s_cmd_queue_len);
-			if (cmd->pc_io_rqst)
-				pqi_free_io(cmd->pc_io_rqst);
-
-			(void) ddi_taskq_dispatch(s->s_complete_taskq,
-			    cmd_finish_task, cmd, 0);
-
-			if (grab_lock == B_TRUE)
-				mutex_exit(&devp->pd_mutex);
-		}
-		break;
-
-	case PQI_CMD_DESTRUCT:
-		if (grab_lock == B_TRUE)
-			mutex_enter(&devp->pd_mutex);
-
-		if (list_link_active(&cmd->pc_list)) {
-			list_remove(&devp->pd_cmd_list, cmd);
-			devp->pd_active_cmds--;
-			if (cmd->pc_io_rqst)
-				pqi_free_io(cmd->pc_io_rqst);
-		}
-
-		if (grab_lock == B_TRUE)
-			mutex_exit(&devp->pd_mutex);
-		break;
-
-	default:
-		/*
-		 * Normally a panic or ASSERT(0) would be called
-		 * for here. Except that in this case the 'cmd'
-		 * memory could be coming from the kmem_cache pool
-		 * which during debug gets wiped with 0xbaddcafe
-		 */
-		break;
-	}
-}
-
 
 static uint_t supported_event_types[] = {
 	PQI_EVENT_TYPE_HOTPLUG,
@@ -602,31 +639,6 @@ pqi_alloc_mem_len(int len)
  * []------------------------------------------------------------------[]
  */
 
-/*
- * cmd_finish_task -- taskq to complete command processing
- *
- * Under high load the driver will run out of IO slots which causes command
- * requests to pause until a slot is free. Calls to pkt_comp below can circle
- * through the SCSI layer and back into the driver to start another command
- * request and therefore possibly pause. If cmd_finish_task() was called on
- * the interrupt thread a hang condition could occur because IO slots wouldn't
- * be processed and then freed. So, this portion of the command completion
- * is run on a taskq.
- */
-static void
-cmd_finish_task(void *v)
-{
-	pqi_cmd_t	cmd = v;
-	struct scsi_pkt	*pkt;
-
-	pkt = cmd->pc_pkt;
-	if (cmd->pc_poll)
-		sema_v(cmd->pc_poll);
-	if ((pkt->pkt_flags & FLAG_NOINTR) == 0 &&
-	    (pkt->pkt_comp != NULL))
-		(*pkt->pkt_comp)(pkt);
-}
-
 typedef struct qual {
 	int	q_val;
 	char	*q_str;
@@ -670,6 +682,44 @@ static code_qual_t cq_table[] = {
 	{ 0, NULL },
 };
 
+/*
+ * cmd_finish_task -- taskq to complete command processing
+ *
+ * Under high load the driver will run out of IO slots which causes command
+ * requests to pause until a slot is free. Calls to pkt_comp below can circle
+ * through the SCSI layer and back into the driver to start another command
+ * request and therefore possibly pause. If cmd_finish_task() was called on
+ * the interrupt thread a hang condition could occur because IO slots wouldn't
+ * be processed and then freed. So, this portion of the command completion
+ * is run on a taskq.
+ */
+static void
+cmd_finish_task(void *v)
+{
+	pqi_cmd_t	c = v;
+	struct scsi_pkt	*pkt = CMD2PKT(c);
+
+	if (c->pc_poll)
+		sema_v(c->pc_poll);
+
+	if (pkt != NULL && (pkt->pkt_flags & FLAG_NOINTR) == 0 &&
+	    (pkt->pkt_comp != NULL))
+		(*pkt->pkt_comp)(pkt);
+}
+
+static void
+cmd_start_time(pqi_cmd_t c)
+{
+	c->pc_start_time = gethrtime();
+	if (CMD2PKT(c) != NULL) {
+		c->pc_expiration = c->pc_start_time +
+		((hrtime_t)c->pc_pkt->pkt_time * NANOSEC);
+	} else {
+		c->pc_expiration = c->pc_start_time +
+		5 * NANOSEC;
+	}
+}
+
 static void
 show_error_detail(pqi_state_t s)
 {
@@ -707,6 +757,7 @@ pqi_catch_release(pqi_io_request_t *io, void *v)
 	 * and then the HBA responds. It's occurred a few times during testing
 	 * so catch and ignore.
 	 */
+	cmn_err(CE_WARN, "%s: caught", __func__);
 }
 
 static void
@@ -719,29 +770,6 @@ reinit_io(pqi_io_request_t *io)
 	io->io_context = NULL;
 	io->io_cmd = NULL;
 }
-
-/* ---- Non-thread safe, for debugging state display code only ---- */
-static char bad_state_buf[64];
-
-static char *
-cmd_state_str(pqi_cmd_state_t state)
-{
-	switch (state) {
-	case PQI_CMD_UNINIT: return ("Uninitialized");
-	case PQI_CMD_CONSTRUCT: return ("Construct");
-	case PQI_CMD_INIT: return ("Init");
-	case PQI_CMD_QUEUED: return ("Queued");
-	case PQI_CMD_STARTED: return ("Started");
-	case PQI_CMD_CMPLT: return ("Completed");
-	case PQI_CMD_FATAL: return ("Fatal");
-	case PQI_CMD_DESTRUCT: return ("Destruct");
-	default:
-		(void) snprintf(bad_state_buf, sizeof (bad_state_buf),
-		    "BAD STATE (%x)", state);
-		return (bad_state_buf);
-	}
-}
-
 
 mem_len_pair_t
 build_cdb_str(uint8_t *cdb)

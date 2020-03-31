@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -240,16 +240,12 @@ pqi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 		}
 	}
 
-	cmd->pc_target = ap->a_target;
-
 	mutex_enter(&s->s_mutex);
 	if (HBA_IS_QUIESCED(s) && !poll) {
 		mutex_exit(&s->s_mutex);
 		return (TRAN_BUSY);
 	}
 	mutex_exit(&s->s_mutex);
-
-	pqi_cmd_sm(cmd, PQI_CMD_QUEUED, B_TRUE);
 
 	rc = pqi_transport_command(s, cmd);
 
@@ -303,16 +299,18 @@ pqi_scsi_reset(struct scsi_address *ap, int level)
 		if ((d = scsi_device_hba_private_get(ap->a.a_sd)) == NULL)
 			break;
 
-		if (pqi_lun_reset(s, d) == B_TRUE)
-			rval = TRUE;
+		pqi_lun_reset(s, d);
+		rval = TRUE;
 		break;
 
 	case RESET_BUS:
 	case RESET_ALL:
+		mutex_enter(&s->s_mutex);
 		for (d = list_head(&s->s_devnodes); d != NULL;
 		    d = list_next(&s->s_devnodes, d)) {
-			(void) pqi_lun_reset(s, d);
+			pqi_lun_reset(s, d);
 		}
+		mutex_exit(&s->s_mutex);
 		rval = TRUE;
 		break;
 	}
@@ -337,7 +335,7 @@ pqi_scsi_abort(struct scsi_address *ap, struct scsi_pkt *pkt)
 		pqi_cmd_t	cmd = PKT2CMD(pkt);
 
 		mutex_enter(&cmd->pc_device->pd_mutex);
-		pqi_fail_cmd(cmd, CMD_ABORTED, STAT_ABORTED);
+		(void) pqi_fail_cmd(cmd, CMD_ABORTED, STAT_ABORTED);
 		mutex_exit(&cmd->pc_device->pd_mutex);
 	} else {
 		abort_all(ap, s);
@@ -417,6 +415,7 @@ pqi_cache_constructor(void *buf, void *un, int flags)
 	pqi_state_t		s	= un;
 	int			(*callback)(caddr_t);
 
+	bzero(c, sizeof (*c));
 	c->pc_softc = s;
 	callback = (flags == KM_SLEEP) ? DDI_DMA_SLEEP : DDI_DMA_DONTWAIT;
 
@@ -426,7 +425,6 @@ pqi_cache_constructor(void *buf, void *un, int flags)
 		dev_err(s->s_dip, CE_WARN, "Failed to alloc dma handle");
 		return (-1);
 	}
-	pqi_cmd_sm(c, PQI_CMD_CONSTRUCT, B_TRUE);
 
 	return (0);
 }
@@ -469,7 +467,7 @@ pqi_init_pkt(struct scsi_address *ap, struct scsi_pkt *pkt,
 
 	if (pkt == NULL) {
 		ddi_dma_handle_t	saved_dmahdl;
-		pqi_cmd_state_t		saved_state;
+		pqi_cmd_action_t	saved_action;
 
 		if ((devp = scsi_device_hba_private_get(ap->a.a_sd)) == NULL)
 			return (NULL);
@@ -478,12 +476,13 @@ pqi_init_pkt(struct scsi_address *ap, struct scsi_pkt *pkt,
 
 		is_new = B_TRUE;
 		saved_dmahdl = cmd->pc_dmahdl;
-		saved_state = cmd->pc_cmd_state;
+		saved_action = cmd->pc_last_action;
 
 		(void) memset(cmd, 0, sizeof (*cmd));
+		mutex_init(&cmd->pc_mutex, NULL, MUTEX_DRIVER, NULL);
 
 		cmd->pc_dmahdl = saved_dmahdl;
-		cmd->pc_cmd_state = saved_state;
+		cmd->pc_last_action = saved_action;
 
 		cmd->pc_device = devp;
 		cmd->pc_pkt = &cmd->pc_cached_pkt;
@@ -515,7 +514,6 @@ pqi_init_pkt(struct scsi_address *ap, struct scsi_pkt *pkt,
 		cmd = PKT2CMD(pkt);
 		cmd->pc_flags &= PQI_FLAGS_PERSISTENT;
 	}
-	pqi_cmd_sm(cmd, PQI_CMD_INIT, B_TRUE);
 
 	/* ---- Handle partial DMA transfer ---- */
 	if (cmd->pc_nwin > 0) {
@@ -608,8 +606,8 @@ handle_dma_cookies:
 	}
 
 	return (pkt);
+
 out:
-	pqi_cmd_sm(cmd, PQI_CMD_FATAL, B_TRUE);
 	if (is_new == B_TRUE)
 		pqi_destroy_pkt(ap, pkt);
 	return (NULL);
@@ -634,7 +632,6 @@ pqi_destroy_pkt(struct scsi_address *ap, struct scsi_pkt *pkt)
 		(void) ddi_dma_unbind_handle(c->pc_dmahdl);
 	}
 	cmd_ext_free(c);
-	pqi_cmd_sm(c, PQI_CMD_DESTRUCT, B_TRUE);
 
 	kmem_cache_free(s->s_cmd_cache, c);
 }
@@ -789,11 +786,13 @@ pqi_find_target_dev(pqi_state_t s, int target)
 	 * Should switch to indexed array of devices that can grow
 	 * as needed.
 	 */
+	mutex_enter(&s->s_mutex);
 	for (d = list_head(&s->s_devnodes); d != NULL;
 	    d = list_next(&s->s_devnodes, d)) {
 		if (d->pd_target == target && d->pd_online)
 			break;
 	}
+	mutex_exit(&s->s_mutex);
 	return (d);
 }
 
@@ -809,6 +808,7 @@ pqi_config_all(dev_info_t *pdip, pqi_state_t s)
 	 * were pulled from an enclosure or a cable to the enclosure was
 	 * pulled.
 	 */
+	/* ---- XXX Grab s_mutex ---- */
 	for (d = list_head(&s->s_devnodes); d != NULL;
 	    d = list_next(&s->s_devnodes, d)) {
 		if (d->pd_online)
@@ -847,70 +847,48 @@ pqi_quiesced_notify(pqi_state_t s)
  */
 
 static void
-cmd_timeout_scan(void *v)
+cmd_timeout_drive(pqi_device_t d)
 {
-	pqi_state_t	s = v;
-	pqi_device_t	d;
-	pqi_cmd_t	cmd;
+	uint32_t	timed_out_cnt = 0;
+	pqi_cmd_t	c,
+			next_c;
 	hrtime_t	now = gethrtime();
-	list_t		to_scan;
 
-	mutex_enter(&s->s_mutex);
-	for (d = list_head(&s->s_devnodes); d != NULL;
-	    d = list_next(&s->s_devnodes, d)) {
+	mutex_enter(&d->pd_mutex);
 
-		list_create(&to_scan, sizeof (struct pqi_cmd),
-		    offsetof(struct pqi_cmd, pc_list));
+	c = list_head(&d->pd_cmd_list);
+	while (c != NULL) {
+		next_c = list_next(&d->pd_cmd_list, c);
+		if (c->pc_expiration < now) {
+			struct scsi_pkt	*pkt = CMD2PKT(c);
 
-		mutex_enter(&d->pd_mutex);
-		list_move_tail(&to_scan, &d->pd_cmd_list);
-
-		while ((cmd = list_remove_head(&to_scan)) != NULL) {
-			if (cmd->pc_expiration < now) {
-				struct scsi_pkt	*pkt	= CMD2PKT(cmd);
-
+			if (pkt != NULL) {
 				pkt->pkt_reason = CMD_TIMEOUT;
 				pkt->pkt_statistics = STAT_TIMEOUT;
-
-				/*
-				 * Insert the command back onto the list, with
-				 * the lock held, so that the state machine
-				 * can do its processing which removes the
-				 * command from the list and calls pkt_comp.
-				 */
-				list_insert_tail(&d->pd_cmd_list, cmd);
-				pqi_cmd_sm(cmd, PQI_CMD_FATAL, B_FALSE);
-
-			} else {
-				/*
-				 * Once a command's experiation date is in
-				 * the future this command and all remaining
-				 * commands on the chain are in the future as
-				 * well. So, add them back to the device
-				 * command list lock, stock, and barrel. Then
-				 * stop processing for this command.
-				 */
-				list_insert_tail(&d->pd_cmd_list, cmd);
-				list_move_tail(&d->pd_cmd_list, &to_scan);
-				break;
 			}
+			(void) pqi_cmd_action_nolock(c, PQI_CMD_TIMEOUT);
+			timed_out_cnt++;
 		}
-		mutex_exit(&d->pd_mutex);
+		c = next_c;
 	}
 
-	/*
-	 * Certain commands are issued and run serially through the driver.
-	 * These all should complete no matter what since they are commands
-	 * which are actually sent to the HBA. Yet, there have been cases
-	 * where the HBA failed to respond. So, if the time is past the
-	 * expired time mark the IO has having a timeout error and call the
-	 * return function.
-	 */
-	if (s->s_sync_io != NULL &&
-	    s->s_sync_expire < now) {
-		s->s_sync_io->io_status = PQI_DATA_IN_OUT_TIMEOUT;
-		s->s_sync_io->io_cb(s->s_sync_io, s->s_sync_io->io_context);
+	d->pd_timedout += timed_out_cnt;
+	mutex_exit(&d->pd_mutex);
+}
+
+static void
+cmd_timeout_scan(void *v)
+{
+	pqi_state_t		s = v;
+	pqi_device_t		d;
+
+	mutex_enter(&s->s_mutex);
+
+	for (d = list_head(&s->s_devnodes); d != NULL;
+	    d = list_next(&s->s_devnodes, d)) {
+		cmd_timeout_drive(d);
 	}
+	cmd_timeout_drive(&s->s_special_device);
 
 	mutex_exit(&s->s_mutex);
 	s->s_cmd_timeout = timeout(cmd_timeout_scan, s,
@@ -949,7 +927,7 @@ abort_all(struct scsi_address *ap, pqi_state_t s)
 	if ((devp = pqi_find_target_dev(s, ap->a_target)) == NULL)
 		return;
 
-	pqi_fail_drive_cmds(devp);
+	pqi_fail_drive_cmds(devp, CMD_ABORTED);
 }
 
 static boolean_t
@@ -1195,7 +1173,7 @@ config_one(dev_info_t *pdip, pqi_state_t s, pqi_device_t d,
 	/* ---- Inquiry target ---- */
 	if (!d->pd_online ||
 	    pqi_scsi_inquiry(s, d, 0, &inq, sizeof (inq)) == B_FALSE) {
-		pqi_fail_drive_cmds(d);
+		pqi_fail_drive_cmds(d, CMD_DEV_GONE);
 
 		if (d->pd_dip != NULL) {
 			(void) ndi_devi_offline(d->pd_dip,

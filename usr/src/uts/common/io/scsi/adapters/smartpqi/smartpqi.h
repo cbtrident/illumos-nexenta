@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta Systems, Inc.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SMARTPQI_H
@@ -224,6 +224,7 @@ typedef struct pqi_io_request {
 	uint8_t			io_raid_bypass : 1;
 	int			io_status;
 	pqi_queue_group_t	*io_queue_group;
+	int			io_queue_path;
 	struct pqi_cmd		*io_cmd;
 	void			*io_error_info;
 	pqi_dma_overhead_t	*io_sg_chain_dma;
@@ -257,6 +258,45 @@ typedef struct pqi_event {
 #define	DBG_LVL_STATE				0x0004
 #define	DBG_LVL_RAW_RQST			0x0008
 
+typedef struct pqi_device {
+	list_node_t		pd_list;
+	kmutex_t		pd_mutex;
+
+	/* ---- Protected by pd_mutex ---- */
+	list_t			pd_cmd_list;
+	int			pd_flags;
+
+	int			pd_active_cmds;
+	int			pd_target;
+
+	/* ---- Only one will be valid, MPxIO uses s_pip ---- */
+	dev_info_t		*pd_dip;
+	mdi_pathinfo_t		*pd_pip;
+	mdi_pathinfo_t		*pd_pip_offlined;
+
+	dev_info_t		*pd_parent;
+	int			pd_devtype;
+	int			pd_online : 1;
+	int			pd_scanned : 1;
+	int			pd_phys_dev : 1;
+	int			pd_external_raid : 1;
+	int			pd_aio_enabled : 1;
+	uint32_t		pd_aio_handle;
+	char			pd_scsi3addr[8];
+	uint64_t		pd_wwid;	/* big endian */
+	char			*pd_guid;
+	uint64_t		pd_sas_address;
+	uint8_t			pd_volume_id[16];
+	char			pd_vendor[8];	/* From INQUIRY */
+	char			pd_model[16];	/* From INQUIRY */
+
+	/* ---- Debug stats ---- */
+	uint32_t		pd_killed;
+	uint32_t		pd_timedout;
+	uint32_t		pd_sense_errors;
+	uint32_t		pd_busy;
+} *pqi_device_t;
+
 typedef struct pqi_state {
 	int			s_instance;
 	dev_info_t		*s_dip;
@@ -264,11 +304,10 @@ typedef struct pqi_state {
 	kmutex_t		s_mutex;
 	kmutex_t		s_intr_mutex;
 	kcondvar_t		s_quiescedvar;
+	uint32_t		s_next_target;
 
 	/* ---- Used for serialized commands through driver ---- */
-	ksema_t			s_sync_rqst;
-	hrtime_t		s_sync_expire;
-	pqi_io_request_t	*s_sync_io;
+	struct pqi_device	s_special_device;
 
 	int			s_intr_ready : 1,
 				s_offline : 1,
@@ -387,39 +426,6 @@ typedef struct mem_check {
 	char			m_file[80];
 } *mem_check_t;
 
-typedef struct pqi_device {
-	list_node_t		pd_list;
-	kmutex_t		pd_mutex;
-
-	/* ---- Protected by pd_mutex ---- */
-	list_t			pd_cmd_list;
-	int			pd_flags;
-
-	int			pd_active_cmds;
-	int			pd_target;
-
-	/* ---- Only one will be valid, MPxIO uses s_pip ---- */
-	dev_info_t		*pd_dip;
-	mdi_pathinfo_t		*pd_pip;
-	mdi_pathinfo_t		*pd_pip_offlined;
-
-	dev_info_t		*pd_parent;
-	int			pd_devtype;
-	int			pd_online : 1;
-	int			pd_scanned : 1;
-	int			pd_phys_dev : 1;
-	int			pd_external_raid : 1;
-	int			pd_aio_enabled : 1;
-	uint32_t		pd_aio_handle;
-	char			pd_scsi3addr[8];
-	uint64_t		pd_wwid;	/* big endian */
-	char			*pd_guid;
-	uint64_t		pd_sas_address;
-	uint8_t			pd_volume_id[16];
-	char			pd_vendor[8];	/* From INQUIRY */
-	char			pd_model[16];	/* From INQUIRY */
-} *pqi_device_t;
-
 /* ---- Flags used in pqi_cmd_t ---- */
 #define	PQI_FLAG_ABORTED	0x0001
 #define	PQI_FLAG_TIMED_OUT	0x0002
@@ -433,16 +439,14 @@ typedef struct pqi_device {
 #define	PQI_FLAG_IO_BOUNCE	0x2000
 #define	PQI_FLAG_FINISHING	0x4000
 
-typedef enum pqi_cmd_state {
-	PQI_CMD_UNINIT		= 0,
-	PQI_CMD_CONSTRUCT,
-	PQI_CMD_INIT,
-	PQI_CMD_QUEUED,
-	PQI_CMD_STARTED,
+typedef enum pqi_cmd_action {
+	PQI_CMD_UNINIT,
+	PQI_CMD_QUEUE,
+	PQI_CMD_START,
 	PQI_CMD_CMPLT,
-	PQI_CMD_FATAL,
-	PQI_CMD_DESTRUCT
-} pqi_cmd_state_t;
+	PQI_CMD_TIMEOUT,
+	PQI_CMD_FAIL
+} pqi_cmd_action_t;
 
 #define	PQI_FLAGS_PERSISTENT	\
 	(PQI_FLAG_DMA_VALID	|\
@@ -455,12 +459,14 @@ typedef enum pqi_cmd_state {
 
 typedef struct pqi_cmd {
 	list_node_t		pc_list;
-	pqi_cmd_state_t		pc_cmd_state;
-	pqi_cmd_state_t		pc_last_state;
+	kmutex_t		pc_mutex;	// protects pc_cmd_state
+
+	pqi_cmd_action_t	pc_cur_action;
+	pqi_cmd_action_t	pc_last_action;
+
 	struct scsi_pkt		*pc_pkt;
 	pqi_state_t		pc_softc;
 	pqi_device_t		pc_device;
-	int			pc_target;
 	ksema_t			*pc_poll;
 	uint8_t			pc_cdb[SCSI_CDB_SIZE];
 	struct scsi_arq_status	pc_cmd_scb;
@@ -585,14 +591,14 @@ void pqi_quiesced_notify(pqi_state_t s);
 void pqi_start_io(pqi_state_t s, pqi_queue_group_t *qg, pqi_path_t path,
     pqi_io_request_t *io);
 int pqi_transport_command(pqi_state_t s, pqi_cmd_t cmd);
-void pqi_fail_cmd(pqi_cmd_t cmd, uchar_t reason, uint_t stats);
-void pqi_fail_drive_cmds(pqi_device_t devp);
+pqi_cmd_action_t pqi_fail_cmd(pqi_cmd_t cmd, uchar_t reason, uint_t stats);
+void pqi_fail_drive_cmds(pqi_device_t devp, uchar_t reason);
 void pqi_watchdog(void *v);
 void pqi_do_rescan(void *v);
 void pqi_event_worker(void *v);
 uint32_t pqi_disable_intr(pqi_state_t s);
 void pqi_enable_intr(pqi_state_t s, uint32_t old_state);
-boolean_t pqi_lun_reset(pqi_state_t s, pqi_device_t d);
+void pqi_lun_reset(pqi_state_t s, pqi_device_t d);
 
 /* ---- smartpqi_util.c ---- */
 pqi_dma_overhead_t *pqi_alloc_single(pqi_state_t s, size_t len);
@@ -600,7 +606,8 @@ void pqi_free_single(pqi_state_t s, pqi_dma_overhead_t *d);
 pqi_io_request_t *pqi_alloc_io(pqi_state_t s);
 void pqi_free_io(pqi_io_request_t *io);
 void pqi_dump_io(pqi_io_request_t *io);
-void pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock);
+pqi_cmd_action_t pqi_cmd_action(pqi_cmd_t cmd, pqi_cmd_action_t a);
+pqi_cmd_action_t pqi_cmd_action_nolock(pqi_cmd_t cmd, pqi_cmd_action_t a);
 char *pqi_event_to_str(uint8_t event);
 int pqi_map_event(uint8_t event);
 boolean_t pqi_supported_event(uint8_t event_type);

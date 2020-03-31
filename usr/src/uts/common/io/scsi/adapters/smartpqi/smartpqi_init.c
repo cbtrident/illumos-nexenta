@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -871,8 +871,6 @@ pqi_schedule_update_time_worker(pqi_state_t s)
 	return (B_TRUE);
 }
 
-static uint32_t pqi_next_lun;
-
 static boolean_t
 pqi_scan_scsi_devices(pqi_state_t s)
 {
@@ -932,7 +930,7 @@ pqi_scan_scsi_devices(pqi_state_t s)
 				 * 1 from the return value.
 				 */
 				dev->pd_target =
-				    atomic_inc_32_nv(&pqi_next_lun) - 1;
+				    atomic_inc_32_nv(&s->s_next_target) - 1;
 				list_insert_tail(&s->s_devnodes, dev);
 				mutex_exit(&s->s_mutex);
 			} else {
@@ -1313,19 +1311,10 @@ submit_raid_sync_with_io(pqi_state_t s, pqi_io_request_t *io)
 	if (pqi_is_offline(s))
 		return (B_FALSE);
 
-	/*
-	 * If the controller hangs this reference to the io structure
-	 * is used to cancel the command. The status will be set to
-	 * EIO instead of PQI_DATA_IN_OUT_GOOD.
-	 */
-	s->s_sync_io = io;
-	s->s_sync_expire = gethrtime() + (SYNC_CMDS_TIMEOUT_SECS * NANOSEC);
-
 	pqi_start_io(s, &s->s_queue_groups[PQI_DEFAULT_QUEUE_GROUP],
 	    RAID_PATH, io);
 	sema_p(&sema);
-	s->s_sync_io = NULL;
-	s->s_sync_expire = 0;
+
 	switch (io->io_status) {
 		case PQI_DATA_IN_OUT_GOOD:
 		case PQI_DATA_IN_OUT_UNDERFLOW:
@@ -1343,11 +1332,20 @@ submit_raid_rqst_sync(pqi_state_t s, pqi_iu_header_t *rqst,
 	pqi_io_request_t	*io;
 	size_t			len;
 	boolean_t		rval = B_FALSE; // default to error case
-
-	sema_p(&s->s_sync_rqst);
+	struct pqi_cmd		*c;
 
 	if ((io = pqi_alloc_io(s)) == NULL)
 		return (B_FALSE);
+
+	c = kmem_zalloc(sizeof (*c), KM_SLEEP);
+
+	mutex_init(&c->pc_mutex, NULL, MUTEX_DRIVER, NULL);
+	c->pc_io_rqst = io;
+	c->pc_device = &s->s_special_device;
+	c->pc_softc = s;
+	io->io_cmd = c;
+	(void) pqi_cmd_action(c, PQI_CMD_QUEUE);
+
 	((pqi_raid_path_request_t *)rqst)->rp_id = io->io_index;
 	if (rqst->iu_type == PQI_REQUEST_IU_RAID_PATH_IO)
 		((pqi_raid_path_request_t *)rqst)->rp_error_index =
@@ -1358,8 +1356,10 @@ submit_raid_rqst_sync(pqi_state_t s, pqi_iu_header_t *rqst,
 	if (submit_raid_sync_with_io(s, io) == B_TRUE)
 		rval = B_TRUE;
 
-	pqi_free_io(io);
-	sema_v(&s->s_sync_rqst);
+	(void) pqi_cmd_action(c, PQI_CMD_CMPLT);
+	mutex_destroy(&c->pc_mutex);
+	kmem_free(c, sizeof (*c));
+
 	return (rval);
 }
 
