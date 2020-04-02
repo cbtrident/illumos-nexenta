@@ -608,33 +608,38 @@ dls_link_notify(void *arg, mac_notify_type_t type)
 {
 	dls_link_t	*dlp = arg;
 	dls_dl_handle_t	dhp;
+	boolean_t	is_vnic = mac_is_vnic(dlp->dl_mh);
 	nvlist_t	*nvp;
 	sysevent_t	*event;
 	sysevent_id_t	eid;
 	link_state_t	*old, new;
 
-	switch (type) {
-	case MAC_NOTE_LINK:
-		if (!dls_link_notify_state)
+	if (!is_vnic) {
+		switch (type) {
+		case MAC_NOTE_LINK:
+			if (!dls_link_notify_state)
+				return;
+			old = &dlp->dl_last_ls;
+			new = mac_stat_get(dlp->dl_mh, MAC_STAT_LINK_STATE);
+			break;
+		case MAC_NOTE_LOWLINK:
+			if (!dls_link_notify_state_low)
+				return;
+			old = &dlp->dl_last_lls;
+			new = mac_stat_get(dlp->dl_mh, MAC_STAT_LOWLINK_STATE);
+			break;
+		default:
 			return;
-		old = &dlp->dl_last_ls;
-		new = mac_stat_get(dlp->dl_mh, MAC_STAT_LINK_STATE);
-		break;
-	case MAC_NOTE_LOWLINK:
-		if (!dls_link_notify_state_low)
-			return;
-		old = &dlp->dl_last_lls;
-		new = mac_stat_get(dlp->dl_mh, MAC_STAT_LOWLINK_STATE);
-		break;
-	default:
-		return;
-	}
+		}
 
-	/* We are only interested in *->UP or UP->DOWN transitions */
-	if (new == *old || (new != LINK_STATE_UP && (new != LINK_STATE_DOWN ||
-	    *old != LINK_STATE_UP)))
-		return;
-	*old = new;
+		/* We are only interested in *->UP or UP->DOWN transitions */
+		if (new == *old || (new != LINK_STATE_UP &&
+		    (new != LINK_STATE_DOWN || *old != LINK_STATE_UP)))
+			return;
+		*old = new;
+	} else {
+		new = LINK_STATE_UNKNOWN;
+	}
 
 	/*
 	 * If we can't find a devnet handle for this link, then there is no user
@@ -733,8 +738,12 @@ i_dls_link_create(const char *name, dls_link_t **dlpp)
 	if (err != 0)
 		goto bail;
 
-	dlp->dl_last_ls = mac_stat_get(dlp->dl_mh, MAC_STAT_LINK_STATE);
-	dlp->dl_last_lls = mac_stat_get(dlp->dl_mh, MAC_STAT_LOWLINK_STATE);
+	if (!mac_is_vnic(dlp->dl_mh)) {
+		dlp->dl_last_ls = mac_stat_get(dlp->dl_mh,
+		    MAC_STAT_LINK_STATE);
+		dlp->dl_last_lls = mac_stat_get(dlp->dl_mh,
+		    MAC_STAT_LOWLINK_STATE);
+	}
 	dlp->dl_mnh = mac_notify_add(dlp->dl_mh, dls_link_notify, dlp);
 
 	DTRACE_PROBE2(dls__primary__client, char *, dlp->dl_name, void *,
