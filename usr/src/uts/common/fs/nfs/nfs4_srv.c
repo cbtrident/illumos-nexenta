@@ -8772,7 +8772,7 @@ rfs4_op_setclientid_confirm(nfs_argop4 *argop, nfs_resop4 *resop,
 	cp->rc_need_confirm = FALSE;
 	if (cp->rc_cp_confirmed) {
 		cptoclose = cp->rc_cp_confirmed;
-		cptoclose->rc_ss_remove = 1;
+		(void) atomic_swap_32(&cp->rc_ss_remove, TRUE);
 		cp->rc_cp_confirmed = NULL;
 	}
 
@@ -9113,7 +9113,8 @@ finish:
  * network traffic and tries to make sure the client gets the lock ASAP.
  */
 static int
-setlock(vnode_t *vp, struct flock64 *flock, int flag, cred_t *cred)
+setlock(vnode_t *vp, struct flock64 *flock, int flag, cred_t *cred,
+		caller_context_t *ct)
 {
 	int error;
 	struct flock64 flk;
@@ -9129,7 +9130,7 @@ retry:
 	for (i = 0; i < rfs4_maxlock_tries; i++) {
 		LOCK_PRINT(rfs4_debug, "setlock", cmd, flock);
 		error = VOP_FRLOCK(vp, cmd,
-		    flock, flag, (u_offset_t)0, NULL, cred, NULL);
+		    flock, flag, (u_offset_t)0, NULL, cred, ct);
 
 		if (error != EAGAIN && error != EACCES)
 			break;
@@ -9145,7 +9146,7 @@ retry:
 		flk = *flock;
 		LOCK_PRINT(rfs4_debug, "setlock", F_GETLK, &flk);
 		if (VOP_FRLOCK(vp, F_GETLK, &flk, flag, 0, NULL, cred,
-		    NULL) == 0) {
+		    ct) == 0) {
 			/*
 			 * There's a race inherent in the current VOP_FRLOCK
 			 * design where:
@@ -9212,6 +9213,7 @@ rfs4_do_lock(rfs4_lo_state_t *lsp, nfs_lock_type4 locktype,
 	sysid_t sysid;
 	LOCK4res *lres;
 	vnode_t *vp;
+	caller_context_t ct;
 
 	if (rfs4_lease_expired(lo->rl_client)) {
 		return (NFS4ERR_EXPIRED);
@@ -9272,6 +9274,11 @@ retry:
 		return (NFS4ERR_INVAL);
 	}
 
+	ct.cc_sysid = sysid;
+	ct.cc_pid = lsp->rls_locker->rl_pid;
+	ct.cc_caller_id = nfs4_srv_caller_id;
+	ct.cc_flags = CC_DONTBLOCK;
+
 	/*
 	 * N.B. FREAD has the same value as OPEN4_SHARE_ACCESS_READ and
 	 * FWRITE has the same value as OPEN4_SHARE_ACCESS_WRITE.
@@ -9287,7 +9294,7 @@ retry:
 	 */
 	rfs4_dbe_unlock(sp->rs_dbe);
 
-	error = setlock(vp, &flock, flag, cred);
+	error = setlock(vp, &flock, flag, cred, &ct);
 
 	/*
 	 * Make sure the file is still open.  In a case the file was closed in
@@ -9916,6 +9923,7 @@ rfs4_op_lockt(nfs_argop4 *argop, nfs_resop4 *resop,
 	length4 posix_length;
 	sysid_t sysid;
 	pid_t pid;
+	caller_context_t ct;
 
 	DTRACE_NFSV4_2(op__lockt__start, struct compound_state *, cs,
 	    LOCKT4args *, args);
@@ -10015,8 +10023,14 @@ retry:
 		resp->status = NFS4ERR_INVAL;
 		goto err;
 	}
+
+	ct.cc_sysid = sysid;
+	ct.cc_pid = pid;
+	ct.cc_caller_id = nfs4_srv_caller_id;
+	ct.cc_flags = CC_DONTBLOCK;
+
 	error = VOP_FRLOCK(cs->vp, F_GETLK, &flk, flag, (u_offset_t)0,
-	    NULL, cs->cr, NULL);
+	    NULL, cs->cr, &ct);
 
 	/*
 	 * N.B. We map error values to nfsv4 errors. This is differrent

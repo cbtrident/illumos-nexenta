@@ -1100,7 +1100,7 @@ rfs4_client_scrub(rfs4_entry_t ent, void *arg)
 		 * for forced expiration
 		 */
 		if (IN6_ARE_ADDR_EQUAL(&ent_sin6->sin6_addr, &clr_in6)) {
-			cp->rc_forced_expire = 1;
+			(void) atomic_swap_32(&cp->rc_forced_expire, TRUE);
 		}
 		break;
 
@@ -1117,7 +1117,7 @@ rfs4_client_scrub(rfs4_entry_t ent, void *arg)
 		 * for forced expiration
 		 */
 		if (ent_sin->sin_addr.s_addr == clr_in.s_addr) {
-			cp->rc_forced_expire = 1;
+			(void) atomic_swap_32(&cp->rc_forced_expire, TRUE);
 		}
 		break;
 
@@ -1634,14 +1634,23 @@ nfsclnt_mkkey(rfs4_entry_t entry)
 	return (&cp->rc_nfs_client);
 }
 
-static bool_t
+/*
+ * Evaluate if the lease for this client has expired.
+ *
+ * If the lease has expired we will also want to remove
+ * any stable storage state data. So mark the client id
+ * accordingly.
+ *
+ * Refer: rfs4_client_expiry().
+ */
+bool_t
 rfs4_client_expiry(rfs4_entry_t u_entry)
 {
 	rfs4_client_t *cp = (rfs4_client_t *)u_entry;
 	bool_t cp_expired;
 
 	if (rfs4_dbe_is_invalid(cp->rc_dbe)) {
-		cp->rc_ss_remove = 1;
+		(void) atomic_swap_32(&cp->rc_ss_remove, TRUE);
 		return (TRUE);
 	}
 	/*
@@ -1655,7 +1664,7 @@ rfs4_client_expiry(rfs4_entry_t u_entry)
 	    > rfs4_lease_time));
 
 	if (!cp->rc_ss_remove && cp_expired)
-		cp->rc_ss_remove = 1;
+		(void) atomic_swap_32(&cp->rc_ss_remove, TRUE);
 	return (cp_expired);
 }
 
@@ -2025,6 +2034,14 @@ rfs4_invalidate_clntip(struct sockaddr *addr)
 	rw_exit(&nsrv4->rfs4_findclient_lock);
 }
 
+
+/*
+ * Evaluate if the lease for this client has expired.
+ *
+ * If the lease has expired we will also want to remove
+ * any stable storage state data. So mark the client id
+ * accordingly.
+ */
 bool_t
 rfs4_lease_expired(rfs4_client_t *cp)
 {
@@ -2049,7 +2066,7 @@ rfs4_lease_expired(rfs4_client_t *cp)
 	 * mark the client id accordingly.
 	 */
 	if (!cp->rc_ss_remove)
-		cp->rc_ss_remove = (rc == TRUE);
+		(void) atomic_swap_32(&cp->rc_ss_remove, (rc == TRUE));
 
 	rfs4_dbe_unlock(cp->rc_dbe);
 
@@ -3743,14 +3760,16 @@ rfs4_check_stateid(int mode, vnode_t *vp,
 						rfs4_state_rele_nounlock(sp);
 					return (NFS4ERR_OLD_STATEID);
 				}
-				/* Ensure specified filehandle matches */
-				if (lsp->rls_state->rs_finfo->rf_vp != vp) {
-					rfs4_lo_state_rele(lsp, FALSE);
-					if (sp != NULL)
-						rfs4_state_rele_nounlock(sp);
-					return (NFS4ERR_BAD_STATEID);
-				}
 			}
+
+			/* Ensure specified filehandle matches */
+			if (lsp->rls_state->rs_finfo->rf_vp != vp) {
+				rfs4_lo_state_rele(lsp, FALSE);
+				if (sp != NULL)
+					rfs4_state_rele_nounlock(sp);
+				return (NFS4ERR_BAD_STATEID);
+			}
+
 			if (ct != NULL) {
 				ct->cc_sysid =
 				    lsp->rls_locker->rl_client->rc_sysidt;
@@ -3794,6 +3813,13 @@ rfs4_check_stateid(int mode, vnode_t *vp,
 			if (sp->rs_closed == TRUE) {
 				rfs4_state_rele_nounlock(sp);
 				return (NFS4ERR_OLD_STATEID);
+			}
+
+			if (ct != NULL) {
+				rfs4_openowner_t *oo = sp->rs_owner;
+				ASSERT(oo != NULL);
+				ct->cc_sysid = oo->ro_client->rc_sysidt;
+				ct->cc_pid = rfs4_dbe_getid(oo->ro_dbe);
 			}
 
 			if (do_access)

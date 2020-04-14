@@ -510,8 +510,6 @@ typedef struct rfs4_client {
 	unsigned		rc_need_confirm:1;
 	unsigned		rc_unlksys_completed:1;
 	unsigned		rc_can_reclaim:1;
-	unsigned 		rc_ss_remove:1;
-	unsigned		rc_forced_expire:1;
 	uint_t			rc_deleg_revoked;
 	struct rfs4_client	*rc_cp_confirmed;
 	time_t			rc_last_access;
@@ -522,6 +520,8 @@ typedef struct rfs4_client {
 	rfs4_ss_pn_t		*rc_ss_pn;
 	struct sockaddr_storage rc_addr;
 	rfs4_servinst_t		*rc_server_instance;
+	uint32_t 		rc_ss_remove;
+	uint32_t		rc_forced_expire;
 } rfs4_client_t;
 
 /*
