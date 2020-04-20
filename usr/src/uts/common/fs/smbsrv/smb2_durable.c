@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -891,7 +891,7 @@ smb2_dh_import_cred(smb_ofile_t *of, char *sidstr)
 	rc = smb_sid_splitstr(tmpstr, &ksid.ks_rid);
 	if (rc != 0)
 		return (rc);
-	cr = crget();
+	cr = crdup(zone_kcred());
 
 	ksid.ks_domain = ksid_lookupdomain(tmpstr);
 	crsetsid(cr, &ksid, KSID_USER);

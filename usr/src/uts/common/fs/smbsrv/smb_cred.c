@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -69,7 +69,13 @@ smb_cred_create(smb_token_t *token, smb_session_t *s)
 	ASSERT(token->tkn_posix_grps);
 	posix_grps = token->tkn_posix_grps;
 
-	cr = crget();
+	/*
+	 * crget() uses the global zone's kcred, not zone_kcred().
+	 * We need the cred to have the correct zone (i.e. to make sure that
+	 * we're using the correct IDMAP), so until crget() uses zone_kcred(),
+	 * start by duping it instead.
+	 */
+	cr = crdup(zone_kcred());
 	ASSERT(cr != NULL);
 
 	if (!IDMAP_ID_IS_EPHEMERAL(token->tkn_user.i_id) &&
@@ -171,7 +177,7 @@ smb_kcred_create(void)
 {
 	cred_t	*cr;
 
-	cr = crget();
+	cr = crdup(zone_kcred());
 	ASSERT(cr != NULL);
 
 	return (cr);
