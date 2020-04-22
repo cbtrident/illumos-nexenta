@@ -2773,42 +2773,6 @@ nfs_srvfini(void)
 	}
 	mutex_destroy(&nfs_vsd_stats_mx);
 
-	(void) zone_key_delete(nfssrv_zone_key);
-}
-
-/* ARGSUSED */
-static void *
-nfs_srv_zone_init(zoneid_t zoneid)
-{
-	nfs_globals_t *ng;
-
-	ng = kmem_zalloc(sizeof (*ng), KM_SLEEP);
-
-	ng->nfs_versmin = NFS_VERSMIN_DEFAULT;
-	ng->nfs_versmax = NFS_VERSMAX_DEFAULT;
-
-	/* Init the stuff to control start/stop */
-	ng->nfs_server_upordown = NFS_SERVER_STOPPED;
-	mutex_init(&ng->nfs_server_upordown_lock, NULL, MUTEX_DEFAULT, NULL);
-	cv_init(&ng->nfs_server_upordown_cv, NULL, CV_DEFAULT, NULL);
-	mutex_init(&ng->rdma_wait_mutex, NULL, MUTEX_DEFAULT, NULL);
-	cv_init(&ng->rdma_wait_cv, NULL, CV_DEFAULT, NULL);
-
-	return (ng);
-}
-
-/* ARGSUSED */
-static void
-nfs_srv_zone_fini(zoneid_t zoneid, void *data)
-{
-	nfs_globals_t *ng;
-
-	ng = (nfs_globals_t *)data;
-	mutex_destroy(&ng->nfs_server_upordown_lock);
-	cv_destroy(&ng->nfs_server_upordown_cv);
-	mutex_destroy(&ng->rdma_wait_mutex);
-	cv_destroy(&ng->rdma_wait_cv);
-
 	/* Truly global stuff in this module (not per zone) */
 	tsd_destroy(&nfs_server_tsd_key);
 	list_destroy(&nfssrv_globals_list);

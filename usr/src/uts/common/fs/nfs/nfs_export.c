@@ -1911,8 +1911,6 @@ unexport(nfs_export_t *ne, struct exportinfo *exi)
 		return (EINVAL);
 	}
 
-	exp_kstats_delete(exi->exi_kstats);
-
 	mutex_enter(&nfs_exi_id_lock);
 	avl_remove(&exi_id_tree, exi);
 	mutex_exit(&nfs_exi_id_lock);
@@ -2845,6 +2843,7 @@ exportfree(struct exportinfo *exi)
 		kmem_free(exi->exi_cache[i], sizeof (avl_tree_t));
 	}
 
+	exp_kstats_delete(exi->exi_kstats);
 	exp_kstats_fini(exi->exi_kstats);
 
 	kmem_free(exi, sizeof (*exi));
