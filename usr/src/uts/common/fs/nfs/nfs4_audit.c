@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <c2/audit.h>
@@ -36,14 +36,15 @@ static int
 nfs_audit_vnodetopath(vnode_t *vp, vnode_t *rootvp, char *buf, size_t buflen)
 {
 	int rc;
+	cred_t *kcr = (AU_AUDIT_PERZONE()) ? zone_kcred() : kcred;
 
 	VN_HOLD(vp);
 	if (rootvp != NULL) {
 		VN_HOLD(rootvp);
-		rc = vnodetopath(rootvp, vp, buf, buflen, CRED());
+		rc = vnodetopath(rootvp, vp, buf, buflen, kcr);
 		VN_RELE(rootvp);
 	} else {
-		rc = vnodetopath(NULL, vp, buf, buflen, CRED());
+		rc = vnodetopath(NULL, vp, buf, buflen, kcr);
 	}
 	VN_RELE(vp);
 
