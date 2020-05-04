@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
  * Copyright 2017 Joyent, Inc.
@@ -1911,10 +1911,11 @@ zpool_disable_datasets_ex(zpool_handle_t *zhp, boolean_t force, int n_threads)
 	 */
 	sharearg.zhandle_arr = datasets;
 	sharearg.zhandle_len = used;
-	ret = zfs_init_libshare_arg(hdl, SA_INIT_SHARE_API_SELECTIVE,
-	    &sharearg);
-	if (ret != 0)
+	if (zfs_init_libshare_arg(hdl, SA_INIT_SHARE_API_SELECTIVE, &sharearg)
+	    != 0) {
 		goto out;
+	}
+
 	qsort(mountpoints, used, sizeof (char *), mountpoint_compare);
 
 	/*
