@@ -366,11 +366,14 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	/* Create the directory if it doesn't already exist */
 	if (lstat(mountpoint, &buf) != 0) {
 		if (mkdirp(mountpoint, 0755) != 0) {
+			int err = errno;
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-			    "failed to create mountpoint"));
-			return (zfs_error_fmt(hdl, EZFS_MOUNTFAILED,
+			    "failed to create mountpoint - %s"),
+			    strerror(err));
+			(void) zfs_error_fmt(hdl, EZFS_MOUNTFAILED,
 			    dgettext(TEXT_DOMAIN, "cannot mount '%s'"),
-			    mountpoint));
+			    mountpoint);
+			return (err);
 		}
 	}
 
@@ -1627,8 +1630,10 @@ mounter(void *arg)
 		} else {
 			error = zfs_mount(task->zh, mntopts, flags);
 			task->error = (error != 0);
-			if ((error != 0) && (task_q->q_error == 0))
+			if ((error != 0) && (error != EROFS) &&
+			    (task_q->q_error == 0)) {
 				task_q->q_error = error;
+			}
 		}
 
 		if ((error = pthread_mutex_lock(&task_q->q_lock)) != 0)
@@ -1720,6 +1725,17 @@ int parallel_mount(get_all_cb_t *cb, int *good, const char *mntopts,
 	return (error);
 }
 
+/*
+ * Handling EROFS from a failed zfs_mount:
+ * If a dataset fails to mount because its mount point cannot be created due to
+ * it being on a readonly filesystem we do NOT fail zpool_enable_datasets_ex.
+ * We treat the mount as a failure in that we do not try to share the dataset
+ * nor try to mount any child mounts on it. We chose to not fail this function
+ * so that a "zpool import" does not fail as a result of this situation.
+ * The primary reason for doing this is to support HPR, where it is possible
+ * for a dataset to be in this state for a finite period of time. We do not
+ * want to cause a failover to abort as a result of this.
+ */
 int
 zpool_enable_datasets_ex(zpool_handle_t *zhp, const char *mntopts, int flags,
     int n_threads)
@@ -1730,6 +1746,7 @@ zpool_enable_datasets_ex(zpool_handle_t *zhp, const char *mntopts, int flags,
 	int i, ret = -1;
 	int *good = NULL;
 	sa_init_selective_arg_t sharearg;
+	int error = 0;
 
 	/*
 	 * Gather all non-snap datasets within the pool.
@@ -1772,10 +1789,14 @@ zpool_enable_datasets_ex(zpool_handle_t *zhp, const char *mntopts, int flags,
 			    zfs_strdup(cb.cb_handles[i]->zfs_hdl, mntpnt);
 
 			/* do not attempt to mount if the parent mount failed */
-			if ((parent_mount_status_serial(i, good, mntpnts)
-			    == PARENT_MOUNT_SUCCESS) &&
-			    (zfs_mount(cb.cb_handles[i], mntopts, flags) == 0)) {
-				good[i] = 1;
+			if (parent_mount_status_serial(i, good, mntpnts)
+			    == PARENT_MOUNT_SUCCESS) {
+				error = zfs_mount(cb.cb_handles[i], mntopts, flags);
+				if (error == 0) {
+					good[i] = 1;
+				} else if (error != EROFS) {
+					ret = -1;
+				}
 			} else {
 				ret = -1;
 			}
