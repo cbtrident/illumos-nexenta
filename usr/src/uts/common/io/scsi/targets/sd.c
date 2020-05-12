@@ -212,7 +212,7 @@ static taskq_t	*sd_tq = NULL;
 static int	sd_taskq_minalloc = SD_TASKQ_MINALLOC;
 static int	sd_taskq_maxalloc = SD_TASKQ_MAXALLOC;
 
-#define SD_BAIL_CHECK(a) if ((a)->un_detach_count != 0) { \
+#define	SD_BAIL_CHECK(a) if ((a)->un_detach_count != 0) { \
 	mutex_exit(SD_MUTEX((a))); \
 	return (ENXIO); \
 	}
@@ -1296,9 +1296,9 @@ static int sd_failfast_enable = SD_FAILFAST_ENABLE_FAIL_RETRIES |
     SD_FAILFAST_ENABLE_FAIL_USCSI;
 
 #define	SD_RESERVATION_CONFLICT_FATAL(pkt)			\
-    (sd_failfast_enable != 0 &&					\
-    (sd_failfast_disabled_resrv_nopanic == FALSE ||		\
-    ((pkt)->pkt_flags & FLAG_PKT_RESRV_DISABLED) == 0))
+	(sd_failfast_enable != 0 &&				\
+	(sd_failfast_disabled_resrv_nopanic == FALSE ||		\
+	((pkt)->pkt_flags & FLAG_PKT_RESRV_DISABLED) == 0))
 
 /*
  * Bitmask to control behavior of buf(9S) flushes when a transition to
@@ -8386,29 +8386,24 @@ sd_unit_detach(dev_info_t *devi)
 		un->un_dcvb_timeid = NULL;
 		mutex_exit(SD_MUTEX(un));
 		(void) untimeout(temp_id);
-	} else {
-		mutex_exit(SD_MUTEX(un));
+		mutex_enter(SD_MUTEX(un));
 	}
 
-	/* Remove any pending reservation reclaim requests for this device */
-	sd_rmv_resv_reclaim_req(dev);
-
-	mutex_enter(SD_MUTEX(un));
 	if (un->un_retry_timeid != NULL) {
 		timeout_id_t temp_id = un->un_retry_timeid;
 		un->un_retry_timeid = NULL;
 		mutex_exit(SD_MUTEX(un));
 		(void) untimeout(temp_id);
 		mutex_enter(SD_MUTEX(un));
+	}
 
-		if (un->un_retry_bp != NULL) {
-			un->un_retry_bp->av_forw = un->un_waitq_headp;
-			un->un_waitq_headp = un->un_retry_bp;
-			if (un->un_waitq_tailp == NULL)
-				un->un_waitq_tailp = un->un_retry_bp;
-			un->un_retry_bp = NULL;
-			un->un_retry_statp = NULL;
-		}
+	if (un->un_retry_bp != NULL) {
+		un->un_retry_bp->av_forw = un->un_waitq_headp;
+		un->un_waitq_headp = un->un_retry_bp;
+		if (un->un_waitq_tailp == NULL)
+			un->un_waitq_tailp = un->un_retry_bp;
+		un->un_retry_bp = NULL;
+		un->un_retry_statp = NULL;
 	}
 
 	if (DEVI_IS_GONE(SD_DEVINFO(un))) {
@@ -8419,6 +8414,11 @@ sd_unit_detach(dev_info_t *devi)
 		un->un_failfast_bp = NULL;
 		sd_failfast_flushq(un, B_TRUE);
 	}
+
+	/* Remove any pending reservation reclaim requests for this device */
+	mutex_exit(SD_MUTEX(un));
+	sd_rmv_resv_reclaim_req(dev);
+	mutex_enter(SD_MUTEX(un));
 
 	/* Cancel any pending callbacks for SD_PATH_DIRECT_PRIORITY cmd. */
 	if (un->un_direct_priority_timeid != NULL) {
@@ -8623,6 +8623,17 @@ no_attach_cleanup:
 
 	un->un_f_detach_waiting = 0;
 	mutex_exit(SD_MUTEX(un));
+
+	/*
+	 * XXX Ideally, we need to keep running over here. However, for
+	 * that, perfect job needs to be done wrt abort of outstanding I/O
+	 * within the detach processs. That must be implemented at all
+	 * underlying layers, and errors from scsi_abort() must be handled
+	 * accordingly. Then, dev_err() below can be changed for ASSERT().
+	 */
+	if (un->un_ncmds_in_driver != 0) {
+		dev_err(devi, CE_PANIC, "Ongoing I/O to drive detached");
+	}
 
 	cmlb_detach(un->un_cmlbhandle, (void *)SD_PATH_DIRECT);
 	cmlb_free_handle(&un->un_cmlbhandle);
