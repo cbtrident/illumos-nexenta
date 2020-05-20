@@ -1724,7 +1724,7 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 		{
 			if (crgetref(cr) != 1) {
 				crfree(cr);
-				cr = crget();
+				cr = crdup(zone_kcred());
 				xprt->xp_cred = cr;
 				cred_misses++;
 			} else
@@ -1733,7 +1733,7 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 #else
 		if (crgetref(cr) != 1) {
 			crfree(cr);
-			cr = crget();
+			cr = crdup(zone_kcred());
 			xprt->xp_cred = cr;
 		}
 #endif

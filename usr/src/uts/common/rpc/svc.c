@@ -21,7 +21,7 @@
 
 /*
  * Copyright 2012 Marcel Telka <marcel@telka.sk>
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc.  All rights reserved.
  * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
@@ -1422,7 +1422,7 @@ svc_clone_init(void)
 	SVCXPRT *clone_xprt;
 
 	clone_xprt = kmem_zalloc(sizeof (SVCXPRT), KM_SLEEP);
-	clone_xprt->xp_cred = crget();
+	clone_xprt->xp_cred = crdup(zone_kcred());
 	return (clone_xprt);
 }
 
@@ -1432,7 +1432,7 @@ svc_clone_init(void)
 void
 svc_clone_free(SVCXPRT *clone_xprt)
 {
-	/* Fre credentials from crget() */
+	/* Free credentials from zone_kcred() */
 	if (clone_xprt->xp_cred)
 		crfree(clone_xprt->xp_cred);
 	kmem_free(clone_xprt, sizeof (SVCXPRT));

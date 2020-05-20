@@ -6154,7 +6154,7 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 	ASSERT(exi == NULL);
 	ASSERT(cr == NULL);
 
-	cr = crget();
+	cr = crdup(zone_kcred());
 	ASSERT(cr != NULL);
 
 	if (sec_svc_getcred(req, cr, &cs.principal, &cs.nfsflavor) == 0 ||
