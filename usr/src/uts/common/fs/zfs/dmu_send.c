@@ -94,6 +94,8 @@ struct send_block_record {
 	bqueue_node_t		ln;
 };
 
+static int do_dump(dmu_sendarg_t *dsa, struct send_block_record *data);
+
 static int
 dump_bytes(dmu_sendarg_t *dsp, void *buf, int len)
 {
@@ -552,6 +554,29 @@ dump_dnode(dmu_sendarg_t *dsp, uint64_t object, dnode_phys_t *dnp)
 	if (dump_free(dsp, object, (dnp->dn_maxblkid + 1) *
 	    (dnp->dn_datablkszsec << SPA_MINBLOCKSHIFT), -1ULL) != 0)
 		return (SET_ERROR(EINTR));
+
+	/*
+	 * Send DRR_SPILL records for unmodified spill blocks.  This is useful
+	 * because changing certain attributes of the object (e.g. blocksize)
+	 * can cause old versions of ZFS to incorrectly remove a spill block.
+	 * Including these records in the stream forces an up to date version
+	 * to always be written ensuring they're never lost. This piece of code
+	 * is part of https://github.com/openzfs/zfs/pull/8668
+	 */
+	if ((dnp->dn_flags & DNODE_FLAG_SPILL_BLKPTR) &&
+	    (dnp->dn_spill.blk_birth <= dsp->dsa_fromtxg)) {
+		 struct send_block_record record;
+
+		 bzero(&record, sizeof (struct send_block_record));
+		 record.eos_marker = B_FALSE;
+		 record.bp = dnp->dn_spill;
+		 SET_BOOKMARK(&(record.zb), dmu_objset_id(dsp->dsa_os),
+		     object, 0, DMU_SPILL_BLKID);
+
+		 if (do_dump(dsp, &record) != 0)
+			 return (SET_ERROR(EINTR));
+	}
+
 	if (dsp->dsa_err != 0)
 		return (SET_ERROR(EINTR));
 	return (0);
@@ -910,6 +935,7 @@ dmu_send_impl_ss(void *tag, dsl_pool_t *dp, dsl_dataset_t *to_ds,
 	dsp->dsa_os = os;
 	dsp->dsa_off = off;
 	dsp->dsa_toguid = dsl_dataset_phys(to_ds)->ds_guid;
+	dsp->dsa_fromtxg = fromtxg;
 	dsp->dsa_krrp_task = krrp_task;
 	dsp->dsa_pending_op = PENDING_NONE;
 	dsp->dsa_featureflags = featureflags;
