@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2019 RackTop Systems
  */
 
 /*
@@ -28,6 +29,7 @@ static int smartpqi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd);
 static int smartpqi_power(dev_info_t *dip, int component, int level);
 static int smartpqi_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg,
     void **results);
+static int smartpqi_quiesce(dev_info_t *dip);
 
 /* ---- cb_ops forward declarations ---- */
 static int smartpqi_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
@@ -66,7 +68,7 @@ static struct dev_ops smartpqi_ops = {
 	&smartpqi_cb_ops,	/* driver operations */
 	NULL,			/* bus operations */
 	smartpqi_power,		/* power management */
-	ddi_quiesce_not_needed,	/* quience */
+	smartpqi_quiesce,	/* quiesce */
 };
 
 static struct modldrv modldrv = {
@@ -384,7 +386,29 @@ smartpqi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 static int
 smartpqi_power(dev_info_t *dip, int component, int level)
 {
+	/* We don't register any power components yet. */
 	return (DDI_SUCCESS);
+}
+
+static int
+smartpqi_quiesce(dev_info_t *dip)
+{
+	pqi_state_t	s;
+	int		instance;
+
+	/*
+	 * ddi_get_soft_state is lock-free, so is safe to call from
+	 * quiesce.  Furthermore, pqi_hba_reset uses only the safe
+	 * drv_usecwait() and register accesses.
+	 */
+	instance = ddi_get_instance(dip);
+	if ((s = ddi_get_soft_state(pqi_state, instance)) != NULL) {
+		if (pqi_hba_reset(s)) {
+			return (DDI_SUCCESS);
+		}
+	}
+	/* If we couldn't quiesce for any reason, play it safe and reboot. */
+	return (DDI_FAILURE);
 }
 
 /*ARGSUSED*/
@@ -392,5 +416,6 @@ static int
 smartpqi_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *credp,
     int *rval)
 {
-	return (0);
+	/* Arguably we could just use nodev for the entry point. */
+	return (EINVAL);
 }

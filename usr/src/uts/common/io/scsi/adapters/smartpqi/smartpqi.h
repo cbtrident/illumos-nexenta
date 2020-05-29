@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2019 RackTop Systems
  */
 
 #ifndef _SMARTPQI_H
@@ -292,6 +293,7 @@ typedef struct pqi_device {
 
 	/* ---- Debug stats ---- */
 	uint32_t		pd_killed;
+	uint32_t		pd_posted;
 	uint32_t		pd_timedout;
 	uint32_t		pd_sense_errors;
 	uint32_t		pd_busy;
@@ -577,6 +579,8 @@ boolean_t pqi_scsi_inquiry(pqi_state_t s, pqi_device_t dev, int vpd,
 void pqi_rescan_devices(pqi_state_t s);
 boolean_t pqi_check_firmware(pqi_state_t s);
 boolean_t pqi_prep_full(pqi_state_t s);
+boolean_t pqi_reset_ctl(pqi_state_t s);
+boolean_t pqi_hba_reset(pqi_state_t s);
 
 /* ---- smartpqi_hba.c ---- */
 int smartpqi_register_hba(pqi_state_t);

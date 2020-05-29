@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2019 Racktop Systems
  */
 
 /*
@@ -30,6 +31,9 @@ typedef struct _func_list_ {
 
 /* BEGIN CSTYLED */
 #define	FORWARD_DECLS() \
+	item(pqi_reset_prep) \
+	item(pqi_ctlr_ready) \
+	item(revert_to_sis) \
 	item(pqi_calculate_io_resources) \
 	item(pqi_check_alloc) \
 	item(pqi_wait_for_mode_ready) \
@@ -43,6 +47,7 @@ typedef struct _func_list_ {
 	item(pqi_alloc_io_resource) \
 	item(pqi_alloc_operation_queues) \
 	item(pqi_init_operational_queues) \
+	item(pqi_init_operational_locks) \
 	item(pqi_create_queues) \
 	item(pqi_change_irq_mode) \
 	item(pqi_start_heartbeat_timer) \
@@ -75,6 +80,7 @@ FORWARD_DECLS()
     item(pqi_alloc_io_resource) \
     item(pqi_alloc_operation_queues) \
     item(pqi_init_operational_queues) \
+    item(pqi_init_operational_locks) \
     item(pqi_create_queues) \
     item(pqi_change_irq_mode) \
     item(pqi_start_heartbeat_timer) \
@@ -88,6 +94,46 @@ func_list_t startup_funcs[] =
 {
 #define	item(a) { #a, a },
 	STARTUP_FUNCS
+#undef item
+	NULL, NULL
+};
+
+#define RESET_FUNCS \
+    item(pqi_reset_prep) \
+    item(revert_to_sis) \
+    item(pqi_check_firmware) \
+    item(sis_wait_for_ctrl_ready) \
+    item(sis_get_ctrl_props) \
+    item(sis_get_pqi_capabilities) \
+    item(pqi_calculate_io_resources) \
+    item(pqi_check_alloc) \
+    item(sis_init_base_struct_addr) \
+    item(pqi_wait_for_mode_ready) \
+    item(save_ctrl_mode_pqi) \
+    item(pqi_process_config_table) \
+    item(pqi_alloc_admin_queue) \
+    item(pqi_create_admin_queues) \
+    item(pqi_report_device_capability) \
+    item(pqi_valid_device_capability) \
+    item(pqi_calculate_queue_resources) \
+    item(pqi_alloc_io_resource) \
+    item(pqi_alloc_operation_queues) \
+    item(pqi_init_operational_queues) \
+    \
+    item(pqi_create_queues) \
+    item(pqi_change_irq_mode) \
+    item(pqi_ctlr_ready) \
+    item(pqi_start_heartbeat_timer) \
+    item(pqi_enable_events) \
+    item(pqi_get_hba_version) \
+    item(pqi_version_to_hba) \
+    item(pqi_schedule_update_time_worker)
+
+
+func_list_t reset_funcs[] =
+{
+#define	item(a) { #a, a },
+	RESET_FUNCS
 #undef item
 	NULL, NULL
 };
@@ -123,6 +169,31 @@ static void update_time(void *v);
 
 static int reset_devices = 1;
 
+static boolean_t
+pqi_reset_prep(pqi_state_t s)
+{
+	s->s_intr_ready = 0;
+	(void) untimeout(s->s_time_of_day);
+	(void) untimeout(s->s_watchdog);
+	pqi_free_single(s, s->s_error_dma);
+	s->s_error_dma = NULL;
+
+	pqi_free_single(s, s->s_adminq_dma);
+	s->s_adminq_dma = NULL;
+
+	mutex_enter(&s->s_io_mutex);
+	pqi_free_io_resource(s);
+	mutex_exit(&s->s_io_mutex);
+	return (B_TRUE);
+}
+
+static boolean_t
+pqi_ctlr_ready(pqi_state_t s)
+{
+	s->s_offline = 0;
+	return (B_TRUE);
+}
+
 boolean_t
 pqi_check_firmware(pqi_state_t s)
 {
@@ -155,6 +226,19 @@ pqi_prep_full(pqi_state_t s)
 	return (B_TRUE);
 }
 
+boolean_t
+pqi_reset_ctl(pqi_state_t s)
+{
+	func_list_t	*f;
+
+	for (f = reset_funcs; f->func_name != NULL; f++)
+		if (f->func(s) == B_FALSE) {
+			cmn_err(CE_WARN, "Reset failed on %s", f->func_name);
+			return (B_FALSE);
+		}
+
+	return (B_TRUE);
+}
 /*
  * []----------------------------------------------------------[]
  * | Startup functions called in sequence to initialize HBA.	|
@@ -199,14 +283,13 @@ pqi_check_alloc(pqi_state_t s)
 	return (B_TRUE);
 }
 
-#define	MILLISECOND	1000
-#define	MS_TO_SEC	1000
+#define	WAIT_FOR_FIRMWARE_IN_MSECS (5 * MILLISEC)
 
 static boolean_t
 pqi_wait_for_mode_ready(pqi_state_t s)
 {
 	uint64_t	signature;
-	int32_t		count = MS_TO_SEC;
+	int32_t		count = WAIT_FOR_FIRMWARE_IN_MSECS;
 
 	for (;;) {
 		signature = G64(s, pqi_registers.signature);
@@ -215,27 +298,27 @@ pqi_wait_for_mode_ready(pqi_state_t s)
 			break;
 		if (count-- == 0)
 			return (B_FALSE);
-		drv_usecwait(MILLISECOND);
+		drv_usecwait(MICROSEC / MILLISEC);
 	}
 
-	count = MS_TO_SEC;
+	count = WAIT_FOR_FIRMWARE_IN_MSECS;
 	for (;;) {
 		if (G64(s, pqi_registers.function_and_status_code) ==
 		    PQI_STATUS_IDLE)
 			break;
 		if (count-- == 0)
 			return (B_FALSE);
-		drv_usecwait(MILLISECOND);
+		drv_usecwait(MICROSEC / MILLISEC);
 	}
 
-	count = MS_TO_SEC;
+	count = WAIT_FOR_FIRMWARE_IN_MSECS;
 	for (;;) {
 		if (G32(s, pqi_registers.device_status) ==
 		    PQI_DEVICE_STATE_ALL_REGISTERS_READY)
 			break;
 		if (count-- == 0)
 			return (B_FALSE);
-		drv_usecwait(MILLISECOND);
+		drv_usecwait(MICROSEC / MILLISEC);
 	}
 
 	return (B_TRUE);
@@ -323,6 +406,10 @@ pqi_create_admin_queues(pqi_state_t s)
 	int			val;
 	int			status;
 	int			countdown = 1000;
+
+
+	aq->iq_pi_copy = 0;
+	aq->oq_ci_copy = 0;
 
 	S64(s, pqi_registers.admin_iq_element_array_addr,
 	    aq->iq_element_array_bus_addr);
@@ -586,6 +673,9 @@ pqi_alloc_operation_queues(pqi_state_t s)
 	for (i = 0; i < s->s_num_queue_groups; i++) {
 		qg = &s->s_queue_groups[i];
 
+		qg->iq_pi_copy[0] = 0;
+		qg->iq_pi_copy[1] = 0;
+		qg->oq_ci_copy = 0;
 		qg->iq_element_array[RAID_PATH] = aligned_pointer;
 		qg->iq_element_array_bus_addr[RAID_PATH] =
 		    s->s_queue_dma->dma_addr +
@@ -701,6 +791,14 @@ pqi_init_operational_queues(pqi_state_t s)
 	s->s_event_queue.int_msg_num = 0;
 	for (i = 0; i < s->s_num_queue_groups; i++)
 		s->s_queue_groups[i].int_msg_num = (uint16_t)i;
+
+	return (B_TRUE);
+}
+
+static boolean_t
+pqi_init_operational_locks(pqi_state_t s)
+{
+	int	i;
 
 	for (i = 0; i < s->s_num_queue_groups; i++) {
 		mutex_init(&s->s_queue_groups[i].submit_lock[0], NULL,
@@ -1308,9 +1406,6 @@ submit_raid_sync_with_io(pqi_state_t s, pqi_io_request_t *io)
 	io->io_cb = raid_sync_complete;
 	io->io_context = &sema;
 
-	if (pqi_is_offline(s))
-		return (B_FALSE);
-
 	pqi_start_io(s, &s->s_queue_groups[PQI_DEFAULT_QUEUE_GROUP],
 	    RAID_PATH, io);
 	sema_p(&sema);
@@ -1388,7 +1483,7 @@ build_raid_path_request(pqi_raid_path_request_t *rqst,
 	case SCMD_READ:
 		rqst->rp_data_dir = (uint8_t)SOP_READ_FLAG;
 		cdb[0] = (uint8_t)cmd;
-		cdb[2] = (uint8_t)vpd_page >> 8;
+		cdb[2] = (uint8_t)(vpd_page >> 8);
 		cdb[3] = (uint8_t)vpd_page;
 		cdb[4] = len >> 9;
 		break;
@@ -1468,7 +1563,7 @@ identify_physical_device(pqi_state_t s, pqi_device_t devp,
 
 	idx = CISS_GET_DRIVE_NUMBER(devp->pd_scsi3addr);
 	rqst.rp_cdb[2] = (uint8_t)idx;
-	rqst.rp_cdb[9] = (uint8_t)idx >> 8;
+	rqst.rp_cdb[9] = (uint8_t)(idx >> 8);
 
 	rqst.rp_sglist[0].sg_addr = dma->dma_addr;
 	rqst.rp_sglist[0].sg_len = dma->len_to_alloc;
@@ -1868,20 +1963,35 @@ is_new_dev(pqi_state_t s, pqi_device_t new_dev)
 }
 
 #define	PQI_RESET_ACTION_RESET		0x1
+#define	PQI_RESET_ACTION_COMPLETE	0x2
 
 #define	PQI_RESET_TYPE_NO_RESET		0x0
 #define	PQI_RESET_TYPE_SOFT_RESET	0x1
 #define	PQI_RESET_TYPE_FIRM_RESET	0x2
 #define	PQI_RESET_TYPE_HARD_RESET	0x3
 
-static boolean_t
-hba_reset(pqi_state_t s)
+boolean_t
+pqi_hba_reset(pqi_state_t s)
 {
 	uint32_t	val;
+	int		max_count = 1000;
 
 	val = (PQI_RESET_ACTION_RESET << 5) | PQI_RESET_TYPE_HARD_RESET;
 	S32(s, pqi_registers.device_reset, val);
 
+	while (1) {
+		drv_usecwait(100 * (MICROSEC / MILLISEC));
+		val = G32(s, pqi_registers.device_reset);
+		if ((val >> 5) == PQI_RESET_ACTION_COMPLETE)
+			break;
+		if (max_count-- == 0)
+			break;
+	}
+
+#ifdef DEBUG
+	cmn_err(CE_WARN, "pqi_hba_reset: reset reg=0x%x, count=%d", val,
+	    max_count);
+#endif
 	return (pqi_wait_for_mode_ready(s));
 }
 
@@ -1894,7 +2004,7 @@ save_ctrl_mode(pqi_state_t s, int mode)
 static boolean_t
 revert_to_sis(pqi_state_t s)
 {
-	if (!hba_reset(s))
+	if (!pqi_hba_reset(s))
 		return (B_FALSE);
 	if (sis_reenable_mode(s) == B_FALSE)
 		return (B_FALSE);

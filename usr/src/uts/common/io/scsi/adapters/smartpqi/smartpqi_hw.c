@@ -49,6 +49,7 @@ static void lun_reset_complete(pqi_io_request_t *io, void *ctx);
  */
 
 int pqi_do_reset_lun = -1;
+int pqi_do_reset_ctlr = -1;
 /*
  * pqi_watchdog -- interrupt count and/or heartbeat must increase over time.
  */
@@ -69,17 +70,22 @@ pqi_watchdog(void *v)
 		pqi_show_dev_state(s);
 		take_ctlr_offline(s);
 	} else {
-		s->s_last_intr_count = s->s_intr_count;
-		s->s_last_heartbeat_count = hb;
-		s->s_watchdog = timeout(pqi_watchdog, s,
-		    drv_usectohz(WATCHDOG));
+		if (pqi_do_reset_ctlr == s->s_instance) {
+			pqi_do_reset_ctlr = -1;
+			take_ctlr_offline(s);
+		} else {
+			s->s_last_intr_count = s->s_intr_count;
+			s->s_last_heartbeat_count = hb;
+			s->s_watchdog = timeout(pqi_watchdog, s,
+			    drv_usectohz(WATCHDOG));
+		}
 	}
 	if (pqi_do_scan && s->s_instance == pqi_do_ctrl) {
 		pqi_do_scan = 0;
 		s->s_rescan = timeout(pqi_do_rescan, (void *)s,
 		    drv_usectohz(MICROSEC));
 	}
-	if (pqi_do_reset_lun != -1) {
+	if (pqi_do_reset_lun != -1 && s->s_instance == pqi_do_ctrl) {
 		d = list_head(&s->s_devnodes);
 		while (d != NULL) {
 			if (d->pd_target == pqi_do_reset_lun) {
@@ -125,9 +131,20 @@ pqi_start_io(pqi_state_t s, pqi_queue_group_t *qg, pqi_path_t path,
 	while ((io = list_remove_head(&qg->request_list[path])) != NULL) {
 
 		/* ---- Primary cause for !active is controller failure ---- */
-		if (qg->qg_active == B_FALSE && io->io_cmd) {
+		if (qg->qg_active == B_FALSE) {
+			pqi_cmd_t	c = io->io_cmd;
+
+			mutex_enter(&c->pc_device->pd_mutex);
+			/*
+			 * When a command is failed it will be removed from
+			 * the queue group if pc_io_rqst is not NULL. Since
+			 * we have already removed the command from the list
+			 * would shouldn't attempt to do so a second time.
+			 */
+			c->pc_io_rqst = NULL;
 			(void) pqi_fail_cmd(io->io_cmd, CMD_DEV_GONE,
 			    STAT_TERMINATED);
+			mutex_exit(&c->pc_device->pd_mutex);
 			continue;
 		}
 
@@ -146,7 +163,8 @@ pqi_start_io(pqi_state_t s, pqi_queue_group_t *qg, pqi_path_t path,
 			break;
 		}
 
-		(void) pqi_cmd_action(io->io_cmd, PQI_CMD_START);
+		if (pqi_cmd_action(io->io_cmd, PQI_CMD_START) == PQI_CMD_FAIL)
+			continue;
 
 		io->io_pi = iq_pi;
 		rqst->iu_id = qg->oq_id;
@@ -277,7 +295,6 @@ pqi_fail_drive_cmds(pqi_device_t d, uchar_t reason)
 {
 	pqi_cmd_t	c,
 			next_c;
-	uint32_t	killed = 0;
 
 	mutex_enter(&d->pd_mutex);
 
@@ -303,13 +320,13 @@ pqi_fail_drive_cmds(pqi_device_t d, uchar_t reason)
 			 * completion during a timeout scan that occurs on
 			 * another thread.
 			 */
-			killed++;
-			list_remove(&d->pd_cmd_list, c);
+			d->pd_killed++;
+		} else {
+			d->pd_posted++;
 		}
 		c = next_c;
 	}
 
-	d->pd_killed += killed;
 	mutex_exit(&d->pd_mutex);
 }
 
@@ -361,6 +378,40 @@ pqi_lun_reset(pqi_state_t s, pqi_device_t d)
  * | Support/utility functions for main entry points			|
  * []------------------------------------------------------------------[]
  */
+
+static uint32_t
+count_drive_cmds(pqi_device_t d)
+{
+	pqi_cmd_t	c;
+	uint32_t	count = 0;
+
+	mutex_enter(&d->pd_mutex);
+	c = list_head(&d->pd_cmd_list);
+	while (c != NULL) {
+		c = list_next(&d->pd_cmd_list, c);
+		count++;
+	}
+	mutex_exit(&d->pd_mutex);
+
+	return (count);
+}
+
+static uint32_t
+count_oustanding_cmds(pqi_state_t s)
+{
+	uint32_t	count = 0;
+	pqi_device_t	d;
+
+	mutex_enter(&s->s_mutex);
+	d = list_head(&s->s_devnodes);
+	while (d != NULL) {
+		count += count_drive_cmds(d);
+		d = list_next(&s->s_devnodes, d);
+	}
+	mutex_exit(&s->s_mutex);
+
+	return (count);
+}
 
 static void
 lun_reset_worker(void *v)
@@ -839,9 +890,13 @@ take_ctlr_offline(pqi_state_t s)
 {
 	int			circ	= 0;
 	int			circ1	= 0;
+	int			num_passes = 5;
+	int			i;
 	pqi_device_t		d;
-	pqi_cmd_t		c;
+	pqi_cmd_t		c,
+				nc;
 	pqi_io_request_t	*io;
+	uint32_t		active_count;
 
 	d = &s->s_special_device;
 	mutex_enter(&d->pd_mutex);
@@ -855,11 +910,62 @@ take_ctlr_offline(pqi_state_t s)
 	}
 	mutex_exit(&d->pd_mutex);
 
+	/*
+	 * If pqi_reset_ctl() completes successfully the queues will be marked
+	 * B_TRUE and the controller will be marked online again.
+	 */
 	mutex_enter(&s->s_mutex);
+	for (i = 0; i < s->s_num_queue_groups; i++)
+		s->s_queue_groups[i].qg_active = B_FALSE;
 	s->s_offline = 1;
-	s->s_watchdog = 0;
 	fail_outstanding_cmds(s);
 	mutex_exit(&s->s_mutex);
+
+	/*
+	 * Commands have been canceled that can be. It's possible there are
+	 * commands currently running that are about to complete. Give them
+	 * up to 5 seconds to finish. If those haven't completed by then they
+	 * are most likely hung in the firmware of the HBA so go ahead and
+	 * reset the firmware.
+	 */
+	while (num_passes-- > 0) {
+		active_count = count_oustanding_cmds(s);
+		if (active_count == 0)
+			break;
+		drv_usecwait(MICROSEC);
+	}
+
+	/*
+	 * Any commands remaining are hung in the controller firmware so
+	 * go ahead time them out so that the upper layers know what's
+	 * happening.
+	 */
+	mutex_enter(&s->s_mutex);
+	for (d = list_head(&s->s_devnodes); d != NULL;
+	    d = list_next(&s->s_devnodes, d)) {
+		mutex_enter(&d->pd_mutex);
+		while ((c = list_head(&d->pd_cmd_list)) != NULL) {
+			struct scsi_pkt *pkt = CMD2PKT(c);
+
+			nc = list_next(&d->pd_cmd_list, c);
+			ASSERT(pkt);
+			if (pkt != NULL) {
+				pkt->pkt_reason = CMD_TIMEOUT;
+				pkt->pkt_statistics = STAT_TIMEOUT;
+			}
+			(void) pqi_cmd_action_nolock(c, PQI_CMD_TIMEOUT);
+			c = nc;
+		}
+		mutex_exit(&d->pd_mutex);
+	}
+	mutex_exit(&s->s_mutex);
+
+	cmn_err(CE_WARN, "Firmware Status: 0x%x", G32(s, sis_firmware_status));
+
+	if (pqi_reset_ctl(s) == B_FALSE) {
+		cmn_err(CE_WARN, "Failed to reset controller");
+		return;
+	}
 
 	/*
 	 * This will have the effect of releasing the device's dip

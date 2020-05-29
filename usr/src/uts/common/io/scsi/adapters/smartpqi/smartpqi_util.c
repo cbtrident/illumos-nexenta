@@ -37,6 +37,7 @@ static void
 cmd_remove_group(pqi_cmd_t c)
 {
 	pqi_io_request_t	*io = c->pc_io_rqst;
+	pqi_device_t		d = c->pc_device;
 
 	/*
 	 * This would be a good place to send a SCSI TASK MANAGEMENT
@@ -48,11 +49,17 @@ cmd_remove_group(pqi_cmd_t c)
 		pqi_queue_group_t	*qg = io->io_queue_group;
 		int			path = io->io_queue_path;
 
+		/*
+		 * The lock ordering is such that the driver must drop
+		 * the device lock in order to grab the queue lock.
+		 */
+		mutex_exit(&d->pd_mutex);
 		mutex_enter(&qg->submit_lock[path]);
 		if (list_link_active(&io->io_list_node)) {
 			list_remove(&qg->request_list[path], io);
 		}
 		mutex_exit(&qg->submit_lock[path]);
+		mutex_enter(&d->pd_mutex);
 	}
 }
 
@@ -80,13 +87,33 @@ pqi_cmd_action_nolock(pqi_cmd_t c, pqi_cmd_action_t a)
 		break;
 
 	case PQI_CMD_START:
-		/*
-		 * Now that the command is actually being sent to the HBA
-		 * reset the start so that a timeout will occur only after
-		 * the HBA has had the command for some amount of time as
-		 * defined by the SCSI packet.
-		 */
-		cmd_start_time(c);
+		if (c->pc_last_action == PQI_CMD_FAIL) {
+			list_remove(&d->pd_cmd_list, c);
+
+			pkt = CMD2PKT(c);
+			if (pkt == NULL) {
+				pqi_io_request_t	*io = c->pc_io_rqst;
+
+				io->io_status = PQI_DATA_IN_OUT_TIMEOUT;
+				(*io->io_cb)(io, io->io_context);
+				pqi_free_io(io);
+				c->pc_io_rqst = NULL;
+			} else {
+				pqi_free_io(c->pc_io_rqst);
+				c->pc_io_rqst = NULL;
+				(void) ddi_taskq_dispatch(s->s_complete_taskq,
+					cmd_finish_task, c, 0);
+			}
+			a = PQI_CMD_FAIL;
+		} else {
+			/*
+			 * Now that the command is actually being sent to the
+			 * HBA reset the start so that a timeout will occur
+			 * only after the HBA has had the command for some
+			 * amount of time as defined by the SCSI packet.
+			 */
+			cmd_start_time(c);
+		}
 		break;
 
 	case PQI_CMD_FAIL:
@@ -103,30 +130,34 @@ pqi_cmd_action_nolock(pqi_cmd_t c, pqi_cmd_action_t a)
 			 */
 			a = PQI_CMD_START;
 		} else {
-			cmd_remove_group(c);
-			list_remove(&d->pd_cmd_list, c);
-
-			pkt = CMD2PKT(c);
-			if (pkt == NULL) {
-				pqi_io_request_t	*io = c->pc_io_rqst;
-
-				io->io_status = PQI_DATA_IN_OUT_TIMEOUT;
-				(*io->io_cb)(io, io->io_context);
-				pqi_free_io(c->pc_io_rqst);
-				c->pc_io_rqst = NULL;
-			} else {
-				pqi_free_io(c->pc_io_rqst);
-				c->pc_io_rqst = NULL;
-				mutex_exit(&c->pc_mutex);
-				(void) ddi_taskq_dispatch(s->s_complete_taskq,
-					cmd_finish_task, c, 0);
-				return (a);
-			}
+			/*
+			 * Don't do any actual processing here to cancel and
+			 * free the command. By leaving the pc_cur_action
+			 * set to PQI_CMD_FAIL the command will be freed
+			 * when pqi_start_io() calls pqi_cmd_action(). The need
+			 * for handling the error case in this manner is due
+			 * to a small window in pqi_start_io() where the command
+			 * has been removed from the group queue and before
+			 * pqi_cmd_action() is called. It would be possible
+			 * to fix by adding an additional lock to
+			 * pqi_io_request_t or handle the issue in this manner.
+			 * Less locks == good.
+			 */
+			ASSERT3U(c->pc_last_action, ==, PQI_CMD_QUEUE);
 		}
 		break;
 
 	case PQI_CMD_TIMEOUT:
 		cmd_remove_group(c);
+
+		/*
+		 * When a timeout has occurred it means something has gone
+		 * wrong with the HBA or drive and the command will not have
+		 * be processed on another path. Therefore, it's impossible
+		 * for the state to change during the call to cmd_remove_group()
+		 * when the pd_mutex is exit/enter.
+		 */
+		ASSERT3U(c->pc_cur_action, ==, PQI_CMD_TIMEOUT);
 		list_remove(&d->pd_cmd_list, c);
 
 		/*
@@ -218,6 +249,14 @@ pqi_alloc_io(pqi_state_t s)
 	s->s_io_need++;
 	for (;;) {
 		for (loop = 0; loop < s->s_max_io_slots; loop++) {
+			/*
+			 * Controller offline can only occur if the HBA is going
+			 * through reset due to firmware hang.
+			 */
+			if (pqi_is_offline(s)) {
+				mutex_exit(&s->s_io_mutex);
+				return (NULL);
+			}
 			io = &s->s_io_rqst_pool[i];
 			i = (i + 1) % s->s_max_io_slots;
 			if (io->io_refcount == 0) {
@@ -444,6 +483,10 @@ pqi_show_dev_state(pqi_state_t s)
 		    dev_status & 0x100 ? "(OP OQ Error)" : "",
 		    dev_status & 0x200 ? "(OP IQ Error)" : "");
 		show_error_detail(s);
+		break;
+
+	default:
+		cmn_err(CE_WARN, "Unknown HBA status: 0x%x", dev_status);
 		break;
 	}
 }
@@ -747,7 +790,6 @@ show_error_detail(pqi_state_t s)
 	    code, qualifier);
 }
 
-/*ARGSUSED*/
 static void
 pqi_catch_release(pqi_io_request_t *io, void *v)
 {
@@ -757,7 +799,7 @@ pqi_catch_release(pqi_io_request_t *io, void *v)
 	 * and then the HBA responds. It's occurred a few times during testing
 	 * so catch and ignore.
 	 */
-	cmn_err(CE_WARN, "%s: caught", __func__);
+	cmn_err(CE_PANIC, "%s: caught", __func__);
 }
 
 static void
