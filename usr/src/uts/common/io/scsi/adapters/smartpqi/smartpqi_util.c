@@ -799,7 +799,7 @@ pqi_catch_release(pqi_io_request_t *io, void *v)
 	 * and then the HBA responds. It's occurred a few times during testing
 	 * so catch and ignore.
 	 */
-	cmn_err(CE_PANIC, "%s: caught", __func__);
+	cmn_err(CE_NOTE, "%s: caught", __func__);
 }
 
 static void
