@@ -3737,6 +3737,7 @@ rfs4_check_stateid(int mode, vnode_t *vp,
 			return (stat);
 		if (lsp != NULL) {
 			/* Is associated server instance in its grace period? */
+			/* Note: We may _also_ have sp here */
 			if (rfs4_clnt_in_grace(lsp->rls_locker->rl_client)) {
 				rfs4_lo_state_rele(lsp, FALSE);
 				if (sp != NULL)
@@ -3760,14 +3761,13 @@ rfs4_check_stateid(int mode, vnode_t *vp,
 						rfs4_state_rele_nounlock(sp);
 					return (NFS4ERR_OLD_STATEID);
 				}
-			}
-
-			/* Ensure specified filehandle matches */
-			if (lsp->rls_state->rs_finfo->rf_vp != vp) {
-				rfs4_lo_state_rele(lsp, FALSE);
-				if (sp != NULL)
-					rfs4_state_rele_nounlock(sp);
-				return (NFS4ERR_BAD_STATEID);
+				/* Ensure specified filehandle matches */
+				if (lsp->rls_state->rs_finfo->rf_vp != vp) {
+					rfs4_lo_state_rele(lsp, FALSE);
+					if (sp != NULL)
+						rfs4_state_rele_nounlock(sp);
+					return (NFS4ERR_BAD_STATEID);
+				}
 			}
 
 			if (ct != NULL) {
@@ -3798,6 +3798,12 @@ rfs4_check_stateid(int mode, vnode_t *vp,
 					rfs4_state_rele_nounlock(sp);
 					return (NFS4ERR_OLD_STATEID);
 				}
+				if (ct != NULL) {
+					rfs4_openowner_t *oo = sp->rs_owner;
+					ASSERT(oo != NULL);
+					ct->cc_sysid = oo->ro_client->rc_sysidt;
+					ct->cc_pid = rfs4_dbe_getid(oo->ro_dbe);
+				}
 			}
 			/* Ensure specified filehandle matches */
 			if (sp->rs_finfo->rf_vp != vp) {
@@ -3813,13 +3819,6 @@ rfs4_check_stateid(int mode, vnode_t *vp,
 			if (sp->rs_closed == TRUE) {
 				rfs4_state_rele_nounlock(sp);
 				return (NFS4ERR_OLD_STATEID);
-			}
-
-			if (ct != NULL) {
-				rfs4_openowner_t *oo = sp->rs_owner;
-				ASSERT(oo != NULL);
-				ct->cc_sysid = oo->ro_client->rc_sysidt;
-				ct->cc_pid = rfs4_dbe_getid(oo->ro_dbe);
 			}
 
 			if (do_access)
