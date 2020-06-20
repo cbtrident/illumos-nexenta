@@ -898,6 +898,31 @@ take_ctlr_offline(pqi_state_t s)
 	pqi_io_request_t	*io;
 	uint32_t		active_count;
 
+	/*
+	 * 1) Why always panic here?
+	 * Firmware resets don't work on the Microsemi HBA when the firmware
+	 * is hung. The code as written fails outstanding commands and tries
+	 * to reset the HBA. Since the reset don't work the HBA is left in an
+	 * offline state and further commands sent (retries and new commands)
+	 * are also failed. Eventually ZFS will panic with a deadman timer,
+	 * but before that COMSTAR will see I/O requests error out and send
+	 * I/O errors back to the client which causes corruption since these
+	 * errors are no different than a device that starts to fail. So,
+	 * instead of trying to play nice the driver now panics which will
+	 * allow HA to fail fast to the other node.
+	 *
+	 * 2) Why not just remove this routine can call panic from the heartbeat
+	 * routine?
+	 * I'm hoping this is a temporary work around. We have been asking
+	 * for more documentation on the product and we've been told there isn't
+	 * any available.  It has been implied that some HBA's do support
+	 * firmware resets. Therefore documentation would enable the driver
+	 * to determine model number and adjust parameters such as panic on
+	 * firmware hang or try a reset.
+	 */
+	if (1)
+		panic("Firmware hung");
+
 	d = &s->s_special_device;
 	mutex_enter(&d->pd_mutex);
 	while ((c = list_remove_head(&d->pd_cmd_list)) != NULL) {
