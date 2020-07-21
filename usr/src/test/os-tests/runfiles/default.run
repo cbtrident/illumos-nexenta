@@ -12,6 +12,7 @@
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2018 Joyent, Inc.
+# Copyright 2020 Tintri by DDN, Inc. All rights reserved.
 #
 
 [DEFAULT]
@@ -62,6 +63,9 @@ tests = ['conn', 'dgram', 'drop_priv', 'nosignal', 'sockpair']
 [/opt/os-tests/tests/pf_key]
 user = root
 tests = ['acquire-compare', 'acquire-spray']
+
+[/opt/os-tests/tests/ksid]
+tests = ['ksid.32','ksid.64']
 
 [/opt/os-tests/tests/i386]
 user = root

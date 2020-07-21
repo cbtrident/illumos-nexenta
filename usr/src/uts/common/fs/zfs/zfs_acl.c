@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -2505,7 +2505,7 @@ zfs_zaccess_append(znode_t *zp, uint32_t *working_mode, boolean_t *check_privs,
 }
 
 int
-zfs_fastaccesschk_execute(znode_t *zdp, cred_t *cr)
+zfs_fastaccesschk_execute(znode_t *zdp, cred_t *cr, boolean_t skipaclchk)
 {
 	boolean_t owner = B_FALSE;
 	boolean_t groupmbr = B_FALSE;
@@ -2566,7 +2566,7 @@ zfs_fastaccesschk_execute(znode_t *zdp, cred_t *cr)
 slow:
 	DTRACE_PROBE(zfs__fastpath__execute__access__miss);
 	ZFS_ENTER(zdp->z_zfsvfs);
-	error = zfs_zaccess(zdp, ACE_EXECUTE, 0, B_FALSE, cr);
+	error = zfs_zaccess(zdp, ACE_EXECUTE, 0, skipaclchk, cr);
 	ZFS_EXIT(zdp->z_zfsvfs);
 	return (error);
 }

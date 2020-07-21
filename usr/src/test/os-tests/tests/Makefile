@@ -12,11 +12,12 @@
 #
 # Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright 2018 Joyent, Inc.
+# Copyright 2020 Tintri by DDN, Inc. All rights reserved.
 #
 
 SUBDIRS_i386 = i386
 
 SUBDIRS = poll secflags sigqueue spoof-ras sdevfs sockfs stress file-locking \
-	pf_key $(SUBDIRS_$(MACH))
+	pf_key ksid $(SUBDIRS_$(MACH))
 
 include $(SRC)/test/Makefile.com

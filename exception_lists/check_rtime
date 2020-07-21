@@ -22,6 +22,7 @@
 #
 # Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2015, OmniTI Computer Consulting, Inc. All rights reserved.
+# Copyright 2020 Tintri by DDN, Inc. All rights reserved.
 #
 
 # This file provides exceptions to the usual rules applied to ELF objects by
@@ -224,6 +225,8 @@ FORBIDDEN_DEP   usr/lib/netsvc/yp/ypxfrd        # C++
 
 # libfakekernel is a test environment, not intended for general use
 FORBIDDEN libfakekernel\.so
+FORBIDDEN_DEP opt/os-tests/tests/ksid/ksid.32
+FORBIDDEN_DEP opt/os-tests/tests/ksid/ksid.64
 FORBIDDEN_DEP usr/MACH(lib)/libzpool.so.1
 FORBIDDEN_DEP usr/bin/amd64/ztest
 FORBIDDEN_DEP usr/bin/i86/ztest
