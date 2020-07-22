@@ -1508,8 +1508,7 @@ smb2_send_reply(smb_request_t *sr)
 
 	if ((session->capabilities & SMB2_CAP_ENCRYPTION) == 0 ||
 	    sr->tform_ssn == NULL) {
-		if (smb_session_send(sr->session, 0, &sr->reply) == 0)
-			sr->reply.chain = 0;
+		(void) smb_session_send(sr->session, 0, &sr->reply);
 		return;
 	}
 
@@ -1534,8 +1533,8 @@ smb2_send_reply(smb_request_t *sr)
 		goto errout;
 	}
 
-	if (smb_session_send(sr->session, 0, &enc_reply) == 0)
-		enc_reply.chain = 0;
+	(void) smb_session_send(sr->session, 0, &enc_reply);
+	kmem_free(tmpbuf, buflen);
 	return;
 
 errout:
