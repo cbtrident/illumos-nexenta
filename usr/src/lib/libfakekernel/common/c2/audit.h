@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -72,6 +72,7 @@ struct au_tid_addr64 {
 typedef struct au_tid_addr64 au_tid64_addr_t;
 typedef struct au_tid_addr au_tid_addr_t;
 
+#define	AU_AUDIT_PERZONE()	(1)
 
 #ifdef __cplusplus
 }

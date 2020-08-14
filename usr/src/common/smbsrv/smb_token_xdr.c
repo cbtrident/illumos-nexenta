@@ -22,7 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -31,6 +31,10 @@
 
 #if !defined(_KERNEL) && !defined(_FAKE_KERNEL)
 #include <stdlib.h>
+#else
+#include <c2/audit_kernel.h>
+#include <sys/cmn_err.h>
+#include <sys/idmap.h>
 #endif /* !_KERNEL */
 #include <smb/wintypes.h>
 #include <smbsrv/smb_sid.h>
@@ -252,6 +256,23 @@ smb_privset_xdr(XDR *xdrs, smb_privset_t *objp)
 	return (TRUE);
 }
 
+#if defined(_KERNEL)
+static bool_t
+smb_token_eof(XDR *xdrs, smb_token_t *objp)
+{
+	xdr_bytesrec br;
+
+	if (xdrs->x_op != XDR_DECODE)
+		return (FALSE);
+
+	if (!xdr_control(xdrs, XDR_GET_BYTES_AVAIL, &br) ||
+	    br.xc_num_avail != 0)
+		return (FALSE);
+
+	return (TRUE);
+}
+#endif
+
 bool_t
 smb_token_xdr(XDR *xdrs, smb_token_t *objp)
 {
@@ -277,6 +298,34 @@ smb_token_xdr(XDR *xdrs, smb_token_t *objp)
 		return (FALSE);
 	if (!smb_posix_grps_helper_xdr(xdrs, (char **)&objp->tkn_posix_grps))
 		return (FALSE);
+#if defined(_KERNEL)
+	if (smb_token_eof(xdrs, objp)) {
+		/*
+		 * This is likely a zone without support for SACL auditing.
+		 * Rather than break sharing SMB shares from down-rev non-global
+		 * zones, make a best-effort approach to audit them.
+		 *
+		 * Do our best to set up the auditing information.
+		 */
+		if (AU_ZONE_AUDITING(NULL)) {
+			objp->tkn_auid = objp->tkn_user.i_id;
+			objp->tkn_amask =
+			    (IDMAP_ID_IS_EPHEMERAL(objp->tkn_auid)) ?
+			    (GET_KCTX_PZ)->auk_info.ai_namask :
+			    (GET_KCTX_PZ)->auk_info.ai_amask;
+			objp->tkn_asid = 0; // 0 is the only 'invalid' ASID
+			cmn_err(CE_WARN, "zone %s did not provide audit info, "
+			    "but auditing is configured; consider upgrading",
+			    curzone->zone_name);
+		} else {
+			objp->tkn_auid = AU_NOAUDITID;
+			objp->tkn_amask.am_success =
+			    objp->tkn_amask.am_failure = 0;
+			objp->tkn_asid = 0;
+		}
+		return (TRUE);
+	}
+#endif /* !_KERNEL */
 	if (!xdr_u_int(xdrs, &objp->tkn_auid))
 		return (FALSE);
 	if (!xdr_u_int(xdrs, &objp->tkn_amask.am_success))

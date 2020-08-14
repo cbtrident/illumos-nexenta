@@ -1191,7 +1191,7 @@ smb_node_getpath_nofail(smb_node_t *node, vnode_t *rootvp, char *buf,
 	int rc, len, addlen;
 	vnode_t *vp;
 	smb_node_t *unode, *dnode;
-	cred_t *kcr = zone_kcred();
+	cred_t *kcr = (AU_AUDIT_PERZONE()) ? zone_kcred() : kcred;
 	boolean_t is_dir, is_stream;
 
 	is_stream = (SMB_IS_STREAM(node) != NULL);
