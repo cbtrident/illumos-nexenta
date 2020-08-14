@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -83,7 +83,7 @@ static smb_audit_t *smbd_audit_unlink(uint32_t);
 smb_token_t *
 smbd_user_auth_logon(smb_logon_t *user_info)
 {
-	smb_token_t *token;
+	smb_token_t *token = NULL;
 	smb_logon_t tmp_user;
 	char *p;
 	char *buf = NULL;
@@ -113,6 +113,8 @@ smbd_user_auth_logon(smb_logon_t *user_info)
 	if (tmp_user.lg_domain[0] == '\0' &&
 	    (p = strchr(tmp_user.lg_e_username, '@')) != NULL) {
 		buf = strdup(tmp_user.lg_e_username);
+		if (buf == NULL)
+			goto errout;
 		p = buf + (p - tmp_user.lg_e_username);
 		*p = '\0';
 		tmp_user.lg_e_domain = p + 1;
@@ -129,6 +131,12 @@ smbd_user_auth_logon(smb_logon_t *user_info)
 			user_info->lg_status = NT_STATUS_INTERNAL_ERROR;
 	}
 
+	/*
+	 * smbd_krb5ssp_work() is the KRB5 equivalent of this function.
+	 * Work done after this point should be done by both functions.
+	 * If you add new work here, make sure to update krb5ssp_work().
+	 */
+
 	if (!smbd_logon_audit(token, &user_info->lg_clnt_ipaddr,
 	    tmp_user.lg_e_username, tmp_user.lg_e_domain)) {
 		user_info->lg_status = NT_STATUS_AUDIT_FAILED;
@@ -139,14 +147,12 @@ smbd_user_auth_logon(smb_logon_t *user_info)
 		smb_autohome_add(token);
 	}
 
-	if (buf != NULL)
-		free(buf);
+	free(buf);
 
 	return (token);
 
 errout:
-	if (buf != NULL)
-		free(buf);
+	free(buf);
 	smb_token_destroy(token);
 	return (NULL);
 }
@@ -248,9 +254,7 @@ smbd_logon_audit(smb_token_t *token, smb_inaddr_t *ipaddr, char *username,
 
 	return (B_TRUE);
 errout:
-	if (ah != NULL)
-		(void) adt_end_session(ah);
-
+	(void) adt_end_session(ah);
 	return (B_FALSE);
 }
 
@@ -279,9 +283,11 @@ smbd_user_nonauth_logon(uint32_t audit_sid)
 }
 
 /*
- * Invoked at user logoff due to SmbLogoffX.  If this is the final
+ * Invoked at user logoff due to SMB Logoff.  If this is the final
  * logoff for this user on the session, audit the event and terminate
  * the audit session.
+ *
+ * This is called to logoff both NTLMSSP and KRB5SSP authentications.
  */
 void
 smbd_user_auth_logoff(uint32_t audit_sid)

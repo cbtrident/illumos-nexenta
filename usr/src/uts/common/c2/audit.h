@@ -426,6 +426,7 @@ struct audit_stat {
 };
 typedef struct audit_stat au_stat_t;
 
+extern uint32_t audit_policy;
 /* get kernel audit context dependent on AUDIT_PERZONE policy */
 #define	GET_KCTX_PZ	(audit_policy & AUDIT_PERZONE) ?\
 			    curproc->p_zone->zone_audit_kctxt :\

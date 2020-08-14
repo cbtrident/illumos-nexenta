@@ -397,7 +397,13 @@ smb_fsop_create_file_with_stream(smb_request_t *sr, cred_t *cr,
 	/* Look up / create the unnamed stream, fname */
 	rc = smb_fsop_lookup(sr, cr, flags | SMB_FOLLOW_LINKS,
 	    sr->tid_tree->t_snode, dnode, fname, &fnode);
-	if (rc == ENOENT) {
+	if (rc == 0) {
+		if (smb_fsop_access(sr, sr->user_cr, fnode,
+		    sr->sr_open.desired_access) != 0) {
+			smb_node_release(fnode);
+			rc = EACCES;
+		}
+	} else if (rc == ENOENT) {
 		fcreate = B_TRUE;
 		rc = smb_fsop_create_file(sr, cr, dnode, fname, flags,
 		    attr, &fnode);
@@ -519,7 +525,7 @@ smb_fsop_create_file(smb_request_t *sr, cred_t *cr,
 
 		if ((secinfo & SMB_SACL_SECINFO) != 0 &&
 		    !smb_user_has_security_priv(sr->uid_user, cr))
-			return (NT_STATUS_PRIVILEGE_NOT_HELD);
+			return (EPERM);
 
 		smb_fssd_init(&fs_sd, secinfo, 0);
 
@@ -678,7 +684,7 @@ smb_fsop_mkdir(
 
 		if ((secinfo & SMB_SACL_SECINFO) != 0 &&
 		    !smb_user_has_security_priv(sr->uid_user, cr))
-			return (NT_STATUS_PRIVILEGE_NOT_HELD);
+			return (EPERM);
 
 		smb_fssd_init(&fs_sd, secinfo, SMB_FSSD_FLAGS_DIR);
 

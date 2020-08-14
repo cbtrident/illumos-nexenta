@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <smbsrv/smb_ktypes.h>
@@ -46,6 +46,17 @@ smb_audit_fini(smb_request_t *sr, uint32_t desired, smb_node_t *node,
 		return;
 
 	tad = T2A(curthread);
+
+	/*
+	 * ACCESS_SYSTEM_SECURITY is the permission used to read/write the SACL.
+	 * It is not granted by the DACL, but rather by privileges.
+	 * This means there's no normal way to audit SACL changes via the SACL.
+	 * Additionally, praudit cannot represent ACCESS_SYSTEM_SECURITY.
+	 * Therefore, we map ACCESS_SYSTEM_SECURITY to READ_ACL|WRITE_ACL for
+	 * auditing purposes.
+	 */
+	if ((desired & ACCESS_SYSTEM_SECURITY) != 0)
+		desired |= ACE_READ_ACL|ACE_WRITE_ACL;
 
 	if (AU_SACL_MASK_NOTSET(tad->tad_sacl_mask)) {
 		/*

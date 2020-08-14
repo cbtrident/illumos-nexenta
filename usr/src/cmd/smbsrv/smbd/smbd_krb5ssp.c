@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -258,6 +258,9 @@ out:
 	if (!smbd_logon_audit(token, &ctx->ctx_clinfo.lci_clnt_ipaddr,
 	    be->be_username, "") && status == 0)
 		return (NT_STATUS_AUDIT_FAILED);
+
+	if (status == 0)
+		smb_autohome_add(token);
 
 	return (status);
 }

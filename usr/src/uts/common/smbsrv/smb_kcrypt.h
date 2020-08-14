@@ -37,6 +37,8 @@ extern "C" {
 #define	MD5_DIGEST_LENGTH	16	/* MD5 digest length in bytes */
 #define	SHA256_DIGEST_LENGTH	32	/* SHA256 digest length in bytes */
 #define	SMB2_SIG_SIZE		16
+#define	SMB2_KEYLEN		16
+#define	SMB3_KEYLEN		16	/* AES-128 keys */
 
 #ifdef	_KERNEL
 /* KCF variant */
