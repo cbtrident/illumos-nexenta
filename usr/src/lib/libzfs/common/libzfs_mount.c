@@ -831,15 +831,18 @@ zfs_share_proto(zfs_handle_t *zhp, zfs_share_proto_t *proto)
 
 	/*
 	 * Function may be called in a loop from higher up stack, with libshare
-	 * initialized for multiple shares (SA_INIT_SHARE_API_SELECTIVE).
+	 * initialized for multiple shares (SA_INIT_SHARE_API_SELECTIVE), or
+	 * for all shares (SA_INIT_SHARE_API).
 	 * zfs_init_libshare_arg will refresh the handle's cache if necessary.
 	 * In this case we do not want to switch to per share initialization.
 	 * Specify SA_INIT_SHARE_API to do full refresh, if refresh required.
 	 */
-	if ((hdl->libzfs_sharehdl != NULL) && (_sa_service != NULL) &&
-	    (_sa_service(hdl->libzfs_sharehdl) ==
-	    SA_INIT_SHARE_API_SELECTIVE)) {
-		service = SA_INIT_SHARE_API;
+	if ((hdl->libzfs_sharehdl != NULL) && (_sa_service != NULL)) {
+		int prev_service = _sa_service(hdl->libzfs_sharehdl);
+		if ((prev_service == SA_INIT_SHARE_API_SELECTIVE) ||
+		    (prev_service == SA_INIT_SHARE_API)) {
+			service = SA_INIT_SHARE_API;
+		}
 	}
 
 	for (curr_proto = proto; *curr_proto != PROTO_END; curr_proto++) {
@@ -943,15 +946,18 @@ unshare_one(libzfs_handle_t *hdl, const char *name, const char *mountpoint,
 
 	/*
 	 * Function may be called in a loop from higher up stack, with libshare
-	 * initialized for multiple shares (SA_INIT_SHARE_API_SELECTIVE).
+	 * initialized for multiple shares (SA_INIT_SHARE_API_SELECTIVE), or
+	 * for all shares (SA_INIT_SHARE_API).
 	 * zfs_init_libshare_arg will refresh the handle's cache if necessary.
 	 * In this case we do not want to switch to per share initialization.
 	 * Specify SA_INIT_SHARE_API to do full refresh, if refresh required.
 	 */
-	if ((hdl->libzfs_sharehdl != NULL) && (_sa_service != NULL) &&
-	    (_sa_service(hdl->libzfs_sharehdl) ==
-	    SA_INIT_SHARE_API_SELECTIVE)) {
-		service = SA_INIT_SHARE_API;
+	if ((hdl->libzfs_sharehdl != NULL) && (_sa_service != NULL)) {
+		int prev_service = _sa_service(hdl->libzfs_sharehdl);
+		if ((prev_service == SA_INIT_SHARE_API_SELECTIVE) ||
+		    (prev_service == SA_INIT_SHARE_API)) {
+			service = SA_INIT_SHARE_API;
+		}
 	}
 
 	err = zfs_init_libshare_arg(hdl, service, (void *)name);
