@@ -20,9 +20,9 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2011-2020 Tintri by DDN, Inc. All rights reserved.
  * Copyright 2016 Syneto S.R.L. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -1766,7 +1766,7 @@ smb_ofile_set_delete_on_close(smb_request_t *sr, smb_ofile_t *of)
 	if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
 		if (sr->session->dialect >= SMB_VERS_2_BASE)
 			(void) smb2sr_go_async(sr);
-		(void) smb_oplock_wait_break(of->f_node, 0);
+		(void) smb_oplock_wait_break(sr, of->f_node, 0);
 	}
 
 	mutex_enter(&of->f_mutex);

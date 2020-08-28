@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2013-2020 Tintri by DDN, Inc.  All rights reserved.
  */
 
 #include <sys/synch.h>
@@ -259,7 +259,7 @@ smb_common_rename(smb_request_t *sr, smb_fqi_t *src_fqi, smb_fqi_t *dst_fqi)
 		if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
 			if (sr->session->dialect >= SMB_VERS_2_BASE)
 				(void) smb2sr_go_async(sr);
-			(void) smb_oplock_wait_break(dst_fnode, 0);
+			(void) smb_oplock_wait_break(sr, dst_fnode, 0);
 			status = 0;
 		}
 		if (status != 0) {
@@ -646,7 +646,7 @@ smb_rename_check_src(smb_request_t *sr, smb_fqi_t *src_fqi)
 		if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
 			if (sr->session->dialect >= SMB_VERS_2_BASE)
 				(void) smb2sr_go_async(sr);
-			(void) smb_oplock_wait_break(src_node, 0);
+			(void) smb_oplock_wait_break(sr, src_node, 0);
 			status = 0;
 		}
 
@@ -670,7 +670,7 @@ smb_rename_check_src(smb_request_t *sr, smb_fqi_t *src_fqi)
 	ASSERT(sr->session->dialect < SMB_VERS_2_BASE);
 	status = smb_oplock_break_DELETE(src_node, NULL);
 	if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
-		(void) smb_oplock_wait_break(src_node, 0);
+		(void) smb_oplock_wait_break(sr, src_node, 0);
 	}
 
 	/*
@@ -687,7 +687,7 @@ smb_rename_check_src(smb_request_t *sr, smb_fqi_t *src_fqi)
 	status = smb_oplock_break_SETINFO(src_node, NULL,
 	    FileRenameInformation);
 	if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
-		(void) smb_oplock_wait_break(src_node, 0);
+		(void) smb_oplock_wait_break(sr, src_node, 0);
 	}
 
 	/*

@@ -73,6 +73,7 @@ int smb_oplock_timeout_def = 45000; /* mSec. */
 
 static void smb_oplock_async_break(void *);
 static void smb_oplock_hdl_clear(smb_ofile_t *);
+static void smb_oplock_wait_break_cancel(smb_request_t *sr);
 
 
 /*
@@ -500,7 +501,7 @@ smb_oplock_send_brk(smb_request_t *sr)
 		 */
 #ifdef DEBUG
 		if (smb_oplock_debug_wait > 0) {
-			status = smb_oplock_wait_break(ofile->f_node,
+			status = smb_oplock_wait_break(sr, ofile->f_node,
 			    smb_oplock_debug_wait);
 			if (status == 0)
 				return;
@@ -509,7 +510,7 @@ smb_oplock_send_brk(smb_request_t *sr)
 			debug_enter("oplock_wait");
 		}
 #endif
-		status = smb_oplock_wait_break(ofile->f_node,
+		status = smb_oplock_wait_break(sr, ofile->f_node,
 		    smb_oplock_timeout_ack);
 		if (status == 0)
 			return;
@@ -595,7 +596,7 @@ smb_oplock_send_brk(smb_request_t *sr)
 	if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
 		/* Not expecting this status return. */
 		cmn_err(CE_NOTE, "clnt local oplock ack wait?");
-		(void) smb_oplock_wait_break(ofile->f_node,
+		(void) smb_oplock_wait_break(sr, ofile->f_node,
 		    smb_oplock_timeout_ack);
 		status = 0;
 	}
@@ -638,6 +639,24 @@ smb_oplock_hdl_clear(smb_ofile_t *ofile)
 }
 
 /*
+ * Called by smb_request_cancel() via sr->cancel_method
+ * Arg is the smb_node_t with the breaking oplock.
+ */
+static void
+smb_oplock_wait_break_cancel(smb_request_t *sr)
+{
+	smb_node_t   *node = sr->cancel_arg2;
+	smb_oplock_t *ol;
+
+	SMB_NODE_VALID(node);
+	ol = &node->n_oplock;
+
+	mutex_enter(&ol->ol_mutex);
+	cv_broadcast(&ol->WaitingOpenCV);
+	mutex_exit(&ol->ol_mutex);
+}
+
+/*
  * Wait up to "timeout" mSec. for the current oplock "breaking" flags
  * to be cleared (by smb_oplock_ack_break or smb_oplock_break_CLOSE).
  *
@@ -653,7 +672,84 @@ smb_oplock_hdl_clear(smb_ofile_t *ofile)
  * we're about to do something that invalidates some cache.
  */
 uint32_t
-smb_oplock_wait_break(smb_node_t *node, int timeout)  /* mSec. */
+smb_oplock_wait_break(smb_request_t *sr, smb_node_t *node, int timeout)
+{
+	smb_oplock_t	*ol;
+	clock_t		time, rv;
+	uint32_t	status = 0;
+	smb_req_state_t  srstate;
+
+	SMB_NODE_VALID(node);
+	ol = &node->n_oplock;
+
+	if (timeout == 0)
+		timeout = smb_oplock_timeout_def;
+	time = MSEC_TO_TICK(timeout) + ddi_get_lbolt();
+
+	mutex_enter(&sr->sr_mutex);
+	if (sr->sr_state != SMB_REQ_STATE_ACTIVE) {
+		mutex_exit(&sr->sr_mutex);
+		return (NT_STATUS_CANCELLED);
+	}
+	sr->sr_state = SMB_REQ_STATE_WAITING_OLBRK;
+	sr->cancel_method = smb_oplock_wait_break_cancel;
+	sr->cancel_arg2 = node;
+	mutex_exit(&sr->sr_mutex);
+
+	mutex_enter(&ol->ol_mutex);
+	while ((ol->ol_state & BREAK_ANY) != 0) {
+		ol->waiters++;
+		rv = cv_timedwait(&ol->WaitingOpenCV,
+		    &ol->ol_mutex, time);
+		ol->waiters--;
+		if (rv < 0) {
+			/* cv_timewait timeout */
+			status = NT_STATUS_CANNOT_BREAK_OPLOCK;
+			break;
+		}
+
+		/*
+		 * Check if we were woken by smb_request_cancel,
+		 * which sets state SMB_REQ_STATE_CANCEL_PENDING
+		 * and signals WaitingOpenCV.
+		 */
+		mutex_enter(&sr->sr_mutex);
+		srstate = sr->sr_state;
+		mutex_exit(&sr->sr_mutex);
+		if (srstate != SMB_REQ_STATE_WAITING_OLBRK) {
+			break;
+		}
+	}
+
+	mutex_exit(&ol->ol_mutex);
+
+	mutex_enter(&sr->sr_mutex);
+	sr->cancel_method = NULL;
+	sr->cancel_arg2 = NULL;
+	switch (sr->sr_state) {
+	case SMB_REQ_STATE_WAITING_OLBRK:
+		sr->sr_state = SMB_REQ_STATE_ACTIVE;
+		/* status from above */
+		break;
+	case SMB_REQ_STATE_CANCEL_PENDING:
+		sr->sr_state = SMB_REQ_STATE_CANCELLED;
+		status = NT_STATUS_CANCELLED;
+		break;
+	default:
+		status = NT_STATUS_INTERNAL_ERROR;
+		break;
+	}
+	mutex_exit(&sr->sr_mutex);
+
+	return (status);
+}
+
+/*
+ * Simplified version used in smb_fem.c, like above,
+ * but no smb_request_cancel stuff.
+ */
+uint32_t
+smb_oplock_wait_break_fem(smb_node_t *node, int timeout)  /* mSec. */
 {
 	smb_oplock_t	*ol;
 	clock_t		time, rv;

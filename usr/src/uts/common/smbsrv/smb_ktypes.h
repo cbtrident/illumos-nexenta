@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2011-2020 Tintri by DDN, Inc.  All rights reserved.
  * Copyright 2020 RackTop Systems, Inc.
  */
 
@@ -1816,6 +1816,7 @@ typedef enum smb_req_state {
 	SMB_REQ_STATE_WAITING_FCN2,
 	SMB_REQ_STATE_WAITING_LOCK,
 	SMB_REQ_STATE_WAITING_PIPE,
+	SMB_REQ_STATE_WAITING_OLBRK,
 	SMB_REQ_STATE_COMPLETED,
 	SMB_REQ_STATE_CANCEL_PENDING,
 	SMB_REQ_STATE_CANCELLED,
