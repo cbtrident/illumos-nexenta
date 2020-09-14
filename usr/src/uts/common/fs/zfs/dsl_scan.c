@@ -2387,7 +2387,18 @@ dsl_scan_sync(dsl_pool_t *dp, dmu_tx_t *tx)
 		}
 	}
 
-	if (!scn->scn_clearing && !scn->scn_checkpointing) {
+	/*
+	 * Traversing objects starting at the root must always occur for
+	 * legacy scan (!scan_is_sorted). If sequential scan is enabled,
+	 * scn_clearing and scn_checkpointing must be tested to avoid
+	 * creating a tree of objects during these phases of sequential
+	 * scan.
+	 * Testing for scn_is_sorted is added since we allow users to
+	 * switch between legacy and sequential scan without a reboot
+	 */
+
+	if (!scn->scn_is_sorted ||
+	    !(scn->scn_clearing || scn->scn_checkpointing)) {
 		scn->scn_zio_root = zio_root(dp->dp_spa, NULL,
 		    NULL, ZIO_FLAG_CANFAIL);
 		dsl_pool_config_enter(dp, FTAG);
