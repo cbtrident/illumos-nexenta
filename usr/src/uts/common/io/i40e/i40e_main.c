@@ -518,16 +518,8 @@ i40e_device_find(i40e_t *i40e, dev_info_t *parent, uint_t bus, uint_t device)
 		idp->id_nreg++;
 	} else {
 		i40e_hw_t *hw = &i40e->i40e_hw_space;
-		/*
-		 * Though remote, it is possible that both ports and partitions
-		 * can be zero.  Though it is possible that this is a temporary
-		 * condition, this driver doesn't have a way of being restarted,
-		 * so we fail here and maybe a future attach will be better.
-		 */
-		if (hw->num_ports == 0 || hw->num_partitions == 0) {
-			i40e_error(i40e, "Device doesn't have ports or partitions");
-			return (NULL);
-		}
+		ASSERT(hw->num_ports > 0);
+		ASSERT(hw->num_partitions > 0);
 
 		/*
 		 * The Intel common code doesn't exactly keep the number of PCI
@@ -1163,9 +1155,6 @@ i40e_get_available_resources(i40e_t *i40e)
 	 * firmware instead.
 	 */
 	idp = i40e_device_find(i40e, parent, bus, device);
-	if (idp == NULL) {
-		return (B_FALSE);
-	}
 	i40e->i40e_device = idp;
 	i40e->i40e_resources.ifr_nvsis = 0;
 	i40e->i40e_resources.ifr_nvsis_used = 0;
