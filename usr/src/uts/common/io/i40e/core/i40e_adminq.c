@@ -1,6 +1,6 @@
 /******************************************************************************
 
-  Copyright (c) 2013-2017, Intel Corporation 
+  Copyright (c) 2013-2015, Intel Corporation 
   All rights reserved.
   
   Redistribution and use in source and binary forms, with or without 
@@ -37,7 +37,6 @@
 #include "i40e_register.h"
 #include "i40e_adminq.h"
 #include "i40e_prototype.h"
-#include "i40e_sw.h"
 
 /**
  *  i40e_adminq_init_regs - Initialize AdminQ registers
@@ -126,7 +125,6 @@ enum i40e_status_code i40e_alloc_adminq_arq_ring(struct i40e_hw *hw)
  **/
 void i40e_free_adminq_asq(struct i40e_hw *hw)
 {
-	i40e_free_virt_mem(hw, &hw->aq.asq.cmd_buf);
 	i40e_free_dma_mem(hw, &hw->aq.asq.desc_buf);
 }
 
@@ -398,7 +396,7 @@ enum i40e_status_code i40e_init_asq(struct i40e_hw *hw)
 	/* initialize base registers */
 	ret_code = i40e_config_asq_regs(hw);
 	if (ret_code != I40E_SUCCESS)
-		goto init_config_regs;
+		goto init_adminq_free_rings;
 
 	/* success! */
 	hw->aq.asq.count = hw->aq.num_asq_entries;
@@ -406,10 +404,6 @@ enum i40e_status_code i40e_init_asq(struct i40e_hw *hw)
 
 init_adminq_free_rings:
 	i40e_free_adminq_asq(hw);
-	return ret_code;
-
-init_config_regs:
-	i40e_free_asq_bufs(hw);
 
 init_adminq_exit:
 	return ret_code;
@@ -627,41 +621,17 @@ enum i40e_status_code i40e_init_adminq(struct i40e_hw *hw)
 		goto init_adminq_free_arq;
 
 	/* get the NVM version info */
-		i40e_read_nvm_word(hw, I40E_SR_NVM_DEV_STARTER_VERSION,
-				   &hw->nvm.version);
-		i40e_read_nvm_word(hw, I40E_SR_NVM_EETRACK_LO, &eetrack_lo);
-		i40e_read_nvm_word(hw, I40E_SR_NVM_EETRACK_HI, &eetrack_hi);
-		hw->nvm.eetrack = (eetrack_hi << 16) | eetrack_lo;
-		i40e_read_nvm_word(hw, I40E_SR_BOOT_CONFIG_PTR, &cfg_ptr);
-		i40e_read_nvm_word(hw, (cfg_ptr + I40E_NVM_OEM_VER_OFF),
-				   &oem_hi);
-		i40e_read_nvm_word(hw, (cfg_ptr + (I40E_NVM_OEM_VER_OFF + 1)),
-				   &oem_lo);
-		hw->nvm.oem_ver = ((u32)oem_hi << 16) | oem_lo;
-
-	/* The ability to RX (not drop) 802.1ad frames was added in API 1.7 */
-	if ((hw->aq.api_maj_ver > 1) ||
-	    ((hw->aq.api_maj_ver == 1) &&
-	     (hw->aq.api_min_ver >= 7)))
-		hw->flags |= I40E_HW_FLAG_802_1AD_CAPABLE;
-
-	if (hw->mac.type == I40E_MAC_XL710 &&
-	    hw->aq.api_maj_ver == I40E_FW_API_VERSION_MAJOR &&
-	    hw->aq.api_min_ver >= I40E_MINOR_VER_GET_LINK_INFO_XL710) {
-		hw->flags |= I40E_HW_FLAG_AQ_PHY_ACCESS_CAPABLE;
-		hw->flags |= I40E_HW_FLAG_FW_LLDP_STOPPABLE;
-	}
-	if (hw->mac.type == I40E_MAC_X722 &&
-	    hw->aq.api_maj_ver == I40E_FW_API_VERSION_MAJOR &&
-	    hw->aq.api_min_ver >= I40E_MINOR_VER_FW_LLDP_STOPPABLE_X722) {
-		hw->flags |= I40E_HW_FLAG_FW_LLDP_STOPPABLE;
-	}
-
-	/* Newer versions of firmware require lock when reading the NVM */
-	if ((hw->aq.api_maj_ver > 1) ||
-	    ((hw->aq.api_maj_ver == 1) &&
-	     (hw->aq.api_min_ver >= 5)))
-		hw->flags |= I40E_HW_FLAG_NVM_READ_REQUIRES_LOCK;
+	i40e_read_nvm_word(hw, I40E_SR_NVM_DEV_STARTER_VERSION,
+			   &hw->nvm.version);
+	i40e_read_nvm_word(hw, I40E_SR_NVM_EETRACK_LO, &eetrack_lo);
+	i40e_read_nvm_word(hw, I40E_SR_NVM_EETRACK_HI, &eetrack_hi);
+	hw->nvm.eetrack = (eetrack_hi << 16) | eetrack_lo;
+	i40e_read_nvm_word(hw, I40E_SR_BOOT_CONFIG_PTR, &cfg_ptr);
+	i40e_read_nvm_word(hw, (cfg_ptr + I40E_NVM_OEM_VER_OFF),
+			   &oem_hi);
+	i40e_read_nvm_word(hw, (cfg_ptr + (I40E_NVM_OEM_VER_OFF + 1)),
+			   &oem_lo);
+	hw->nvm.oem_ver = ((u32)oem_hi << 16) | oem_lo;
 
 	if (hw->aq.api_maj_ver > I40E_FW_API_VERSION_MAJOR) {
 		ret_code = I40E_ERR_FIRMWARE_API_VERSION;
@@ -918,8 +888,8 @@ enum i40e_status_code i40e_asq_send_command(struct i40e_hw *hw,
 			 */
 			if (i40e_asq_done(hw))
 				break;
-			i40e_usec_delay(50);
-			total_delay += 50;
+			i40e_msec_delay(1);
+			total_delay++;
 		} while (total_delay < hw->aq.asq_cmd_timeout);
 	}
 
@@ -943,8 +913,6 @@ enum i40e_status_code i40e_asq_send_command(struct i40e_hw *hw,
 		cmd_completed = TRUE;
 		if ((enum i40e_admin_queue_err)retval == I40E_AQ_RC_OK)
 			status = I40E_SUCCESS;
-		else if ((enum i40e_admin_queue_err)retval == I40E_AQ_RC_EBUSY)
-			status = I40E_ERR_NOT_READY;
 		else
 			status = I40E_ERR_ADMIN_QUEUE_ERROR;
 		hw->aq.asq_last_status = (enum i40e_admin_queue_err)retval;
@@ -962,15 +930,10 @@ enum i40e_status_code i40e_asq_send_command(struct i40e_hw *hw,
 	/* update the error if time out occurred */
 	if ((!cmd_completed) &&
 	    (!details->async && !details->postpone)) {
-		if (rd32(hw, hw->aq.asq.len) & I40E_GL_ATQLEN_ATQCRIT_MASK) {
-			i40e_debug(hw, I40E_DEBUG_AQ_MESSAGE,
-				   "AQTX: AQ Critical error.\n");
-			status = I40E_ERR_ADMIN_QUEUE_CRITICAL_ERROR;
-		} else {
-			i40e_debug(hw, I40E_DEBUG_AQ_MESSAGE,
-				   "AQTX: Writeback timeout.\n");
-			status = I40E_ERR_ADMIN_QUEUE_TIMEOUT;
-		}
+		i40e_debug(hw,
+			   I40E_DEBUG_AQ_MESSAGE,
+			   "AQTX: Writeback timeout.\n");
+		status = I40E_ERR_ADMIN_QUEUE_TIMEOUT;
 	}
 
 asq_send_command_error:
@@ -1032,7 +995,7 @@ enum i40e_status_code i40e_clean_arq_element(struct i40e_hw *hw,
 	}
 
 	/* set next_to_use to head */
-	ntu = rd32(hw, hw->aq.arq.head) & I40E_PF_ARQH_ARQH_MASK;
+	ntu = (rd32(hw, hw->aq.arq.head) & I40E_PF_ARQH_ARQH_MASK);
 	if (ntu == ntc) {
 		/* nothing to do - shouldn't need to update ring's values */
 		ret_code = I40E_ERR_ADMIN_QUEUE_NO_WORK;
@@ -1090,7 +1053,7 @@ enum i40e_status_code i40e_clean_arq_element(struct i40e_hw *hw,
 	hw->aq.arq.next_to_clean = ntc;
 	hw->aq.arq.next_to_use = ntu;
 
-	i40e_nvmupd_check_wait_event(hw, LE16_TO_CPU(e->desc.opcode), &e->desc);
+	i40e_nvmupd_check_wait_event(hw, LE16_TO_CPU(e->desc.opcode));
 clean_arq_element_out:
 	/* Set pending if needed, unlock and return */
 	if (pending != NULL)

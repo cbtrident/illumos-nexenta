@@ -13,7 +13,6 @@
  * Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2017 Tegile Systems, Inc.  All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -971,9 +970,6 @@ extern void i40e_error(i40e_t *, const char *, ...) __KPRINTFLIKE(2);
 extern void i40e_notice(i40e_t *, const char *, ...) __KPRINTFLIKE(2);
 /*PRINTFLIKE2*/
 extern void i40e_log(i40e_t *, const char *, ...) __KPRINTFLIKE(2);
-/*PRINTFLIKE2*/
-extern void i40e_debug_log(i40e_t *, const char *, ...) __KPRINTFLIKE(2);
-extern boolean_t i40e_debug_print;
 
 /*
  * General link handling functions.
@@ -984,8 +980,8 @@ extern void i40e_update_mtu(i40e_t *);
 /*
  * FMA functions.
  */
-extern int i40e_check_acc_handle(i40e_t *, ddi_acc_handle_t);
-extern int i40e_check_dma_handle(i40e_t *, ddi_dma_handle_t);
+extern int i40e_check_acc_handle(ddi_acc_handle_t);
+extern int i40e_check_dma_handle(ddi_dma_handle_t);
 extern void i40e_fm_ereport(i40e_t *, char *);
 
 /*
