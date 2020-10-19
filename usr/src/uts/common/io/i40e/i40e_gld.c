@@ -167,14 +167,14 @@ done:
 }
 
 /*
- * A previous incantation of mi_start and mi_stop effectively configured and
- * unconfigured the entire adapter in this routine.  While this would work, it
- * is an awefully big hammer, and some hardware and configurations took a bit
- * longer to perform this task than others causing some race conditions.
- * So what we do here now is to perform the last of the global tasks necessary
- * for operation, and leave individual ring setup to the mri_start function.
- * It makes this routine quicker, and keeps most of the other hardware
- * state reasonably static.
+ * A previous incantation of mi_start and mi_stop effectively configured
+ * and unconfigured the entire adapter.  While this would work, it is an
+ * awefully big hammer, and some hardware took a bit longer to perform this
+ * task than others causing some race conditions.  So what we do here now
+ * is to perform the last bit of that work by enable/disable interrupts,
+ * and set the last of the PF/VF link related configurations.  It makes
+ * this routine quicker, and keeps most of the other hardware state reasonably
+ * static.
  */
 static int
 i40e_m_start(void *arg)
@@ -192,15 +192,6 @@ i40e_m_start(void *arg)
 		i40e_error(i40e,
 		    "Trying to start a suspended or faulted instance: %d", rc);
 		rc = ECANCELED;
-		goto done;
-	}
-
-	/*
-	 * Verify that the REG handle is still good.
-	 */
-	if (i40e_check_acc_handle(i40e,
-	    i40e->i40e_osdep_space.ios_reg_handle) != DDI_FM_OK) {
-		rc = EIO;
 		goto done;
 	}
 
@@ -226,6 +217,14 @@ i40e_m_start(void *arg)
 	rc = i40e_aq_set_link_restart_an(hw, B_TRUE, NULL);
 	if (rc != I40E_SUCCESS) {
 		i40e_error(i40e, "failed to restart MAC: %d", rc);
+		rc = EIO;
+		goto done;
+	}
+	/*
+	 * Finally, make sure that the REG handle is still good.
+	 */
+	if (i40e_check_acc_handle(i40e, i40e->i40e_osdep_space.ios_reg_handle) !=
+	    DDI_FM_OK) {
 		rc = EIO;
 		goto done;
 	}
@@ -258,12 +257,16 @@ i40e_m_stop(void *arg)
 		goto done;
 
 	i40e_intr_io_disable_all(i40e);
-
 	/*
-	 * Since the interface is stopped, we need to clear
-	 * link_speed, link_duplex, and set the state to
-	 * unknown; these will be reset at start.
+	 * NEEDSWORK
+	 * Generally, this is the right thing to do, but this function
+	 * does more than we want for a simple mi_stop.  Since we also
+	 * want to remember this for future work, we just comment out
+	 * the line here.
+	 *
+	 * i40e_intr_io_clear_cause(i40e);
 	 */
+
 	i40e->i40e_link_speed = 0;
 	i40e->i40e_link_duplex = 0;
 	i40e_link_state_set(i40e, LINK_STATE_UNKNOWN);
@@ -510,30 +513,7 @@ i40e_ring_start(mac_ring_driver_t rh, uint64_t gen_num)
 	mutex_enter(&itrq->itrq_rx_lock);
 	itrq->itrq_rxgen = gen_num;
 	mutex_exit(&itrq->itrq_rx_lock);
-
-	/*
-	 * Check to make sure that things are in order for this ring.
-	 */
-	if (i40e_check_ring(itrq) != DDI_SUCCESS) {
-		i40e_error(itrq->itrq_i40e,
-		    "failed to allocate memory for ring %d\n",
-		    itrq->itrq_index);
-		return (DDI_FAILURE);
-	}
-	return (DDI_SUCCESS);
-}
-
-/*
- * For now, this is all about debugging, but may be used to manipulate
- * rings in the future.
- */
-static void
-i40e_ring_stop(mac_ring_driver_t rh)
-{
-	i40e_trqpair_t *itrq = (i40e_trqpair_t *)rh;
-	i40e_t *i40e = itrq->itrq_i40e;
-
-	i40e_debug_log(i40e, "Stopping ring %d\n", itrq->itrq_index);
+	return (0);
 }
 
 /* ARGSUSED */
@@ -582,11 +562,13 @@ i40e_fill_tx_ring(void *arg, mac_ring_type_t rtype, const int group_index,
 	ASSERT(ring_index < i40e->i40e_num_trqpairs_per_vsi);
 
 	/*
-	 * We would prefer that each of tx and rx have a unique start
-	 * and stop routine.  However, we do things in pairs (for now),
-	 * and though it is unlikely to cause problems for the same
-	 * start and stop routine to be called, we let the RX start
-	 * routine do all of our work.
+	 * NEEDSWORK
+	 * We do a fair amount of ring configuration in other areas of this driver
+	 * as a "big hammer", and it *really* should be put here and the corresponding
+	 * RX side.  Breaking out ring configuration at attach time initialization and
+	 * here in the mri_start and mri_stop callbacks (as well as in the 'groups'
+	 * part of rings), and not in the mi_start/mi_stop callbacks,  would go a long
+	 * way in taking advantage of this hardware.
 	 */
 	itrq->itrq_mactxring = rh;
 	infop->mri_driver = (mac_ring_driver_t)itrq;
@@ -626,7 +608,7 @@ i40e_fill_rx_ring(void *arg, mac_ring_type_t rtype, const int group_index,
 	itrq->itrq_macrxring = rh;
 	infop->mri_driver = (mac_ring_driver_t)itrq;
 	infop->mri_start = i40e_ring_start;
-	infop->mri_stop = i40e_ring_stop;
+	infop->mri_stop = NULL;
 	infop->mri_poll = i40e_ring_rx_poll;
 	infop->mri_stat = i40e_rx_ring_stat;
 	mintr->mi_handle = (mac_intr_handle_t)itrq;
@@ -749,8 +731,8 @@ i40e_transceiver_read(void *arg, uint_t id, uint_t page, void *buf,
 		uint32_t val;
 
 		status = i40e_aq_get_phy_register(hw,
-		    I40E_AQ_PHY_REG_ACCESS_EXTERNAL_MODULE, page, offset,
-		    B_FALSE, (uint32_t *)&val, NULL);
+		    I40E_AQ_PHY_REG_ACCESS_EXTERNAL_MODULE, page, offset, B_FALSE,
+		    (uint32_t *)&val, NULL);
 		if (status != I40E_SUCCESS) {
 			mutex_exit(&i40e->i40e_general_lock);
 			return (EIO);
