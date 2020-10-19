@@ -850,8 +850,7 @@ typedef struct i40e {
 	link_state_t		i40e_link_state;
 	uint32_t		i40e_link_speed;	/* In Mbps */
 	link_duplex_t		i40e_link_duplex;
-	uint_t			i40e_sdu;		/* Current MTU */
-	uint_t			i40e_max_mtu;		/* Max MTU for this PF */
+	uint_t			i40e_sdu;
 	uint_t			i40e_frame_max;
 
 	/*
@@ -1037,10 +1036,6 @@ extern int i40e_tx_ring_stat(mac_ring_driver_t, uint_t, uint64_t *);
 extern boolean_t i40e_register_mac(i40e_t *);
 extern boolean_t i40e_start(i40e_t *, boolean_t);
 extern void i40e_stop(i40e_t *, boolean_t);
-extern boolean_t i40e_startup_rings(i40e_t *);
-extern boolean_t i40e_shutdown_rings(i40e_t *);
-extern void i40e_get_hw_state(i40e_t *, i40e_hw_t *);
-extern void i40e_link_state_set(i40e_t *, link_state_t);
 
 /*
  * DMA & buffer functions and attributes

@@ -246,7 +246,6 @@
  *          | i40e_func_rsrc_t        --+---> Available hardware resources
  *          | i40e_switch_rsrc_t *    --+---> Switch resource snapshot
  *          | i40e_sdu                --+---> Current MTU
- *          | i40e_max_mtu            --+---> Largest MTU supported on this PF
  *          | i40e_frame_max          --+---> Current HW frame size
  *          | i40e_uaddr_t *          --+---> Array of assigned unicast MACs
  *          | i40e_maddr_t *          --+---> Array of assigned multicast MACs
@@ -483,10 +482,11 @@ i40e_device_rele(i40e_t *i40e)
 {
 	i40e_device_t *idp = i40e->i40e_device;
 
-	if (idp == NULL || idp->id_nreg <= 0)
+	if (idp == NULL)
 		return;
 
 	mutex_enter(&i40e_glock);
+	VERIFY(idp->id_nreg > 0);
 	list_remove(&idp->id_i40e_list, i40e);
 	idp->id_nreg--;
 	if (idp->id_nreg == 0) {
@@ -514,7 +514,7 @@ i40e_device_find(i40e_t *i40e, dev_info_t *parent, uint_t bus, uint_t device)
 	}
 
 	if (idp != NULL) {
-		ASSERT(idp->id_nreg < idp->id_nfuncs);
+		VERIFY(idp->id_nreg < idp->id_nfuncs);
 		idp->id_nreg++;
 	} else {
 		i40e_hw_t *hw = &i40e->i40e_hw_space;
@@ -552,7 +552,7 @@ i40e_device_find(i40e_t *i40e, dev_info_t *parent, uint_t bus, uint_t device)
 	return (idp);
 }
 
-void
+static void
 i40e_link_state_set(i40e_t *i40e, link_state_t state)
 {
 	if (i40e->i40e_link_state == state)
@@ -625,12 +625,12 @@ i40e_link_check(i40e_t *i40e)
 		 * current speed.
 		 */
 		i40e->i40e_link_duplex = LINK_DUPLEX_FULL;
-		if (i40e->i40e_link_state != LINK_STATE_UP)
+		if (i40e->i40e_link_state == LINK_STATE_DOWN)
 			i40e_link_state_set(i40e, LINK_STATE_UP);
 	} else {
 		i40e->i40e_link_speed = 0;
 		i40e->i40e_link_duplex = 0;
-		if (i40e->i40e_link_state != LINK_STATE_DOWN)
+		if (i40e->i40e_link_state == LINK_STATE_UP)
 			i40e_link_state_set(i40e, LINK_STATE_DOWN);
 	}
 }
@@ -1299,7 +1299,6 @@ static boolean_t
 i40e_alloc_trqpairs(i40e_t *i40e)
 {
 	void *mutexpri = DDI_INTR_PRI(i40e->i40e_intr_pri);
-	int i;
 
 	/*
 	 * Now that we have the priority for the interrupts, initialize
@@ -1329,30 +1328,6 @@ i40e_alloc_trqpairs(i40e_t *i40e)
 
 		rxg->irg_index = i;
 		rxg->irg_i40e = i40e;
-	}
-
-	/*
-	 * The following should get refactored to be part of ring start and stop at
-	 * some point, along with most of the ring logic at attach and mi_start.
-	 */
-	/* While here, alloc the ring memory too */
-	if (i40e_alloc_ring_mem(i40e) == B_FALSE) {
-		i40e_error(i40e,
-		    "Failed to allocate ring memory");
-		return (B_FALSE);
-	}
-
-	for (i = 0; i < i40e->i40e_num_trqpairs; i++) {
-		if (i40e_stats_trqpair_init(&i40e->i40e_trqpairs[i]) ==
-		    B_FALSE) {
-			int j;
-
-			for (j = 0; j < i; j++) {
-				i40e_trqpair_t *itrq = &i40e->i40e_trqpairs[j];
-				i40e_stats_trqpair_fini(itrq);
-			}
-			return (B_FALSE);
-		}
 	}
 
 	return (B_TRUE);
@@ -1689,65 +1664,26 @@ i40e_regs_map(i40e_t *i40e)
 	return (B_TRUE);
 }
 
-static boolean_t i40e_setup_rx_hmc(i40e_trqpair_t *);
 /*
- * Called from i40e_m_setprop to upate the mtu and associated elements.
+ * Update parameters required when a new MTU has been configured.  Calculate the
+ * maximum frame size, as well as, size our DMA buffers which we size in
+ * increments of 1K.
  */
 void
 i40e_update_mtu(i40e_t *i40e)
 {
-	i40e_hw_t *hw = &i40e->i40e_hw_space;
-	int rc, i;
+	uint32_t rx, tx;
 
 	i40e->i40e_frame_max = i40e->i40e_sdu +
 	    sizeof (struct ether_vlan_header) + ETHERFCSL;
 
-	/*  Update HMC RX context, as it depends on i40e_frame_max */
-	for (i = 0; i < i40e->i40e_num_trqpairs; i++) {
-		(void)i40e_setup_rx_hmc(&i40e->i40e_trqpairs[i]);
-	}
-
-	/*
-	 * Since the MTU can change only when the link is down, set the MAC
-	 * config here.
-	 */
-	rc = i40e_aq_set_mac_config(hw, i40e->i40e_frame_max, B_TRUE, 0, NULL);
-	if (rc != I40E_SUCCESS) {
-		i40e_error(i40e, "failed to set MAC config: %d", rc);
-	}
-}
-
-/*
- * Calculate the size of our DMA buffers which we size in increments of 1K.
- * As these buffers are allocated at attach time, this could be included
- * as part of the attach function, but future work might be to have them
- * dynamically re-allocated, so keep it as a function.
- */
-static void
-i40e_set_buf_size(i40e_t *i40e)
-{
-	uint32_t rx, tx, size;
-
-	i40e->i40e_frame_max = i40e->i40e_sdu +
-	    sizeof (struct ether_vlan_header) + ETHERFCSL;
-
-	size = i40e->i40e_max_mtu +
-	    sizeof (struct ether_vlan_header) + ETHERFCSL;
-
-	rx = size + I40E_BUF_IPHDR_ALIGNMENT;
+	rx = i40e->i40e_frame_max + I40E_BUF_IPHDR_ALIGNMENT;
 	i40e->i40e_rx_buf_size = ((rx >> 10) +
 	    ((rx & (((uint32_t)1 << 10) -1)) > 0 ? 1 : 0)) << 10;
 
-	tx = size;
+	tx = i40e->i40e_frame_max;
 	i40e->i40e_tx_buf_size = ((tx >> 10) +
 	    ((tx & (((uint32_t)1 << 10) -1)) > 0 ? 1 : 0)) << 10;
-
-	/* Make sure we stay within the driver limits */ 
-	if (i40e->i40e_rx_buf_size < I40E_HMC_RX_DBUFF_MIN)
-		i40e->i40e_rx_buf_size = I40E_HMC_RX_DBUFF_MIN;
-
-	if (i40e->i40e_rx_buf_size > I40E_HMC_RX_DBUFF_MAX)
-		i40e->i40e_rx_buf_size = I40E_HMC_RX_DBUFF_MAX;
 }
 
 static int
@@ -1767,22 +1703,8 @@ i40e_get_prop(i40e_t *i40e, char *prop, int min, int max, int def)
 static void
 i40e_init_properties(i40e_t *i40e)
 {
-	/*
-	 * If the properties specifically define the MTU, choose this
-	 * as the "default" mtu.  Otherwise choose the standard default
-	 * MTU (1500).
-	 */
 	i40e->i40e_sdu = i40e_get_prop(i40e, "default_mtu",
 	    I40E_MIN_MTU, I40E_MAX_MTU, I40E_DEF_MTU);
-
-	/*
-	 * If there is a property to constrain the maximum MTU for this
-	 * hardware, get it now; otherwise, use the maximium value know
-	 * for this hardware.  This value will limit the maximum that
-	 * can be set with dladm(1m).
-	 */
-	i40e->i40e_max_mtu = i40e_get_prop(i40e, "max_mtu",
-	    I40E_MIN_MTU, I40E_MAX_MTU, I40E_MAX_MTU);
 
 	i40e->i40e_intr_force = i40e_get_prop(i40e, "intr_force",
 	    I40E_INTR_NONE, I40E_INTR_LEGACY, I40E_INTR_NONE);
@@ -1846,8 +1768,7 @@ i40e_init_properties(i40e_t *i40e)
 		i40e->i40e_num_rx_groups = I40E_GROUP_NOMSIX;
 	}
 
-	/* Set the initial tx/rx DMA buffer sizes */
-	i40e_set_buf_size(i40e);
+	i40e_update_mtu(i40e);
 }
 
 /*
@@ -2161,7 +2082,7 @@ i40e_timer(void *arg)
 /*
  * Get the hardware state, and scribble away anything that needs scribbling.
  */
-void
+static void
 i40e_get_hw_state(i40e_t *i40e, i40e_hw_t *hw)
 {
 	int rc;
@@ -2792,7 +2713,7 @@ i40e_shutdown_rx_rings(i40e_t *i40e)
 		reg = I40E_READ_REG(hw, I40E_QRX_ENA(i));
 		if (!(reg & I40E_QRX_ENA_QENA_REQ_MASK))
 			continue;
-		ASSERT((reg & I40E_QRX_ENA_QENA_REQ_MASK) ==
+		VERIFY((reg & I40E_QRX_ENA_QENA_REQ_MASK) ==
 		    I40E_QRX_ENA_QENA_REQ_MASK);
 		reg &= ~I40E_QRX_ENA_QENA_REQ_MASK;
 		I40E_WRITE_REG(hw, I40E_QRX_ENA(i), reg);
@@ -2910,6 +2831,14 @@ i40e_shutdown_rings_wait(i40e_t *i40e)
 	return (B_TRUE);
 }
 
+static boolean_t
+i40e_shutdown_rings(i40e_t *i40e)
+{
+	i40e_shutdown_rx_rings(i40e);
+	i40e_shutdown_tx_rings(i40e);
+	return (i40e_shutdown_rings_wait(i40e));
+}
+
 static void
 i40e_setup_rx_descs(i40e_trqpair_t *itrq)
 {
@@ -2943,8 +2872,8 @@ i40e_setup_rx_hmc(i40e_trqpair_t *itrq)
 	rctx.base = rxd->rxd_desc_area.dmab_dma_address /
 	    I40E_HMC_RX_CTX_UNIT;
 	rctx.qlen = rxd->rxd_ring_size;
-	ASSERT(i40e->i40e_rx_buf_size >= I40E_HMC_RX_DBUFF_MIN);
-	ASSERT(i40e->i40e_rx_buf_size <= I40E_HMC_RX_DBUFF_MAX);
+	VERIFY(i40e->i40e_rx_buf_size >= I40E_HMC_RX_DBUFF_MIN);
+	VERIFY(i40e->i40e_rx_buf_size <= I40E_HMC_RX_DBUFF_MAX);
 	rctx.dbuff = i40e->i40e_rx_buf_size >> I40E_RXQ_CTX_DBUFF_SHIFT;
 	rctx.hbuff = 0 >> I40E_RXQ_CTX_HBUFF_SHIFT;
 	rctx.dtype = I40E_HMC_RX_DTYPE_NOSPLIT;
@@ -3022,7 +2951,7 @@ i40e_setup_rx_rings(i40e_t *i40e)
 		 * Step 4. Enable the queue via the QENA_REQ.
 		 */
 		reg = I40E_READ_REG(hw, I40E_QRX_ENA(i));
-		ASSERT(reg & (I40E_QRX_ENA_QENA_REQ_MASK |
+		VERIFY0(reg & (I40E_QRX_ENA_QENA_REQ_MASK |
 		    I40E_QRX_ENA_QENA_STAT_MASK));
 		reg |= I40E_QRX_ENA_QENA_REQ_MASK;
 		I40E_WRITE_REG(hw, I40E_QRX_ENA(i), reg);
@@ -3164,7 +3093,7 @@ i40e_setup_tx_rings(i40e_t *i40e)
 		 * Step 4. Set the QENA_REQ flag.
 		 */
 		reg = I40E_READ_REG(hw, I40E_QTX_ENA(i));
-		ASSERT(reg & (I40E_QTX_ENA_QENA_REQ_MASK |
+		VERIFY0(reg & (I40E_QTX_ENA_QENA_REQ_MASK |
 		    I40E_QTX_ENA_QENA_STAT_MASK));
 		reg |= I40E_QTX_ENA_QENA_REQ_MASK;
 		I40E_WRITE_REG(hw, I40E_QTX_ENA(i), reg);
@@ -3198,30 +3127,6 @@ i40e_setup_tx_rings(i40e_t *i40e)
 	}
 
 	return (B_TRUE);
-}
-
-boolean_t
-i40e_startup_rings(i40e_t *i40e)
-{
-	boolean_t rc;
-
-	if ((rc = i40e_setup_rx_rings(i40e)) == B_FALSE) {
-		i40e_debug_log(i40e, "Failed to setup RX rings for instance %d\n",
-		    i40e->i40e_instance);
-	} else if ((rc = i40e_setup_tx_rings(i40e)) == B_FALSE) {
-		i40e_debug_log(i40e, "Failed to setup TX rings for instance %d\n",
-		    i40e->i40e_instance);
-	}
-
-	return rc;
-}
-
-boolean_t
-i40e_shutdown_rings(i40e_t *i40e)
-{
-	i40e_shutdown_rx_rings(i40e);
-	i40e_shutdown_tx_rings(i40e);
-	return (i40e_shutdown_rings_wait(i40e));
 }
 
 void
@@ -3367,7 +3272,12 @@ i40e_start(i40e_t *i40e, boolean_t alloc)
 		goto done;
 	}
 
-	if (i40e_startup_rings(i40e) == B_FALSE) {
+	if (i40e_setup_rx_rings(i40e) == B_FALSE) {
+		rc = B_FALSE;
+		goto done;
+	}
+
+	if (i40e_setup_tx_rings(i40e) == B_FALSE) {
 		rc = B_FALSE;
 		goto done;
 	}
@@ -3563,13 +3473,12 @@ i40e_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	}
 	i40e->i40e_attach_progress |= I40E_ATTACH_ENABLE_INTR;
 
-	/* And finally start the rest of the hardware, VSI's and rings. */
-	if (!i40e_chip_start(i40e)) {
-		i40e_error(i40e, "Failed to start chip");
-		goto attach_fail;
-	}
-
-	if (!i40e_startup_rings(i40e)) {
+	/*
+	 * RSF - I think this is a good place for this for test.
+	 * Unfortunately, since there is a lot of assumptions, this needs
+	 * to be done after the register.
+	 */
+	if (!i40e_start(i40e, B_TRUE)) {
 		i40e_error(i40e, "Failed to start rings");
 		goto attach_fail;
 	}
