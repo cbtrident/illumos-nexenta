@@ -687,9 +687,8 @@ AcpiNsRepair_HID (
     ACPI_OPERAND_OBJECT     **ReturnObjectPtr)
 {
     ACPI_OPERAND_OBJECT     *ReturnObject = *ReturnObjectPtr;
-    ACPI_OPERAND_OBJECT     *NewString;
-    char                    *Source;
     char                    *Dest;
+    char                    *Source;
 
 
     ACPI_FUNCTION_NAME (NsRepair_HID);
@@ -714,14 +713,6 @@ AcpiNsRepair_HID (
         return (AE_OK);
     }
 
-    /* It is simplest to always create a new string object */
-
-    NewString = AcpiUtCreateStringObject (ReturnObject->String.Length);
-    if (!NewString)
-    {
-        return (AE_NO_MEMORY);
-    }
-
     /*
      * Remove a leading asterisk if present. For some unknown reason, there
      * are many machines in the field that contains IDs like this.
@@ -732,7 +723,7 @@ AcpiNsRepair_HID (
     if (*Source == '*')
     {
         Source++;
-        NewString->String.Length--;
+        ReturnObject->String.Length--;
 
         ACPI_DEBUG_PRINT ((ACPI_DB_REPAIR,
             "%s: Removed invalid leading asterisk\n", Info->FullPathname));
@@ -746,13 +737,12 @@ AcpiNsRepair_HID (
      * "NNNN####" where N is an uppercase letter or decimal digit, and
      * # is a hex digit.
      */
-    for (Dest = NewString->String.Pointer; *Source; Dest++, Source++)
+    for (Dest = ReturnObject->String.Pointer; *Source; Dest++, Source++)
     {
         *Dest = (char) toupper ((int) *Source);
     }
+    ReturnObject->String.Pointer[ReturnObject->String.Length] = 0;
 
-    AcpiUtRemoveReference (ReturnObject);
-    *ReturnObjectPtr = NewString;
     return (AE_OK);
 }
 
