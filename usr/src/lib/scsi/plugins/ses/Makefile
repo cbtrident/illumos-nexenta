@@ -23,21 +23,22 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
 SUBDIRS = 			\
 	libses			\
 	ses2			\
 	DELL-MD3060e		\
+	Ericsson-SRU-0101	\
+	HP			\
+	HP-SPS-CHASSIS		\
 	LENOVO-D1224J12ESM3P	\
 	LSILOGIC-SASX28-A.0	\
 	LSI-F-SAS3x48Front	\
 	SUN			\
 	SUN-Storage-J4400	\
-	SUN-Storage-J4500	\
-	HP			\
-	Ericsson-SRU-0101
+	SUN-Storage-J4500
 
 .KEEP_STATE:
 

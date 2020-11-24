@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
 #
 
 set name=pkg.fmri value=pkg:/system/library/storage/scsi-plugins@$(PKGVERS)
@@ -39,6 +39,7 @@ dir path=usr/lib/scsi/plugins/ses/vendor
 dir path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)
 file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/DELL-MD3060e.so
 file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/Ericsson-SRU-0101.so
+file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/HP-SPS-CHASSIS.so
 file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/HP.so
 file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/LENOVO-D1224J12ESM3P.so
 file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/LSI-F-SAS3x48Front.so
@@ -48,6 +49,7 @@ file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/SUN-Storage-J4500.so
 file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/SUN.so
 file path=usr/lib/scsi/plugins/ses/vendor/DELL-MD3060e.so
 file path=usr/lib/scsi/plugins/ses/vendor/Ericsson-SRU-0101.so
+file path=usr/lib/scsi/plugins/ses/vendor/HP-SPS-CHASSIS.so
 file path=usr/lib/scsi/plugins/ses/vendor/HP.so
 file path=usr/lib/scsi/plugins/ses/vendor/LENOVO-D1224J12ESM3P.so
 file path=usr/lib/scsi/plugins/ses/vendor/LSI-F-SAS3x48Front.so
