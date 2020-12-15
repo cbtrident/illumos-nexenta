@@ -19,8 +19,8 @@
  * CDDL HEADER END
  *
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2019 RackTop Systems.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -2242,12 +2242,8 @@ smb_shr_zfs_add(smb_share_t *si)
 	if ((libhd = libzfs_init()) == NULL)
 		return;
 
-	if (smb_getdataset(libhd, si->shr_path, buf, MAXPATHLEN) != 0) {
-		libzfs_fini(libhd);
-		return;
-	}
-
-	if ((zfshd = zfs_open(libhd, buf, ZFS_TYPE_FILESYSTEM)) == NULL) {
+	ret = smb_opendataset(libhd, si->shr_path, buf, MAXPATHLEN, &zfshd);
+	if (ret != 0) {
 		libzfs_fini(libhd);
 		return;
 	}
@@ -2324,12 +2320,9 @@ smb_shr_zfs_rename(smb_share_t *from, smb_share_t *to)
 	if ((libhd = libzfs_init()) == NULL)
 		return;
 
-	if (smb_getdataset(libhd, from->shr_path, dataset, MAXPATHLEN) != 0) {
-		libzfs_fini(libhd);
-		return;
-	}
-
-	if ((zfshd = zfs_open(libhd, dataset, ZFS_TYPE_FILESYSTEM)) == NULL) {
+	ret = smb_opendataset(libhd, from->shr_path, dataset, MAXPATHLEN,
+	    &zfshd);
+	if (ret != 0) {
 		libzfs_fini(libhd);
 		return;
 	}

@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <ctype.h>
@@ -621,14 +621,16 @@ smb_netgroup_match(struct nd_hostservlist *clnames, char  *glist, int grc)
 }
 
 /*
- * Resolve the ZFS dataset from a path.
- * Returns,
- *	0  = On success.
- *	-1 = Failure to open /etc/mnttab file or to get ZFS dataset.
+ * Resolve the ZFS dataset from a path, and optionally open the dataset
+ * (if ds_hdl parameter is non NULL).
+ *
+ * Returns
+ *	 0: On success.
+ *	-1: Failure to open /etc/mnttab file or to get/open ZFS dataset.
  */
 int
-smb_getdataset(libzfs_handle_t *libhdl, const char *path, char *dataset,
-    size_t len)
+smb_opendataset(libzfs_handle_t *libhdl, const char *path, char *dataset,
+    size_t len, zfs_handle_t **ds_hdl)
 {
 	char tmppath[MAXPATHLEN];
 	char *cp;
@@ -653,7 +655,10 @@ smb_getdataset(libzfs_handle_t *libhdl, const char *path, char *dataset,
 			if ((zfs_prop_get(hdl, ZFS_PROP_MOUNTPOINT, mountpnt,
 			    sizeof (mountpnt), NULL, NULL, 0, B_FALSE) == 0) &&
 			    (strcmp(mountpnt, path) == 0)) {
-				zfs_close(hdl);
+				if (ds_hdl != NULL)
+					*ds_hdl = hdl;
+				else
+					zfs_close(hdl);
 				(void) strlcpy(dataset, dsname, len);
 				return (0);
 			}
@@ -711,7 +716,29 @@ smb_getdataset(libzfs_handle_t *libhdl, const char *path, char *dataset,
 	}
 
 	(void) fclose(fp);
+
+	/* open dataset if ds_hdl parameter is non-NULL */
+	if ((rc == 0) && (ds_hdl != NULL)) {
+		*ds_hdl = zfs_open(libhdl, dataset, ZFS_TYPE_FILESYSTEM);
+		if (*ds_hdl == NULL)
+			rc = -1;
+	}
+
 	return (rc);
+}
+
+/*
+ * Resolve the ZFS dataset from a path.
+ *
+ * Returns
+ *	0  = On success.
+ *	-1 = Failure to open /etc/mnttab file or to get ZFS dataset.
+ */
+int
+smb_getdataset(libzfs_handle_t *libhdl, const char *path, char *dataset,
+    size_t len)
+{
+	return (smb_opendataset(libhdl, path, dataset, len, NULL));
 }
 
 /*

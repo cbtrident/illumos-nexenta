@@ -21,8 +21,8 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2016 Martin Matuska. All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <synch.h>
@@ -113,12 +113,7 @@ smbd_vss_get_count(const char *path, uint32_t *count)
 	if ((libhd = libzfs_init()) == NULL)
 		return (-1);
 
-	if (smb_getdataset(libhd, path, dataset, MAXPATHLEN) != 0) {
-		libzfs_fini(libhd);
-		return (-1);
-	}
-
-	if ((zfshd = zfs_open(libhd, dataset, ZFS_TYPE_DATASET)) == NULL) {
+	if (smb_opendataset(libhd, path, dataset, MAXPATHLEN, &zfshd) != 0) {
 		libzfs_fini(libhd);
 		return (-1);
 	}
@@ -176,13 +171,7 @@ smbd_vss_get_snapshots(const char *path, uint32_t count,
 		return;
 	}
 
-	if (smb_getdataset(libhd, path, dataset, MAXPATHLEN) != 0) {
-		free(vss_uint64_date.gd_gmt_array);
-		libzfs_fini(libhd);
-		return;
-	}
-
-	if ((zfshd = zfs_open(libhd, dataset, ZFS_TYPE_DATASET)) == NULL) {
+	if (smb_opendataset(libhd, path, dataset, MAXPATHLEN, &zfshd) != 0) {
 		free(vss_uint64_date.gd_gmt_array);
 		libzfs_fini(libhd);
 		return;
@@ -236,7 +225,7 @@ smbd_vss_gmttoken_fmt[] = "@GMT-%Y.%m.%d-%H.%M.%S";
  */
 int
 smbd_vss_map_gmttoken(const char *path, char *gmttoken, time_t toktime,
-	char *snapname)
+    char *snapname)
 {
 	char dataset[MAXPATHLEN];
 	libzfs_handle_t *libhd;
