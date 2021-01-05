@@ -148,6 +148,7 @@ static uint32_t smb_shr_sa_get(sa_share_t, sa_resource_t, smb_share_t *);
  * .ZFS management functions
  */
 static void smb_shr_zfs_add(smb_share_t *);
+static void smb_shr_zfs_resume(smb_share_t *);
 static void smb_shr_zfs_remove(smb_share_t *);
 static void smb_shr_zfs_rename(smb_share_t *, smb_share_t *);
 
@@ -384,8 +385,8 @@ smb_shr_iterate(smb_shriter_t *shi)
  * If the specified share is an autohome share which already
  * exists in the cache, just increments the reference count.
  */
-uint32_t
-smb_shr_add(smb_share_t *si)
+static uint32_t
+smb_shr_add_common(smb_share_t *si, boolean_t resume)
 {
 	struct stat st;
 	smb_share_t *cached_si;
@@ -433,8 +434,12 @@ smb_shr_add(smb_share_t *si)
 
 			rc = stat(si->shr_path, &st);
 			if (rc == 0) {
-				smb_shr_zfs_add(si);
-				created_zfs = B_TRUE;
+				if (resume) {
+					smb_shr_zfs_resume(si);
+				} else {
+					smb_shr_zfs_add(si);
+					created_zfs = B_TRUE;
+				}
 			}
 
 			(void) priv_set(PRIV_OFF, PRIV_EFFECTIVE,
@@ -510,6 +515,24 @@ smb_shr_add(smb_share_t *si)
 	return ((rc == ENOENT) ? NERR_UnknownDevDir : NERR_InternalError);
 }
 
+uint32_t
+smb_shr_add(smb_share_t *si)
+{
+	return (smb_shr_add_common(si, B_FALSE));
+}
+
+/*
+ * Resume is a special case of smb_shr_add. It adds a share that has been
+ * "suspended". Suspended means that when the share was removed, associated
+ * information stored in the file system was left intact. Specifically this
+ * pertains to shares of ZFS file systems and their share ACL and quota files.
+ */
+uint32_t
+smb_shr_resume(smb_share_t *si)
+{
+	return (smb_shr_add_common(si, B_TRUE));
+}
+
 /*
  * Removes the specified share from cache, removes it from AD
  * if it has an AD container, and calls the kernel to release
@@ -518,8 +541,8 @@ smb_shr_add(smb_share_t *si)
  * If this is an autohome share then decrement the reference
  * count. If it reaches 0 then it proceeds with removing steps.
  */
-uint32_t
-smb_shr_remove(char *sharename)
+static uint32_t
+smb_shr_remove_common(char *sharename, boolean_t suspend)
 {
 	smb_share_t *si;
 	char container[MAXPATHLEN];
@@ -556,8 +579,11 @@ smb_shr_remove(char *sharename)
 	 * If path is ZFS, remove the .zfs/shares/<share> entry.  Need
 	 * to remove before cleanup of cache occurs.  These actions
 	 * require temporary elevation of privileges.
+	 *
+	 * If the share is being suspended due to file system export,
+	 * the .zfs/shares/<share> entry need not be removed.
 	 */
-	if (smb_proc_takesem() == 0) {
+	if ((!suspend) && (smb_proc_takesem() == 0)) {
 
 		(void) priv_set(PRIV_ON, PRIV_EFFECTIVE,
 		    PRIV_FILE_DAC_READ,
@@ -595,6 +621,24 @@ smb_shr_remove(char *sharename)
 		dfs_namespace_unload(sharename);
 
 	return (NERR_Success);
+}
+
+uint32_t
+smb_shr_remove(char *sharename)
+{
+	return (smb_shr_remove_common(sharename, B_FALSE));
+}
+
+/*
+ * Suspend is a special case of smb_shr_remove. It removes a share but leaves
+ * any associated information stored in the file system intact.
+ * Specifically this pertains to shares of ZFS file systems and their share ACL
+ * and quota files.
+ */
+uint32_t
+smb_shr_suspend(char *sharename)
+{
+	return (smb_shr_remove_common(sharename, B_TRUE));
 }
 
 /*
@@ -2261,14 +2305,36 @@ smb_shr_zfs_add(smb_share_t *si)
 		    "%s\n", si->shr_name);
 	} else {
 		if ((si->shr_flags & SMB_SHRF_QUOTAS) != 0) {
-			smb_quota_add_fs(buf);
+			smb_quota_add_fs(buf, B_TRUE);
 		} else {
-			smb_quota_remove_fs(buf);
+			smb_quota_remove_fs(buf, B_TRUE);
 		}
 	}
 
 	zfs_close(zfshd);
 	libzfs_fini(libhd);
+}
+
+/*
+ * The share is being added as part of a file system import, and thus the
+ * associated share ACL and quota files will still exist in the filesystem,
+ * and do not need to be created. Just update the quota tree, without
+ * adding the quota file.
+ *
+ * CAUTION: Since this case only occurs during ZFS pool import where the
+ * shares are ZFS datasets, we can safely know that the share path is the
+ * ZFS dataset and thus quotas are supported.
+ * This may need to be revisted in future if we share subdirectories of
+ * datasets during pool import.
+ */
+static void
+smb_shr_zfs_resume(smb_share_t *si)
+{
+	if ((si->shr_flags & SMB_SHRF_QUOTAS) != 0) {
+		smb_quota_add_fs(si->shr_path, B_FALSE);
+	} else {
+		smb_quota_remove_fs(si->shr_path, B_FALSE);
+	}
 }
 
 /*

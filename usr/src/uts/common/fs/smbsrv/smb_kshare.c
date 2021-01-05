@@ -21,8 +21,8 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2017 Joyent, Inc.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <smbsrv/smb_door.h>
@@ -94,14 +94,14 @@ smb_kshare_door_fini(door_handle_t dhdl)
 
 /*
  * This is a special interface that will be utilized by ZFS to cause
- * a share to be added/removed
+ * a share to be added/removed.
  *
  * arg is either a smb_share_t or share_name from userspace.
  * It will need to be copied into the kernel.   It is smb_share_t
  * for add operations and share_name for delete operations.
  */
 int
-smb_kshare_upcall(door_handle_t dhdl, void *arg, boolean_t add_share)
+smb_kshare_upcall(door_handle_t dhdl, void *arg, int opcode)
 {
 	door_arg_t	doorarg = { 0 };
 	char		*buf = NULL;
@@ -112,9 +112,6 @@ smb_kshare_upcall(door_handle_t dhdl, void *arg, boolean_t add_share)
 	smb_dr_ctx_t	*dec_ctx;
 	smb_dr_ctx_t	*enc_ctx;
 	smb_share_t	*lmshare = NULL;
-	int		opcode;
-
-	opcode = (add_share) ? SMB_SHROP_ADD : SMB_SHROP_DELETE;
 
 	buf = kmem_alloc(SMB_SHARE_DSIZE, KM_SLEEP);
 	enc_ctx = smb_dr_encode_start(buf, SMB_SHARE_DSIZE);
@@ -122,6 +119,7 @@ smb_kshare_upcall(door_handle_t dhdl, void *arg, boolean_t add_share)
 
 	switch (opcode) {
 	case SMB_SHROP_ADD:
+	case SMB_SHROP_RESUME:
 		lmshare = kmem_alloc(sizeof (smb_share_t), KM_SLEEP);
 		error = xcopyin(arg, lmshare, sizeof (smb_share_t));
 		if (error != 0) {
@@ -133,6 +131,7 @@ smb_kshare_upcall(door_handle_t dhdl, void *arg, boolean_t add_share)
 		break;
 
 	case SMB_SHROP_DELETE:
+	case SMB_SHROP_SUSPEND:
 		str = kmem_alloc(MAXPATHLEN, KM_SLEEP);
 		error = copyinstr(arg, str, MAXPATHLEN, NULL);
 		if (error != 0) {
@@ -175,7 +174,7 @@ smb_kshare_upcall(door_handle_t dhdl, void *arg, boolean_t add_share)
 	}
 
 	rc = smb_dr_get_uint32(dec_ctx);
-	if (opcode == SMB_SHROP_ADD)
+	if ((opcode == SMB_SHROP_ADD) || (opcode == SMB_SHROP_RESUME))
 		smb_dr_get_share(dec_ctx, lmshare);
 
 	if (smb_dr_decode_finish(dec_ctx))
@@ -185,7 +184,12 @@ smb_kshare_upcall(door_handle_t dhdl, void *arg, boolean_t add_share)
 	if (lmshare)
 		kmem_free(lmshare, sizeof (smb_share_t));
 
-	return ((rc == NERR_DuplicateShare && add_share) ? 0 : rc);
+	if ((rc == NERR_DuplicateShare) &&
+	    ((opcode == SMB_SHROP_ADD) || (opcode == SMB_SHROP_RESUME))) {
+		return (0);
+	}
+
+	return (rc);
 }
 #endif	/* _KERNEL */
 

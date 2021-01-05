@@ -21,8 +21,8 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SMB_SHARE_H
@@ -269,6 +269,8 @@ void smb_shr_list(int, smb_shrlist_t *);
 int smb_shr_count(void);
 uint32_t smb_shr_add(smb_share_t *);
 uint32_t smb_shr_remove(char *);
+uint32_t smb_shr_suspend(char *);
+uint32_t smb_shr_resume(smb_share_t *);
 uint32_t smb_shr_rename(char *, char *);
 uint32_t smb_shr_get(char *, smb_share_t *);
 uint32_t smb_shr_modify(smb_share_t *);

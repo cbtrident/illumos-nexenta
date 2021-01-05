@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -179,6 +179,7 @@ smbd_share_dispatch(void *cookie, char *ptr, size_t size, door_desc_t *dp,
 		break;
 
 	case SMB_SHROP_DELETE:
+	case SMB_SHROP_SUSPEND:
 		sharename = smb_dr_get_string(dec_ctx);
 
 		if ((dec_status = smb_dr_decode_finish(dec_ctx)) != 0) {
@@ -186,7 +187,11 @@ smbd_share_dispatch(void *cookie, char *ptr, size_t size, door_desc_t *dp,
 			goto decode_error;
 		}
 
-		rc = smb_shr_remove(sharename);
+		if (req_type == SMB_SHROP_SUSPEND)
+			rc = smb_shr_suspend(sharename);
+		else
+			rc = smb_shr_remove(sharename);
+
 		smb_dr_put_int32(enc_ctx, SMB_SHARE_DSUCCESS);
 		smb_dr_put_uint32(enc_ctx, rc);
 		smb_dr_free_string(sharename);
@@ -210,11 +215,16 @@ smbd_share_dispatch(void *cookie, char *ptr, size_t size, door_desc_t *dp,
 		break;
 
 	case SMB_SHROP_ADD:
+	case SMB_SHROP_RESUME:
 		smb_dr_get_share(dec_ctx, &lmshr_info);
 		if ((dec_status = smb_dr_decode_finish(dec_ctx)) != 0)
 			goto decode_error;
 
-		rc = smb_shr_add(&lmshr_info);
+		if (req_type == SMB_SHROP_RESUME)
+			rc = smb_shr_resume(&lmshr_info);
+		else
+			rc = smb_shr_add(&lmshr_info);
+
 		smb_dr_put_int32(enc_ctx, SMB_SHARE_DSUCCESS);
 		smb_dr_put_uint32(enc_ctx, rc);
 		smb_dr_put_share(enc_ctx, &lmshr_info);

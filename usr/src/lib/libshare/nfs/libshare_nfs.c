@@ -25,7 +25,7 @@
 
 /*
  * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -95,6 +95,8 @@ struct sa_plugin_ops sa_plugin_ops = {
 	nfs_fini,
 	nfs_enable_share,
 	nfs_disable_share,
+	nfs_enable_share, /* resume sharing on import */
+	nfs_disable_share, /* suspend sharing for export */
 	nfs_validate_property,
 	nfs_validate_security_mode,
 	nfs_is_security_opt,
@@ -1274,7 +1276,7 @@ printarg(char *path, struct exportdata *ep)
 		(void) printf("LOG_ALLOPS ");
 	if (ep->ex_flags == 0)
 		(void) printf("(none)");
-	(void) 	printf("\n");
+	(void) printf("\n");
 	if (ep->ex_flags & EX_LOG) {
 		(void) printf("\tex_log_buffer = %s\n",
 		    (ep->ex_log_buffer ? ep->ex_log_buffer : "(NULL)"));

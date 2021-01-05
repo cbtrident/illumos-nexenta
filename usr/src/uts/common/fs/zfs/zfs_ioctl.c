@@ -204,6 +204,7 @@
 #include "zfs_deleg.h"
 #include "zfs_comutil.h"
 #include "zfs_errno.h"
+#include <smbsrv/smb_door.h>	/* for SMB share operation codes */
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -4300,7 +4301,8 @@ zfs_ioc_rollback(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 
 	if (error == 0) {
 		event = fnvlist_alloc();
-		fnvlist_add_string(event, "target", (target != NULL) ? target : "");
+		fnvlist_add_string(event, "target",
+		    (target != NULL) ? target : "");
 		fnvlist_add_string(event, "fsname", fsname);
 		fnvlist_add_int32(event, "resume_err", resume_err);
 		zfs_event_post(ZFS_EC_STATUS, "rollback", event);
@@ -5630,7 +5632,7 @@ zfs_ioc_userspace_upgrade(zfs_cmd_t *zc)
  */
 int (*znfsexport_fs)(void *arg);
 int (*zshare_fs)(enum sharefs_sys_op, share_t *, uint32_t);
-int (*zsmbexport_fs)(void *arg, boolean_t add_share);
+int (*zsmbexport_fs)(void *arg, int opcode);
 
 int zfs_nfsshare_inited;
 int zfs_smbshare_inited;
@@ -5664,7 +5666,8 @@ static int
 zfs_ioc_share(zfs_cmd_t *zc)
 {
 	int error;
-	int opcode;
+	int sharefs_opcode;
+	uintptr_t exportdata;
 
 	switch (zc->zc_share.z_sharetype) {
 	case ZFS_SHARE_NFS:
@@ -5694,6 +5697,8 @@ zfs_ioc_share(zfs_cmd_t *zc)
 		break;
 	case ZFS_SHARE_SMB:
 	case ZFS_UNSHARE_SMB:
+	case ZFS_SUSPEND_SMB:
+	case ZFS_RESUME_SMB:
 		if (zfs_smbshare_inited == 0) {
 			mutex_enter(&zfs_share_lock);
 			if (smbsrv_mod == NULL && ((smbsrv_mod =
@@ -5703,8 +5708,8 @@ zfs_ioc_share(zfs_cmd_t *zc)
 				return (SET_ERROR(ENOSYS));
 			}
 			if (zsmbexport_fs == NULL && ((zsmbexport_fs =
-			    (int (*)(void *, boolean_t))ddi_modsym(smbsrv_mod,
-			    "smb_server_share", &error)) == NULL)) {
+			    (int (*)(void *, int))ddi_modsym(smbsrv_mod,
+			    "smb_server_shareop", &error)) == NULL)) {
 				mutex_exit(&zfs_share_lock);
 				return (SET_ERROR(ENOSYS));
 			}
@@ -5721,35 +5726,41 @@ zfs_ioc_share(zfs_cmd_t *zc)
 		return (SET_ERROR(EINVAL));
 	}
 
+	exportdata = (uintptr_t)zc->zc_share.z_exportdata;
 	switch (zc->zc_share.z_sharetype) {
 	case ZFS_SHARE_NFS:
+		sharefs_opcode = SHAREFS_ADD;
+		error = znfsexport_fs((void *) exportdata);
+		break;
 	case ZFS_UNSHARE_NFS:
-		if (error =
-		    znfsexport_fs((void *)
-		    (uintptr_t)zc->zc_share.z_exportdata))
-			return (error);
+		sharefs_opcode = SHAREFS_REMOVE;
+		error = znfsexport_fs((void *) exportdata);
 		break;
 	case ZFS_SHARE_SMB:
-	case ZFS_UNSHARE_SMB:
-		if (error = zsmbexport_fs((void *)
-		    (uintptr_t)zc->zc_share.z_exportdata,
-		    zc->zc_share.z_sharetype == ZFS_SHARE_SMB ?
-		    B_TRUE: B_FALSE)) {
-			return (error);
-		}
+		sharefs_opcode = SHAREFS_ADD;
+		error = zsmbexport_fs((void *) exportdata, SMB_SHROP_ADD);
 		break;
+	case ZFS_UNSHARE_SMB:
+		sharefs_opcode = SHAREFS_REMOVE;
+		error = zsmbexport_fs((void *) exportdata, SMB_SHROP_DELETE);
+		break;
+	case ZFS_SUSPEND_SMB:
+		sharefs_opcode = SHAREFS_REMOVE;
+		error = zsmbexport_fs((void *) exportdata, SMB_SHROP_SUSPEND);
+		break;
+	case ZFS_RESUME_SMB:
+		sharefs_opcode = SHAREFS_ADD;
+		error = zsmbexport_fs((void *) exportdata, SMB_SHROP_RESUME);
+		break;
+	default:
+		return (SET_ERROR(EINVAL));
 	}
-
-	opcode = (zc->zc_share.z_sharetype == ZFS_SHARE_NFS ||
-	    zc->zc_share.z_sharetype == ZFS_SHARE_SMB) ?
-	    SHAREFS_ADD : SHAREFS_REMOVE;
-
-	/*
-	 * Add or remove share from sharetab
-	 */
-	error = zshare_fs(opcode,
-	    (void *)(uintptr_t)zc->zc_share.z_sharedata,
-	    zc->zc_share.z_sharemax);
+	if (error == 0) {
+		/* Add or remove share from sharetab */
+		error = zshare_fs(sharefs_opcode,
+		    (void *)(uintptr_t)zc->zc_share.z_sharedata,
+		    zc->zc_share.z_sharemax);
+	}
 
 	return (error);
 

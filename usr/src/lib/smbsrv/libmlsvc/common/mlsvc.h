@@ -86,8 +86,8 @@ void smb_proc_givesem(void);	/* parent after */
 /* Quota */
 void smb_quota_init(void);
 void smb_quota_fini(void);
-void smb_quota_add_fs(const char *);
-void smb_quota_remove_fs(const char *);
+void smb_quota_add_fs(const char *, boolean_t);
+void smb_quota_remove_fs(const char *, boolean_t);
 
 uint32_t smb_ddiscover_main(char *, smb_domainex_t *);
 

@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SMBSRV_SMB_DOOR_H
@@ -127,6 +127,8 @@ typedef int fksmb_opipe_disp_func_t(door_arg_t *);
 #define	SMB_SHROP_ADD			4
 #define	SMB_SHROP_MODIFY		5
 #define	SMB_SHROP_LIST			6
+#define	SMB_SHROP_SUSPEND		7
+#define	SMB_SHROP_RESUME		8
 
 /*
  * Door server status

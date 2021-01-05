@@ -21,7 +21,7 @@
 #
 # Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2016 by Delphix. All rights reserved.
-# Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2020 Tintri by DDN, Inc. All rights reserved.
 #
 
 #
@@ -110,6 +110,7 @@ SYMBOL_VERSION SUNWprivate {
 	sa_set_share_description;
 	sa_set_group_attr;
 	sa_disable_share;
+	sa_suspend_share;
 	sa_get_next_property;
 	sa_get_next_security;
 	sa_get_protocol_status;
@@ -128,6 +129,7 @@ SYMBOL_VERSION SUNWprivate {
 	sa_free_derived_security;
 	sa_enable_share;
 	sa_enable_resource;
+	sa_resume_share;
 	sa_create_group;
 	sa_valid_protocol;
 	sa_find_group_handle;

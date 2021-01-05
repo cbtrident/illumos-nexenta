@@ -23,7 +23,7 @@
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -89,6 +89,8 @@ struct sa_plugin_ops sa_plugin_ops = {
 	smbfs_fini,
 	NULL,	/* share */
 	NULL,	/* unshare */
+	NULL,	/* resume */
+	NULL,	/* suspenf */
 	NULL,	/* valid_prop */
 	NULL,	/* valid_space */
 	NULL,	/* security_prop */

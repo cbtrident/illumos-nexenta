@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <stdio.h>
@@ -284,9 +284,11 @@ smb_quota_fini(void)
  *
  * If there is not a quota tree representing the specified path,
  * create one and add it to the list.
+ * If ctrldir is B_TRUE, and a quota tree is created, add the
+ * ZFS quota control dir/file.
  */
 void
-smb_quota_add_fs(const char *path)
+smb_quota_add_fs(const char *path, boolean_t ctrldir)
 {
 	smb_quota_tree_t *qtree;
 
@@ -314,7 +316,7 @@ smb_quota_add_fs(const char *path)
 			list_insert_head(&smb_quota_fs_list, (void *)qtree);
 	}
 
-	if (qtree)
+	if (ctrldir && qtree)
 		smb_quota_add_ctrldir(path);
 
 	(void) mutex_unlock(&smb_quota_list_mutex);
@@ -327,9 +329,11 @@ smb_quota_add_fs(const char *path)
  * (qtree->qt_sharecnt == 0) remove the qtree from the list.
  * The qtree will be deleted if/when there is nobody using it
  * (qtree->qt_refcnt == 0).
+ * If ctrldir is B_TRUE, and a quota tree is deleted, remove
+ * the ZFS quota control dir/file.
  */
 void
-smb_quota_remove_fs(const char *path)
+smb_quota_remove_fs(const char *path, boolean_t ctrldir)
 {
 	smb_quota_tree_t *qtree;
 	boolean_t delete = B_FALSE;
@@ -349,7 +353,10 @@ smb_quota_remove_fs(const char *path)
 			--qtree->qt_sharecnt;
 			if (qtree->qt_sharecnt == 0) {
 				list_remove(&smb_quota_fs_list, (void *)qtree);
-				smb_quota_remove_ctrldir(qtree->qt_path);
+				if (ctrldir) {
+					smb_quota_remove_ctrldir(
+					    qtree->qt_path);
+				}
 				--(qtree->qt_refcnt);
 				delete = (qtree->qt_refcnt == 0);
 			}

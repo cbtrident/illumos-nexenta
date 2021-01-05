@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -68,10 +69,12 @@ static int range_check_validator(int index, char *value);
 struct sa_plugin_ops sa_plugin_ops = {
 	SA_PLUGIN_VERSION,
 	"autofs",
-	autofs_init, 		/* Init autofs */
-	autofs_fini, 		/* Fini autofs */
+	autofs_init,		/* Init autofs */
+	autofs_fini,		/* Fini autofs */
 	NULL,			/* Start Sharing */
 	NULL,			/* stop sharing */
+	NULL,			/* resume sharing on import */
+	NULL,			/* suspend sharing for export */
 	autofs_validate_property,
 	NULL,			/* valid_space */
 	NULL,			/* security_prop */

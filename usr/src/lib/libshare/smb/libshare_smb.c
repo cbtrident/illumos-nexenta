@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -71,6 +71,8 @@ static sa_protocol_properties_t smb_get_proto_set(void);
 static char *smb_get_status(void);
 static int smb_parse_optstring(sa_group_t, char *);
 static char *smb_format_options(sa_group_t, int);
+static int smb_resume_share(sa_share_t);
+static int smb_suspend_share(sa_share_t share, char *);
 
 static int smb_enable_service(void);
 
@@ -144,6 +146,8 @@ struct sa_plugin_ops sa_plugin_ops = {
 	smb_share_fini,
 	smb_enable_share,
 	smb_disable_share,
+	smb_resume_share, /* resume sharing on import */
+	smb_suspend_share, /* suspend sharing for export */
 	smb_validate_property,
 	NULL,	/* valid_space */
 	NULL,	/* security_prop */
@@ -379,13 +383,25 @@ smb_ismaint(void)
 }
 
 /*
+ * smb_enable_share_impl(sa_share_t share, boolean_t resume)
+ *
  * smb_enable_share tells the implementation that it is to enable the share.
  * This entails converting the path and options into the appropriate ioctl
  * calls. It is assumed that all error checking of paths, etc. were
  * done earlier.
+ * If resume is TRUE the share will be resumed rather than shared.
+ *
+ * This only difference between resume and enable is that it is distinguished
+ * to ZFS, and subsequently the smbd daemon, to allow different behavior on
+ * suspend from disable.
+ * For example, share config stored in the filesystem should not need to be
+ * recreated as it will not have been destroyed when the share was suspended
+ * during file system export.
+ *
+ * Resume should only be invoked as part of ZFS file system im.
  */
 static int
-smb_enable_share(sa_share_t share)
+smb_enable_share_impl(sa_share_t share, boolean_t resume)
 {
 	char *path;
 	smb_share_t si;
@@ -408,14 +424,19 @@ smb_enable_share(sa_share_t share)
 	if (path == NULL)
 		return (SA_NO_SUCH_PATH);
 
+	iszfs = sa_path_is_zfs(path);
+	/* suspend and resume only supported for ZFS */
+	if (resume && !iszfs) {
+		sa_free_attr_string(path);
+		return (SA_NOT_SUPPORTED);
+	}
+
 	/*
 	 * If administratively disabled, don't try to start anything.
 	 */
 	online = smb_isonline();
 	if (!online && !smb_isautoenable() && smb_isdisabled())
 		goto done;
-
-	iszfs = sa_path_is_zfs(path);
 
 	if (!online) {
 		err = smb_enable_service();
@@ -451,7 +472,7 @@ smb_enable_share(sa_share_t share)
 
 			(void) sa_sharetab_fill_zfs(share, &sh, "smb");
 			err = sa_share_zfs(share, resource, (char *)path, &sh,
-			    &si, ZFS_SHARE_SMB);
+			    &si, resume ? ZFS_RESUME_SMB : ZFS_SHARE_SMB);
 			if (err != SA_OK) {
 				errno = err;
 				err = -1;
@@ -465,6 +486,29 @@ done:
 	sa_free_attr_string(path);
 
 	return (err == NERR_DuplicateShare ? 0 : err);
+}
+
+/*
+ * smb_enable_share(sa_share_t share)
+ *
+ * Share the specified share.
+ */
+static int
+smb_enable_share(sa_share_t share)
+{
+	return (smb_enable_share_impl(share, B_FALSE));
+}
+
+/*
+ * smb_resume_share(sa_share_t share)
+ *
+ * Enable a share when an exported filesystem is imported.
+ * Should only be invoked as part of ZFS file system import.
+ */
+static int
+smb_resume_share(sa_share_t share)
+{
+	return (smb_enable_share_impl(share, B_TRUE));
 }
 
 /*
@@ -622,15 +666,23 @@ smb_resource_changed(sa_resource_t resource)
 }
 
 /*
- * smb_disable_share(sa_share_t share, char *path)
+ * smb_disable_share_impl(sa_share_t share, char *path, boolean_t suspend)
  *
  * Unshare the specified share. Note that "path" is the same
  * path as what is in the "share" object. It is passed in to avoid an
  * additional lookup. A missing "path" value makes this a no-op
  * function.
+ *
+ * If suspend is TRUE the share will be suspended rather than unshared.
+ * This only difference between suspend and disable is that it is distinguished
+ * to ZFS, and subsequently the smbd daemon, to allow different behavior on
+ * suspend from disable.
+ * For example, when suspending a share, share config stored in the filesystem
+ * should not be destroyed as it will be required when the share is resumed.
+ * Suspend should only be invoked as part of ZFS file system export.
  */
 static int
-smb_disable_share(sa_share_t share, char *path)
+smb_disable_share_impl(sa_share_t share, char *path, boolean_t suspend)
 {
 	char *rname;
 	sa_resource_t resource;
@@ -651,6 +703,11 @@ smb_disable_share(sa_share_t share, char *path)
 	 */
 	parent = sa_get_parent_group(share);
 	iszfs = sa_group_is_zfs(parent);
+
+	/* suspend and resume only supported for ZFS */
+	if (suspend && !iszfs) {
+		return (SA_NOT_SUPPORTED);
+	}
 
 	if (!smb_isonline())
 		goto done;
@@ -678,7 +735,7 @@ smb_disable_share(sa_share_t share, char *path)
 
 			(void) sa_sharetab_fill_zfs(share, &sh, "smb");
 			err = sa_share_zfs(share, resource, (char *)path, &sh,
-			    rname, ZFS_UNSHARE_SMB);
+			    rname, suspend ? ZFS_SUSPEND_SMB : ZFS_UNSHARE_SMB);
 			if (err != SA_OK) {
 				switch (err) {
 				case EINVAL:
@@ -720,6 +777,29 @@ done:
 			ret = SA_SYSTEM_ERR;
 	}
 	return (ret);
+}
+
+/*
+ * smb_disable_share(sa_share_t share, char *path)
+ *
+ * Unshare the specified share.
+ */
+static int
+smb_disable_share(sa_share_t share, char *path)
+{
+	return (smb_disable_share_impl(share, path, B_FALSE));
+}
+
+/*
+ * smb_suspend_share(sa_share_t share, char *path)
+ *
+ * Disable a share when a filesystem is exported.
+ * Should only be invoked as part of ZFS file system export.
+ */
+static int
+smb_suspend_share(sa_share_t share, char *path)
+{
+	return (smb_disable_share_impl(share, path, B_TRUE));
 }
 
 /*

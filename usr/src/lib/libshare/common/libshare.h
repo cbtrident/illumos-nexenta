@@ -21,8 +21,8 @@
 
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -206,6 +206,8 @@ extern int sa_set_share_attr(sa_share_t, char *, char *);
 extern int sa_set_share_description(sa_share_t, char *);
 extern int sa_enable_share(sa_group_t, char *);
 extern int sa_disable_share(sa_share_t, char *);
+extern int sa_resume_share(sa_group_t, char *);
+extern int sa_suspend_share(sa_share_t, char *);
 extern int sa_is_share(void *);
 
 /* resource name related */

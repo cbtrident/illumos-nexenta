@@ -21,8 +21,8 @@
 
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -1691,12 +1691,12 @@ sa_add_share(sa_group_t group, char *sharepath, int persist, int *error)
 }
 
 /*
- * sa_enable_share(share, protocol)
- *	Enable the specified share to the specified protocol.
+ * sa_enable_share_impl(share, protocol, resume)
+ *	Enable or Resume the specified share to the specified protocol.
  *	If protocol is NULL, then all protocols.
  */
-int
-sa_enable_share(sa_share_t share, char *protocol)
+static int
+sa_enable_share_impl(sa_share_t share, char *protocol, boolean_t resume)
 {
 	char *sharepath;
 	struct stat st;
@@ -1715,7 +1715,10 @@ sa_enable_share(sa_share_t share, char *protocol)
 				goto done;
 
 			/* lookup protocol specific handler */
-			err = sa_proto_share(protocol, share);
+			if (resume)
+				err = sa_proto_resume(protocol, share);
+			else
+				err = sa_proto_share(protocol, share);
 			if (err == SA_OK)
 				(void) sa_set_share_attr(share,
 				    "shared", "true");
@@ -1734,8 +1737,13 @@ sa_enable_share(sa_share_t share, char *protocol)
 				    "type");
 				if (proto != NULL) {
 					if (!excluded_protocol(share, proto)) {
-						ret = sa_proto_share(proto,
-						    share);
+						if (resume) {
+							ret = sa_proto_resume(
+							    proto, share);
+						} else {
+							ret = sa_proto_share(
+							    proto, share);
+						}
 						if (ret != SA_OK)
 							err = ret;
 					}
@@ -1752,13 +1760,35 @@ done:
 }
 
 /*
- * sa_disable_share(share, protocol)
- *	Disable the specified share to the specified protocol.  If
- *	protocol is NULL, then all protocols that are enabled for the
+ * sa_enable_share(share, protocol)
+ *	Enable the specified share to the specified protocol.
+ *	If protocol is NULL, then all protocols.
+ */
+int
+sa_enable_share(sa_share_t share, char *protocol)
+{
+	return (sa_enable_share_impl(share, protocol, B_FALSE));
+}
+
+/*
+ * sa_resume_share(share, protocol)
+ *	Resume sharing the specified share to the specified protocol.
+ *	If protocol is NULL, then all protocols.
+ */
+int
+sa_resume_share(sa_share_t share, char *protocol)
+{
+	return (sa_enable_share_impl(share, protocol, B_TRUE));
+}
+
+/*
+ * sa_disable_share_impl(share, protocol, suspend)
+ *	Disable or Suspend the specified share to the specified protocol.
+ *	If protocol is NULL, then all protocols that are enabled for the
  *	share should be disabled.
  */
 int
-sa_disable_share(sa_share_t share, char *protocol)
+sa_disable_share_impl(sa_share_t share, char *protocol, boolean_t suspend)
 {
 	char *path;
 	int err = SA_OK;
@@ -1767,7 +1797,10 @@ sa_disable_share(sa_share_t share, char *protocol)
 	path = sa_get_share_attr(share, "path");
 
 	if (protocol != NULL) {
-		ret = sa_proto_unshare(share, protocol, path);
+		if (suspend)
+			ret = sa_proto_suspend(share, protocol, path);
+		else
+			ret = sa_proto_unshare(share, protocol, path);
 	} else {
 		/* need to do all protocols */
 		sa_group_t group;
@@ -1783,7 +1816,13 @@ sa_disable_share(sa_share_t share, char *protocol)
 
 			proto = sa_get_optionset_attr(optionset, "type");
 			if (proto != NULL) {
-				err = sa_proto_unshare(share, proto, path);
+				if (suspend) {
+					err = sa_proto_suspend(share, proto,
+					    path);
+				} else {
+					err = sa_proto_unshare(share, proto,
+					    path);
+				}
 				if (err != SA_OK)
 					ret = err;
 				sa_free_attr_string(proto);
@@ -1795,6 +1834,30 @@ sa_disable_share(sa_share_t share, char *protocol)
 	if (path != NULL)
 		sa_free_attr_string(path);
 	return (ret);
+}
+
+/*
+ * sa_disable_share(share, protocol)
+ *	Disable the specified share to the specified protocol.  If
+ *	protocol is NULL, then all protocols that are enabled for the
+ *	share should be disabled.
+ */
+int
+sa_disable_share(sa_share_t share, char *protocol)
+{
+	return (sa_disable_share_impl(share, protocol, B_FALSE));
+}
+
+/*
+ * sa_suspend_share(share, protocol)
+ *	Suspend sharing the specified share to the specified protocol.
+ *	If protocol is NULL, then all protocols that are enabled for the
+ *	share should be disabled.
+ */
+int
+sa_suspend_share(sa_share_t share, char *protocol)
+{
+	return (sa_disable_share_impl(share, protocol, B_TRUE));
 }
 
 /*

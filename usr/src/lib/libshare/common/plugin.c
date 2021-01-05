@@ -22,6 +22,7 @@
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <stdio.h>
@@ -332,6 +333,40 @@ sa_proto_unshare(sa_share_t share, char *proto, char *path)
 
 	if (ops != NULL && ops->sa_unshare != NULL)
 		ret = ops->sa_unshare(share, path);
+	return (ret);
+}
+
+/*
+ * sa_proto_resume(proto, share)
+ *
+ * Resume a share for the specified protocol.
+ */
+
+int
+sa_proto_resume(char *proto, sa_share_t share)
+{
+	struct sa_plugin_ops *ops = find_protocol(proto);
+	int ret = SA_INVALID_PROTOCOL;
+
+	if (ops != NULL && ops->sa_resume != NULL)
+		ret = ops->sa_resume(share);
+	return (ret);
+}
+
+/*
+ * sa_proto_suspend(proto, share)
+ *
+ * Suspend (unshare) the share for this protocol.
+ */
+
+int
+sa_proto_suspend(sa_share_t share, char *proto, char *path)
+{
+	struct sa_plugin_ops *ops = find_protocol(proto);
+	int ret = SA_INVALID_PROTOCOL;
+
+	if (ops != NULL && ops->sa_suspend != NULL)
+		ret = ops->sa_suspend(share, path);
 	return (ret);
 }
 

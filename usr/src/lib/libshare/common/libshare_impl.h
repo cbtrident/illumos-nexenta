@@ -23,6 +23,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -60,6 +61,8 @@ struct sa_plugin_ops {
 	void	(*sa_fini)();
 	int	(*sa_share)(sa_share_t);	/* start sharing */
 	int	(*sa_unshare)(sa_share_t, char *); /* stop sharing */
+	int	(*sa_resume)(sa_share_t);	/* resume on import */
+	int	(*sa_suspend)(sa_share_t, char *); /* suspend for export */
 	int	(*sa_valid_prop)(sa_handle_t, sa_property_t,
 	    sa_optionset_t); /* validate */
 	int	(*sa_valid_space)(char *);	/* is name valid optionspace? */
@@ -117,6 +120,8 @@ typedef struct sa_handle_impl {
 
 extern int sa_proto_share(char *, sa_share_t);
 extern int sa_proto_unshare(sa_share_t, char *, char *);
+extern int sa_proto_resume(char *, sa_share_t);
+extern int sa_proto_suspend(sa_share_t, char *, char *);
 extern int sa_proto_valid_prop(sa_handle_t, char *, sa_property_t,
     sa_optionset_t);
 extern int sa_proto_security_prop(char *, char *);

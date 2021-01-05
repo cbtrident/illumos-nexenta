@@ -81,9 +81,11 @@ SYMBOL_VERSION SUNWprivate {
 	smb_shr_modify;
 	smb_shr_remove;
 	smb_shr_rename;
+	smb_shr_resume;
 	smb_shr_sa_csc_name;
 	smb_shr_start;
 	smb_shr_stop;
+	smb_shr_suspend;
 	smb_shr_unload;
 	smb_token_destroy;
 	smb_token_log;

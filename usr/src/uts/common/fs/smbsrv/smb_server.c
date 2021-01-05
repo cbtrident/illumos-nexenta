@@ -21,8 +21,8 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2017 by Delphix. All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright 2020 RackTop Systems, Inc.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -1031,15 +1031,15 @@ smb_server_share_lookup(smb_server_t *sv, const char *shr_path,
 
 #ifdef	_KERNEL
 /*
- * This is a special interface that will be utilized by ZFS to cause a share to
- * be added/removed.
+ * This is a special interface that will be utilized by ZFS to cause
+ * a share to be added/removed.
  *
- * arg is either a lmshare_info_t or share_name from userspace.
- * It will need to be copied into the kernel.   It is lmshare_info_t
+ * arg is either a smb_share_t or share_name from userspace.
+ * It will need to be copied into the kernel.   It is smb_share_t
  * for add operations and share_name for delete operations.
  */
 int
-smb_server_share(void *arg, boolean_t add_share)
+smb_server_shareop(void *arg, int opcode)
 {
 	smb_server_t	*sv;
 	int		rc;
@@ -1049,7 +1049,7 @@ smb_server_share(void *arg, boolean_t add_share)
 		switch (sv->sv_state) {
 		case SMB_SERVER_STATE_RUNNING:
 			mutex_exit(&sv->sv_mutex);
-			(void) smb_kshare_upcall(sv->sv_lmshrd, arg, add_share);
+			(void) smb_kshare_upcall(sv->sv_lmshrd, arg, opcode);
 			break;
 		default:
 			mutex_exit(&sv->sv_mutex);
@@ -1059,6 +1059,16 @@ smb_server_share(void *arg, boolean_t add_share)
 	}
 
 	return (rc);
+}
+
+/*
+ * Retain previous API for backward compatibility (OZFS).
+ */
+int
+smb_server_share(void *arg, boolean_t add_share)
+{
+	int opcode = add_share ? SMB_SHROP_ADD : SMB_SHROP_DELETE;
+	return (smb_server_shareop(arg, opcode));
 }
 #endif	/* _KERNEL */
 

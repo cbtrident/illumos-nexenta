@@ -917,7 +917,7 @@ void smb_export_stop(smb_server_t *);
 struct __door_handle;
 struct __door_handle *smb_kshare_door_init(int);
 void smb_kshare_door_fini(struct __door_handle *);
-int smb_kshare_upcall(struct __door_handle *, void *, boolean_t);
+int smb_kshare_upcall(struct __door_handle *, void *, int);
 #endif	/* _KERNEL */
 
 void smb_kshare_g_init(void);
