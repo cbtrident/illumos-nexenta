@@ -333,8 +333,7 @@ idm_status_t
 iscsit_sess_check_hold(iscsit_sess_t *ist)
 {
 	mutex_enter(&ist->ist_mutex);
-	if (ist->ist_state != SS_Q6_DONE &&
-	    ist->ist_state != SS_Q7_ERROR) {
+	if (ist->ist_state == SS_Q3_LOGGED_IN) {
 		idm_refcnt_hold(&ist->ist_refcnt);
 		mutex_exit(&ist->ist_mutex);
 		return (IDM_STATUS_SUCCESS);

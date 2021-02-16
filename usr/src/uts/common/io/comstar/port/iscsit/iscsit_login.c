@@ -238,8 +238,6 @@ iscsit_login_sm_init(iscsit_conn_t *ict)
 	    offsetof(login_event_ctx_t, le_ctx_node));
 	list_create(&lsm->icl_pdu_list, sizeof (idm_pdu_t),
 	    offsetof(idm_pdu_t, isp_client_lnd));
-	list_create(&lsm->icl_resp_list, sizeof (idm_pdu_t),
-		    offsetof(idm_pdu_t, isp_client_lnd));
 
 	lsm->icl_login_state = ILS_LOGIN_INIT;
 	lsm->icl_login_last_state = ILS_LOGIN_INIT;
@@ -272,17 +270,11 @@ static void
 login_resp_complete_cb(idm_pdu_t *pdu, idm_status_t status)
 {
 	iscsit_conn_t *ict = pdu->isp_private;
-	iscsit_conn_login_t *lsm = &ict->ict_login_sm;
 
 	/*
 	 * Check that this is a login pdu
 	 */
 	ASSERT((pdu->isp_flags & IDM_PDU_LOGIN_TX) != 0);
-
-	mutex_enter(&lsm->icl_mutex);
-	list_remove(&lsm->icl_resp_list, pdu);
-	mutex_exit(&lsm->icl_mutex);
-
 	idm_pdu_free(pdu);
 
 	if ((status != IDM_STATUS_SUCCESS) ||
@@ -299,12 +291,22 @@ void
 iscsit_login_sm_fini(iscsit_conn_t *ict)
 {
 	iscsit_conn_login_t *lsm = &ict->ict_login_sm;
+	login_event_ctx_t *ctx;
+	
 
 	mutex_enter(&lsm->icl_mutex);
+
+	/* Remove any pending login events */
+	while (!list_is_empty(&lsm->icl_login_events)) {
+		ctx = list_head(&lsm->icl_login_events);
+		list_remove(&lsm->icl_login_events, ctx);
+		if (ctx->le_pdu)
+			idm_pdu_complete(ctx->le_pdu, IDM_STATUS_SUCCESS);
+		kmem_free(ctx, sizeof (*ctx));
+	}
+
 	list_destroy(&lsm->icl_pdu_list);
 	list_destroy(&lsm->icl_login_events);
-	ASSERT(list_is_empty(&lsm->icl_resp_list));
-	list_destroy(&lsm->icl_resp_list);
 
 	kmem_free(lsm->icl_login_resp_tmpl, sizeof (iscsi_login_rsp_hdr_t));
 
@@ -822,9 +824,6 @@ login_sm_send_ack(iscsit_conn_t *ict, idm_pdu_t *pdu)
 	lack = idm_pdu_alloc(sizeof (iscsi_hdr_t), 0);
 	idm_pdu_init(lack, ict->ict_ic, ict, login_resp_complete_cb);
 	lack->isp_flags |= IDM_PDU_LOGIN_TX;
-	mutex_enter(&lsm->icl_mutex);
-	list_insert_tail(&lsm->icl_resp_list, lack);
-	mutex_exit(&lsm->icl_mutex);
 
 	/*
 	 * copy the response template into the response pdu
@@ -2120,9 +2119,6 @@ login_sm_build_login_response(iscsit_conn_t *ict)
 	idm_pdu_init(login_resp,
 	    ict->ict_ic, ict, login_resp_complete_cb);
 	login_resp->isp_flags |= IDM_PDU_LOGIN_TX;
-	mutex_enter(&lsm->icl_mutex);
-	list_insert_tail(&lsm->icl_resp_list, login_resp);
-	mutex_exit(&lsm->icl_mutex);
 
 	/*
 	 * Use the BHS header values from the response template

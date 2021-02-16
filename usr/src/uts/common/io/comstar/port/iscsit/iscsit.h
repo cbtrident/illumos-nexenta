@@ -460,7 +460,6 @@ typedef struct {
 	int			icl_auth_pass;
 	list_t			icl_login_events;
 	list_t			icl_pdu_list;
-	list_t			icl_resp_list;
 	uint16_t		icl_tsih;
 	uint8_t			icl_isid[ISCSI_ISID_LEN];
 	uint32_t		icl_cmdsn;
