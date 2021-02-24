@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  */
 
@@ -153,7 +153,16 @@ typedef struct logging_data {
 static logging_data *logging_head = NULL;
 static logging_data *logging_tail = NULL;
 
-#define	MOUNTD_STKSZ	(16 * 1024)	/* 16KB Stacks */
+/*
+ * If NSCD is disabled, then the mountd door server threads call into
+ * libsldap code (through getusergroups() and nss_search()) when it
+ * needs to get supplemental groups. Those libraries have VERY deep
+ * stacks (see: SetDoorInfo, set_default_value, stlogit). The deepest
+ * stack we've seen (stlogit) is over 36k, but below 40k; We choose
+ * 48k to leave some room for other, unknown deeper stacks.
+ */
+size_t	mountd_stksz = 48 * 1024;	/* 48KB Stacks */
+
 static	uint32_t	nm_thrds = 0;
 static	uint32_t	mx_thrds = 2;	/* fallback default: see main() */
 
@@ -250,7 +259,7 @@ mntd_thr_create(door_info_t *dp)
 	thread_t	 tid;
 	int		 num = 0;
 	int		 rc = 0;
-	size_t		 stksz = MOUNTD_STKSZ;
+	size_t		 stksz = mountd_stksz;
 	long		 flags = THR_DETACHED;
 	void		*proc;
 	dr_cmd_t	*cp;
