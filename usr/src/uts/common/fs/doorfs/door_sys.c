@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -1112,6 +1113,22 @@ door_stack_copyout(const void *kaddr, void *uaddr, size_t count)
 	}
 	return (0);
 }
+
+/*
+ * The IA32 ABI supplement 1.0 changed the required stack alignment to
+ * 16 bytes (from 4 bytes), so that code can make use of SSE instructions.
+ * This is already done for process entry, thread entry, and makecontext();
+ * We need to do this for door_return as well. The stack will be aligned to
+ * whatever the door_results is aligned.
+ * See: usr/src/lib/libc/i386/gen/makectxt.c for more details.
+ */
+#if defined(__i386)
+#undef STACK_ALIGN
+#define	STACK_ALIGN 16
+#elif defined(__amd64)
+#undef STACK_ALIGN32
+#define	STACK_ALIGN32 16
+#endif
 
 /*
  * Writes the stack layout for door_return() into the door_server_t of the
@@ -2725,7 +2742,7 @@ door_translate_out(void)
  */
 static int
 door_results(kthread_t *caller, caddr_t data_ptr, size_t data_size,
-		door_desc_t *desc_ptr, uint_t desc_num)
+    door_desc_t *desc_ptr, uint_t desc_num)
 {
 	door_client_t	*ct = DOOR_CLIENT(caller->t_door);
 	door_upcall_t	*dup = ct->d_upcall;
