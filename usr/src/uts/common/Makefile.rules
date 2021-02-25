@@ -24,7 +24,7 @@
 # Copyright 2016 Garrett D'Amore <garrett@damore.org>
 # Copyright 2013 Saso Kiselkov. All rights reserved.
 # Copyright 2016 Joyent, Inc.
-# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 # Copyright (c) 2016 by Delphix. All rights reserved.
 #
 
@@ -929,6 +929,10 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/mr_sas/%.c
 	$(CTFCONVERT_O)
 
 $(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/scsi/adapters/mpt_sas/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/scsi/adapters/mpt_sas3/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
@@ -2281,6 +2285,9 @@ $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/mr_sas/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/scsi/adapters/mpt_sas/%.c
+	@($(LHEAD) $(LINT.c) $< $(LTAIL))
+
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/scsi/adapters/mpt_sas3/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
  $(LINTS_DIR)/%.ln:              $(UTSBASE)/common/io/scsi/adapters/smartpqi/%.c

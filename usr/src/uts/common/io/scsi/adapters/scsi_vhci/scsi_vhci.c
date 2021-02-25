@@ -21,8 +21,8 @@
 
 /*
  * Copyright (c) 2001, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018, 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -1549,6 +1549,16 @@ pkt_cleanup:
 			vpkt->vpkt_path = NULL;
 		}
 	}
+
+	/*
+	 * If the HBA returned a fatal error and this is a silent USCSI command
+	 * as used during device attach return an error here so that we
+	 * do not get stuck in a loop with sd retrying forever. Because we always
+	 * set the FLAG_NOQUEUE bit mpt_sas3 will only ever return this when
+	 * it itself has initiated a target device configure.
+	 */
+	if (rval == TRAN_FATAL_ERROR && (flags & FLAG_SILENT))
+		return(TRAN_FATAL_ERROR);
 	return (TRAN_BUSY);
 }
 

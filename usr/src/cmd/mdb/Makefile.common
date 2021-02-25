@@ -22,7 +22,7 @@
 #
 # Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2016 Joyent, Inc.
-# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
 #
@@ -82,6 +82,7 @@ COMMON_MODULES_KVM = \
 	mac \
 	mm \
 	mpt_sas \
+	mpt_sas3 \
 	mr_sas \
 	nca \
 	nsmb \
