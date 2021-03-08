@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2012-2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <sys/sid.h>
@@ -1670,6 +1670,27 @@ smb_fsop_write(
 	smb_node_end_crit(snode);
 
 	return (rc);
+}
+
+
+/*
+ * Support for zero-copy read/write
+ * Request buffers and return them.
+ *
+ * Unlike other fsop functions, these two do NOT include the SR
+ * because the lifetime of the loaned buffers could eventually
+ * extend beyond the life of the smb_request_t that used them.
+ */
+int
+smb_fsop_reqzcbuf(smb_node_t *node, xuio_t *xuio, int ioflag, cred_t *cr)
+{
+	return (smb_vop_reqzcbuf(node->vp, ioflag, xuio, cr));
+}
+
+int
+smb_fsop_retzcbuf(smb_node_t *node, xuio_t *xuio, cred_t *cr)
+{
+	return (smb_vop_retzcbuf(node->vp, xuio, cr));
 }
 
 /*
