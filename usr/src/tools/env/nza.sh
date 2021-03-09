@@ -232,7 +232,7 @@ export ENABLE_SMB_PRINTING='#'
 # Detect the values to match the perl version used for building.
 # This code can be avoided by setting the variables here.
 if [ -z "$PERL_VERSION" ] ; then
-	for d in 5.16.1 5.16 5.14 5.12 5.10.0 5.10 ; do
+	for d in 5.28 5.16.1 5.16 5.14 5.12 5.10.0 5.10 ; do
 		if [ -d /usr/perl5/$d ] ; then
 			export PERL_VERSION=$d
 			break
@@ -245,10 +245,8 @@ if [ -z "$PERL_VERSION" ] ; then
 	exit 1
 fi
 
-if [ -z "$PERL_PKGVERS" ] ; then
-	PERL_PKGVERS=-$(echo $PERL_VERSION | tr -d '.')
-	export PERL_PKGVERS=$PERL_PKGVERS
-fi
+# PERL_PKGVERS is no longer needed.
+export PERL_PKGVERS=
 
 # Now PERL_ARCH.
 if [ -z "$PERL_ARCH" ] ; then
