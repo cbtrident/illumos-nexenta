@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2015-2021 Tintri by DDN, Inc. All rights reserved.
  * Copyright 2020 RackTop Systems, Inc.
  */
 
@@ -499,7 +499,7 @@ smb_auth_get_token(smb_request_t *sr)
 	 * at least through Session Setup.
 	 */
 	if (sr->session->dialect >= SMB_VERS_3_0)
-		smb3_encrypt_begin(sr, token);
+		smb3_encrypt_begin(sr->uid_user, token);
 
 	/*
 	 * Save the session key, and (maybe) enable signing,
