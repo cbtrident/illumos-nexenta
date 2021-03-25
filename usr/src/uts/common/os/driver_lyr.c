@@ -1924,7 +1924,7 @@ ldi_get_size(ldi_handle_t lh, uint64_t *sizep)
 
 int
 ldi_ioctl(ldi_handle_t lh, int cmd, intptr_t arg, int mode,
-	cred_t *cr, int *rvalp)
+    cred_t *cr, int *rvalp)
 {
 	struct ldi_handle	*handlep = (struct ldi_handle *)lh;
 	vnode_t			*vp;
@@ -1999,7 +1999,7 @@ ldi_poll(ldi_handle_t lh, short events, int anyyet, short *reventsp,
 
 int
 ldi_prop_op(ldi_handle_t lh, ddi_prop_op_t prop_op,
-	int flags, char *name, caddr_t valuep, int *length)
+    int flags, char *name, caddr_t valuep, int *length)
 {
 	struct ldi_handle	*handlep = (struct ldi_handle *)lh;
 	dev_t			dev;
@@ -3319,8 +3319,7 @@ int
 ldi_invoke_notify(dev_info_t *dip, dev_t dev, int spec_type, char *event,
     void *ev_data)
 {
-	ldi_ev_callback_impl_t	*lecp,
-				*saved_lecp;
+	ldi_ev_callback_impl_t	*lecp, *saved_lecp;
 	list_t	*listp;
 	int	ret;
 	char	*lec_event;
@@ -3400,6 +3399,7 @@ restart_loop:
 		 * be restarted since there's no telling what happened to
 		 * the linked list.
 		 */
+		ldi_ev_callback_list.le_walker_next = NULL;
 		ldi_ev_unlock();
 		ret = lecp->lec_notify(lecp->lec_lhp, lecp->lec_cookie,
 		    lecp->lec_arg, ev_data);
@@ -3468,6 +3468,7 @@ restart_2nd_loop:
 			continue;
 		lecp->lec_lhp->lh_flags |= LH_FLAGS_NOTIFY_FINALIZE;
 
+		ldi_ev_callback_list.le_walker_prev = NULL;
 		ldi_ev_unlock();
 		lecp->lec_finalize(lecp->lec_lhp, lecp->lec_cookie,
 		    LDI_EV_FAILURE, lecp->lec_arg, ev_data);
@@ -3494,8 +3495,8 @@ out:
 	for (lecp = list_head(listp); lecp; lecp = list_next(listp, lecp)) {
 		if (lecp->lec_lhp == NULL)
 			continue;
-		lecp->lec_lhp->lh_flags &= ~(LH_FLAGS_NOTIFY_NOTIFY |
-					     LH_FLAGS_NOTIFY_FINALIZE);
+		lecp->lec_lhp->lh_flags &=
+		    ~(LH_FLAGS_NOTIFY_NOTIFY | LH_FLAGS_NOTIFY_FINALIZE);
 	}
 	ldi_ev_callback_list.le_walker_next = NULL;
 	ldi_ev_callback_list.le_walker_prev = NULL;
