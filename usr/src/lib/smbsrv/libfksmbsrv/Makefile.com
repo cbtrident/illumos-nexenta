@@ -22,7 +22,7 @@
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2014-2021 Tintri by DDN, Inc. All rights reserved.
 #
 # Copyright (c) 2018, Joyent, Inc.
 #
@@ -41,8 +41,10 @@ OBJS_LOCAL = \
 		fksmb_kdoor.o \
 		fksmb_preauth_pkcs.o \
 		fksmb_sign_pkcs.o \
+		fake_ksocket.o \
 		fake_lookup.o \
 		fake_nblk.o \
+		fake_stream.o \
 		fake_vfs.o \
 		fake_vnode.o \
 		fake_vop.o \
