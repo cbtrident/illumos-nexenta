@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2021 RackTop Systems, Inc.
  */
 
 /*
@@ -441,7 +442,6 @@ smb2_nego_validate(smb_request_t *sr, smb_fsctl_t *fsctl)
 	/*
 	 * The spec. says to parse the VALIDATE_NEGOTIATE_INFO here
 	 * and verify that the original negotiate was not modified.
-	 * The request MUST be signed, and we MUST validate the signature.
 	 *
 	 * One interesting requirement here is that we MUST reply
 	 * with exactly the same information as we returned in our
@@ -454,7 +454,13 @@ smb2_nego_validate(smb_request_t *sr, smb_fsctl_t *fsctl)
 	uint16_t secmode, num_dialects, dialects[8];
 	uint8_t clnt_guid[16];
 
-	if ((sr->smb2_hdr_flags & SMB2_FLAGS_SIGNED) == 0)
+	/*
+	 * [MS-SMB2] 3.3.5.2.4 Verifying the Signature
+	 *
+	 * If the dialect is SMB3 and the message was successfully
+	 * decrypted we MUST skip processing of the signature.
+	 */
+	if (!sr->encrypted && (sr->smb2_hdr_flags & SMB2_FLAGS_SIGNED) == 0)
 		goto drop;
 
 	if (fsctl->InputCount < 24)
