@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2013-2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -42,7 +42,9 @@
 #include <sys/sysmacros.h>
 
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include "vncache.h"
@@ -457,6 +459,71 @@ fake_lookup_xattrdir(
 	return (0);
 }
 
+/*
+ * Case-insensitive fstatat(), optionally returns actual name found.
+ */
+static int
+fstatatci(int fd, const char *name, pathname_t *rpnp, struct stat *stp)
+{
+	struct dirent *dp_mem, *dp;
+	DIR *dirp = NULL;
+	int rc = ENOENT;
+	int tfd = -1;
+	int flg = AT_SYMLINK_NOFOLLOW;
+
+	dp = NULL;
+	dp_mem = calloc(1, sizeof (*dp_mem) + MAXNAMLEN + 1);
+	if (dp_mem == NULL) {
+		rc = ENOMEM;
+		goto out;
+	}
+
+	/* closedir will close the FD we give it, so dup */
+	if ((tfd = dup(fd)) == -1) {
+		rc = errno;
+		goto out;
+	}
+	(void) lseek(tfd, (off_t)0, SEEK_SET);
+
+	if ((dirp = fdopendir(tfd)) == NULL) {
+		rc = errno;
+		goto out;
+	}
+	tfd = -1; // dirp owns it now
+
+	for (;;) {
+		rc = readdir_r(dirp, dp_mem, &dp);
+		if (rc != 0)
+			goto out;
+		if (dp == NULL)
+			break;
+		if (strcasecmp(dp->d_name, name) == 0)
+			break;
+	}
+	if (dp == NULL) {
+		rc = ENOENT;
+		goto out;
+	}
+
+	/* Found CI match */
+	if (fstatat(fd, dp->d_name, stp, flg) != 0) {
+		rc = errno;
+		goto out;
+	}
+	if (rpnp != NULL)
+		pn_set(rpnp, dp->d_name);
+	rc = 0;
+
+out:
+	if (dirp != NULL)
+		(void) closedir(dirp);
+	if (tfd != -1)
+		close(tfd);
+	free(dp_mem);
+
+	return (rc);
+}
+
 /* ARGSUSED */
 int
 fop_lookup(
@@ -469,7 +536,7 @@ fop_lookup(
 	cred_t *cr,
 	caller_context_t *ct,
 	int *deflags,		/* Returned per-dirent flags */
-	pathname_t *ppnp)	/* Returned case-preserved name in directory */
+	pathname_t *rpnp)	/* Returned case-preserved name in directory */
 {
 	int fd;
 	int omode = O_RDWR | O_NOFOLLOW;
@@ -488,8 +555,21 @@ fop_lookup(
 		return (0);
 	}
 
-	if (fstatat(dvp->v_fd, name, &st, AT_SYMLINK_NOFOLLOW) == -1)
+	if (fstatat(dvp->v_fd, name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+		/* name exists */
+		if (rpnp != NULL)
+			pn_set(rpnp, name);
+	} else if (errno == ENOENT && (flags & FIGNORECASE) != 0) {
+		/* name does not exist, try CI */
+		ASSERT(rpnp != NULL);
+		if (fstatatci(dvp->v_fd, name, rpnp, &st) != 0)
+			return (ENOENT);
+		/* CI lookup worked.  Use real name from now on. */
+		name = rpnp->pn_path;
+	} else {
+		/* fstatat some other error */
 		return (errno);
+	}
 
 	vp = vncache_lookup(&st);
 	if (vp != NULL) {

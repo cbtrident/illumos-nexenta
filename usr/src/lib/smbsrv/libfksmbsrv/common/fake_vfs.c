@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2013-2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -45,7 +45,7 @@
 
 #define	VFTBITS(feature)	((feature) & 0xFFFFFFFFLL)
 
-static uint64_t vfs_features = VFSFT_XVATTR;
+uint64_t vfs_features = VFSFT_XVATTR | VFSFT_CASEINSENSITIVE;
 
 vnode_t *rootdir = NULL;	/* pointer to root inode vnode. */
 

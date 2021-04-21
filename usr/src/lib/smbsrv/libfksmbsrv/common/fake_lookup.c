@@ -21,11 +21,11 @@
 
 /*
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2013-2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved   */
 
 /*
  * University Copyright- Copyright (c) 1982, 1986, 1988
@@ -97,14 +97,17 @@ lookuppnvp(
 
 	nlink = 0;
 	cvp = NULL;
-	if (rpnp)
+	if (rpnp) {
 		rpnp->pn_pathlen = 0;
+		rpnp->pn_buf[0] = '\0';
+	}
 
 	lookup_flags = dirvpp ? LOOKUP_DIR : 0;
 	if (flags & FIGNORECASE) {
 		lookup_flags |= FIGNORECASE;
 		pn_alloc(&presrvd);
 		pp = &presrvd;
+		pp->pn_buf[0] = '\0';
 	}
 
 	/*
