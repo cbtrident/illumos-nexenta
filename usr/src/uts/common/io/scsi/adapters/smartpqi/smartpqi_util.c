@@ -394,18 +394,18 @@ dtype_to_str(int t)
 }
 
 static ddi_dma_attr_t single_dma_attrs = {
-	DMA_ATTR_V0,	/* attribute layout version			*/
-	0x0ull,		/* address low - should be 0 (longlong)		*/
-	0xffffffffffffffffull, /* address high - 64-bit max		*/
-	0x7ffffull,	/* count max - max DMA object size		*/
-	4096,		/* allocation alignment requirements		*/
-	0x78,		/* burstsizes - binary encoded values		*/
-	1,		/* minxfer - gran. of DMA engine		*/
-	0x007ffffull,	/* maxxfer - gran. of DMA engine		*/
-	0xffffffffull,	/* max segment size (DMA boundary)		*/
-	1,		/* For pqi_alloc_single must be contig memory	*/
-	512,		/* granularity - device transfer size		*/
-	0		/* flags, set to 0				*/
+	.dma_attr_version =	DMA_ATTR_V0,
+	.dma_attr_addr_lo =	0x0ull,
+	.dma_attr_addr_hi =	0xffffffffffffffffull,
+	.dma_attr_count_max =	0x7ffffull,
+	.dma_attr_align =	4096,
+	.dma_attr_burstsizes =	0x78,
+	.dma_attr_minxfer =	1,
+	.dma_attr_maxxfer =	0x007ffffull,
+	.dma_attr_seg =		0xffffffffull,
+	.dma_attr_sgllen =	1,
+	.dma_attr_granular =	512,
+	.dma_attr_flags =	0,
 };
 
 pqi_dma_overhead_t *

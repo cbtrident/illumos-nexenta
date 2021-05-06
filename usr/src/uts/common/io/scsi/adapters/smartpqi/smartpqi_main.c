@@ -91,18 +91,18 @@ int pqi_do_offline = 0;
  * physical addresses are supported.)
  */
 ddi_dma_attr_t smartpqi_dma_attrs = {
-	DMA_ATTR_V0,		/* attribute layout version		*/
-	0x0ull,			/* address low - should be 0 (longlong)	*/
-	0xffffffffffffffffull, /* address high - 64-bit max	*/
-	0x00666600ull,		/* count max - max DMA object size	*/
-	4096,			/* allocation alignment requirements	*/
-	0x78,			/* burstsizes - binary encoded values	*/
-	1,			/* minxfer - gran. of DMA engine	*/
-	0x00666600ull,		/* maxxfer - gran. of DMA engine	*/
-	0x00666600ull,		/* max segment size (DMA boundary)	*/
-	PQI_MAX_SCATTER_GATHER,	/* scatter/gather list length		*/
-	512,			/* granularity - device transfer size	*/
-	0			/* flags, set to 0			*/
+	.dma_attr_version =	DMA_ATTR_V0,
+	.dma_attr_addr_lo =	0x0ull,
+	.dma_attr_addr_hi =	0xffffffffffffffffull,
+	.dma_attr_count_max =	0x00ffffffull,
+	.dma_attr_align =	4096,
+	.dma_attr_burstsizes =	0x78,
+	.dma_attr_minxfer =	1,
+	.dma_attr_maxxfer =	0x00ffffffull,
+	.dma_attr_seg =		0xffffffffull,
+	.dma_attr_sgllen =	PQI_MAX_SCATTER_GATHER,
+	.dma_attr_granular =	512,
+	.dma_attr_flags =	0,
 };
 
 ddi_device_acc_attr_t smartpqi_dev_attr = {
