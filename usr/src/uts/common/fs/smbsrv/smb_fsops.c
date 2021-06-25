@@ -1279,10 +1279,11 @@ smb_fsop_rename(
 			return (EACCES);
 		}
 
-		/* TODO: rename drops ATTR_NOACLCHECK, so this is a no-op. */
-		if (smb_tree_has_feature(sr->tid_tree,
-		    SMB_TREE_ACEMASKONACCESS))
-			flags = ATTR_NOACLCHECK;
+		/*
+		 * TODO: avoid ACL check for source file.
+		 * smb_vop_rename() passes its own flags to VOP_RENAME,
+		 * and ZFS doesn't pass it on to zfs_zaccess_rename().
+		 */
 	}
 
 	rc = smb_vop_rename(from_dnode->vp, from_name, to_dnode->vp,
