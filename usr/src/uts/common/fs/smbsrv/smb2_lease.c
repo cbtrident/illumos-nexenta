@@ -240,10 +240,9 @@ smb2_lease_lookup(smb_server_t *sv, uint8_t *clnt_uuid, uint8_t *lease_key)
 }
 
 /*
- * Find an smb_ofile_t in the current tree that shares the
- * specified lease and has some oplock breaking flags set.
+ * Find the smb_ofile_t in the current tree that owns the
+ * specified lease.
  * If lease not found, NT_STATUS_OBJECT_NAME_NOT_FOUND.
- * If ofile not breaking NT_STATUS_UNSUCCESSFUL.
  * On success, ofile (held) in sr->fid_ofile.
  */
 static uint32_t
@@ -277,10 +276,10 @@ find_breaking_ofile(smb_request_t *sr, uint8_t *lease_key)
 		 */
 		status = NT_STATUS_UNSUCCESSFUL;
 
-		if (o->f_oplock.og_breaking == 0)
-			continue; // not breaking
+		if (lease->ls_oplock_ofile != o)
+			continue; // not owner
 
-		/* Found breaking ofile. */
+		/* Found oplock owner */
 		if (smb_ofile_hold(o)) {
 			sr->fid_ofile = o;
 			status = NT_STATUS_SUCCESS;
@@ -336,6 +335,12 @@ smb2_lease_break_ack(smb_request_t *sr)
 	ofile = sr->fid_ofile;
 	lease = ofile->f_lease;
 
+	/* Either this ACK is unsolicited, or we timed out waiting. */
+	if (lease->ls_breaking == 0) {
+		status = NT_STATUS_UNSUCCESSFUL;
+		goto errout;
+	}
+
 	/*
 	 * Process the lease break ack.
 	 *
@@ -349,7 +354,6 @@ smb2_lease_break_ack(smb_request_t *sr)
 		goto errout;
 	}
 
-	ofile->f_oplock.og_breaking = 0;
 	lease->ls_breaking = 0;
 
 	LeaseState |= OPLOCK_LEVEL_GRANULAR;
@@ -360,9 +364,7 @@ smb2_lease_break_ack(smb_request_t *sr)
 		status = NT_STATUS_SUCCESS;
 	}
 
-	ofile->f_oplock.og_state = LeaseState;
-	lease->ls_state = LeaseState &
-	    OPLOCK_LEVEL_CACHE_MASK;
+	lease->ls_state = LeaseState & OPLOCK_LEVEL_CACHE_MASK;
 
 errout:
 	sr->smb2_status = status;
@@ -401,9 +403,7 @@ void
 smb2_lease_break_notification(smb_request_t *sr, uint32_t NewLevel,
     boolean_t AckReq)
 {
-	smb_ofile_t *ofile = sr->fid_ofile;
-	smb_oplock_grant_t *og = &ofile->f_oplock;
-	smb_lease_t *ls = ofile->f_lease;
+	smb_lease_t *ls = sr->fid_ofile->f_lease;
 	uint32_t oldcache;
 	uint32_t newcache;
 	uint16_t Epoch;
@@ -412,7 +412,7 @@ smb2_lease_break_notification(smb_request_t *sr, uint32_t NewLevel,
 	/*
 	 * Convert internal level to SMB2
 	 */
-	oldcache = og->og_state & OPLOCK_LEVEL_CACHE_MASK;
+	oldcache = ls->ls_state & OPLOCK_LEVEL_CACHE_MASK;
 	newcache = NewLevel & OPLOCK_LEVEL_CACHE_MASK;
 	if (ls->ls_version < 2)
 		Epoch = 0;
@@ -642,15 +642,9 @@ done:
 		ASSERT(status == NT_STATUS_SUCCESS);
 
 		/*
-		 * Keep track of what we got (in ofile->f_oplock.og_state)
-		 * so we'll know what we had when sending a break later.
-		 * Also update the lease with the new oplock state.
-		 * Also track which ofile on the lease owns the oplock.
-		 * The og_dialect here is the oplock dialect, not the
-		 * SMB dialect.  Leasing, so SMB 2.1 (or later).
+		 * Keep track of what we got (in lease->ls_state)
+		 * so we'll know what we last told the client.
 		 */
-		ofile->f_oplock.og_dialect = SMB_VERS_2_1;
-		ofile->f_oplock.og_state = op->op_oplock_state;
 		mutex_enter(&lease->ls_mutex);
 		lease->ls_state = op->op_oplock_state & CACHE_RWH;
 		lease->ls_epoch++;

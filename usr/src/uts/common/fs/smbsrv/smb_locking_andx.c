@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2020 Tintri by DDN, Inc.  All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -443,8 +443,9 @@ smb1_oplock_break_notification(smb_request_t *sr, uint32_t NewLevel)
 		break;
 	}
 
+	ASSERT(ofile->f_tree != NULL);
 	sr->smb_com = SMB_COM_LOCKING_ANDX;
-	sr->smb_tid = ofile->f_tree->t_tid;
+	sr->smb_tid = (ofile->f_tree == NULL) ? 0xFFFF : ofile->f_tree->t_tid;
 	sr->smb_pid = 0xFFFF;
 	sr->smb_uid = 0;
 	sr->smb_mid = 0xFFFF;

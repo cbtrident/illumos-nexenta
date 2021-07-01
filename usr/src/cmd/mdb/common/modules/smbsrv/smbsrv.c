@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <mdb/mdb_modapi.h>
@@ -2142,9 +2142,63 @@ smbsrv_leases_dcmd(uintptr_t addr, uint_t flags, int argc,
 typedef struct mdb_smb_lease {
 	struct smb_node		*ls_node;
 	uint32_t		ls_refcnt;
+	uint32_t		ls_state;
 	uint16_t		ls_epoch;
 	uint8_t			ls_key[SMB_LEASE_KEY_SZ];
 } mdb_smb_lease_t;
+
+static const mdb_bitmask_t
+oplock_bits[] = {
+	{  "READ_CACHING",
+	    READ_CACHING,
+	    READ_CACHING },
+	{  "HANDLE_CACHING",
+	    HANDLE_CACHING,
+	    HANDLE_CACHING },
+	{  "WRITE_CACHING",
+	    WRITE_CACHING,
+	    WRITE_CACHING },
+	{  "EXCLUSIVE",
+	    EXCLUSIVE,
+	    EXCLUSIVE },
+	{  "MIXED_R_AND_RH",
+	    MIXED_R_AND_RH,
+	    MIXED_R_AND_RH },
+	{  "LEVEL_TWO_OPLOCK",
+	    LEVEL_TWO_OPLOCK,
+	    LEVEL_TWO_OPLOCK },
+	{  "LEVEL_ONE_OPLOCK",
+	    LEVEL_ONE_OPLOCK,
+	    LEVEL_ONE_OPLOCK },
+	{  "BATCH_OPLOCK",
+	    BATCH_OPLOCK,
+	    BATCH_OPLOCK },
+	{  "BREAK_TO_TWO",
+	    BREAK_TO_TWO,
+	    BREAK_TO_TWO },
+	{  "BREAK_TO_NONE",
+	    BREAK_TO_NONE,
+	    BREAK_TO_NONE },
+	{  "BREAK_TO_TWO_TO_NONE",
+	    BREAK_TO_TWO_TO_NONE,
+	    BREAK_TO_TWO_TO_NONE },
+	{  "BREAK_TO_READ_CACHING",
+	    BREAK_TO_READ_CACHING,
+	    BREAK_TO_READ_CACHING },
+	{  "BREAK_TO_HANDLE_CACHING",
+	    BREAK_TO_HANDLE_CACHING,
+	    BREAK_TO_HANDLE_CACHING },
+	{  "BREAK_TO_WRITE_CACHING",
+	    BREAK_TO_WRITE_CACHING,
+	    BREAK_TO_WRITE_CACHING },
+	{  "BREAK_TO_NO_CACHING",
+	    BREAK_TO_NO_CACHING,
+	    BREAK_TO_NO_CACHING },
+	{  "NO_OPLOCK",
+	    NO_OPLOCK,
+	    NO_OPLOCK },
+	{  NULL, 0, 0 }
+};
 
 static int
 smblease_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
@@ -2178,6 +2232,10 @@ smblease_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 			mdb_printf("SMB Node: %p\n", ls->ls_node);
 			mdb_printf("Refcount: %u\n", ls->ls_refcnt);
 			mdb_printf("Epoch: %u\n", ls->ls_epoch);
+			mdb_printf("State: 0x%x <%b>\n",
+			    ls->ls_state,
+			    ls->ls_state,
+			    oplock_bits);
 
 			mdb_printf("Key: [");
 			for (i = 0; i < SMB_LEASE_KEY_SZ; i++) {
@@ -2186,16 +2244,19 @@ smblease_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 					mdb_printf(" ");
 			}
 			mdb_printf(" ]\n");
+
 		} else {
 			if (DCMD_HDRSPEC(flags))
 				mdb_printf(
 				    "%<b>%<u>"
 				    "%-?s "
 				    "%-?s "
+				    "%-?s "
 				    "%-?s%</u>%</b>\n",
-				    "LEASE", "SMB NODE", "KEY");
+				    "LEASE", "SMB NODE", "STATE", "KEY");
 
-			mdb_printf("%?p %-p [", addr, ls->ls_node);
+			mdb_printf("%?p %-?p %#-?x [", addr, ls->ls_node,
+			    ls->ls_state);
 			for (i = 0; i < 8; i++) {
 				mdb_printf(" %02x", ls->ls_key[i] & 0xFF);
 			}
@@ -2948,59 +3009,6 @@ typedef struct mdb_smb_oplock_grant {
 	uint8_t			onlist_RHBQ;
 	uint8_t			BreakingToRead;
 } mdb_smb_oplock_grant_t;
-
-static const mdb_bitmask_t
-oplock_bits[] = {
-	{  "READ_CACHING",
-	    READ_CACHING,
-	    READ_CACHING },
-	{  "HANDLE_CACHING",
-	    HANDLE_CACHING,
-	    HANDLE_CACHING },
-	{  "WRITE_CACHING",
-	    WRITE_CACHING,
-	    WRITE_CACHING },
-	{  "EXCLUSIVE",
-	    EXCLUSIVE,
-	    EXCLUSIVE },
-	{  "MIXED_R_AND_RH",
-	    MIXED_R_AND_RH,
-	    MIXED_R_AND_RH },
-	{  "LEVEL_TWO_OPLOCK",
-	    LEVEL_TWO_OPLOCK,
-	    LEVEL_TWO_OPLOCK },
-	{  "LEVEL_ONE_OPLOCK",
-	    LEVEL_ONE_OPLOCK,
-	    LEVEL_ONE_OPLOCK },
-	{  "BATCH_OPLOCK",
-	    BATCH_OPLOCK,
-	    BATCH_OPLOCK },
-	{  "BREAK_TO_TWO",
-	    BREAK_TO_TWO,
-	    BREAK_TO_TWO },
-	{  "BREAK_TO_NONE",
-	    BREAK_TO_NONE,
-	    BREAK_TO_NONE },
-	{  "BREAK_TO_TWO_TO_NONE",
-	    BREAK_TO_TWO_TO_NONE,
-	    BREAK_TO_TWO_TO_NONE },
-	{  "BREAK_TO_READ_CACHING",
-	    BREAK_TO_READ_CACHING,
-	    BREAK_TO_READ_CACHING },
-	{  "BREAK_TO_HANDLE_CACHING",
-	    BREAK_TO_HANDLE_CACHING,
-	    BREAK_TO_HANDLE_CACHING },
-	{  "BREAK_TO_WRITE_CACHING",
-	    BREAK_TO_WRITE_CACHING,
-	    BREAK_TO_WRITE_CACHING },
-	{  "BREAK_TO_NO_CACHING",
-	    BREAK_TO_NO_CACHING,
-	    BREAK_TO_NO_CACHING },
-	{  "NO_OPLOCK",
-	    NO_OPLOCK,
-	    NO_OPLOCK },
-	{  NULL, 0, 0 }
-};
 
 /*
  * Show smb_ofile_t oplock info

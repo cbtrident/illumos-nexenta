@@ -373,6 +373,19 @@ smb_oplock_async_break(void *arg)
 	smb_request_free(sr);
 }
 
+static void
+smb_oplock_update(smb_request_t *sr, smb_ofile_t *ofile, uint32_t NewLevel)
+{
+	if (ofile->f_lease != NULL)
+		ofile->f_lease->ls_state = NewLevel & CACHE_RWH;
+	else
+		ofile->f_oplock.og_state = NewLevel;
+
+	if (ofile->dh_persist) {
+		smb2_dh_update_oplock(sr, ofile);
+	}
+}
+
 #ifdef DEBUG
 int smb_oplock_debug_wait = 0;
 #endif
@@ -412,23 +425,29 @@ smb_oplock_send_brk(smb_request_t *sr)
 	 * Also updates the lease and NewLevel.
 	 */
 	sr->reply.max_bytes = MLEN;
-	if (ofile->f_oplock.og_dialect >= SMB_VERS_2_BASE) {
-		if (lease != NULL) {
-			/*
-			 * Oplock state has changed, so
-			 * update the epoch.
-			 */
-			mutex_enter(&lease->ls_mutex);
-			lease->ls_epoch++;
-			mutex_exit(&lease->ls_mutex);
 
-			/* Note, needs "old" state in og_state */
-			smb2_lease_break_notification(sr,
-			    (NewLevel & CACHE_RWH), AckReq);
-			NewLevel |= OPLOCK_LEVEL_GRANULAR;
-		} else {
-			smb2_oplock_break_notification(sr, NewLevel);
-		}
+	/*
+	 * We would like to test ls_oplock_ofile to determine whether we need to
+	 * do work for leases, but we can't do that right now because it can be
+	 * NULL during upgrade.
+	 */
+	if (lease != NULL) {
+		/*
+		 * Oplock state has changed, so update the epoch.
+		 */
+		mutex_enter(&lease->ls_mutex);
+		lease->ls_epoch++;
+		mutex_exit(&lease->ls_mutex);
+
+		/* Note, needs "old" state in ls_state */
+		smb2_lease_break_notification(sr,
+		    (NewLevel & CACHE_RWH), AckReq);
+		NewLevel |= OPLOCK_LEVEL_GRANULAR;
+	} else if (ofile->f_oplock.og_closing ||
+	    ofile->f_oplock.og_dialect == 0) {
+		return;
+	} else if (ofile->f_oplock.og_dialect >= SMB_VERS_2_BASE) {
+		smb2_oplock_break_notification(sr, NewLevel);
 	} else {
 		/*
 		 * SMB1 clients should only get Level II oplocks if they
@@ -443,9 +462,8 @@ smb_oplock_send_brk(smb_request_t *sr)
 	/*
 	 * Keep track of what we last sent to the client,
 	 * preserving the GRANULAR flag (if a lease).
-	 * If we're expecting an ACK, set og_breaking
-	 * (and maybe lease->ls_breaking) so we can
-	 * later find the ofile with breaks pending.
+	 * If we're expecting an ACK, set ls/og_breaking so we can later
+	 * filter unsolicited ACKs.
 	 */
 	if (AckReq) {
 		uint32_t BreakTo;
@@ -460,17 +478,11 @@ smb_oplock_send_brk(smb_request_t *sr)
 				BreakTo = BREAK_TO_TWO;
 			else
 				BreakTo = BREAK_TO_NONE;
+			ofile->f_oplock.og_breaking = BreakTo;
 		}
-		/* Will update og_state in ack. */
-		ofile->f_oplock.og_breaking = BreakTo;
+		/* Will update ls/og_state in ack. */
 	} else {
-		if (lease != NULL)
-			lease->ls_state = NewLevel & CACHE_RWH;
-		ofile->f_oplock.og_state = NewLevel;
-
-		if (ofile->dh_persist) {
-			smb2_dh_update_oplock(sr, ofile);
-		}
+		smb_oplock_update(sr, ofile, NewLevel);
 	}
 
 	/*
@@ -553,6 +565,7 @@ smb_oplock_send_brk(smb_request_t *sr)
 		 * If Lease.LeaseOpens is empty, (... local ack to "none").
 		 */
 
+		/* TODO: New MS-SMB2 says do this for all opens on the Lease */
 		/*
 		 * See similar logic in smb_ofile_should_save
 		 */
@@ -588,9 +601,10 @@ smb_oplock_send_brk(smb_request_t *sr)
 	 * or a send failure for a durable handle type that we
 	 * preserve rather than just close.  Do local ack.
 	 */
-	ofile->f_oplock.og_breaking = 0;
 	if (lease != NULL)
 		lease->ls_breaking = 0;
+	else
+		ofile->f_oplock.og_breaking = 0;
 
 	status = smb_oplock_ack_break(sr, ofile, &NewLevel);
 	if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
@@ -605,15 +619,8 @@ smb_oplock_send_brk(smb_request_t *sr)
 		    "status=0x%x", status);
 	}
 
-	/* Update og_state as if we heard from the client. */
-	ofile->f_oplock.og_state = NewLevel;
-	if (lease != NULL) {
-		lease->ls_state = NewLevel & CACHE_RWH;
-	}
-
-	if (ofile->dh_persist) {
-		smb2_dh_update_oplock(sr, ofile);
-	}
+	/* Update ls/og_state as if we heard from the client. */
+	smb_oplock_update(sr, ofile, NewLevel);
 }
 
 /*
@@ -630,7 +637,7 @@ smb_oplock_hdl_clear(smb_ofile_t *ofile)
 
 	if (lease != NULL) {
 		if (lease->ls_oplock_ofile == ofile) {
-			/* Last close on the lease. */
+			/* Last close on the lease (except for upgrade). */
 			lease->ls_oplock_ofile = NULL;
 		}
 	}
