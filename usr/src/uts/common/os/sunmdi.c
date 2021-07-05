@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 /*
@@ -3407,128 +3407,6 @@ i_mdi_client_remove_path(mdi_client_t *ct, mdi_pathinfo_t *pip)
 }
 
 /*
- * i_mdi_pi_stable():
- *              Subroutine for i_mdi_pi_state_change() stable state.
- *
- * Return Values:
- *              NDI_SUCCESS, NDI_FAILURE or as returned from
- *              ndi_devi_on/offline();
- */
-static int
-i_mdi_pi_stable(mdi_pathinfo_t *pip, mdi_client_t *ct, mdi_vhci_t *vh,
-    int (*f)(), mdi_pathinfo_state_t state, int flag)
-{
-	int             rv = NDI_SUCCESS;
-	dev_info_t      *cdip;
-
-	cdip = ct->ct_dip;
-
-	/*
-	 * Onlining the mdi_pathinfo node will impact the
-	 * client state.  Update the client and dev_info node
-	 * state accordingly.
-	 */
-	i_mdi_client_update_state(ct);
-	switch (MDI_CLIENT_STATE(ct)) {
-	case MDI_CLIENT_STATE_OPTIMAL:
-	case MDI_CLIENT_STATE_DEGRADED:
-		if (cdip && !i_ddi_devi_attached(cdip) &&
-		    ((state == MDI_PATHINFO_STATE_ONLINE) ||
-		    (state == MDI_PATHINFO_STATE_STANDBY))) {
-
-			/*
-			 * Must do ndi_devi_online() through hotplug thread for
-			 * deferred attach mechanism to work
-			 */
-			MDI_CLIENT_UNLOCK(ct);
-			rv = ndi_devi_online(cdip, 0);
-			MDI_CLIENT_LOCK(ct);
-			if ((rv != NDI_SUCCESS) &&
-			    (MDI_CLIENT_STATE(ct) ==
-			    MDI_CLIENT_STATE_DEGRADED)) {
-				/*
-				 * ndi_devi_online failed.
-				 * Reset client flags to offline.
-				 * If there is a callback function revert the
-				 * state for that as well.
-				 */
-				MDI_DEBUG(1, (MDI_WARN, cdip,
-				    "!ndi_devi_online failed error %x", rv));
-				if (f != NULL) {
-					MDI_CLIENT_UNLOCK(ct);
-					if ((*f)(vh->vh_dip, pip,
-					    MDI_PATHINFO_STATE_OFFLINE, 0,
-					    flag) != MDI_SUCCESS) {
-						MDI_DEBUG(1, (MDI_WARN,
-						    ct->ct_dip,
-						    "!_path_offline failed: "
-						    "vdip %s%d %p: path %s %p",
-						    ddi_driver_name(vh->vh_dip),
-						    ddi_get_instance(
-						    vh->vh_dip),
-						    (void *)vh->vh_dip,
-						    mdi_pi_spathname(pip),
-						    (void *)pip));
-					}
-					MDI_CLIENT_LOCK(ct);
-				}
-				MDI_CLIENT_SET_OFFLINE(ct);
-			}
-			if (rv != NDI_SUCCESS) {
-				/* Reset the path state */
-				MDI_PI_LOCK(pip);
-				MDI_PI(pip)->pi_state = MDI_PI_OLD_STATE(pip);
-				MDI_PI_UNLOCK(pip);
-			}
-		}
-		break;
-	case MDI_CLIENT_STATE_FAILED:
-		/*
-		 * This is the last path case for non-user initiated events.
-		 */
-		if (((flag & NDI_USER_REQ) == 0) && cdip &&
-		    (i_ddi_node_state(cdip) >= DS_INITIALIZED)) {
-			MDI_CLIENT_UNLOCK(ct);
-			rv = ndi_devi_offline(cdip, NDI_DEVFS_CLEAN);
-			MDI_CLIENT_LOCK(ct);
-
-			if (rv != NDI_SUCCESS) {
-				/*
-				 * ndi_devi_offline failed.
-				 * Reset client flags to online as the path
-				 * could not be offlined.
-				 * If there is a callback function revert the
-				 * state for that as well.
-				 */
-				MDI_DEBUG(1, (MDI_WARN, cdip,
-				    "!ndi_devi_offline failed: error %x", rv));
-				if (f != NULL) {
-					MDI_CLIENT_UNLOCK(ct);
-					if ((*f)(vh->vh_dip, pip,
-					    MDI_PATHINFO_STATE_ONLINE, 0,
-					    flag) != MDI_SUCCESS) {
-						MDI_DEBUG(1, (MDI_WARN,
-						    ct->ct_dip,
-						    "!_path_online failed: "
-						    "vdip %s%d %p: path %s %p",
-						    ddi_driver_name(vh->vh_dip),
-						    ddi_get_instance(
-						    vh->vh_dip),
-						    (void *)vh->vh_dip,
-						    mdi_pi_spathname(pip),
-						    (void *)pip));
-					}
-					MDI_CLIENT_LOCK(ct);
-				}
-				MDI_CLIENT_SET_ONLINE(ct);
-			}
-		}
-		break;
-	}
-	return (rv);
-}
-
-/*
  * i_mdi_pi_state_change():
  *		online a mdi_pathinfo node
  *
@@ -3536,6 +3414,7 @@ i_mdi_pi_stable(mdi_pathinfo_t *pip, mdi_client_t *ct, mdi_vhci_t *vh,
  *		MDI_SUCCESS
  *		MDI_FAILURE
  */
+/*ARGSUSED*/
 static int
 i_mdi_pi_state_change(mdi_pathinfo_t *pip, mdi_pathinfo_state_t state, int flag)
 {
@@ -3748,7 +3627,68 @@ i_mdi_pi_state_change(mdi_pathinfo_t *pip, mdi_pathinfo_state_t state, int flag)
 	MDI_CLIENT_STABLE(ct);
 	if (rv == MDI_SUCCESS) {
 		if (ct->ct_unstable == 0) {
-			rv = i_mdi_pi_stable(pip, ct, vh, f, state, flag);
+			cdip = ct->ct_dip;
+
+			/*
+			 * Onlining the mdi_pathinfo node will impact the
+			 * client state Update the client and dev_info node
+			 * state accordingly
+			 */
+			rv = NDI_SUCCESS;
+			i_mdi_client_update_state(ct);
+			switch (MDI_CLIENT_STATE(ct)) {
+			case MDI_CLIENT_STATE_OPTIMAL:
+			case MDI_CLIENT_STATE_DEGRADED:
+				if (cdip && !i_ddi_devi_attached(cdip) &&
+				    ((state == MDI_PATHINFO_STATE_ONLINE) ||
+				    (state == MDI_PATHINFO_STATE_STANDBY))) {
+
+					/*
+					 * Must do ndi_devi_online() through
+					 * hotplug thread for deferred
+					 * attach mechanism to work
+					 */
+					MDI_CLIENT_UNLOCK(ct);
+					rv = ndi_devi_online(cdip, 0);
+					MDI_CLIENT_LOCK(ct);
+					if ((rv != NDI_SUCCESS) &&
+					    (MDI_CLIENT_STATE(ct) ==
+					    MDI_CLIENT_STATE_DEGRADED)) {
+						MDI_DEBUG(1, (MDI_WARN, cdip,
+						    "!ndi_devi_online failed "
+						    "error %x", rv));
+					}
+					rv = NDI_SUCCESS;
+				}
+				break;
+
+			case MDI_CLIENT_STATE_FAILED:
+				/*
+				 * This is the last path case for
+				 * non-user initiated events.
+				 */
+				if ((flag & NDI_USER_REQ) ||
+				    cdip == NULL || i_ddi_node_state(cdip) <
+				    DS_INITIALIZED)
+					break;
+
+				MDI_CLIENT_UNLOCK(ct);
+				rv = ndi_devi_offline(cdip, NDI_DEVFS_CLEAN |
+				    NDI_DEVI_GONE);
+				MDI_CLIENT_LOCK(ct);
+
+				if (rv != NDI_SUCCESS) {
+					/*
+					 * Reset client flags to online as the
+					 * path could not be offlined.
+					 */
+					MDI_DEBUG(1, (MDI_WARN, cdip,
+					    "!ndi_devi_offline failed: %d",
+					    rv));
+					MDI_CLIENT_SET_ONLINE(ct);
+				}
+				break;
+			}
 			/*
 			 * Convert to MDI error code
 			 */
