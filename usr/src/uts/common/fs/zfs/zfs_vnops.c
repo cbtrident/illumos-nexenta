@@ -714,6 +714,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	ssize_t		n, nbytes;
 	int		error = 0;
 	rl_t		*rl;
+	boolean_t	frsync = B_FALSE;
 	xuio_t		*xuio = NULL;
 
 	ZFS_ENTER(zfsvfs);
@@ -757,10 +758,19 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	if (zfsvfs->z_rate.rate_cap)
 		zfs_rate_throttle(zfsvfs, uio->uio_resid);
 
+#ifdef FRSYNC
 	/*
 	 * If we're in FRSYNC mode, sync out this znode before reading it.
+	 * Only do this for non-snapshots.
+	 *
+	 * Some platforms do not support FRSYNC and instead map it
+	 * to FSYNC, which results in unnecessary calls to zil_commit. We
+	 * only honor FRSYNC requests on platforms which support it.
 	 */
-	if (ioflag & FRSYNC || zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
+	frsync = !!(ioflag & FRSYNC);
+#endif
+	if (zfsvfs->z_log &&
+	    (frsync || zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS))
 		zil_commit(zfsvfs->z_log, zp->z_id);
 
 	/*
