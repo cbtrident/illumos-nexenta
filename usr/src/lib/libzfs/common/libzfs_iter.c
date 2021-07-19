@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2012 Pawel Jakub Dawidek. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <stdio.h>
@@ -101,8 +101,9 @@ top:
 /*
  * Iterate over all child filesystems
  */
-int
-zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
+static int
+zfs_iter_filesystems_impl(zfs_handle_t *zhp, zfs_iter_f func, void *data,
+    dmu_objset_type_t os_type)
 {
 	zfs_cmd_t zc = { 0 };
 	zfs_handle_t *nzhp;
@@ -113,6 +114,8 @@ zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 
 	if (zcmd_alloc_dst_nvlist(zhp->zfs_hdl, &zc, 0) != 0)
 		return (-1);
+
+	zc.zc_objset_type = os_type;
 
 	while ((ret = zfs_do_list_ioctl(zhp, ZFS_IOC_DATASET_LIST_NEXT,
 	    &zc)) == 0) {
@@ -132,6 +135,18 @@ zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 	}
 	zcmd_free_nvlists(&zc);
 	return ((ret < 0) ? ret : 0);
+}
+
+int
+zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
+{
+	return (zfs_iter_filesystems_impl(zhp, func, data, DMU_OST_NONE));
+}
+
+int
+zfs_iter_fs(zfs_handle_t *zhp, zfs_iter_f func, void *data)
+{
+	return (zfs_iter_filesystems_impl(zhp, func, data, DMU_OST_ZFS));
 }
 
 /*

@@ -32,7 +32,7 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright 2017 RackTop Systems.
  * Copyright (c) 2017 Datto Inc.
@@ -360,6 +360,21 @@ history_str_get(zfs_cmd_t *zc)
 	buf[HIS_MAX_RECORD_LEN -1] = '\0';
 
 	return (buf);
+}
+
+
+static boolean_t
+zfs_is_req_type(const char *name, dmu_objset_type_t type)
+{
+	objset_t *os = NULL;
+
+	if (dmu_objset_hold(name, FTAG, &os) == 0) {
+		boolean_t ret;
+		ret = (dmu_objset_type(os) == type);
+		dmu_objset_rele(os, FTAG);
+		return (ret);
+	}
+	return (B_FALSE);
 }
 
 /*
@@ -2456,6 +2471,7 @@ zfs_ioc_dataset_list_next(zfs_cmd_t *zc)
 	int error;
 	char *p;
 	size_t orig_len = strlen(zc->zc_name);
+	dmu_objset_type_t type = zc->zc_objset_type;
 
 top:
 	if (error = dmu_objset_hold(zc->zc_name, FTAG, &os)) {
@@ -2475,7 +2491,9 @@ top:
 		    NULL, &zc->zc_cookie);
 		if (error == ENOENT)
 			error = SET_ERROR(ESRCH);
-	} while (error == 0 && dataset_name_hidden(zc->zc_name));
+	} while (error == 0 && (dataset_name_hidden(zc->zc_name) ||
+	    (type && !zfs_is_req_type(zc->zc_name, type))));
+
 	dmu_objset_rele(os, FTAG);
 
 	/*
