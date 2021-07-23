@@ -2810,13 +2810,9 @@ sd_spin_up_unit(sd_ssc_t *ssc)
 	status = sd_send_scsi_START_STOP_UNIT(ssc, SD_START_STOP,
 	    SD_TARGET_START, SD_PATH_DIRECT);
 
-	switch (status) {
-	case EIO:
-		sd_ssc_assessment(ssc, SD_FMT_STATUS_CHECK);
-		return (status);
-	case EACCES:
-		has_conflict = TRUE;
-	default: /*FALLTHROUGH*/
+	if (status != 0) {
+		if (status == EACCES)
+			has_conflict = TRUE;
 		sd_ssc_assessment(ssc, SD_FMT_IGNORE);
 	}
 
