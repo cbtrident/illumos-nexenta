@@ -24,11 +24,11 @@
  */
 
 /*
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
  * Copyright 2017 Joyent, Inc.
  * Copyright 2017 RackTop Systems.
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -1163,7 +1163,7 @@ mount_cb(zfs_handle_t *zhp, void *data)
 	}
 
 	libzfs_add_handle(cbp, zhp);
-	if (zfs_iter_fs(zhp, mount_cb, cbp) != 0) {
+	if (zfs_iter_filesystems(zhp, mount_cb, cbp) != 0) {
 		zfs_close(zhp);
 		return (-1);
 	}
@@ -1761,7 +1761,7 @@ zpool_enable_datasets_ex(zpool_handle_t *zhp, const char *mntopts, int flags,
 		goto out;
 
 	libzfs_add_handle(&cb, zfsp);
-	if (zfs_iter_fs(zfsp, mount_cb, &cb) != 0)
+	if (zfs_iter_filesystems(zfsp, mount_cb, &cb) != 0)
 		goto out;
 	/*
 	 * Sort the datasets by mountpoint.
