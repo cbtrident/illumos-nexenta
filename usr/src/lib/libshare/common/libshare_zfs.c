@@ -26,7 +26,7 @@
 /*
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright 2017 RackTop Systems.
- * Copyright 2019 Nexenta Systems, Inc.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <stdio.h>
@@ -136,7 +136,7 @@ get_one_filesystem(zfs_handle_t *zhp, void *data)
 	 * Interate over any nested datasets.
 	 */
 	if (type == ZFS_TYPE_FILESYSTEM &&
-	    zfs_iter_filesystems(zhp, get_one_filesystem, data) != 0) {
+	    zfs_iter_fs(zhp, get_one_filesystem, data) != 0) {
 		zfs_close(zhp);
 		return (1);
 	}

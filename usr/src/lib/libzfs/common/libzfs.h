@@ -26,7 +26,7 @@
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  * Copyright (c) 2017 Datto Inc.
  */
 
@@ -601,6 +601,7 @@ extern int zfs_iter_root(libzfs_handle_t *, zfs_iter_f, void *);
 extern int zfs_iter_children(zfs_handle_t *, zfs_iter_f, void *);
 extern int zfs_iter_dependents(zfs_handle_t *, boolean_t, zfs_iter_f, void *);
 extern int zfs_iter_filesystems(zfs_handle_t *, zfs_iter_f, void *);
+extern int zfs_iter_fs(zfs_handle_t *, zfs_iter_f, void *);
 extern int zfs_iter_autosnapshots(zfs_handle_t *, boolean_t, zfs_iter_f,
     void *);
 extern int zfs_iter_snapshots(zfs_handle_t *, boolean_t, zfs_iter_f, void *);
