@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <sys/atomic.h>
@@ -1081,7 +1081,8 @@ pvscsi_transport_command(pvscsi_softc_t *pvs, pvscsi_cmd_t *cmd)
 	case SCMD_WRITE_G4:
 	case SCMD_READ_G5:
 	case SCMD_WRITE_G5:
-		ASSERT((cmd->flags & PVSCSI_FLAG_DMA_VALID) != 0);
+		ASSERT(cmd->cmd_dma_count == 0 || (cmd->cmd_dma_count != 0 &&
+		    (cmd->flags & PVSCSI_FLAG_DMA_VALID) != 0));
 		pvscsi_submit_rw_io(pvs);
 		break;
 	default:
