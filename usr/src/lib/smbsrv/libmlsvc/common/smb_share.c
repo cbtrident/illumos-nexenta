@@ -20,7 +20,7 @@
  *
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2019 RackTop Systems.
- * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -56,6 +56,7 @@
 
 #define	SMB_SHR_ERROR_THRESHOLD		3
 #define	SMB_SHR_CSC_BUFSZ		64
+#define	SMB_ZFS_SHARE_DIR		".zfs/shares"
 
 typedef struct smb_transient {
 	char		*name;
@@ -148,7 +149,7 @@ static uint32_t smb_shr_sa_get(sa_share_t, sa_resource_t, smb_share_t *);
  * .ZFS management functions
  */
 static void smb_shr_zfs_add(smb_share_t *);
-static void smb_shr_zfs_resume(smb_share_t *);
+static int smb_shr_zfs_resume(smb_share_t *);
 static void smb_shr_zfs_remove(smb_share_t *);
 static void smb_shr_zfs_rename(smb_share_t *, smb_share_t *);
 
@@ -434,9 +435,8 @@ smb_shr_add_common(smb_share_t *si, boolean_t resume)
 
 			rc = stat(si->shr_path, &st);
 			if (rc == 0) {
-				if (resume) {
-					smb_shr_zfs_resume(si);
-				} else {
+				if ((!resume) ||
+				    (smb_shr_zfs_resume(si) == ENOENT)) {
 					smb_shr_zfs_add(si);
 					created_zfs = B_TRUE;
 				}
@@ -2321,20 +2321,39 @@ smb_shr_zfs_add(smb_share_t *si)
  * and do not need to be created. Just update the quota tree, without
  * adding the quota file.
  *
+ * Occassionally (eg upgrade) it is possible that the pool may have been
+ * exported from a previous version, thus the share may have been DELETEd
+ * rather than SUSPENDed. In this case the share  cannot be resumed because
+ * the share files will not exist, and need to be created.
+ * Return ENOENT and the caller can invoke smb_shr_zfs_add().
+ *
  * CAUTION: Since this case only occurs during ZFS pool import where the
  * shares are ZFS datasets, we can safely know that the share path is the
  * ZFS dataset and thus quotas are supported.
  * This may need to be revisted in future if we share subdirectories of
  * datasets during pool import.
+ *
  */
-static void
+static int
 smb_shr_zfs_resume(smb_share_t *si)
 {
+	char acl_path[MAXPATHLEN];
+	struct stat st;
+
+	/* check in case share was DELETEd, not SUSPENDed */
+	(void) snprintf(acl_path, MAXPATHLEN, "%s/%s/%s",
+	    si->shr_path, SMB_ZFS_SHARE_DIR, si->shr_name);
+	if (stat(acl_path, &st) != 0)
+		return (ENOENT);
+
+	/* sharefile exists so process as a resume */
 	if ((si->shr_flags & SMB_SHRF_QUOTAS) != 0) {
 		smb_quota_add_fs(si->shr_path, B_FALSE);
 	} else {
 		smb_quota_remove_fs(si->shr_path, B_FALSE);
 	}
+
+	return (0);
 }
 
 /*

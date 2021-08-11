@@ -22,7 +22,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2017 by Delphix. All rights reserved.
  * Copyright 2020 RackTop Systems, Inc.
- * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -266,6 +266,15 @@ uint32_t SMB_OFILE_HASH_NBUCKETS = DEFAULT_HASH_NBUCKETS;
 uint32_t SMB_LEASE_HASH_NBUCKETS = DEFAULT_HASH_NBUCKETS;
 
 int smb_event_debug = 0;
+
+/*
+ * smb_share_suspend_resume (for testing)
+ * controls whether we allow shares to be suspended and resumed.
+ * If set to 0:
+ * - SMB_SHROP_SUSPEND will be treated as SMB_SHROP_DELETE
+ * - SMB_SHROP_RESUME will be treated as SMB_SHROP_ADD
+ */
+int smb_share_suspend_resume = 1;
 
 static smb_llist_t	smb_servers;
 
@@ -1032,17 +1041,25 @@ smb_server_share_lookup(smb_server_t *sv, const char *shr_path,
 #ifdef	_KERNEL
 /*
  * This is a special interface that will be utilized by ZFS to cause
- * a share to be added/removed.
+ * a share to be added/removed, resumed/suspended.
  *
- * arg is either a smb_share_t or share_name from userspace.
- * It will need to be copied into the kernel.   It is smb_share_t
- * for add operations and share_name for delete operations.
+ * arg is:
+ * - smb_share_t for add and resume operations
+ * - share_name for delete and suspend operations.
  */
 int
 smb_server_shareop(void *arg, int opcode)
 {
 	smb_server_t	*sv;
 	int		rc;
+
+	/* if share suspend/resume is disabled treat as delete/add */
+	if (!smb_share_suspend_resume) {
+		if (opcode == SMB_SHROP_SUSPEND)
+			opcode = SMB_SHROP_DELETE;
+		else if (opcode == SMB_SHROP_RESUME)
+			opcode = SMB_SHROP_ADD;
+	}
 
 	if ((rc = smb_server_lookup(&sv)) == 0) {
 		mutex_enter(&sv->sv_mutex);
