@@ -13,17 +13,27 @@
 # Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
-include		$(SRC)/cmd/Makefile.cmd
+MODULE=		fm_mod.so
 
-ROOTETCSNMP=	$(ROOTETC)/net-snmp/snmp
-ROOTETCSNMPMIB=	$(ROOTETCSNMP)/mibs
-ROOTLIBSNMP=	$(ROOTLIB)/snmp
+OBJECTS=	init.o \
+		module.o \
+		problem.o \
+		resource.o
 
-ROOTMIBS=	$(MIBS:%=$(ROOTETCSNMPMIB)/%)
-$(ROOTMIBS) :=	FILEMODE=0444
+MIBS=		SUN-FM-MIB.txt \
+		SUN-IREPORT-MIB.txt
 
-$(ROOTETCSNMPMIB)/%: %
-		$(INS.file)
+include		../Makefile.com
 
-$(ROOTLIBSNMP)/%: %
-		$(INS.file)
+LDLIBS +=	-lnetsnmp -lnetsnmphelpers -lnetsnmpagent
+LDLIBS +=	-luutil -lnvpair
+LDLIBS +=	-L$(ROOT)/usr/lib/fm/$(MACH64) -R/usr/lib/fm/$(MACH64)
+LDLIBS +=	-lfmd_adm -lfmevent -ltopo
+
+.KEEP_STATE:
+
+all:		$(DYNLIB)
+
+install:	all $(ROOTMODULE) $(ROOTMIBS)
+
+include		$(SRC)/lib/Makefile.targ

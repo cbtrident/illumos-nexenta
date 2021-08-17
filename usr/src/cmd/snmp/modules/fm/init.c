@@ -24,35 +24,31 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ */
+
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
-#include <stdarg.h>
+
+#include "fm_snmp.h"
+#include "module.h"
+#include "problem.h"
+#include "resource.h"
 
 void
-sunFm_vpanic(const char *format, va_list ap)
+init_fm(void)
 {
-	(void) snmp_vlog(LOG_ERR, format, ap);
-#ifdef DEBUG
-	abort();
-	exit(1);
-#endif
+	sunFmModuleTable_init();
+	sunFmProblemTable_init();
+	sunFmResourceTable_init();
 }
 
 void
-sunFm_panic(const char *format, ...)
+deinit_fm(void)
 {
-	va_list	ap;
-
-	va_start(ap, format);
-	sunFm_vpanic(format, ap);
-	va_end(ap);
-}
-
-int
-sunFm_assert(const char *expr, const char *file, int line)
-{
-	sunFm_panic("\"%s\", line %d: assertion failed: %s\n", file, line,
-	    expr);
-	return (0);
+	sunFmModuleTable_fini();
+	sunFmProblemTable_fini();
+	sunFmResourceTable_fini();
 }

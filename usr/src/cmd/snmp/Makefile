@@ -10,10 +10,11 @@
 #
 
 #
-# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
-SUBDIRS=	snmpd
+SUBDIRS=	mibs \
+		modules
 
 all :=		TARGET=all
 clean :=	TARGET=clean

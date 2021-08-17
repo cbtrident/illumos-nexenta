@@ -21,15 +21,12 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
-/*
- * Copyright 2018 Nexenta Systems, Inc.
- */
+#include <sys/debug.h>
 
 #include <fm/fmd_adm.h>
-#include <fm/fmd_snmp.h>
 
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
@@ -40,7 +37,7 @@
 #include <pthread.h>
 #include <stddef.h>
 
-#include "sunFM_impl.h"
+#include "fm_snmp.h"
 #include "resource.h"
 
 static uu_avl_pool_t	*rsrc_fmri_avl_pool;
@@ -66,10 +63,14 @@ static uu_avl_t		*rsrc_index_avl;
 static ulong_t		max_index;
 static int		valid_stamp;
 static uint32_t		rsrc_count;
-static pthread_mutex_t	update_lock;
+static pthread_mutex_t	update_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static Netsnmp_Node_Handler	sunFmResourceTable_handler;
-static Netsnmp_Node_Handler	sunFmResourceCount_handler;
+static oid sunFmResourceTable_oid[] = { SUNFMRESOURCETABLE_OID };
+static oid sunFmResourceCount_oid[] = { SUNFMRESOURCECOUNT_OID, 0 };
+
+static netsnmp_table_registration_info *rsrc_tinfo;
+static netsnmp_handler_registration *rsrc_handler;
+static netsnmp_handler_registration *cnt_handler;
 
 static sunFmResource_data_t *
 key_build(const char *fmri, const ulong_t index)
@@ -288,7 +289,6 @@ request_update(void)
 	(void) rsrcinfo_update(&uc);
 }
 
-/*ARGSUSED*/
 static int
 resource_compare_fmri(const void *l, const void *r, void *private)
 {
@@ -300,7 +300,6 @@ resource_compare_fmri(const void *l, const void *r, void *private)
 	return (strcmp(l_data->d_ari_fmri, r_data->d_ari_fmri));
 }
 
-/*ARGSUSED*/
 static int
 resource_compare_index(const void *l, const void *r, void *private)
 {
@@ -311,120 +310,6 @@ resource_compare_index(const void *l, const void *r, void *private)
 
 	return (l_data->d_index < r_data->d_index ? -1 :
 	    l_data->d_index > r_data->d_index ? 1 : 0);
-}
-
-int
-sunFmResourceTable_init(void)
-{
-	static oid sunFmResourceTable_oid[] = { SUNFMRESOURCETABLE_OID };
-	static oid sunFmResourceCount_oid[] = { SUNFMRESOURCECOUNT_OID, 0 };
-	netsnmp_table_registration_info *table_info;
-	netsnmp_handler_registration *handler;
-	int err;
-
-	if ((err = pthread_mutex_init(&update_lock, NULL)) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": mutex_init failure: "
-		    "%s\n", strerror(err));
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	if ((table_info =
-	    SNMP_MALLOC_TYPEDEF(netsnmp_table_registration_info)) == NULL)
-		return (MIB_REGISTRATION_FAILED);
-
-	if ((handler = netsnmp_create_handler_registration("sunFmResourceTable",
-	    sunFmResourceTable_handler, sunFmResourceTable_oid,
-	    OID_LENGTH(sunFmResourceTable_oid), HANDLER_CAN_RONLY)) == NULL) {
-		SNMP_FREE(table_info);
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	/*
-	 * The Net-SNMP template uses add_indexes here, but that
-	 * function is unsafe because it does not check for failure.
-	 */
-	if (netsnmp_table_helper_add_index(table_info, ASN_UNSIGNED) == NULL) {
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	table_info->min_column = SUNFMRESOURCE_COLMIN;
-	table_info->max_column = SUNFMRESOURCE_COLMAX;
-
-	if ((rsrc_fmri_avl_pool = uu_avl_pool_create("rsrc_fmri",
-	    sizeof (sunFmResource_data_t),
-	    offsetof(sunFmResource_data_t, d_fmri_avl), resource_compare_fmri,
-	    UU_AVL_DEBUG)) == NULL) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": rsrc_fmri avl pool "
-		    "creation failed: %s\n", uu_strerror(uu_error()));
-		snmp_free_varbind(table_info->indexes);
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-	}
-
-	if ((rsrc_fmri_avl = uu_avl_create(rsrc_fmri_avl_pool, NULL,
-	    UU_AVL_DEBUG)) == NULL) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": rsrc_fmri avl creation "
-		    "failed: %s\n", uu_strerror(uu_error()));
-		snmp_free_varbind(table_info->indexes);
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-		uu_avl_pool_destroy(rsrc_fmri_avl_pool);
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	if ((rsrc_index_avl_pool = uu_avl_pool_create("rsrc_index",
-	    sizeof (sunFmResource_data_t),
-	    offsetof(sunFmResource_data_t, d_index_avl),
-	    resource_compare_index, UU_AVL_DEBUG)) == NULL) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": rsrc_index avl pool "
-		    "creation failed: %s\n", uu_strerror(uu_error()));
-		snmp_free_varbind(table_info->indexes);
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-		uu_avl_destroy(rsrc_fmri_avl);
-		uu_avl_pool_destroy(rsrc_fmri_avl_pool);
-	}
-
-	if ((rsrc_index_avl = uu_avl_create(rsrc_index_avl_pool, NULL,
-	    UU_AVL_DEBUG)) == NULL) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": rsrc_index avl "
-		    "creation failed: %s\n", uu_strerror(uu_error()));
-		snmp_free_varbind(table_info->indexes);
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-		uu_avl_destroy(rsrc_fmri_avl);
-		uu_avl_pool_destroy(rsrc_fmri_avl_pool);
-		uu_avl_pool_destroy(rsrc_index_avl_pool);
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	if ((err = netsnmp_register_table(handler, table_info)) !=
-	    MIB_REGISTERED_OK) {
-		snmp_free_varbind(table_info->indexes);
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-		uu_avl_destroy(rsrc_fmri_avl);
-		uu_avl_pool_destroy(rsrc_fmri_avl_pool);
-		uu_avl_destroy(rsrc_index_avl);
-		uu_avl_pool_destroy(rsrc_index_avl_pool);
-		return (err);
-	}
-
-	if ((err = netsnmp_register_read_only_instance(
-	    netsnmp_create_handler_registration("sunFmResourceCount",
-	    sunFmResourceCount_handler, sunFmResourceCount_oid,
-	    OID_LENGTH(sunFmResourceCount_oid), HANDLER_CAN_RONLY))) !=
-	    MIB_REGISTERED_OK) {
-		/*
-		 * There's no way to unregister the table handler, so we
-		 * can't free any of the data, either.
-		 */
-		return (err);
-	}
-
-	return (MIB_REGISTERED_OK);
 }
 
 /*
@@ -515,7 +400,6 @@ sunFmResourceTable_nextrsrc(netsnmp_handler_registration *reginfo,
 	return (data);
 }
 
-/*ARGSUSED*/
 static sunFmResource_data_t *
 sunFmResourceTable_rsrc(netsnmp_handler_registration *reginfo,
     netsnmp_table_request_info *table_info)
@@ -525,7 +409,6 @@ sunFmResourceTable_rsrc(netsnmp_handler_registration *reginfo,
 	return (resource_lookup_index_exact(table_info->index_oid[0]));
 }
 
-/*ARGSUSED*/
 static int
 sunFmResourceTable_handler(netsnmp_mib_handler *handler,
     netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
@@ -628,7 +511,6 @@ out:
 	return (ret);
 }
 
-/*ARGSUSED*/
 static int
 sunFmResourceCount_handler(netsnmp_mib_handler *handler,
     netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
@@ -678,4 +560,82 @@ sunFmResourceCount_handler(netsnmp_mib_handler *handler,
 
 	(void) pthread_mutex_unlock(&update_lock);
 	return (ret);
+}
+
+void
+sunFmResourceTable_init(void)
+{
+	DEBUGMSGTL((MODNAME_STR, "initializing resource\n"));
+
+	rsrc_tinfo = SNMP_MALLOC_TYPEDEF(netsnmp_table_registration_info);
+	VERIFY3P(rsrc_tinfo, !=, NULL);
+	rsrc_handler = netsnmp_create_handler_registration("sunFmResourceTable",
+	    sunFmResourceTable_handler, sunFmResourceTable_oid,
+	    OID_LENGTH(sunFmResourceTable_oid), HANDLER_CAN_RONLY);
+	VERIFY3P(rsrc_handler, !=, NULL);
+	cnt_handler = netsnmp_create_handler_registration("sunFmResourceCount",
+	    sunFmResourceCount_handler, sunFmResourceCount_oid,
+	    OID_LENGTH(sunFmResourceCount_oid), HANDLER_CAN_RONLY);
+	VERIFY3P(cnt_handler, !=, NULL);
+
+	netsnmp_table_helper_add_indexes(rsrc_tinfo, ASN_UNSIGNED, 0);
+
+	rsrc_tinfo->min_column = SUNFMRESOURCE_COLMIN;
+	rsrc_tinfo->max_column = SUNFMRESOURCE_COLMAX;
+
+	rsrc_fmri_avl_pool = uu_avl_pool_create("rsrc_fmri",
+	    sizeof (sunFmResource_data_t),
+	    offsetof(sunFmResource_data_t, d_fmri_avl), resource_compare_fmri,
+	    UU_AVL_DEBUG);
+	VERIFY3P(rsrc_fmri_avl_pool, !=, NULL);
+
+	rsrc_fmri_avl = uu_avl_create(rsrc_fmri_avl_pool, NULL, UU_AVL_DEBUG);
+	VERIFY3P(rsrc_fmri_avl, !=, NULL);
+
+	rsrc_index_avl_pool = uu_avl_pool_create("rsrc_index",
+	    sizeof (sunFmResource_data_t),
+	    offsetof(sunFmResource_data_t, d_index_avl), resource_compare_index,
+	    UU_AVL_DEBUG);
+	VERIFY3P(rsrc_index_avl_pool, !=, NULL);
+
+	rsrc_index_avl = uu_avl_create(rsrc_index_avl_pool, NULL, UU_AVL_DEBUG);
+	VERIFY3P(rsrc_index_avl, !=, NULL);
+
+	VERIFY3U(netsnmp_register_table(rsrc_handler, rsrc_tinfo), ==,
+	    MIB_REGISTERED_OK);
+
+	VERIFY3U(netsnmp_register_read_only_instance(cnt_handler), ==,
+	    MIB_REGISTERED_OK);
+}
+
+void
+sunFmResourceTable_fini(void)
+{
+	uu_avl_walk_t *walk;
+	sunFmResource_data_t *node;
+
+	DEBUGMSGTL((MODNAME_STR, "finalizing resource\n"));
+
+	VERIFY3U(unregister_mib(sunFmResourceTable_oid,
+	    OID_LENGTH(sunFmResourceTable_oid)), ==, MIB_UNREGISTERED_OK);
+	netsnmp_handler_registration_free(rsrc_handler);
+	snmp_free_varbind(rsrc_tinfo->indexes);
+	SNMP_FREE(rsrc_tinfo);
+
+	VERIFY3U(unregister_mib(sunFmResourceCount_oid,
+	    OID_LENGTH(sunFmResourceCount_oid)), ==, MIB_UNREGISTERED_OK);
+	netsnmp_handler_registration_free(cnt_handler);
+
+	walk = uu_avl_walk_start(rsrc_fmri_avl, UU_WALK_ROBUST);
+	VERIFY3P(walk, !=, NULL);
+	while ((node = uu_avl_walk_next(walk)) != NULL) {
+		uu_avl_remove(rsrc_fmri_avl, node);
+		uu_avl_remove(rsrc_index_avl, node);
+		SNMP_FREE(node);
+	}
+	uu_avl_walk_end(walk);
+	uu_avl_destroy(rsrc_fmri_avl);
+	uu_avl_pool_destroy(rsrc_fmri_avl_pool);
+	uu_avl_destroy(rsrc_index_avl);
+	uu_avl_pool_destroy(rsrc_index_avl_pool);
 }

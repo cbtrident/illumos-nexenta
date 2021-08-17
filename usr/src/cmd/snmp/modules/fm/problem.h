@@ -25,7 +25,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_PROBLEM_H
@@ -61,7 +61,8 @@ typedef struct sunFmProblem_data {
 typedef nvlist_t sunFmFaultEvent_data_t;
 typedef uint8_t sunFmFaultStatus_data_t;
 
-int sunFmProblemTable_init(void);
+void sunFmProblemTable_init(void);
+void sunFmProblemTable_fini(void);
 
 #ifdef	__cplusplus
 }

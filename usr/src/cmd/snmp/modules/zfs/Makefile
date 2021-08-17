@@ -10,21 +10,26 @@
 #
 
 #
-# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
-MIBS=		NETWORK-SERVICES-MIB.txt \
-		NEXENTA-MIB.txt \
-		SUN-MIB.txt
+MODULE=		zfs_mod.so
 
-include		$(SRC)/cmd/snmp/Makefile.snmp
+OBJECTS=	arc_access.o \
+		zprop_access.o \
+		zfs.o
+
+MIBS=		NEXENTA-ZFS-MIB.txt
+
+include		../Makefile.com
+
+LDLIBS +=	-lnetsnmp -lnetsnmphelpers -lnetsnmpagent
+LDLIBS +=	-lnvpair -lumem -lkstat -lzfs_core
 
 .KEEP_STATE:
 
-all:		$(MIBS)
+all:		$(DYNLIB)
 
-clean:
+install:	all $(ROOTMODULE) $(ROOTMIBS)
 
-install:	all $(ROOTMIBS)
-
-include		$(SRC)/cmd/Makefile.targ
+include		$(SRC)/lib/Makefile.targ

@@ -24,9 +24,46 @@
  * Use is subject to license terms.
  */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
+/*
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ */
 
-/*LINTLIBRARY*/
-/*PROTOLIB1*/
+#ifndef	_RESOURCE_H
+#define	_RESOURCE_H
 
-#include <fm/fmd_snmp.h>
+#ifdef	__cplusplus
+extern "C" {
+#endif
+
+#include <sys/types.h>
+#include <libuutil.h>
+
+typedef struct sunFmResource_data {
+	ulong_t		d_index;		/* MIB index */
+	int		d_valid;		/* iteration stamp */
+	uu_avl_node_t	d_fmri_avl;		/* by-FMRI AVL node */
+	uu_avl_node_t	d_index_avl;		/* by-index AVL node */
+	char		d_ari_fmri[256];	/* resource FMRI */
+	char		d_ari_case[256];	/* resource state case UUID */
+	uint_t		d_ari_flags;		/* resource flags */
+} sunFmResource_data_t;
+
+typedef struct sunFmResource_update_ctx {
+	const char	*uc_host;
+	uint32_t	uc_prog;
+	int		uc_version;
+	int		uc_all;
+	ulong_t		uc_index;
+	uint32_t	uc_type;
+} sunFmResource_update_ctx_t;
+
+int sunFmResourceCount_init(void);
+
+void sunFmResourceTable_init(void);
+void sunFmResourceTable_fini(void);
+
+#ifdef	__cplusplus
+}
+#endif
+
+#endif	/* _RESOURCE_H */

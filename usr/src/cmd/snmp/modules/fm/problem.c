@@ -21,17 +21,14 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
-/*
- * Copyright 2019 Nexenta Systems, Inc.
- */
+#include <sys/debug.h>
 
 #include <sys/fm/protocol.h>
 
 #include <fm/fmd_adm.h>
-#include <fm/fmd_snmp.h>
 #include <fm/libfmevent.h>
 #include <fm/libtopo.h>
 
@@ -46,9 +43,10 @@
 #include <locale.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include <stddef.h>
 
-#include "sunFM_impl.h"
+#include "fm_snmp.h"
 #include "problem.h"
 
 /*
@@ -63,13 +61,24 @@ static uu_avl_t		*problem_uuid_avl = NULL;
 #define	VALID_AVL_STATE	(problem_uuid_avl_pool != NULL &&	\
 	problem_uuid_avl != NULL)
 
-static int		valid_stamp;
-static pthread_mutex_t	update_lock;
-static pthread_cond_t	update_cv;
-static fmev_shdl_t	evhdl;
+static int valid_stamp;
+static fmev_shdl_t evhdl;
 
-static Netsnmp_Node_Handler	sunFmProblemTable_handler;
-static Netsnmp_Node_Handler	sunFmFaultEventTable_handler;
+static pthread_mutex_t update_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t update_cv = PTHREAD_COND_INITIALIZER;
+
+static pthread_t ptid;
+static pthread_t utid;
+
+static oid sunFmFaultEventTable_oid[] = { SUNFMFAULTEVENTTABLE_OID };
+static oid sunFmProbTable_oid[] = { SUNFMPROBLEMTABLE_OID };
+
+static netsnmp_table_registration_info *fault_tinfo;
+static netsnmp_table_registration_info *problem_tinfo;
+static netsnmp_handler_registration *fault_handler;
+static netsnmp_handler_registration *problem_handler;
+
+static bool exiting = false;
 
 static char *
 nvl2fmri(nvlist_t *nvl)
@@ -163,7 +172,6 @@ faultstatus_lookup_index_exact(sunFmProblem_data_t *data, ulong_t index)
 	(FM_SUSPECT_NOT_PRESENT | FM_SUSPECT_REPAIRED | \
 	FM_SUSPECT_REPLACED | FM_SUSPECT_ACQUITTED)
 
-/*ARGSUSED*/
 static int
 problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 {
@@ -310,31 +318,34 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 
 delete:
 	uu_avl_remove(problem_uuid_avl, data);
-	uu_avl_node_fini(data, &data->d_uuid_avl,
-	    problem_uuid_avl_pool);
+	uu_avl_node_fini(data, &data->d_uuid_avl, problem_uuid_avl_pool);
 	nvlist_free(data->d_aci_event);
 	SNMP_FREE(data);
 	return (0);
 }
 
-/*ARGSUSED*/
 static void *
 update_thread(void *arg)
 {
 	fmd_adm_t *adm;
 	static struct timespec tv;
 
+	DEBUGMSGTL((MODNAME_STR, "problem update thread starting\n"));
+
 	/* Do a 1-minute checks for changes */
 	tv.tv_sec = 60;
 	tv.tv_nsec = 0;
 
-	for (;;) {
+	while (!exiting) {
 		ASSERT(VALID_AVL_STATE);
 
 		(void) pthread_mutex_lock(&update_lock);
-		/* We don't care if we were awaken explicitly or by timeout */
 		(void) pthread_cond_reltimedwait_np(&update_cv, &update_lock,
 		    &tv);
+		if (exiting) {
+			(void) pthread_mutex_unlock(&update_lock);
+			break;
+		}
 		if ((adm = fmd_adm_open(NULL, FMD_ADM_PROGRAM,
 		    FMD_ADM_VERSION)) == NULL) {
 			(void) pthread_mutex_unlock(&update_lock);
@@ -363,11 +374,10 @@ update_thread(void *arg)
 		DEBUGMSGTL((MODNAME_STR, "case iteration completed\n"));
 	}
 
-	/*NOTREACHED*/
+	DEBUGMSGTL((MODNAME_STR, "problem update thread exiting\n"));
 	return (NULL);
 }
 
-/*ARGSUSED*/
 static void
 event_cb(fmev_t ev, const char *class, nvlist_t *nvl, void *arg)
 {
@@ -376,7 +386,6 @@ event_cb(fmev_t ev, const char *class, nvlist_t *nvl, void *arg)
 	(void) pthread_mutex_unlock(&update_lock);
 }
 
-/*ARGSUSED*/
 static int
 problem_compare_uuid(const void *l, const void *r, void *private)
 {
@@ -388,15 +397,16 @@ problem_compare_uuid(const void *l, const void *r, void *private)
 	return (strcmp(l_data->d_aci_uuid, r_data->d_aci_uuid));
 }
 
-/* ARGSUSED */
-void *
+static void *
 pid_thread(void *arg)
 {
 	pid_t pid = getpid();
 	int wait = 0;
 
+	DEBUGMSGTL((MODNAME_STR, "problem pid thread starting\n"));
+
 	/*
-	 * Workaround the forking madness in net-snmp -- we need to
+	 * Workaround the forking madness in snmpd -- we need to
 	 * subscribe from the *forked* process so that event notifications
 	 * get our PID correctly.
 	 *
@@ -404,7 +414,9 @@ pid_thread(void *arg)
 	 * we subscribe to event notifications when running with -f (don't fork)
 	 * specified.
 	 */
-	for (;;) {
+	while (!exiting) {
+		if (exiting)
+			break;
 		if (getpid() != pid || wait == 10) {
 			/* Subscribe to fault event notifications */
 			evhdl = fmev_shdl_init(LIBFMEVENT_VERSION_2, NULL, NULL,
@@ -417,102 +429,8 @@ pid_thread(void *arg)
 		(void) sleep(1);
 	}
 
+	DEBUGMSGTL((MODNAME_STR, "problem pid thread exiting\n"));
 	return (NULL);
-}
-
-int
-sunFmProblemTable_init(void)
-{
-	static oid sunFmFaultEventTable_oid[] = { SUNFMFAULTEVENTTABLE_OID };
-	netsnmp_table_registration_info *ftinfo = NULL;
-	netsnmp_handler_registration *fhandler = NULL;
-	static oid sunFmProblemTable_oid[] = { SUNFMPROBLEMTABLE_OID };
-	netsnmp_table_registration_info *ptinfo = NULL;
-	netsnmp_handler_registration *phandler = NULL;
-	pthread_t ptid;
-	pthread_t utid;
-	int ret = MIB_REGISTRATION_FAILED;
-
-	/* Create fault event table and handler */
-	if ((ftinfo =
-	    SNMP_MALLOC_TYPEDEF(netsnmp_table_registration_info)) == NULL ||
-	    netsnmp_table_helper_add_index(ftinfo, ASN_OCTET_STR) == NULL ||
-	    netsnmp_table_helper_add_index(ftinfo, ASN_UNSIGNED) == NULL ||
-	    (fhandler =
-	    netsnmp_create_handler_registration("sunFmFaultEventTable",
-	    sunFmFaultEventTable_handler, sunFmFaultEventTable_oid,
-	    OID_LENGTH(sunFmFaultEventTable_oid), HANDLER_CAN_RONLY)) == NULL)
-		goto fail;
-
-	ftinfo->min_column = SUNFMFAULTEVENT_COLMIN;
-	ftinfo->max_column = SUNFMFAULTEVENT_COLMAX;
-
-	/* Register fault event handler */
-	if ((ret = netsnmp_register_table(fhandler, ftinfo)) !=
-	    MIB_REGISTERED_OK)
-		goto fail;
-
-	/* Create problem table, data pool, and handler */
-	if ((problem_uuid_avl_pool = uu_avl_pool_create("problem_uuid",
-	    sizeof (sunFmProblem_data_t), offsetof(sunFmProblem_data_t,
-	    d_uuid_avl), problem_compare_uuid, UU_AVL_DEBUG)) == NULL ||
-	    (problem_uuid_avl = uu_avl_create(problem_uuid_avl_pool, NULL,
-	    UU_AVL_DEBUG)) == NULL ||
-	    (ptinfo =
-	    SNMP_MALLOC_TYPEDEF(netsnmp_table_registration_info)) == NULL ||
-	    netsnmp_table_helper_add_index(ptinfo, ASN_OCTET_STR) == NULL ||
-	    (phandler =
-	    netsnmp_create_handler_registration("sunFmProblemTable",
-	    sunFmProblemTable_handler, sunFmProblemTable_oid,
-	    OID_LENGTH(sunFmProblemTable_oid), HANDLER_CAN_RONLY)) == NULL)
-		goto fail;
-
-	ptinfo->min_column = SUNFMPROBLEM_COLMIN;
-	ptinfo->max_column = SUNFMPROBLEM_COLMAX;
-
-	/* Register problem handler */
-	if ((ret = netsnmp_register_table(phandler, ptinfo)) !=
-	    MIB_REGISTERED_OK)
-		goto fail;
-
-	/* Create PID change waiter thread */
-	if (pthread_create(&ptid, NULL, pid_thread, 0) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR
-		    ": failed to create pid thread: %s\n", strerror(ret));
-		goto fail;
-	}
-
-	/* Create update thread */
-	if ((ret = pthread_mutex_init(&update_lock, NULL)) != 0 ||
-	    (ret = pthread_cond_init(&update_cv, NULL)) != 0 ||
-	    (ret = pthread_create(&utid, NULL, update_thread, 0)) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR
-		    ": failed to create update thread: %s\n", strerror(ret));
-		goto fail;
-	}
-
-	return (MIB_REGISTERED_OK);
-
-fail:
-	(void) pthread_mutex_destroy(&update_lock);
-	if (problem_uuid_avl != NULL)
-		uu_avl_destroy(problem_uuid_avl);
-	if (problem_uuid_avl_pool != NULL)
-		uu_avl_pool_destroy(problem_uuid_avl_pool);
-	if (ftinfo->indexes != NULL)
-		snmp_free_varbind(ftinfo->indexes);
-	if (ftinfo != NULL)
-		SNMP_FREE(ftinfo);
-	if (ptinfo->indexes != NULL)
-		snmp_free_varbind(ptinfo->indexes);
-	if (ptinfo != NULL)
-		SNMP_FREE(ptinfo);
-	if (fhandler != NULL)
-		SNMP_FREE(fhandler);
-	if (phandler != NULL)
-		SNMP_FREE(phandler);
-
-	return (ret);
 }
 
 /*
@@ -522,7 +440,7 @@ fail:
  * us to implement GETNEXT.
  */
 static sunFmProblem_data_t *
-sunFmProblemTable_nextpr(netsnmp_handler_registration *reginfo,
+sunFmProbTable_nextpr(netsnmp_handler_registration *reginfo,
     netsnmp_table_request_info *table_info)
 {
 	sunFmProblem_data_t	*data;
@@ -612,9 +530,8 @@ sunFmProblemTable_nextpr(netsnmp_handler_registration *reginfo,
  * Returns the problem data corresponding to the request in table_info.
  * All request parameters are unmodified.
  */
-/*ARGSUSED*/
 static sunFmProblem_data_t *
-sunFmProblemTable_pr(netsnmp_handler_registration *reginfo,
+sunFmProbTable_pr(netsnmp_handler_registration *reginfo,
     netsnmp_table_request_info *table_info)
 {
 	char			*uuid;
@@ -655,7 +572,7 @@ sunFmFaultEventTable_nextfe(netsnmp_handler_registration *reginfo,
 			index = *(ulong_t *)
 			    table_info->indexes->next_variable->val.integer + 1;
 
-			if ((data = sunFmProblemTable_pr(reginfo,
+			if ((data = sunFmProbTable_pr(reginfo,
 			    table_info)) != NULL &&
 			    (*statusp = faultstatus_lookup_index_exact(data,
 			    index)) != 0 &&
@@ -668,12 +585,12 @@ sunFmFaultEventTable_nextfe(netsnmp_handler_registration *reginfo,
 				return (rv);
 			}
 
-			if (sunFmProblemTable_nextpr(reginfo, table_info) ==
+			if (sunFmProbTable_nextpr(reginfo, table_info) ==
 			    NULL)
 				return (NULL);
 			break;
 		case 1:
-			if ((data = sunFmProblemTable_pr(reginfo,
+			if ((data = sunFmProbTable_pr(reginfo,
 			    table_info)) != NULL) {
 				oid tmpoid[MAX_OID_LEN];
 				index = 0;
@@ -707,13 +624,13 @@ sunFmFaultEventTable_nextfe(netsnmp_handler_registration *reginfo,
 				    table_info->indexes->next_variable));
 				DEBUGMSG((MODNAME_STR, "\n"));
 			} else {
-				if (sunFmProblemTable_nextpr(reginfo,
+				if (sunFmProbTable_nextpr(reginfo,
 				    table_info) == NULL)
 					return (NULL);
 			}
 			break;
 		case 0:
-			if (sunFmProblemTable_nextpr(reginfo, table_info) ==
+			if (sunFmProbTable_nextpr(reginfo, table_info) ==
 			    NULL)
 				return (NULL);
 			break;
@@ -729,7 +646,7 @@ sunFmFaultEventTable_fe(netsnmp_handler_registration *reginfo,
 
 	ASSERT(table_info->number_indexes == 2);
 
-	if ((data = sunFmProblemTable_pr(reginfo, table_info)) == NULL)
+	if ((data = sunFmProbTable_pr(reginfo, table_info)) == NULL)
 		return (NULL);
 
 	*statusp = faultstatus_lookup_index_exact(data,
@@ -740,9 +657,8 @@ sunFmFaultEventTable_fe(netsnmp_handler_registration *reginfo,
 	    *(ulong_t *)table_info->indexes->next_variable->val.integer));
 }
 
-/*ARGSUSED*/
 static int
-sunFmProblemTable_handler(netsnmp_mib_handler *handler,
+sunFmProbTable_handler(netsnmp_mib_handler *handler,
     netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
     netsnmp_request_info *request)
 {
@@ -779,12 +695,12 @@ sunFmProblemTable_handler(netsnmp_mib_handler *handler,
 		 */
 		switch (reqinfo->mode) {
 		case MODE_GET:
-			data = sunFmProblemTable_pr(reginfo, table_info);
+			data = sunFmProbTable_pr(reginfo, table_info);
 			if (data == NULL)
 				goto out;
 			break;
 		case MODE_GETNEXT:
-			data = sunFmProblemTable_nextpr(reginfo, table_info);
+			data = sunFmProbTable_nextpr(reginfo, table_info);
 			if (data == NULL)
 				goto out;
 			break;
@@ -886,7 +802,6 @@ out:
 	return (ret);
 }
 
-/*ARGSUSED*/
 static int
 sunFmFaultEventTable_handler(netsnmp_mib_handler *handler,
     netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
@@ -950,7 +865,7 @@ sunFmFaultEventTable_handler(netsnmp_mib_handler *handler,
 
 		switch (table_info->colnum) {
 		case SUNFMFAULTEVENT_COL_PROBLEMUUID:
-			if ((pdata = sunFmProblemTable_pr(reginfo, table_info))
+			if ((pdata = sunFmProbTable_pr(reginfo, table_info))
 			    == NULL) {
 				(void) netsnmp_table_build_result(reginfo,
 				    request, table_info, ASN_OCTET_STR,
@@ -1062,4 +977,101 @@ sunFmFaultEventTable_handler(netsnmp_mib_handler *handler,
 out:
 	(void) pthread_mutex_unlock(&update_lock);
 	return (ret);
+}
+
+void
+sunFmProblemTable_init(void)
+{
+	DEBUGMSGTL((MODNAME_STR, "initializing problem\n"));
+
+	/* Create fault event table and handler */
+	fault_tinfo = SNMP_MALLOC_TYPEDEF(netsnmp_table_registration_info);
+	VERIFY3P(fault_tinfo, !=, NULL);
+	fault_handler = netsnmp_create_handler_registration(
+	    "sunFmFaultEventTable",
+	    sunFmFaultEventTable_handler, sunFmFaultEventTable_oid,
+	    OID_LENGTH(sunFmFaultEventTable_oid),
+	    HANDLER_CAN_RONLY);
+	VERIFY3P(fault_handler, !=, NULL);
+	netsnmp_table_helper_add_indexes(fault_tinfo, ASN_OCTET_STR,
+	    ASN_UNSIGNED, 0);
+
+	fault_tinfo->min_column = SUNFMFAULTEVENT_COLMIN;
+	fault_tinfo->max_column = SUNFMFAULTEVENT_COLMAX;
+
+	/* Register fault event handler */
+	VERIFY3U(netsnmp_register_table(fault_handler, fault_tinfo), ==,
+	    MIB_REGISTERED_OK);
+
+	/* Create problem table, handler, and data pool */
+	problem_tinfo = SNMP_MALLOC_TYPEDEF(netsnmp_table_registration_info);
+	VERIFY3P(problem_tinfo, !=, NULL);
+	problem_handler = netsnmp_create_handler_registration("sunFmProbTable",
+	    sunFmProbTable_handler, sunFmProbTable_oid,
+	    OID_LENGTH(sunFmProbTable_oid), HANDLER_CAN_RONLY);
+	VERIFY3P(problem_handler, !=, NULL);
+	netsnmp_table_helper_add_indexes(problem_tinfo, ASN_OCTET_STR, 0);
+
+	problem_tinfo->min_column = SUNFMPROBLEM_COLMIN;
+	problem_tinfo->max_column = SUNFMPROBLEM_COLMAX;
+
+	problem_uuid_avl_pool = uu_avl_pool_create("problem_uuid",
+	    sizeof (sunFmProblem_data_t), offsetof(sunFmProblem_data_t,
+	    d_uuid_avl), problem_compare_uuid, UU_AVL_DEBUG);
+	VERIFY3P(problem_uuid_avl_pool, !=, NULL);
+	problem_uuid_avl = uu_avl_create(problem_uuid_avl_pool, NULL,
+	    UU_AVL_DEBUG);
+	VERIFY3P(problem_uuid_avl, !=, NULL);
+
+	/* Register problem handler */
+	VERIFY3U(netsnmp_register_table(problem_handler, problem_tinfo), ==,
+	    MIB_REGISTERED_OK);
+
+	/* Create PID change waiter thread */
+	VERIFY3U(pthread_create(&ptid, NULL, pid_thread, 0), ==, 0);
+
+	/* Create update thread */
+	VERIFY3U(pthread_create(&utid, NULL, update_thread, 0), ==, 0);
+}
+
+void
+sunFmProblemTable_fini(void)
+{
+	uu_avl_walk_t *walk;
+	sunFmProblem_data_t *node;
+
+	DEBUGMSGTL((MODNAME_STR, "finalizing problem\n"));
+
+	VERIFY3U(pthread_join(ptid, NULL), ==, 0);
+
+	(void) pthread_mutex_lock(&update_lock);
+	exiting = true;
+	(void) pthread_cond_signal(&update_cv);
+	(void) pthread_mutex_unlock(&update_lock);
+	VERIFY3U(pthread_join(utid, NULL), ==, 0);
+
+	VERIFY3U(unregister_mib(sunFmFaultEventTable_oid,
+	    OID_LENGTH(sunFmFaultEventTable_oid)), ==, MIB_UNREGISTERED_OK);
+	netsnmp_handler_registration_free(fault_handler);
+	snmp_free_varbind(fault_tinfo->indexes);
+	SNMP_FREE(fault_tinfo);
+
+	VERIFY3U(unregister_mib(sunFmProbTable_oid,
+	    OID_LENGTH(sunFmProbTable_oid)), ==, MIB_UNREGISTERED_OK);
+	netsnmp_handler_registration_free(problem_handler);
+	snmp_free_varbind(problem_tinfo->indexes);
+	SNMP_FREE(problem_tinfo);
+
+	walk = uu_avl_walk_start(problem_uuid_avl, UU_WALK_ROBUST);
+	VERIFY3P(walk, !=, NULL);
+	while ((node = uu_avl_walk_next(walk)) != NULL) {
+		uu_avl_remove(problem_uuid_avl, node);
+		uu_avl_node_fini(node, &node->d_uuid_avl,
+		    problem_uuid_avl_pool);
+		nvlist_free(node->d_aci_event);
+		SNMP_FREE(node);
+	}
+	uu_avl_walk_end(walk);
+	uu_avl_destroy(problem_uuid_avl);
+	uu_avl_pool_destroy(problem_uuid_avl_pool);
 }

@@ -13,17 +13,16 @@
 # Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
-include		$(SRC)/cmd/Makefile.cmd
+include		$(SRC)/cmd/snmp/Makefile.snmp
+include		$(SRC)/lib/Makefile.lib
+include		$(SRC)/lib/Makefile.lib.64
 
-ROOTETCSNMP=	$(ROOTETC)/net-snmp/snmp
-ROOTETCSNMPMIB=	$(ROOTETCSNMP)/mibs
-ROOTLIBSNMP=	$(ROOTLIB)/snmp
+DYNLIB=		$(MODULE)
+SRCDIR=		.
+HSONAME=
+MAPFILES=
 
-ROOTMIBS=	$(MIBS:%=$(ROOTETCSNMPMIB)/%)
-$(ROOTMIBS) :=	FILEMODE=0444
+LDLIBS +=	-lc
 
-$(ROOTETCSNMPMIB)/%: %
-		$(INS.file)
-
-$(ROOTLIBSNMP)/%: %
-		$(INS.file)
+ROOTMODULE=	$(MODULE:%=$(ROOTLIBSNMP)/%)
+$(ROOTMODULE):=	FILEMODE=0555

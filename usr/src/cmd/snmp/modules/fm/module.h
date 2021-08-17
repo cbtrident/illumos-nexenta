@@ -24,10 +24,12 @@
  * Use is subject to license terms.
  */
 
-#ifndef	_RESOURCE_H
-#define	_RESOURCE_H
+/*
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
+#ifndef	_MODULE_H
+#define	_MODULE_H
 
 #ifdef	__cplusplus
 extern "C" {
@@ -36,30 +38,30 @@ extern "C" {
 #include <sys/types.h>
 #include <libuutil.h>
 
-typedef struct sunFmResource_data {
+typedef struct sunFmModule_data {
 	ulong_t		d_index;		/* MIB index */
 	int		d_valid;		/* iteration stamp */
-	uu_avl_node_t	d_fmri_avl;		/* by-FMRI AVL node */
+	uu_avl_node_t	d_name_avl;		/* by-name AVL node */
 	uu_avl_node_t	d_index_avl;		/* by-index AVL node */
-	char		d_ari_fmri[256];	/* resource FMRI */
-	char		d_ari_case[256];	/* resource state case UUID */
-	uint_t		d_ari_flags;		/* resource flags */
-} sunFmResource_data_t;
+	char		d_ami_name[256];	/* fmd module name */
+	char		d_ami_vers[256];	/* fmd module version */
+	char		d_ami_desc[256];	/* fmd module description */
+	uint_t		d_ami_flags;		/* fmd module flags */
+} sunFmModule_data_t;
 
-typedef struct sunFmResource_update_ctx {
+typedef struct sunFmModule_update_ctx {
 	const char	*uc_host;
 	uint32_t	uc_prog;
 	int		uc_version;
-	int		uc_all;
 	ulong_t		uc_index;
-	uint32_t	uc_type;
-} sunFmResource_update_ctx_t;
+	int		uc_type;
+} sunFmModule_update_ctx_t;
 
-int sunFmResourceTable_init(void);
-int sunFmResourceCount_init(void);
+void sunFmModuleTable_init(void);
+void sunFmModuleTable_fini(void);
 
 #ifdef	__cplusplus
 }
 #endif
 
-#endif	/* _RESOURCE_H */
+#endif	/* _MODULE_H */

@@ -35,7 +35,7 @@ extern "C" {
  * These values are derived from, and must remain consistent with, the
  * MIB definitions in SUN-FM-MIB.
  */
-#define	MODNAME_STR	"sunFM"
+#define	MODNAME_STR	"fm"
 #define	SUNFM_OID	1, 3, 6, 1, 4, 1, 42, 2, 195, 1
 
 #define	SUNFMPROBLEMTABLE_OID		SUNFM_OID, 1
@@ -137,8 +137,8 @@ extern "C" {
 #define	SUNIREPORTTRAPS_OID		SUNIREPORT_OID, 2, 0
 #define	SUNIREPORTTRAP_OID		SUNIREPORTTRAPS_OID, 1
 
-
-extern int	init_sunFM(void);
+extern void	init_fm(void);
+extern void	deinit_fm(void);
 
 #ifdef	__cplusplus
 }

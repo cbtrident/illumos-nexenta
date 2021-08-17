@@ -286,7 +286,7 @@ nd_get_event_fmri(nd_hdl_t *nhdl, fmev_t ev)
 		return (NULL);
 
 	/*
-	 * NOTE: this should match the logic in libfmd_snmp.
+	 * NOTE: this should match the logic in zfs_mod.
 	 *
 	 * Use the following order of nested nvlists to make up FMRI:
 	 * - FRU

@@ -24,12 +24,12 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright (c) 2018, Joyent, Inc.
  */
 
 #include <sys/fm/protocol.h>
 
-#include <fm/fmd_snmp.h>
 #include <fm/fmd_msg.h>
 #include <fm/libfmevent.h>
 
@@ -49,6 +49,7 @@
 #include <unistd.h>
 #include <zone.h>
 
+#include "fm_snmp.h"
 #include "libfmnotify.h"
 
 /*
@@ -630,7 +631,7 @@ main(int argc, char *argv[])
 				break;
 			default:
 				free(nhdl);
-				return (usage(nhdl->nh_pname));
+				return (usage(argv[0]));
 			}
 		}
 	}

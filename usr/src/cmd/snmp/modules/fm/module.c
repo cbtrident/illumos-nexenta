@@ -21,15 +21,12 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
-/*
- * Copyright 2018 Nexenta Systems, Inc.
- */
+#include <sys/debug.h>
 
 #include <fm/fmd_adm.h>
-#include <fm/fmd_snmp.h>
 
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
@@ -40,7 +37,7 @@
 #include <pthread.h>
 #include <stddef.h>
 
-#include "sunFM_impl.h"
+#include "fm_snmp.h"
 #include "module.h"
 
 static uu_avl_pool_t	*mod_name_avl_pool;
@@ -63,9 +60,12 @@ static uu_avl_t		*mod_index_avl;
 
 static ulong_t		max_index;
 static int		valid_stamp;
-static pthread_mutex_t	update_lock;
+static pthread_mutex_t	update_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static Netsnmp_Node_Handler	sunFmModuleTable_handler;
+static oid sunFmModuleTable_oid[] = { SUNFMMODULETABLE_OID };
+
+static netsnmp_table_registration_info *mod_tinfo;
+static netsnmp_handler_registration *mod_handler;
 
 static sunFmModule_data_t *
 key_build(const char *name, const ulong_t index)
@@ -270,7 +270,6 @@ request_update(void)
 	(void) modinfo_update(&uc);
 }
 
-/*ARGSUSED*/
 static int
 module_compare_name(const void *l, const void *r, void *private)
 {
@@ -282,7 +281,6 @@ module_compare_name(const void *l, const void *r, void *private)
 	return (strcmp(l_data->d_ami_name, r_data->d_ami_name));
 }
 
-/*ARGSUSED*/
 static int
 module_compare_index(const void *l, const void *r, void *private)
 {
@@ -293,103 +291,6 @@ module_compare_index(const void *l, const void *r, void *private)
 
 	return (l_data->d_index < r_data->d_index ? -1 :
 	    l_data->d_index > r_data->d_index ? 1 : 0);
-}
-
-int
-sunFmModuleTable_init(void)
-{
-	static oid sunFmModuleTable_oid[] = { SUNFMMODULETABLE_OID };
-	netsnmp_table_registration_info *table_info;
-	netsnmp_handler_registration *handler;
-	int err;
-
-	if ((err = pthread_mutex_init(&update_lock, NULL)) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": mutex_init failure: "
-		    "%s\n", strerror(err));
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	if ((table_info =
-	    SNMP_MALLOC_TYPEDEF(netsnmp_table_registration_info)) == NULL)
-		return (MIB_REGISTRATION_FAILED);
-
-	if ((handler = netsnmp_create_handler_registration("sunFmModuleTable",
-	    sunFmModuleTable_handler, sunFmModuleTable_oid,
-	    OID_LENGTH(sunFmModuleTable_oid), HANDLER_CAN_RONLY)) == NULL) {
-		SNMP_FREE(table_info);
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	/*
-	 * The Net-SNMP template uses add_indexes here, but that
-	 * function is unsafe because it does not check for failure.
-	 */
-	if (netsnmp_table_helper_add_index(table_info, ASN_UNSIGNED) == NULL) {
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	table_info->min_column = SUNFMMODULE_COLMIN;
-	table_info->max_column = SUNFMMODULE_COLMAX;
-
-	if ((mod_name_avl_pool = uu_avl_pool_create("mod_name",
-	    sizeof (sunFmModule_data_t),
-	    offsetof(sunFmModule_data_t, d_name_avl), module_compare_name,
-	    UU_AVL_DEBUG)) == NULL) {
-		snmp_free_varbind(table_info->indexes);
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-	}
-
-	if ((mod_name_avl = uu_avl_create(mod_name_avl_pool, NULL,
-	    UU_AVL_DEBUG)) == NULL) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": mod_name_avl creation "
-		    "failed: %s\n", uu_strerror(uu_error()));
-		snmp_free_varbind(table_info->indexes);
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-		uu_avl_pool_destroy(mod_name_avl_pool);
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	if ((mod_index_avl_pool = uu_avl_pool_create("mod_index",
-	    sizeof (sunFmModule_data_t),
-	    offsetof(sunFmModule_data_t, d_index_avl),
-	    module_compare_index, UU_AVL_DEBUG)) == NULL) {
-		snmp_free_varbind(table_info->indexes);
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-		uu_avl_destroy(mod_name_avl);
-		uu_avl_pool_destroy(mod_name_avl_pool);
-	}
-
-	if ((mod_index_avl = uu_avl_create(mod_index_avl_pool, NULL,
-	    UU_AVL_DEBUG)) == NULL) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": mod_index_avl creation "
-		    "failed: %s\n", uu_strerror(uu_error()));
-		snmp_free_varbind(table_info->indexes);
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-		uu_avl_destroy(mod_name_avl);
-		uu_avl_pool_destroy(mod_name_avl_pool);
-		uu_avl_pool_destroy(mod_index_avl_pool);
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	if ((err = netsnmp_register_table(handler, table_info)) !=
-	    MIB_REGISTERED_OK) {
-		snmp_free_varbind(table_info->indexes);
-		SNMP_FREE(table_info);
-		SNMP_FREE(handler);
-		uu_avl_destroy(mod_name_avl);
-		uu_avl_pool_destroy(mod_name_avl_pool);
-		uu_avl_destroy(mod_index_avl);
-		uu_avl_pool_destroy(mod_index_avl_pool);
-		return (err);
-	}
-
-	return (MIB_REGISTERED_OK);
 }
 
 /*
@@ -480,7 +381,6 @@ sunFmModuleTable_nextmod(netsnmp_handler_registration *reginfo,
 	return (data);
 }
 
-/*ARGSUSED*/
 static sunFmModule_data_t *
 sunFmModuleTable_mod(netsnmp_handler_registration *reginfo,
     netsnmp_table_request_info *table_info)
@@ -490,7 +390,6 @@ sunFmModuleTable_mod(netsnmp_handler_registration *reginfo,
 	return (module_lookup_index_exact(table_info->index_oid[0]));
 }
 
-/*ARGSUSED*/
 static int
 sunFmModuleTable_handler(netsnmp_mib_handler *handler,
     netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
@@ -584,4 +483,71 @@ sunFmModuleTable_handler(netsnmp_mib_handler *handler,
 out:
 	(void) pthread_mutex_unlock(&update_lock);
 	return (ret);
+}
+
+void
+sunFmModuleTable_init(void)
+{
+	DEBUGMSGTL((MODNAME_STR, "initializing module\n"));
+
+	mod_tinfo = SNMP_MALLOC_TYPEDEF(netsnmp_table_registration_info);
+	VERIFY3P(mod_tinfo, !=, NULL);
+	mod_handler = netsnmp_create_handler_registration("sunFmModuleTable",
+	    sunFmModuleTable_handler, sunFmModuleTable_oid,
+	    OID_LENGTH(sunFmModuleTable_oid), HANDLER_CAN_RONLY);
+	VERIFY3P(mod_handler, !=, NULL);
+
+	netsnmp_table_helper_add_indexes(mod_tinfo, ASN_UNSIGNED, 0);
+
+	mod_tinfo->min_column = SUNFMMODULE_COLMIN;
+	mod_tinfo->max_column = SUNFMMODULE_COLMAX;
+
+	mod_name_avl_pool = uu_avl_pool_create("mod_name",
+	    sizeof (sunFmModule_data_t),
+	    offsetof(sunFmModule_data_t, d_name_avl), module_compare_name,
+	    UU_AVL_DEBUG);
+	VERIFY3P(mod_name_avl_pool, !=, NULL);
+
+	mod_name_avl = uu_avl_create(mod_name_avl_pool, NULL, UU_AVL_DEBUG);
+	VERIFY3P(mod_name_avl, !=, NULL);
+
+	mod_index_avl_pool = uu_avl_pool_create("mod_index",
+	    sizeof (sunFmModule_data_t),
+	    offsetof(sunFmModule_data_t, d_index_avl),
+	    module_compare_index, UU_AVL_DEBUG);
+	VERIFY3P(mod_index_avl_pool, !=, NULL);
+
+	mod_index_avl = uu_avl_create(mod_index_avl_pool, NULL, UU_AVL_DEBUG);
+	VERIFY3P(mod_index_avl, !=, NULL);
+
+	VERIFY3U(netsnmp_register_table(mod_handler, mod_tinfo), ==,
+	    MIB_REGISTERED_OK);
+}
+
+void
+sunFmModuleTable_fini(void)
+{
+	uu_avl_walk_t *walk;
+	sunFmModule_data_t *node;
+
+	DEBUGMSGTL((MODNAME_STR, "finalizing module\n"));
+
+	VERIFY3U(unregister_mib(sunFmModuleTable_oid,
+	    OID_LENGTH(sunFmModuleTable_oid)), ==, MIB_UNREGISTERED_OK);
+	netsnmp_handler_registration_free(mod_handler);
+	snmp_free_varbind(mod_tinfo->indexes);
+	SNMP_FREE(mod_tinfo);
+
+	walk = uu_avl_walk_start(mod_name_avl, UU_WALK_ROBUST);
+	VERIFY3P(walk, !=, NULL);
+	while ((node = uu_avl_walk_next(walk)) != NULL) {
+		uu_avl_remove(mod_name_avl, node);
+		uu_avl_remove(mod_index_avl, node);
+		SNMP_FREE(node);
+	}
+	uu_avl_walk_end(walk);
+	uu_avl_destroy(mod_name_avl);
+	uu_avl_pool_destroy(mod_name_avl_pool);
+	uu_avl_destroy(mod_index_avl);
+	uu_avl_pool_destroy(mod_index_avl_pool);
 }

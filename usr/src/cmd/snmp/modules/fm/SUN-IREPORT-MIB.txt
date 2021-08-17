@@ -160,11 +160,11 @@ sunIreportTrap NOTIFICATION-TYPE
 	STATUS	current
 	DESCRIPTION
 		"Trap notification that a informational report has occurred.
-		
+
 		The last four entries in the trap will only be set for SMF
 		service state transition (STN) events.  The following values for
 		sunIreportMsgid correspond to an STN event:
-		
+
 		SMF-8000-SR
 		SMF-8000-TC
 		SMF-8000-UQ

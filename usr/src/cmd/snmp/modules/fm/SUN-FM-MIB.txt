@@ -121,7 +121,7 @@ sunFmProblemEntry OBJECT-TYPE
 	DESCRIPTION
 		"A problem diagnosed by the fault manager and still
 		present in the system."
-	INDEX 		{ sunFmProblemUUIDIndex }
+	INDEX		{ sunFmProblemUUIDIndex }
 	::= { sunFmProblemTable 1 }
 
 SunFmProblemEntry ::= SEQUENCE {

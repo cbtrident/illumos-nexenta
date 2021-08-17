@@ -13,17 +13,18 @@
 # Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
-include		$(SRC)/cmd/Makefile.cmd
+MIBS=		NETWORK-SERVICES-MIB.txt \
+		NEXENTA-MIB.txt \
+		SUN-MIB.txt
 
-ROOTETCSNMP=	$(ROOTETC)/net-snmp/snmp
-ROOTETCSNMPMIB=	$(ROOTETCSNMP)/mibs
-ROOTLIBSNMP=	$(ROOTLIB)/snmp
+include		$(SRC)/cmd/snmp/Makefile.snmp
 
-ROOTMIBS=	$(MIBS:%=$(ROOTETCSNMPMIB)/%)
-$(ROOTMIBS) :=	FILEMODE=0444
+.KEEP_STATE:
 
-$(ROOTETCSNMPMIB)/%: %
-		$(INS.file)
+all:		$(MIBS)
 
-$(ROOTLIBSNMP)/%: %
-		$(INS.file)
+clean:
+
+install:	all $(ROOTMIBS)
+
+include		$(SRC)/cmd/Makefile.targ

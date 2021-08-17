@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 #
 
 include ../Makefile.lib
@@ -34,9 +34,7 @@ common_SUBDIRS = \
 	libfmd_adm \
 	libfmd_log \
 	libfmd_msg \
-	libfmd_snmp \
 	libfmevent \
-	.WAIT \
 	libfmnotify \
 	topo
 
@@ -49,9 +47,8 @@ i386_SUBDIRS =
 SUBDIRS = $(common_SUBDIRS) $($(MACH)_SUBDIRS)
 
 libldom: libmdesc libfmd_agent
-libfmd_snmp: libfmd_adm topo libfmevent
+libfmevent: topo
 libfmnotify: topo
-
 topo: $($(MACH)_SUBDIRS) libfmd_agent libdiskstatus
 
 include ./Makefile.subdirs

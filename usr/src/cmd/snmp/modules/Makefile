@@ -13,17 +13,19 @@
 # Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
-include		$(SRC)/cmd/Makefile.cmd
+SUBDIRS=	fm \
+		zfs
 
-ROOTETCSNMP=	$(ROOTETC)/net-snmp/snmp
-ROOTETCSNMPMIB=	$(ROOTETCSNMP)/mibs
-ROOTLIBSNMP=	$(ROOTLIB)/snmp
+all :=		TARGET=all
+clean :=	TARGET=clean
+clobber :=	TARGET=clobber
+install :=	TARGET=install
 
-ROOTMIBS=	$(MIBS:%=$(ROOTETCSNMPMIB)/%)
-$(ROOTMIBS) :=	FILEMODE=0444
+.KEEP_STATE:
 
-$(ROOTETCSNMPMIB)/%: %
-		$(INS.file)
+all clean clobber install: $(SUBDIRS)
 
-$(ROOTLIBSNMP)/%: %
-		$(INS.file)
+$(SUBDIRS):	FRC
+		cd $@; pwd; $(MAKE) $(TARGET)
+
+FRC:

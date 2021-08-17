@@ -316,6 +316,7 @@ DIRS= \
 	/usr/lib/secure \
 	/usr/lib/security \
 	/usr/lib/smbsrv \
+	/usr/lib/snmp \
 	/usr/lib/vscan \
 	/usr/lib/zfs \
 	/usr/lib/zones \

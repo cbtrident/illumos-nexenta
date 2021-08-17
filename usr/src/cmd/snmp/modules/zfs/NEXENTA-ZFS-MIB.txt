@@ -1,0 +1,454 @@
+--
+-- This file and its contents are supplied under the terms of the
+-- Common Development and Distribution License ("CDDL"), version 1.0.
+-- You may only use this file in accordance with the terms of version
+-- 1.0 of the CDDL.
+--
+-- A full copy of the text of the CDDL should have accompanied this
+-- source.  A copy of the CDDL is also available via the Internet at
+-- http://www.illumos.org/license/CDDL.
+--
+
+-- Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+
+NEXENTA-ZFS-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	zfs
+		FROM NEXENTA-MIB
+	MODULE-IDENTITY, OBJECT-TYPE, Unsigned32, Counter64, TimeTicks
+		FROM SNMPv2-SMI
+	TEXTUAL-CONVENTION, DisplayString, TruthValue
+		FROM SNMPv2-TC;
+
+nexentaZfsMIB MODULE-IDENTITY
+	LAST-UPDATED	"201907250000Z"
+	ORGANIZATION	"Nexenta by DDN, Inc."
+	CONTACT-INFO	"Support"
+	DESCRIPTION	"MIB exposing ZFS objects"
+	REVISION	"201907250000Z"
+	DESCRIPTION	"Revision 1.1"
+	::= { zfs 1 }
+
+nexentaZfsObjects OBJECT IDENTIFIER ::= { nexentaZfsMIB 1 }
+
+NexentaZfsPoolHealth ::= TEXTUAL-CONVENTION
+	STATUS		current
+	DESCRIPTION	"Represents ZFS pool health"
+	SYNTAX		INTEGER {
+			degraded(1),
+			faulted(2),
+			offline(3),
+			online(4),
+			removed(5),
+			unavail(6)
+	}
+
+NexentaZfsPoolFailmode ::= TEXTUAL-CONVENTION
+	STATUS		current
+	DESCRIPTION	"Represents ZFS pool failure mode"
+	SYNTAX		INTEGER {
+			wait(1),
+			continue(2),
+			panic(3)
+	}
+
+NexentaZfsRatio ::= TEXTUAL-CONVENTION
+	DISPLAY-HINT	"d-2"
+	STATUS		current
+	DESCRIPTION	"Represents ZFS ratio"
+	SYNTAX		INTEGER
+
+nexentaZfsArcObjects OBJECT IDENTIFIER ::= { nexentaZfsObjects 1 }
+
+nexentaZfsArcTable OBJECT-TYPE
+	SYNTAX		SEQUENCE OF ArcEntry
+	MAX-ACCESS	not-accessible
+	STATUS		current
+	DESCRIPTION	"ZFS conceptual table for ARC statistics"
+	::= { nexentaZfsArcObjects 1 }
+
+arcEntry OBJECT-TYPE
+	SYNTAX		ArcEntry
+	MAX-ACCESS	not-accessible
+	STATUS		current
+	DESCRIPTION	"ARC statistics conceptual row"
+	INDEX		{ arcInstance }
+	::= { nexentaZfsArcTable 1 }
+
+ArcEntry ::= SEQUENCE {
+	arcInstance			Unsigned32,
+	arcMetaUsed			Unsigned32,
+	arcC				Unsigned32,
+	arcP				Unsigned32,
+	arcSize				Unsigned32,
+	arcL2SizeLow			Unsigned32,
+	arcL2SizeHigh			Unsigned32,
+	arcHits				Counter64,
+	arcMisses			Counter64,
+	arcDemandDataHits		Counter64,
+	arcDemandDataMisses		Counter64,
+	arcDemandMetadataHits		Counter64,
+	arcDemandMetadataMisses		Counter64,
+	arcPrefetchDataHits		Counter64,
+	arcPrefetchDataMisses		Counter64,
+	arcPrefetchMetadataHits		Counter64,
+	arcPrefetchMetadataMisses	Counter64,
+	arcMfuGhostHits			Counter64,
+	arcMfuHits			Counter64,
+	arcMruGhostHits			Counter64,
+	arcMruHits			Counter64,
+	arcL2Hits			Counter64,
+	arcL2Misses			Counter64,
+	arcCrTime			TimeTicks,
+	arcSnapTime			TimeTicks
+}
+
+arcInstance OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"ARC instance identifier"
+	::= { arcEntry 1 }
+
+arcMetaUsed OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Current ARC metadata content in kilobytes"
+	::= { arcEntry 2 }
+
+arcC OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Current ARC target size in kilobytes"
+	::= { arcEntry 3 }
+
+arcP OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"ARC MRU cache size in kilobytes"
+	::= { arcEntry 4 }
+
+arcSize OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"ARC current size in kilobytes"
+	::= { arcEntry 5 }
+
+arcL2SizeLow OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"L2ARC current size in kilobytes, lower-order, composed
+			 with arcL2SizeHigh"
+	::= { arcEntry 6 }
+
+arcL2SizeHigh OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"L2ARC current size in kilobytes, higher-order, composed
+			 with arcL2SizeLow"
+	::= { arcEntry 7 }
+
+arcHits OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of ARC hits"
+	::= { arcEntry 8 }
+
+arcMisses OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of ARC misses"
+	::= { arcEntry 9 }
+
+arcDemandDataHits OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of on-demand ARC data cache hits"
+	::= { arcEntry 10 }
+
+arcDemandDataMisses OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of on-demand ARC data cache misses"
+	::= { arcEntry 11 }
+
+arcDemandMetadataHits OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of demand-driven ARC metadata cache hits"
+	::= { arcEntry 12 }
+
+arcDemandMetadataMisses OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of demand-driven ARC metadata cache misses"
+	::= { arcEntry 13 }
+
+arcPrefetchDataHits OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of prefetched ARC data cache hits"
+	::= { arcEntry 14 }
+
+arcPrefetchDataMisses OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of prefetched ARC data cache misses"
+	::= { arcEntry 15 }
+
+arcPrefetchMetadataHits OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of prefetched ARC metadata cache hits"
+	::= { arcEntry 16 }
+
+arcPrefetchMetadataMisses OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of prefetched ARC metadata cache misses"
+	::= { arcEntry 17 }
+
+arcMfuGhostHits OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of MFU cache ghost hits"
+	::= { arcEntry 18 }
+
+arcMfuHits OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of MFU cache hits"
+	::= { arcEntry 19 }
+
+arcMruGhostHits OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of MRU cache ghost hits"
+	::= { arcEntry 20 }
+
+arcMruHits OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of MRU cache hits"
+	::= { arcEntry 21 }
+
+arcL2Hits OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of L2ARC cache hits"
+	::= { arcEntry 22 }
+
+arcL2Misses OBJECT-TYPE
+	SYNTAX		Counter64
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Number of L2ARC cache misses"
+	::= { arcEntry 23 }
+
+arcCrTime OBJECT-TYPE
+	SYNTAX		TimeTicks
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"ARC statistics creation time in hundredths of a second
+			 since boot"
+	::= { arcEntry 24 }
+
+arcSnapTime OBJECT-TYPE
+	SYNTAX		TimeTicks
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"ARC statistics update time in hundredths of a second
+			 since boot"
+	::= { arcEntry 25 }
+
+nexentaZfsPoolObjects OBJECT IDENTIFIER ::= { nexentaZfsObjects 2 }
+
+nexentaZfsPoolTable OBJECT-TYPE
+	SYNTAX		SEQUENCE OF PoolEntry
+	MAX-ACCESS	not-accessible
+	STATUS		current
+	DESCRIPTION	"ZFS conceptual table for pool statistics"
+	::= { nexentaZfsPoolObjects 1 }
+
+poolEntry OBJECT-TYPE
+	SYNTAX		PoolEntry
+	MAX-ACCESS	not-accessible
+	STATUS		current
+	DESCRIPTION	"ZFS pool statistics conceptual row"
+	INDEX		{ poolName, poolGuid }
+	::= { nexentaZfsPoolTable 1 }
+
+PoolEntry ::= SEQUENCE {
+	poolName		DisplayString,
+	poolGuid		DisplayString,
+	poolHealth		NexentaZfsPoolHealth,
+	poolFailmode		NexentaZfsPoolFailmode,
+	poolCapacity		Unsigned32,
+	poolSizeHigh		Unsigned32,
+	poolSizeLow		Unsigned32,
+	poolAllocHigh		Unsigned32,
+	poolAllocLow		Unsigned32,
+	poolFreeHigh		Unsigned32,
+	poolFreeLow		Unsigned32,
+	poolFreeingHigh		Unsigned32,
+	poolFreeingLow		Unsigned32,
+	poolExpandSizeHigh	Unsigned32,
+	poolExpandSizeLow	Unsigned32,
+	poolDedupRatio		NexentaZfsRatio,
+	poolAutoexpand		TruthValue
+}
+
+poolName OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool Name"
+	::= { poolEntry 1 }
+
+poolGuid OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool GUID"
+	::= { poolEntry 2 }
+
+poolHealth OBJECT-TYPE
+	SYNTAX		NexentaZfsPoolHealth
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool health state"
+	::= { poolEntry 3 }
+
+poolFailmode OBJECT-TYPE
+	SYNTAX		NexentaZfsPoolFailmode
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool failure mode"
+	::= { poolEntry 4 }
+
+poolCapacity OBJECT-TYPE
+	SYNTAX		Unsigned32 (0..100)
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool capacity as decimal percentage"
+	::= { poolEntry 5 }
+
+poolSizeHigh OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool total size in kilobytes, high-order byte, must be
+			 composed with poolSizeLow"
+	::= { poolEntry 6 }
+
+poolSizeLow OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool total size in kilobytes, low-order byte, must be
+			 composed with poolSizeHigh"
+	::= { poolEntry 7 }
+
+poolAllocHigh OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool allocated space in kilobytes, high-order byte,
+			 must be composed with poolAllocLow"
+	::= { poolEntry 8 }
+
+poolAllocLow OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool allocated space in kilobytes, low-order byte,
+			 must be composed with poolAllocHigh"
+	::= { poolEntry 9 }
+
+poolFreeHigh OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool free space in kilobytes, high-order byte, must be
+			 composed with poolFreeLow"
+	::= { poolEntry 10 }
+
+poolFreeLow OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool allocated space in kilobytes, low-order byte,
+			 must be composed with poolFreeHigh"
+	::= { poolEntry 11 }
+
+poolFreeingHigh OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool space pending async free in kilobytes, high-order
+			 byte, must be composed with poolFreeingLow"
+	::= { poolEntry 12 }
+
+poolFreeingLow OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool space pending async free in kilobytes, low-order
+			 byte, must be composed with poolFreeingHigh"
+	::= { poolEntry 13 }
+
+poolExpandSizeHigh OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool available expansion space in kilobytes,
+			 high-order byte, must be composed with
+			 poolExpandSizeLow"
+	::= { poolEntry 14 }
+
+poolExpandSizeLow OBJECT-TYPE
+	SYNTAX		Unsigned32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool available expansion space in kilobytes,
+			 high-order byte, must be composed with
+			 poolExpandSizeHigh"
+	::= { poolEntry 15 }
+
+poolDedupRatio OBJECT-TYPE
+	SYNTAX		NexentaZfsRatio
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool deduplication ratio, precise to two decimals"
+	::= { poolEntry 16 }
+
+poolAutoexpand OBJECT-TYPE
+	SYNTAX		TruthValue
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"pool automatically expands to use new space"
+	::= { poolEntry 17 }
+
+END
