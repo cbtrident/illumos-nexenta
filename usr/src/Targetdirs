@@ -28,6 +28,7 @@
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
 # Copyright 2017 RackTop Systems.
+# Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
 #
 
 #
@@ -62,6 +63,29 @@ sparc_64ONLY= $(POUND_SIGN)
 64ONLY=  $($(MACH)_64ONLY)
 
 $(64ONLY) MACH32_DIRS=/usr/ucb/$(MACH32)
+
+PYTHON2_DIRS=
+PYTHON2_64DIRS=
+PYTHON3_DIRS=
+
+$(BUILDPY2)PYTHON2_DIRS += \
+	/usr/lib/python$(PYTHON_VERSION) \
+	/usr/lib/python$(PYTHON_VERSION)/vendor-packages \
+	/usr/lib/python$(PYTHON_VERSION)/vendor-packages/solaris \
+	/usr/lib/python$(PYTHON_VERSION)/vendor-packages/zfs
+
+$(BUILDPY2)PYTHON2_64DIRS += \
+	/usr/lib/python$(PYTHON_VERSION)/vendor-packages/64 \
+	/usr/lib/python$(PYTHON_VERSION)/vendor-packages/solaris/64 \
+	/usr/lib/python$(PYTHON_VERSION)/vendor-packages/zfs/64
+
+$(BUILDPY3)PYTHON3_DIRS += \
+	/usr/lib/python$(PYTHON3_VERSION) \
+	/usr/lib/python$(PYTHON3_VERSION)/vendor-packages \
+	/usr/lib/python$(PYTHON3_VERSION)/vendor-packages/solaris \
+	/usr/lib/python$(PYTHON3_VERSION)/vendor-packages/solaris/__pycache__ \
+	/usr/lib/python$(PYTHON3_VERSION)/vendor-packages/zfs \
+	/usr/lib/python$(PYTHON3_VERSION)/vendor-packages/zfs/__pycache__
 
 DIRS= \
 	/boot \
@@ -282,12 +306,7 @@ DIRS= \
 	/usr/net \
 	/usr/net/servers \
 	/usr/lib/pool \
-	/usr/lib/python$(PYTHON_VERSION) \
-	/usr/lib/python$(PYTHON_VERSION)/vendor-packages \
-	/usr/lib/python$(PYTHON_VERSION)/vendor-packages/64 \
-	/usr/lib/python$(PYTHON_VERSION)/vendor-packages/solaris \
-	/usr/lib/python$(PYTHON_VERSION)/vendor-packages/zfs \
-	/usr/lib/python$(PYTHON_VERSION)/vendor-packages/beadm \
+	$(PYTHON2_DIRS) \
 	/usr/lib/rcap \
 	/usr/lib/rcap/$(MACH32) \
 	/usr/lib/sa  \
@@ -456,6 +475,8 @@ DIRS64= \
 	/usr/lib/lwp/$(MACH64) \
 	/usr/lib/mdb/kvm/$(MACH64) \
 	/usr/lib/mdb/proc/$(MACH64) \
+	$(PYTHON2_64DIRS) \
+	$(PYTHON3_DIRS) \
 	/usr/lib/rcap/$(MACH64) \
 	/usr/lib/sasl/$(MACH64) \
 	/usr/lib/scsi/$(MACH64) \

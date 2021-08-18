@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 OmniTI Computer Consulting, Inc.  All rights reserved.
+ * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
 #include <Python.h>
@@ -59,7 +60,6 @@ PyObject *beUnmount(PyObject *, PyObject *);
 PyObject *bePrintErrors(PyObject *, PyObject *);
 PyObject *beGetErrDesc(PyObject *, PyObject *);
 char *beMapLibbePyErrorToString(int);
-void initlibbe_py();
 
 static boolean_t convertBEInfoToDictionary(be_node_list_t *be,
     PyObject **listDict);
@@ -203,8 +203,8 @@ beCopy(PyObject *self, PyObject *args)
 		}
 		while (PyDict_Next(beNameProperties, &pos, &pkey, &pvalue)) {
 			if (!convertPyArgsToNvlist(&beProps, 2,
-			    PyString_AsString(pkey),
-			    PyString_AsString(pvalue))) {
+			    PyBytes_AS_STRING(pkey),
+			    PyBytes_AS_STRING(pvalue))) {
 				nvlist_free(beProps);
 				nvlist_free(beAttrs);
 				return (Py_BuildValue("[iss]", BE_PY_ERR_NVLIST,
@@ -269,7 +269,7 @@ beCopy(PyObject *self, PyObject *args)
  *              to gather information about Boot Environments
  * Parameters:
  *   args -     pointer to a python object containing:
- *     beName - The name of the BE to list (optional)
+ *     beName  - The name of the BE to list (optional)
  *
  * Returns a pointer to a python object. That Python object will consist of
  * the return code and a list of Dicts or NULL.
@@ -641,7 +641,7 @@ beMount(PyObject *self, PyObject *args)
 PyObject *
 beUnmount(PyObject *self, PyObject *args)
 {
-	char 		*beName = NULL;
+	char		*beName = NULL;
 	int		force_unmount = 0;
 	int		unmount_flags = 0;
 	int		ret = BE_PY_SUCCESS;
@@ -823,21 +823,21 @@ convertBEInfoToDictionary(be_node_list_t *be, PyObject **listDict)
 {
 	if (be->be_node_name != NULL) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_ORIG_BE_NAME,
-		    PyString_FromString(be->be_node_name)) != 0) {
+		    PyUnicode_FromString(be->be_node_name)) != 0) {
 			return (B_FALSE);
 		}
 	}
 
 	if (be->be_rpool != NULL) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_ORIG_BE_POOL,
-		    PyString_FromString(be->be_rpool)) != 0) {
+		    PyUnicode_FromString(be->be_rpool)) != 0) {
 			return (B_FALSE);
 		}
 	}
 
 	if (be->be_mntpt != NULL) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_MOUNTPOINT,
-		    PyString_FromString(be->be_mntpt)) != 0) {
+		    PyUnicode_FromString(be->be_mntpt)) != 0) {
 			return (B_FALSE);
 		}
 	}
@@ -871,12 +871,12 @@ convertBEInfoToDictionary(be_node_list_t *be, PyObject **listDict)
 
 	if (be->be_root_ds != NULL) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_ROOT_DS,
-		    PyString_FromString(be->be_root_ds)) != 0) {
+		    PyUnicode_FromString(be->be_root_ds)) != 0) {
 			return (B_FALSE);
 		}
 	}
 
-	if (be->be_node_creation != NULL) {
+	if (be->be_node_creation != 0) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_DATE,
 		    PyLong_FromLong(be->be_node_creation)) != 0) {
 			return (B_FALSE);
@@ -885,14 +885,14 @@ convertBEInfoToDictionary(be_node_list_t *be, PyObject **listDict)
 
 	if (be->be_policy_type != NULL) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_POLICY,
-		    PyString_FromString(be->be_policy_type)) != 0) {
+		    PyUnicode_FromString(be->be_policy_type)) != 0) {
 			return (B_FALSE);
 		}
 	}
 
 	if (be->be_uuid_str != NULL) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_UUID_STR,
-		    PyString_FromString(be->be_uuid_str)) != 0) {
+		    PyUnicode_FromString(be->be_uuid_str)) != 0) {
 			return (B_FALSE);
 		}
 	}
@@ -905,7 +905,7 @@ convertDatasetInfoToDictionary(be_dataset_list_t *ds, PyObject **listDict)
 {
 	if (ds->be_dataset_name != NULL) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_DATASET,
-		    PyString_FromString(ds->be_dataset_name)) != 0) {
+		    PyUnicode_FromString(ds->be_dataset_name)) != 0) {
 			return (B_FALSE);
 		}
 	}
@@ -917,7 +917,7 @@ convertDatasetInfoToDictionary(be_dataset_list_t *ds, PyObject **listDict)
 
 	if (ds->be_ds_mntpt != NULL) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_MOUNTPOINT,
-		    PyString_FromString(ds->be_ds_mntpt)) != 0) {
+		    PyUnicode_FromString(ds->be_ds_mntpt)) != 0) {
 			return (B_FALSE);
 		}
 	}
@@ -937,19 +937,19 @@ convertDatasetInfoToDictionary(be_dataset_list_t *ds, PyObject **listDict)
 
 	if (ds->be_dataset_name != 0) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_DATASET,
-		    PyString_FromString(ds->be_dataset_name)) != 0) {
+		    PyUnicode_FromString(ds->be_dataset_name)) != 0) {
 			return (B_FALSE);
 		}
 	}
 
 	if (ds->be_ds_plcy_type != NULL) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_POLICY,
-		    PyString_FromString(ds->be_ds_plcy_type)) != 0) {
+		    PyUnicode_FromString(ds->be_ds_plcy_type)) != 0) {
 			return (B_FALSE);
 		}
 	}
 
-	if (ds->be_ds_creation != NULL) {
+	if (ds->be_ds_creation != 0) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_DATE,
 		    PyLong_FromLong(ds->be_ds_creation)) != 0) {
 			return (B_FALSE);
@@ -964,12 +964,12 @@ convertSnapshotInfoToDictionary(be_snapshot_list_t *ss, PyObject **listDict)
 {
 	if (ss->be_snapshot_name != NULL) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_SNAP_NAME,
-		    PyString_FromString(ss->be_snapshot_name)) != 0) {
+		    PyUnicode_FromString(ss->be_snapshot_name)) != 0) {
 			return (B_FALSE);
 		}
 	}
 
-	if (ss->be_snapshot_creation != NULL) {
+	if (ss->be_snapshot_creation != 0) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_DATE,
 		    PyLong_FromLong(ss->be_snapshot_creation)) != 0) {
 			return (B_FALSE);
@@ -978,7 +978,7 @@ convertSnapshotInfoToDictionary(be_snapshot_list_t *ss, PyObject **listDict)
 
 	if (ss->be_snapshot_type != NULL) {
 		if (PyDict_SetItemString(*listDict, BE_ATTR_POLICY,
-		    PyString_FromString(ss->be_snapshot_type)) != 0) {
+		    PyUnicode_FromString(ss->be_snapshot_type)) != 0) {
 			return (B_FALSE);
 		}
 	}
@@ -1092,9 +1092,42 @@ static struct PyMethodDef libbeMethods[] = {
 	{NULL, NULL, 0, NULL}
 };
 
-void
-initlibbe_py()
+#if PY_MAJOR_VERSION >= 3
+static struct PyModuleDef libbe_module = {
+	PyModuleDef_HEAD_INIT,
+	"libbe_py",
+	NULL,
+	-1,
+	libbeMethods
+};
+#endif
+
+static PyObject *
+moduleinit()
 {
 	/* PyMODINIT_FUNC; */
+#if PY_MAJOR_VERSION >= 3
+	return (PyModule_Create(&libbe_module));
+#else
+	/*
+	 * Python2 module initialisation functions are void and may not return
+	 * a value. However, they will set an exception if appropriate.
+	 */
 	(void) Py_InitModule("libbe_py", libbeMethods);
+	return (NULL);
+#endif
 }
+
+#if PY_MAJOR_VERSION >= 3
+PyMODINIT_FUNC
+PyInit_libbe_py(void)
+{
+	return (moduleinit());
+}
+#else
+PyMODINIT_FUNC
+initlibbe_py(void)
+{
+	(void) moduleinit();
+}
+#endif

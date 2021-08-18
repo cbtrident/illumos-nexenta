@@ -199,6 +199,11 @@ export ONLY_LINT_DEFS=-I${SPRO_ROOT}/sunstudio12.1/prod/include/lint
 # Causes GCC to be used as the main compiler
 export __GNUC=""
 
+export BUILDPY2='#'
+export BUILDPY2TOOLS='#'
+export BUILDPY3=
+export BUILDPY3TOOLS=
+
 # Check for customized GCC location and set GNUC_ROOT accordingly.
 if [ -d /opt/gcc-4.4.4 ] ; then
 	export GNUC_ROOT=/opt/gcc-4.4.4
@@ -258,6 +263,7 @@ if [ -z "$PERL_ARCH" ] ; then
 		fi
 	done
 fi
+
 #
 # The following variables are used to generate ips pkg with correct FMRI.build
 # Typically only PKGPUBLISHER_REDIST needs to be set.
