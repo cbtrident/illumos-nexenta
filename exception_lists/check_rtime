@@ -165,6 +165,7 @@ UNREF_OBJ	/lib.*\ of\ .*libpython2\.7\.so\.1\.0
 UNREF_OBJ	/lib.*\ of\ .*libpython3\.[567]m?\.so\.1\.0
 UNREF_OBJ	/libgcc_s.*\ of\ .*libstdc\+\+\.so\.6
 UNREF_OBJ	/libgcc_s.*\ of\ .*libgmodule-2\.0\.so
+UNREF_OBJ	/lib.*\ of\ .*libssl\.so\.1
 
 # Unreferenced object of objects we can't change for other reasons
 UNREF_OBJ	/libmapmalloc\.so\.1;\ unused\ dependency\ of	# interposer
