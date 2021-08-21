@@ -2,7 +2,8 @@ comment_char *
 escape_char /
 
 ********************************************************************************
-* Placeholder for C.UTF-8 locale
+* This file contains only empty LC_CTYPE section which will be replaced by the
+* common.UTF-8.src contents, and all other sections are used from C locale.
 ********************************************************************************
 
 LC_CTYPE

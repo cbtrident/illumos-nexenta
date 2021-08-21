@@ -9,7 +9,7 @@
 #
 
 #
-# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
 set name=pkg.fmri value=pkg:/locale/mn@$(PKGVERS)

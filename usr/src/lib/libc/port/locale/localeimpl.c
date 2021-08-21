@@ -128,6 +128,20 @@ __global_locale(void)
 }
 
 /*
+ * Locale data for hybrid C.UTF-8 locale having all the characteristics of
+ * default C/POSIX locale, except for LC_CTYPE data which is retrieved from
+ * cache/file as for other UTF-8 locales.
+ */
+static struct locdata cutf_locdata[LC_ALL] = {
+	{ "C.UTF-8", NULL }, /* unused */
+	{ "C.UTF-8", &lc_numeric_posix },
+	{ "C.UTF-8", &lc_time_posix },
+	{ "C.UTF-8", &lc_collate_posix },
+	{ "C.UTF-8", &lc_monetary_posix },
+	{ "C.UTF-8", &lc_messages_posix },
+};
+
+/*
  * Category names for getenv()  Note that this was modified
  * for Solaris.  See <iso/locale_iso.h>.
  */
@@ -312,9 +326,11 @@ locdata_get(int category, const char *locname)
 		locname = scratch;
 	}
 
-	if (strcmp(locname, "C") == 0 || strcmp(locname, "POSIX") == 0 ||
-	    (category != LC_CTYPE && strncmp(locname, "C.", 2) == 0))
+	if ((strcmp(locname, "C") == 0) || (strcmp(locname, "POSIX") == 0))
 		return (posix_locale.locdata[category]);
+
+	if ((strcmp(locname, "C.UTF-8") == 0) && (category != LC_CTYPE))
+		return (&cutf_locdata[category]);
 
 	return (locdata_get_cache(category, locname));
 }

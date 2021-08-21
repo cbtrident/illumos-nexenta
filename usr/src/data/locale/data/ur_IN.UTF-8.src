@@ -352,6 +352,16 @@ alpha	<ARABIC_SIGN_SALLALLAHOU_ALAYHE_WASSALLAM>;/
 	<ARABIC_LETTER_AFRICAN_FEH>;/
 	<ARABIC_LETTER_AFRICAN_QAF>;/
 	<ARABIC_LETTER_AFRICAN_NOON>;/
+	<ARABIC_LETTER_PEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_TEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_TTEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_TCHEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_KEHEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_GHAIN_WITH_THREE_DOTS_ABOVE>;/
+	<ARABIC_LETTER_AFRICAN_QAF_WITH_THREE_DOTS_ABOVE>;/
+	<ARABIC_LETTER_JEEM_WITH_THREE_DOTS_ABOVE>;/
+	<ARABIC_LETTER_JEEM_WITH_THREE_DOTS_BELOW>;/
+	<ARABIC_LETTER_LAM_WITH_SMALL_ARABIC_LETTER_TAH_ABOVE>;/
 	<ARABIC_SMALL_HIGH_WORD_AR-RUB>;/
 	<ARABIC_SMALL_HIGH_SAD>;/
 	<ARABIC_SMALL_HIGH_AIN>;/
@@ -1562,6 +1572,16 @@ graph	<EXCLAMATION_MARK>;/
 	<ARABIC_LETTER_AFRICAN_FEH>;/
 	<ARABIC_LETTER_AFRICAN_QAF>;/
 	<ARABIC_LETTER_AFRICAN_NOON>;/
+	<ARABIC_LETTER_PEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_TEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_TTEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_TCHEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_KEHEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_GHAIN_WITH_THREE_DOTS_ABOVE>;/
+	<ARABIC_LETTER_AFRICAN_QAF_WITH_THREE_DOTS_ABOVE>;/
+	<ARABIC_LETTER_JEEM_WITH_THREE_DOTS_ABOVE>;/
+	<ARABIC_LETTER_JEEM_WITH_THREE_DOTS_BELOW>;/
+	<ARABIC_LETTER_LAM_WITH_SMALL_ARABIC_LETTER_TAH_ABOVE>;/
 	<ARABIC_SMALL_LOW_WAW>;/
 	<ARABIC_SMALL_HIGH_WORD_AR-RUB>;/
 	<ARABIC_SMALL_HIGH_SAD>;/
@@ -2759,6 +2779,16 @@ print	<space>;/
 	<ARABIC_LETTER_AFRICAN_FEH>;/
 	<ARABIC_LETTER_AFRICAN_QAF>;/
 	<ARABIC_LETTER_AFRICAN_NOON>;/
+	<ARABIC_LETTER_PEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_TEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_TTEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_TCHEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_KEHEH_WITH_SMALL_V>;/
+	<ARABIC_LETTER_GHAIN_WITH_THREE_DOTS_ABOVE>;/
+	<ARABIC_LETTER_AFRICAN_QAF_WITH_THREE_DOTS_ABOVE>;/
+	<ARABIC_LETTER_JEEM_WITH_THREE_DOTS_ABOVE>;/
+	<ARABIC_LETTER_JEEM_WITH_THREE_DOTS_BELOW>;/
+	<ARABIC_LETTER_LAM_WITH_SMALL_ARABIC_LETTER_TAH_ABOVE>;/
 	<ARABIC_SMALL_LOW_WAW>;/
 	<ARABIC_SMALL_HIGH_WORD_AR-RUB>;/
 	<ARABIC_SMALL_HIGH_SAD>;/
@@ -3727,17 +3757,18 @@ collating-element <u-zero-six-five-three> from "<u><zero><six><five><three>"
 collating-symbol <X01>
 collating-symbol <X05>
 collating-symbol <X06>
-collating-symbol <X08>
-collating-symbol <X0A>
+collating-symbol <X09>
 collating-symbol <X10>
+collating-symbol <X13>
 collating-symbol <X18>
 collating-symbol <X1A>
 collating-symbol <X1B>
-collating-symbol <X1C>
+collating-symbol <X1D>
 collating-symbol <X1E>
 collating-symbol <X20>
 collating-symbol <X25>
 collating-symbol <X26>
+collating-symbol <X27>
 collating-symbol <X28>
 collating-symbol <X2A>
 collating-symbol <X2C>
@@ -3745,8 +3776,8 @@ collating-symbol <X2E>
 collating-symbol <X30>
 collating-symbol <X31>
 collating-symbol <X33>
-collating-symbol <X3A>
-collating-symbol <X3C>
+collating-symbol <X34>
+collating-symbol <X3B>
 collating-symbol <X3E>
 collating-symbol <X46>
 collating-symbol <X47>
@@ -3761,24 +3792,25 @@ collating-symbol <X4F>
 collating-symbol <X50>
 collating-symbol <X51>
 collating-symbol <X52>
-collating-symbol <X5C>
-collating-symbol <X5E>
-collating-symbol <X60>
+collating-symbol <X55>
+collating-symbol <X69>
 collating-symbol <X6C>
-collating-symbol <X6E>
 collating-symbol <X70>
-collating-symbol <X7E>
+collating-symbol <X73>
+collating-symbol <X76>
 collating-symbol <X80>
-collating-symbol <X82>
 collating-symbol <X85>
-collating-symbol <X8E>
-collating-symbol <X92>
+collating-symbol <X8A>
+collating-symbol <X8D>
+collating-symbol <X94>
+collating-symbol <X97>
 collating-symbol <X9C>
 collating-symbol <XA0>
-collating-symbol <XA2>
-collating-symbol <XB0>
-collating-symbol <XB2>
-collating-symbol <XB4>
+collating-symbol <XA4>
+collating-symbol <XAB>
+collating-symbol <XAE>
+collating-symbol <XB5>
+collating-symbol <XB8>
 collating-symbol <XBC>
 collating-symbol <XC0>
 collating-symbol <XC2>
@@ -3786,10 +3818,11 @@ collating-symbol <XC3>
 collating-symbol <XC4>
 collating-symbol <XC5>
 collating-symbol <XC6>
-collating-symbol <XD2>
+collating-symbol <XCC>
+collating-symbol <XCF>
 collating-symbol <XD6>
-collating-symbol <XE2>
-collating-symbol <XE4>
+collating-symbol <XD9>
+collating-symbol <XE3>
 collating-symbol <XE5>
 collating-symbol <XE6>
 collating-symbol <XE7>
@@ -3797,9 +3830,10 @@ collating-symbol <XE8>
 collating-symbol <XE9>
 collating-symbol <XEA>
 collating-symbol <XEB>
-collating-symbol <XF4>
-collating-symbol <XF6>
-collating-symbol <XF8>
+collating-symbol <XED>
+collating-symbol <XF0>
+collating-symbol <XF7>
+collating-symbol <XFA>
 collating-symbol <X0200>
 collating-symbol <X0300>
 collating-symbol <X0304>
@@ -3813,14 +3847,14 @@ collating-symbol <X050A>
 collating-symbol <X050E>
 collating-symbol <X0600>
 collating-symbol <X0700>
-collating-symbol <X0714>
 collating-symbol <X0716>
 collating-symbol <X0718>
-collating-symbol <X0726>
-collating-symbol <X0732>
+collating-symbol <X071A>
+collating-symbol <X072A>
 collating-symbol <X0736>
-collating-symbol <X0756>
-collating-symbol <X075E>
+collating-symbol <X073A>
+collating-symbol <X075A>
+collating-symbol <X0762>
 collating-symbol <X0800>
 collating-symbol <X0900>
 collating-symbol <X0908>
@@ -3839,27 +3873,27 @@ collating-symbol <X0A86>
 collating-symbol <X0A8A>
 collating-symbol <X0A8C>
 collating-symbol <X0A90>
-collating-symbol <X0A94>
 collating-symbol <X0A96>
 collating-symbol <X0A98>
-collating-symbol <X0A9C>
-collating-symbol <X0AA0>
+collating-symbol <X0A9A>
+collating-symbol <X0A9E>
+collating-symbol <X0AA2>
 collating-symbol <X0B00>
 collating-symbol <X0C00>
 collating-symbol <X0C04>
 collating-symbol <X0C0A>
 collating-symbol <X0C55>
-collating-symbol <X0C78>
-collating-symbol <X0C80>
-collating-symbol <X0C82>
-collating-symbol <X0C84>
-collating-symbol <X0C88>
-collating-symbol <X0C8C>
-collating-symbol <X0C96>
+collating-symbol <X0C79>
+collating-symbol <X0C81>
+collating-symbol <X0C83>
+collating-symbol <X0C85>
+collating-symbol <X0C89>
+collating-symbol <X0C8D>
+collating-symbol <X0C97>
 collating-symbol <X0D00>
-collating-symbol <X0D7C>
-collating-symbol <X0D84>
-collating-symbol <X0DDA>
+collating-symbol <X0D8A>
+collating-symbol <X0D92>
+collating-symbol <X0DF2>
 collating-symbol <X0E00>
 collating-symbol <X0F00>
 collating-symbol <X1000>
@@ -4073,17 +4107,18 @@ order_start forward;forward;forward;forward
 <X01>
 <X05>
 <X06>
-<X08>
-<X0A>
+<X09>
 <X10>
+<X13>
 <X18>
 <X1A>
 <X1B>
-<X1C>
+<X1D>
 <X1E>
 <X20>
 <X25>
 <X26>
+<X27>
 <X28>
 <X2A>
 <X2C>
@@ -4091,8 +4126,8 @@ order_start forward;forward;forward;forward
 <X30>
 <X31>
 <X33>
-<X3A>
-<X3C>
+<X34>
+<X3B>
 <X3E>
 <X46>
 <X47>
@@ -4107,24 +4142,25 @@ order_start forward;forward;forward;forward
 <X50>
 <X51>
 <X52>
-<X5C>
-<X5E>
-<X60>
+<X55>
+<X69>
 <X6C>
-<X6E>
 <X70>
-<X7E>
+<X73>
+<X76>
 <X80>
-<X82>
 <X85>
-<X8E>
-<X92>
+<X8A>
+<X8D>
+<X94>
+<X97>
 <X9C>
 <XA0>
-<XA2>
-<XB0>
-<XB2>
-<XB4>
+<XA4>
+<XAB>
+<XAE>
+<XB5>
+<XB8>
 <XBC>
 <XC0>
 <XC2>
@@ -4132,10 +4168,11 @@ order_start forward;forward;forward;forward
 <XC4>
 <XC5>
 <XC6>
-<XD2>
+<XCC>
+<XCF>
 <XD6>
-<XE2>
-<XE4>
+<XD9>
+<XE3>
 <XE5>
 <XE6>
 <XE7>
@@ -4143,9 +4180,10 @@ order_start forward;forward;forward;forward
 <XE9>
 <XEA>
 <XEB>
-<XF4>
-<XF6>
-<XF8>
+<XED>
+<XF0>
+<XF7>
+<XFA>
 <X0200>
 <X0300>
 <X0304>
@@ -4159,14 +4197,14 @@ order_start forward;forward;forward;forward
 <X050E>
 <X0600>
 <X0700>
-<X0714>
 <X0716>
 <X0718>
-<X0726>
-<X0732>
+<X071A>
+<X072A>
 <X0736>
-<X0756>
-<X075E>
+<X073A>
+<X075A>
+<X0762>
 <X0800>
 <X0900>
 <X0908>
@@ -4185,27 +4223,27 @@ order_start forward;forward;forward;forward
 <X0A8A>
 <X0A8C>
 <X0A90>
-<X0A94>
 <X0A96>
 <X0A98>
-<X0A9C>
-<X0AA0>
+<X0A9A>
+<X0A9E>
+<X0AA2>
 <X0B00>
 <X0C00>
 <X0C04>
 <X0C0A>
 <X0C55>
-<X0C78>
-<X0C80>
-<X0C82>
-<X0C84>
-<X0C88>
-<X0C8C>
-<X0C96>
+<X0C79>
+<X0C81>
+<X0C83>
+<X0C85>
+<X0C89>
+<X0C8D>
+<X0C97>
 <X0D00>
-<X0D7C>
-<X0D84>
-<X0DDA>
+<X0D8A>
+<X0D92>
+<X0DF2>
 <X0E00>
 <X0F00>
 <X1000>
@@ -4505,61 +4543,61 @@ order_start forward;forward;forward;forward
 <u-zero-six-one-three>                                                                IGNORE;IGNORE;"<XBC><XC4>";<u-zero-six-one-three>
 <u-zero-six-one-two>                                                                  IGNORE;IGNORE;"<XBC><XC5>";<u-zero-six-one-two>
 <u-zero-six-one-four>                                                                 IGNORE;IGNORE;"<XBC><XC6>";<u-zero-six-one-four>
-<ARABIC_TATWEEL_WITH_FATHATAN_ABOVE>                                                  IGNORE;"<XE5><XC0>";"<X10><XC0>";<ARABIC_TATWEEL_WITH_FATHATAN_ABOVE>
-<ARABIC_FATHATAN_ISOLATED_FORM>                                                       IGNORE;"<XE5><XC0>";"<X2C><XC0>";<ARABIC_FATHATAN_ISOLATED_FORM>
-<ARABIC_OPEN_FATHATAN>                                                                IGNORE;"<XE5><XE2>";"<X05><XC0>";<ARABIC_OPEN_FATHATAN>
-<ARABIC_CURLY_FATHATAN>                                                               IGNORE;"<XE6><X06>";"<X05><XC0>";<ARABIC_CURLY_FATHATAN>
-<ARABIC_DAMMATAN_ISOLATED_FORM>                                                       IGNORE;"<XE6><X28>";"<X20><XC0>";<ARABIC_DAMMATAN_ISOLATED_FORM>
-<ARABIC_LIGATURE_SHADDA_WITH_DAMMATAN_ISOLATED_FORM>                                  IGNORE;"<XE6><X28><XE8><X4C>";"<X20><XC0><X2E><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_DAMMATAN_ISOLATED_FORM>
-<ARABIC_OPEN_DAMMATAN>                                                                IGNORE;"<XE6><X4A>";"<X05><XC0>";<ARABIC_OPEN_DAMMATAN>
-<ARABIC_CURLY_DAMMATAN>                                                               IGNORE;"<XE6><X6C>";"<X05><XC0>";<ARABIC_CURLY_DAMMATAN>
-<ARABIC_KASRATAN_ISOLATED_FORM>                                                       IGNORE;"<XE6><X8E>";"<X20><XC0>";<ARABIC_KASRATAN_ISOLATED_FORM>
-<ARABIC_LIGATURE_SHADDA_WITH_KASRATAN_ISOLATED_FORM>                                  IGNORE;"<XE6><X8E><XE8><X4C>";"<X20><XC0><X2E><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_KASRATAN_ISOLATED_FORM>
-<ARABIC_OPEN_KASRATAN>                                                                IGNORE;"<XE6><XB0>";"<X05><XC0>";<ARABIC_OPEN_KASRATAN>
-<ARABIC_CURLY_KASRATAN>                                                               IGNORE;"<XE6><XD2>";"<X05><XC0>";<ARABIC_CURLY_KASRATAN>
-<ARABIC_FATHA_MEDIAL_FORM>                                                            IGNORE;"<XE6><XF4>";"<X20><XC0>";<ARABIC_FATHA_MEDIAL_FORM>
-<ARABIC_FATHA_ISOLATED_FORM>                                                          IGNORE;"<XE6><XF4>";"<X2E><XC0>";<ARABIC_FATHA_ISOLATED_FORM>
-<ARABIC_LIGATURE_SHADDA_WITH_FATHA_MEDIAL_FORM>                                       IGNORE;"<XE6><XF4><XE8><X4C>";"<X20><XC0><X20><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_FATHA_MEDIAL_FORM>
-<ARABIC_LIGATURE_SHADDA_WITH_FATHA_ISOLATED_FORM>                                     IGNORE;"<XE6><XF4><XE8><X4C>";"<X2E><XC0><X2E><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_FATHA_ISOLATED_FORM>
-<ARABIC_CURLY_FATHA>                                                                  IGNORE;"<XE7><X18>";"<X05><XC0>";<ARABIC_CURLY_FATHA>
-<ARABIC_FATHA_WITH_RING>                                                              IGNORE;"<XE7><X3A>";"<X05><XC0>";<ARABIC_FATHA_WITH_RING>
-<ARABIC_FATHA_WITH_DOT_ABOVE>                                                         IGNORE;"<XE7><X5C>";"<X05><XC0>";<ARABIC_FATHA_WITH_DOT_ABOVE>
-<ARABIC_DAMMA_MEDIAL_FORM>                                                            IGNORE;"<XE7><X7E>";"<X20><XC0>";<ARABIC_DAMMA_MEDIAL_FORM>
-<ARABIC_DAMMA_ISOLATED_FORM>                                                          IGNORE;"<XE7><X7E>";"<X2E><XC0>";<ARABIC_DAMMA_ISOLATED_FORM>
-<ARABIC_LIGATURE_SHADDA_WITH_DAMMA_MEDIAL_FORM>                                       IGNORE;"<XE7><X7E><XE8><X4C>";"<X20><XC0><X20><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_DAMMA_MEDIAL_FORM>
-<ARABIC_LIGATURE_SHADDA_WITH_DAMMA_ISOLATED_FORM>                                     IGNORE;"<XE7><X7E><XE8><X4C>";"<X2E><XC0><X2E><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_DAMMA_ISOLATED_FORM>
-<ARABIC_CURLY_DAMMA>                                                                  IGNORE;"<XE7><XA0>";"<X05><XC0>";<ARABIC_CURLY_DAMMA>
-<ARABIC_DAMMA_WITH_DOT>                                                               IGNORE;"<XE7><XC2>";"<X05><XC0>";<ARABIC_DAMMA_WITH_DOT>
-<ARABIC_KASRA_MEDIAL_FORM>                                                            IGNORE;"<XE7><XE4>";"<X20><XC0>";<ARABIC_KASRA_MEDIAL_FORM>
-<ARABIC_KASRA_ISOLATED_FORM>                                                          IGNORE;"<XE7><XE4>";"<X2E><XC0>";<ARABIC_KASRA_ISOLATED_FORM>
-<ARABIC_LIGATURE_SHADDA_WITH_KASRA_MEDIAL_FORM>                                       IGNORE;"<XE7><XE4><XE8><X4C>";"<X20><XC0><X20><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_KASRA_MEDIAL_FORM>
-<ARABIC_LIGATURE_SHADDA_WITH_KASRA_ISOLATED_FORM>                                     IGNORE;"<XE7><XE4><XE8><X4C>";"<X2E><XC0><X2E><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_KASRA_ISOLATED_FORM>
-<ARABIC_CURLY_KASRA>                                                                  IGNORE;"<XE8><X08>";"<X05><XC0>";<ARABIC_CURLY_KASRA>
-<ARABIC_KASRA_WITH_DOT_BELOW>                                                         IGNORE;"<XE8><X2A>";"<X05><XC0>";<ARABIC_KASRA_WITH_DOT_BELOW>
-<ARABIC_SHADDA_MEDIAL_FORM>                                                           IGNORE;"<XE8><X4C>";"<X20><XC0>";<ARABIC_SHADDA_MEDIAL_FORM>
-<ARABIC_SHADDA_ISOLATED_FORM>                                                         IGNORE;"<XE8><X4C>";"<X2E><XC0>";<ARABIC_SHADDA_ISOLATED_FORM>
-<ARABIC_LIGATURE_SHADDA_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>                          IGNORE;"<XE8><X4C><XEB><X82>";"<X2E><XC0><X2C><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>
-<ARABIC_SUKUN_MEDIAL_FORM>                                                            IGNORE;"<XE8><X6E>";"<X20><XC0>";<ARABIC_SUKUN_MEDIAL_FORM>
-<ARABIC_SUKUN_ISOLATED_FORM>                                                          IGNORE;"<XE8><X6E>";"<X2E><XC0>";<ARABIC_SUKUN_ISOLATED_FORM>
-<ARABIC_WAVY_HAMZA_BELOW>                                                             IGNORE;"<XE8><XF6>";"<X05><XC0>";<ARABIC_WAVY_HAMZA_BELOW>
-<ARABIC_SUBSCRIPT_ALEF>                                                               IGNORE;"<XE9><X1A>";"<X05><XC0>";<ARABIC_SUBSCRIPT_ALEF>
-<ARABIC_INVERTED_DAMMA>                                                               IGNORE;"<XE9><X3C>";"<X05><XC0>";<ARABIC_INVERTED_DAMMA>
-<ARABIC_MARK_NOON_GHUNNA>                                                             IGNORE;"<XE9><X5E>";"<X05><XC0>";<ARABIC_MARK_NOON_GHUNNA>
-<ARABIC_MARK_SIDEWAYS_NOON_GHUNNA>                                                    IGNORE;"<XE9><X80>";"<X05><XC0>";<ARABIC_MARK_SIDEWAYS_NOON_GHUNNA>
-<ARABIC_ZWARAKAY>                                                                     IGNORE;"<XE9><XA2>";"<X05><XC0>";<ARABIC_ZWARAKAY>
-<ARABIC_VOWEL_SIGN_SMALL_V_ABOVE>                                                     IGNORE;"<XE9><XC4>";"<X05><XC0>";<ARABIC_VOWEL_SIGN_SMALL_V_ABOVE>
-<ARABIC_VOWEL_SIGN_INVERTED_SMALL_V_ABOVE>                                            IGNORE;"<XE9><XE6>";"<X05><XC0>";<ARABIC_VOWEL_SIGN_INVERTED_SMALL_V_ABOVE>
-<ARABIC_VOWEL_SIGN_DOT_BELOW>                                                         IGNORE;"<XEA><X0A>";"<X05><XC0>";<ARABIC_VOWEL_SIGN_DOT_BELOW>
-<ARABIC_REVERSED_DAMMA>                                                               IGNORE;"<XEA><X2C>";"<X05><XC0>";<ARABIC_REVERSED_DAMMA>
-<ARABIC_FATHA_WITH_TWO_DOTS>                                                          IGNORE;"<XEA><X4E>";"<X05><XC0>";<ARABIC_FATHA_WITH_TWO_DOTS>
-<ARABIC_TURNED_DAMMA_BELOW>                                                           IGNORE;"<XEA><X70>";"<X05><XC0>";<ARABIC_TURNED_DAMMA_BELOW>
-<ARABIC_LEFT_ARROWHEAD_ABOVE>                                                         IGNORE;"<XEA><X92>";"<X05><XC0>";<ARABIC_LEFT_ARROWHEAD_ABOVE>
-<ARABIC_RIGHT_ARROWHEAD_ABOVE>                                                        IGNORE;"<XEA><XB4>";"<X05><XC0>";<ARABIC_RIGHT_ARROWHEAD_ABOVE>
-<ARABIC_RIGHT_ARROWHEAD_ABOVE_WITH_DOT>                                               IGNORE;"<XEA><XD6>";"<X05><XC0>";<ARABIC_RIGHT_ARROWHEAD_ABOVE_WITH_DOT>
-<ARABIC_DOUBLE_RIGHT_ARROWHEAD_ABOVE>                                                 IGNORE;"<XEA><XF8>";"<X05><XC0>";<ARABIC_DOUBLE_RIGHT_ARROWHEAD_ABOVE>
-<ARABIC_DOUBLE_RIGHT_ARROWHEAD_ABOVE_WITH_DOT>                                        IGNORE;"<XEB><X1C>";"<X05><XC0>";<ARABIC_DOUBLE_RIGHT_ARROWHEAD_ABOVE_WITH_DOT>
-<ARABIC_LEFT_ARROWHEAD_BELOW>                                                         IGNORE;"<XEB><X3E>";"<X05><XC0>";<ARABIC_LEFT_ARROWHEAD_BELOW>
-<ARABIC_RIGHT_ARROWHEAD_BELOW>                                                        IGNORE;"<XEB><X60>";"<X05><XC0>";<ARABIC_RIGHT_ARROWHEAD_BELOW>
+<ARABIC_TATWEEL_WITH_FATHATAN_ABOVE>                                                  IGNORE;"<XE5><XA4>";"<X10><XC0>";<ARABIC_TATWEEL_WITH_FATHATAN_ABOVE>
+<ARABIC_FATHATAN_ISOLATED_FORM>                                                       IGNORE;"<XE5><XA4>";"<X2C><XC0>";<ARABIC_FATHATAN_ISOLATED_FORM>
+<ARABIC_OPEN_FATHATAN>                                                                IGNORE;"<XE5><XC5>";"<X05><XC0>";<ARABIC_OPEN_FATHATAN>
+<ARABIC_CURLY_FATHATAN>                                                               IGNORE;"<XE5><XE6>";"<X05><XC0>";<ARABIC_CURLY_FATHATAN>
+<ARABIC_DAMMATAN_ISOLATED_FORM>                                                       IGNORE;"<XE6><X09>";"<X20><XC0>";<ARABIC_DAMMATAN_ISOLATED_FORM>
+<ARABIC_LIGATURE_SHADDA_WITH_DAMMATAN_ISOLATED_FORM>                                  IGNORE;"<XE6><X09><XE8><X1D>";"<X20><XC0><X2E><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_DAMMATAN_ISOLATED_FORM>
+<ARABIC_OPEN_DAMMATAN>                                                                IGNORE;"<XE6><X2A>";"<X05><XC0>";<ARABIC_OPEN_DAMMATAN>
+<ARABIC_CURLY_DAMMATAN>                                                               IGNORE;"<XE6><X4B>";"<X05><XC0>";<ARABIC_CURLY_DAMMATAN>
+<ARABIC_KASRATAN_ISOLATED_FORM>                                                       IGNORE;"<XE6><X6C>";"<X20><XC0>";<ARABIC_KASRATAN_ISOLATED_FORM>
+<ARABIC_LIGATURE_SHADDA_WITH_KASRATAN_ISOLATED_FORM>                                  IGNORE;"<XE6><X6C><XE8><X1D>";"<X20><XC0><X2E><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_KASRATAN_ISOLATED_FORM>
+<ARABIC_OPEN_KASRATAN>                                                                IGNORE;"<XE6><X8D>";"<X05><XC0>";<ARABIC_OPEN_KASRATAN>
+<ARABIC_CURLY_KASRATAN>                                                               IGNORE;"<XE6><XAE>";"<X05><XC0>";<ARABIC_CURLY_KASRATAN>
+<ARABIC_FATHA_MEDIAL_FORM>                                                            IGNORE;"<XE6><XCF>";"<X20><XC0>";<ARABIC_FATHA_MEDIAL_FORM>
+<ARABIC_FATHA_ISOLATED_FORM>                                                          IGNORE;"<XE6><XCF>";"<X2E><XC0>";<ARABIC_FATHA_ISOLATED_FORM>
+<ARABIC_LIGATURE_SHADDA_WITH_FATHA_MEDIAL_FORM>                                       IGNORE;"<XE6><XCF><XE8><X1D>";"<X20><XC0><X20><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_FATHA_MEDIAL_FORM>
+<ARABIC_LIGATURE_SHADDA_WITH_FATHA_ISOLATED_FORM>                                     IGNORE;"<XE6><XCF><XE8><X1D>";"<X2E><XC0><X2E><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_FATHA_ISOLATED_FORM>
+<ARABIC_CURLY_FATHA>                                                                  IGNORE;"<XE6><XF0>";"<X05><XC0>";<ARABIC_CURLY_FATHA>
+<ARABIC_FATHA_WITH_RING>                                                              IGNORE;"<XE7><X13>";"<X05><XC0>";<ARABIC_FATHA_WITH_RING>
+<ARABIC_FATHA_WITH_DOT_ABOVE>                                                         IGNORE;"<XE7><X34>";"<X05><XC0>";<ARABIC_FATHA_WITH_DOT_ABOVE>
+<ARABIC_DAMMA_MEDIAL_FORM>                                                            IGNORE;"<XE7><X55>";"<X20><XC0>";<ARABIC_DAMMA_MEDIAL_FORM>
+<ARABIC_DAMMA_ISOLATED_FORM>                                                          IGNORE;"<XE7><X55>";"<X2E><XC0>";<ARABIC_DAMMA_ISOLATED_FORM>
+<ARABIC_LIGATURE_SHADDA_WITH_DAMMA_MEDIAL_FORM>                                       IGNORE;"<XE7><X55><XE8><X1D>";"<X20><XC0><X20><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_DAMMA_MEDIAL_FORM>
+<ARABIC_LIGATURE_SHADDA_WITH_DAMMA_ISOLATED_FORM>                                     IGNORE;"<XE7><X55><XE8><X1D>";"<X2E><XC0><X2E><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_DAMMA_ISOLATED_FORM>
+<ARABIC_CURLY_DAMMA>                                                                  IGNORE;"<XE7><X76>";"<X05><XC0>";<ARABIC_CURLY_DAMMA>
+<ARABIC_DAMMA_WITH_DOT>                                                               IGNORE;"<XE7><X97>";"<X05><XC0>";<ARABIC_DAMMA_WITH_DOT>
+<ARABIC_KASRA_MEDIAL_FORM>                                                            IGNORE;"<XE7><XB8>";"<X20><XC0>";<ARABIC_KASRA_MEDIAL_FORM>
+<ARABIC_KASRA_ISOLATED_FORM>                                                          IGNORE;"<XE7><XB8>";"<X2E><XC0>";<ARABIC_KASRA_ISOLATED_FORM>
+<ARABIC_LIGATURE_SHADDA_WITH_KASRA_MEDIAL_FORM>                                       IGNORE;"<XE7><XB8><XE8><X1D>";"<X20><XC0><X20><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_KASRA_MEDIAL_FORM>
+<ARABIC_LIGATURE_SHADDA_WITH_KASRA_ISOLATED_FORM>                                     IGNORE;"<XE7><XB8><XE8><X1D>";"<X2E><XC0><X2E><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_KASRA_ISOLATED_FORM>
+<ARABIC_CURLY_KASRA>                                                                  IGNORE;"<XE7><XD9>";"<X05><XC0>";<ARABIC_CURLY_KASRA>
+<ARABIC_KASRA_WITH_DOT_BELOW>                                                         IGNORE;"<XE7><XFA>";"<X05><XC0>";<ARABIC_KASRA_WITH_DOT_BELOW>
+<ARABIC_SHADDA_MEDIAL_FORM>                                                           IGNORE;"<XE8><X1D>";"<X20><XC0>";<ARABIC_SHADDA_MEDIAL_FORM>
+<ARABIC_SHADDA_ISOLATED_FORM>                                                         IGNORE;"<XE8><X1D>";"<X2E><XC0>";<ARABIC_SHADDA_ISOLATED_FORM>
+<ARABIC_LIGATURE_SHADDA_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>                          IGNORE;"<XE8><X1D><XEB><X3B>";"<X2E><XC0><X2C><XC0>";<ARABIC_LIGATURE_SHADDA_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>
+<ARABIC_SUKUN_MEDIAL_FORM>                                                            IGNORE;"<XE8><X3E>";"<X20><XC0>";<ARABIC_SUKUN_MEDIAL_FORM>
+<ARABIC_SUKUN_ISOLATED_FORM>                                                          IGNORE;"<XE8><X3E>";"<X2E><XC0>";<ARABIC_SUKUN_ISOLATED_FORM>
+<ARABIC_WAVY_HAMZA_BELOW>                                                             IGNORE;"<XE8><XC2>";"<X05><XC0>";<ARABIC_WAVY_HAMZA_BELOW>
+<ARABIC_SUBSCRIPT_ALEF>                                                               IGNORE;"<XE8><XE3>";"<X05><XC0>";<ARABIC_SUBSCRIPT_ALEF>
+<ARABIC_INVERTED_DAMMA>                                                               IGNORE;"<XE9><X06>";"<X05><XC0>";<ARABIC_INVERTED_DAMMA>
+<ARABIC_MARK_NOON_GHUNNA>                                                             IGNORE;"<XE9><X27>";"<X05><XC0>";<ARABIC_MARK_NOON_GHUNNA>
+<ARABIC_MARK_SIDEWAYS_NOON_GHUNNA>                                                    IGNORE;"<XE9><X48>";"<X05><XC0>";<ARABIC_MARK_SIDEWAYS_NOON_GHUNNA>
+<ARABIC_ZWARAKAY>                                                                     IGNORE;"<XE9><X69>";"<X05><XC0>";<ARABIC_ZWARAKAY>
+<ARABIC_VOWEL_SIGN_SMALL_V_ABOVE>                                                     IGNORE;"<XE9><X8A>";"<X05><XC0>";<ARABIC_VOWEL_SIGN_SMALL_V_ABOVE>
+<ARABIC_VOWEL_SIGN_INVERTED_SMALL_V_ABOVE>                                            IGNORE;"<XE9><XAB>";"<X05><XC0>";<ARABIC_VOWEL_SIGN_INVERTED_SMALL_V_ABOVE>
+<ARABIC_VOWEL_SIGN_DOT_BELOW>                                                         IGNORE;"<XE9><XCC>";"<X05><XC0>";<ARABIC_VOWEL_SIGN_DOT_BELOW>
+<ARABIC_REVERSED_DAMMA>                                                               IGNORE;"<XE9><XED>";"<X05><XC0>";<ARABIC_REVERSED_DAMMA>
+<ARABIC_FATHA_WITH_TWO_DOTS>                                                          IGNORE;"<XEA><X10>";"<X05><XC0>";<ARABIC_FATHA_WITH_TWO_DOTS>
+<ARABIC_TURNED_DAMMA_BELOW>                                                           IGNORE;"<XEA><X31>";"<X05><XC0>";<ARABIC_TURNED_DAMMA_BELOW>
+<ARABIC_LEFT_ARROWHEAD_ABOVE>                                                         IGNORE;"<XEA><X52>";"<X05><XC0>";<ARABIC_LEFT_ARROWHEAD_ABOVE>
+<ARABIC_RIGHT_ARROWHEAD_ABOVE>                                                        IGNORE;"<XEA><X73>";"<X05><XC0>";<ARABIC_RIGHT_ARROWHEAD_ABOVE>
+<ARABIC_RIGHT_ARROWHEAD_ABOVE_WITH_DOT>                                               IGNORE;"<XEA><X94>";"<X05><XC0>";<ARABIC_RIGHT_ARROWHEAD_ABOVE_WITH_DOT>
+<ARABIC_DOUBLE_RIGHT_ARROWHEAD_ABOVE>                                                 IGNORE;"<XEA><XB5>";"<X05><XC0>";<ARABIC_DOUBLE_RIGHT_ARROWHEAD_ABOVE>
+<ARABIC_DOUBLE_RIGHT_ARROWHEAD_ABOVE_WITH_DOT>                                        IGNORE;"<XEA><XD6>";"<X05><XC0>";<ARABIC_DOUBLE_RIGHT_ARROWHEAD_ABOVE_WITH_DOT>
+<ARABIC_LEFT_ARROWHEAD_BELOW>                                                         IGNORE;"<XEA><XF7>";"<X05><XC0>";<ARABIC_LEFT_ARROWHEAD_BELOW>
+<ARABIC_RIGHT_ARROWHEAD_BELOW>                                                        IGNORE;"<XEB><X1A>";"<X05><XC0>";<ARABIC_RIGHT_ARROWHEAD_BELOW>
 <tab>                                                                                 <X0304>;<X05>;<X05>;<tab>
 <newline>                                                                             <X0306>;<X05>;<X05>;<newline>
 <vertical-tab>                                                                        <X0308>;<X05>;<X05>;<vertical-tab>
@@ -4569,14 +4607,14 @@ order_start forward;forward;forward;forward
 <LOW_LINE>                                                                            <X050A>;<X05>;<X05>;<LOW_LINE>
 <HYPHEN-MINUS>                                                                        <X050E>;<X05>;<X05>;<HYPHEN-MINUS>
 <COMMA>                                                                               <X0600>;<X05>;<X05>;<COMMA>
-<ARABIC_DATE_SEPARATOR>                                                               <X0714>;<X05>;<X05>;<ARABIC_DATE_SEPARATOR>
-<ARABIC_DECIMAL_SEPARATOR>                                                            <X0716>;<X05>;<X05>;<ARABIC_DECIMAL_SEPARATOR>
-<ARABIC_THOUSANDS_SEPARATOR>                                                          <X0718>;<X05>;<X05>;<ARABIC_THOUSANDS_SEPARATOR>
-<SEMICOLON>                                                                           <X0726>;<X05>;<X05>;<SEMICOLON>
-<COLON>                                                                               <X0732>;<X05>;<X05>;<COLON>
-<ARABIC_TRIPLE_DOT_PUNCTUATION_MARK>                                                  <X0736>;<X05>;<X05>;<ARABIC_TRIPLE_DOT_PUNCTUATION_MARK>
-<EXCLAMATION_MARK>                                                                    <X0756>;<X05>;<X05>;<EXCLAMATION_MARK>
-<QUESTION_MARK>                                                                       <X075E>;<X05>;<X05>;<QUESTION_MARK>
+<ARABIC_DATE_SEPARATOR>                                                               <X0716>;<X05>;<X05>;<ARABIC_DATE_SEPARATOR>
+<ARABIC_DECIMAL_SEPARATOR>                                                            <X0718>;<X05>;<X05>;<ARABIC_DECIMAL_SEPARATOR>
+<ARABIC_THOUSANDS_SEPARATOR>                                                          <X071A>;<X05>;<X05>;<ARABIC_THOUSANDS_SEPARATOR>
+<SEMICOLON>                                                                           <X072A>;<X05>;<X05>;<SEMICOLON>
+<COLON>                                                                               <X0736>;<X05>;<X05>;<COLON>
+<ARABIC_TRIPLE_DOT_PUNCTUATION_MARK>                                                  <X073A>;<X05>;<X05>;<ARABIC_TRIPLE_DOT_PUNCTUATION_MARK>
+<EXCLAMATION_MARK>                                                                    <X075A>;<X05>;<X05>;<EXCLAMATION_MARK>
+<QUESTION_MARK>                                                                       <X0762>;<X05>;<X05>;<QUESTION_MARK>
 <FULL_STOP>                                                                           <X0800>;<X05>;<X05>;<FULL_STOP>
 <ARABIC_FULL_STOP>                                                                    <X0908>;<X05>;<X05>;<ARABIC_FULL_STOP>
 <APOSTROPHE>                                                                          <X096A>;<X05>;<X05>;<APOSTROPHE>
@@ -4593,11 +4631,11 @@ order_start forward;forward;forward;forward
 <SOLIDUS>                                                                             <X0A8A>;<X05>;<X05>;<SOLIDUS>
 <REVERSE_SOLIDUS>                                                                     <X0A8C>;<X05>;<X05>;<REVERSE_SOLIDUS>
 <AMPERSAND>                                                                           <X0A90>;<X05>;<X05>;<AMPERSAND>
-<NUMBER_SIGN>                                                                         <X0A94>;<X05>;<X05>;<NUMBER_SIGN>
-<PERCENT_SIGN>                                                                        <X0A96>;<X05>;<X05>;<PERCENT_SIGN>
-<ARABIC_PERCENT_SIGN>                                                                 <X0A98>;<X05>;<X05>;<ARABIC_PERCENT_SIGN>
-<ARABIC-INDIC_PER_MILLE_SIGN>                                                         <X0A9C>;<X05>;<X05>;<ARABIC-INDIC_PER_MILLE_SIGN>
-<ARABIC-INDIC_PER_TEN_THOUSAND_SIGN>                                                  <X0AA0>;<X05>;<X05>;<ARABIC-INDIC_PER_TEN_THOUSAND_SIGN>
+<NUMBER_SIGN>                                                                         <X0A96>;<X05>;<X05>;<NUMBER_SIGN>
+<PERCENT_SIGN>                                                                        <X0A98>;<X05>;<X05>;<PERCENT_SIGN>
+<ARABIC_PERCENT_SIGN>                                                                 <X0A9A>;<X05>;<X05>;<ARABIC_PERCENT_SIGN>
+<ARABIC-INDIC_PER_MILLE_SIGN>                                                         <X0A9E>;<X05>;<X05>;<ARABIC-INDIC_PER_MILLE_SIGN>
+<ARABIC-INDIC_PER_TEN_THOUSAND_SIGN>                                                  <X0AA2>;<X05>;<X05>;<ARABIC-INDIC_PER_TEN_THOUSAND_SIGN>
 <GRAVE_ACCENT>                                                                        <X0C04>;<X05>;<X05>;<GRAVE_ACCENT>
 <CIRCUMFLEX_ACCENT>                                                                   <X0C0A>;<X05>;<X05>;<CIRCUMFLEX_ACCENT>
 <ARABIC_RAY>                                                                          "<X0C55><X1700>";<X05>;"<X05><XC0>";<ARABIC_RAY>
@@ -4622,17 +4660,17 @@ order_start forward;forward;forward;forward
 <ARABIC_SYMBOL_RING>                                                                  "<X0C55><XAA00>";<X05>;"<X05><XC0>";<ARABIC_SYMBOL_RING>
 <ARABIC_SYMBOL_SMALL_TAH_ABOVE>                                                       "<X0C55><XB100>";<X05>;"<X05><XC0>";<ARABIC_SYMBOL_SMALL_TAH_ABOVE>
 <ARABIC_SYMBOL_SMALL_TAH_BELOW>                                                       "<X0C55><XB800>";<X05>;"<X05><XC0>";<ARABIC_SYMBOL_SMALL_TAH_BELOW>
-<PLUS_SIGN>                                                                           <X0C78>;<X05>;<X05>;<PLUS_SIGN>
-<LESS-THAN_SIGN>                                                                      <X0C80>;<X05>;<X05>;<LESS-THAN_SIGN>
-<EQUALS_SIGN>                                                                         <X0C82>;<X05>;<X05>;<EQUALS_SIGN>
-<GREATER-THAN_SIGN>                                                                   <X0C84>;<X05>;<X05>;<GREATER-THAN_SIGN>
-<VERTICAL_LINE>                                                                       <X0C88>;<X05>;<X05>;<VERTICAL_LINE>
-<TILDE>                                                                               <X0C8C>;<X05>;<X05>;<TILDE>
-<ARABIC-INDIC_CUBE_ROOT>                                                              "<X0C96><X2C00>";<X05>;"<X05><XC0>";<ARABIC-INDIC_CUBE_ROOT>
-<ARABIC-INDIC_FOURTH_ROOT>                                                            "<X0C96><X3A00>";<X05>;"<X05><XC0>";<ARABIC-INDIC_FOURTH_ROOT>
-<DOLLAR_SIGN>                                                                         <X0D7C>;<X05>;<X05>;<DOLLAR_SIGN>
-<AFGHANI_SIGN>                                                                        <X0D84>;<X05>;<X05>;<AFGHANI_SIGN>
-<RIAL_SIGN>                                                                           <X0DDA>;<X05>;<X05>;<RIAL_SIGN>
+<PLUS_SIGN>                                                                           <X0C79>;<X05>;<X05>;<PLUS_SIGN>
+<LESS-THAN_SIGN>                                                                      <X0C81>;<X05>;<X05>;<LESS-THAN_SIGN>
+<EQUALS_SIGN>                                                                         <X0C83>;<X05>;<X05>;<EQUALS_SIGN>
+<GREATER-THAN_SIGN>                                                                   <X0C85>;<X05>;<X05>;<GREATER-THAN_SIGN>
+<VERTICAL_LINE>                                                                       <X0C89>;<X05>;<X05>;<VERTICAL_LINE>
+<TILDE>                                                                               <X0C8D>;<X05>;<X05>;<TILDE>
+<ARABIC-INDIC_CUBE_ROOT>                                                              "<X0C97><X2C00>";<X05>;"<X05><XC0>";<ARABIC-INDIC_CUBE_ROOT>
+<ARABIC-INDIC_FOURTH_ROOT>                                                            "<X0C97><X3A00>";<X05>;"<X05><XC0>";<ARABIC-INDIC_FOURTH_ROOT>
+<DOLLAR_SIGN>                                                                         <X0D8A>;<X05>;<X05>;<DOLLAR_SIGN>
+<AFGHANI_SIGN>                                                                        <X0D92>;<X05>;<X05>;<AFGHANI_SIGN>
+<RIAL_SIGN>                                                                           <X0DF2>;<X05>;<X05>;<RIAL_SIGN>
 <zero>                                                                                <X1300>;<X05>;<X05>;<zero>
 <ARABIC-INDIC_DIGIT_ZERO>                                                             <X1300>;<X05>;<X05>;<ARABIC-INDIC_DIGIT_ZERO>
 <EXTENDED_ARABIC-INDIC_DIGIT_ZERO>                                                    <X1300>;<X05>;<X05>;<EXTENDED_ARABIC-INDIC_DIGIT_ZERO>
@@ -4729,8 +4767,8 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_LOW_ALEF>                                                              <X661A>;<X05>;<X10>;<ARABIC_LETTER_LOW_ALEF>
 <ARABIC_LETTER_ALEF_FINAL_FORM>                                                       <X661A>;<X05>;<X26>;<ARABIC_LETTER_ALEF_FINAL_FORM>
 <ARABIC_LETTER_ALEF_ISOLATED_FORM>                                                    <X661A>;<X05>;<X31>;<ARABIC_LETTER_ALEF_ISOLATED_FORM>
-<ARABIC_LIGATURE_ALEF_WITH_FATHATAN_FINAL_FORM>                                       <X661A>;"<X05><XE5><XC0>";"<X26><X1E><XC0>";<ARABIC_LIGATURE_ALEF_WITH_FATHATAN_FINAL_FORM>
-<ARABIC_LIGATURE_ALEF_WITH_FATHATAN_ISOLATED_FORM>                                    <X661A>;"<X05><XE5><XC0>";"<X31><X2C><XC0>";<ARABIC_LIGATURE_ALEF_WITH_FATHATAN_ISOLATED_FORM>
+<ARABIC_LIGATURE_ALEF_WITH_FATHATAN_FINAL_FORM>                                       <X661A>;"<X05><XE5><XA4>";"<X26><X1E><XC0>";<ARABIC_LIGATURE_ALEF_WITH_FATHATAN_FINAL_FORM>
+<ARABIC_LIGATURE_ALEF_WITH_FATHATAN_ISOLATED_FORM>                                    <X661A>;"<X05><XE5><XA4>";"<X31><X2C><XC0>";<ARABIC_LIGATURE_ALEF_WITH_FATHATAN_ISOLATED_FORM>
 <ARABIC_LETTER_ALEF_WITH_HAMZA_ABOVE>                                                 <X661A>;<X46>;<X05>;<ARABIC_LETTER_ALEF_WITH_HAMZA_ABOVE>
 <ARABIC_LETTER_HIGH_HAMZA_ALEF>                                                       "<X661A><X6606>";"<X05><X05>";"<X10><X20>";<ARABIC_LETTER_HIGH_HAMZA_ALEF>
 <ARABIC_LIGATURE_AKBAR_ISOLATED_FORM>                                                 "<X661A><X66B6><X661E><X666E>";"<X05><X05><X05><X05>";"<X31><X30><X30><X2C>";<ARABIC_LIGATURE_AKBAR_ISOLATED_FORM>
@@ -4845,9 +4883,10 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_BEH_WITH_INVERTED_SMALL_V_BELOW>                                       "<X6626><X2500>";<X05>;"<X05><XC0>";<ARABIC_LETTER_BEH_WITH_INVERTED_SMALL_V_BELOW>
 <ARABIC_LETTER_BEH_WITH_SMALL_V_BELOW>                                                "<X6626><X2C00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_BEH_WITH_SMALL_V_BELOW>
 <ARABIC_LETTER_BEH_WITH_SMALL_V>                                                      "<X6626><X3300>";<X05>;"<X05><XC0>";<ARABIC_LETTER_BEH_WITH_SMALL_V>
-<ARABIC_LETTER_BEH_WITH_HAMZA_ABOVE>                                                  "<X6626><X3A00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_BEH_WITH_HAMZA_ABOVE>
-<ARABIC_LETTER_BEH_WITH_SMALL_MEEM_ABOVE>                                             "<X6626><X4100>";<X05>;"<X05><XC0>";<ARABIC_LETTER_BEH_WITH_SMALL_MEEM_ABOVE>
-<ARABIC_LETTER_PEH_WITH_SMALL_MEEM_ABOVE>                                             "<X6626><X4800>";<X05>;"<X05><XC0>";<ARABIC_LETTER_PEH_WITH_SMALL_MEEM_ABOVE>
+<ARABIC_LETTER_PEH_WITH_SMALL_V>                                                      "<X6626><X3A00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_PEH_WITH_SMALL_V>
+<ARABIC_LETTER_BEH_WITH_HAMZA_ABOVE>                                                  "<X6626><X4100>";<X05>;"<X05><XC0>";<ARABIC_LETTER_BEH_WITH_HAMZA_ABOVE>
+<ARABIC_LETTER_BEH_WITH_SMALL_MEEM_ABOVE>                                             "<X6626><X4800>";<X05>;"<X05><XC0>";<ARABIC_LETTER_BEH_WITH_SMALL_MEEM_ABOVE>
+<ARABIC_LETTER_PEH_WITH_SMALL_MEEM_ABOVE>                                             "<X6626><X4F00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_PEH_WITH_SMALL_MEEM_ABOVE>
 <ARABIC_LETTER_TEH_MARBUTA>                                                           <X6628>;<X05>;<X05>;<ARABIC_LETTER_TEH_MARBUTA>
 <ARABIC_LETTER_TEH_MARBUTA_FINAL_FORM>                                                <X6628>;<X05>;<X20>;<ARABIC_LETTER_TEH_MARBUTA_FINAL_FORM>
 <ARABIC_LETTER_TEH_MARBUTA_ISOLATED_FORM>                                             <X6628>;<X05>;<X2E>;<ARABIC_LETTER_TEH_MARBUTA_ISOLATED_FORM>
@@ -4921,7 +4960,9 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_TEHEH_MEDIAL_FORM>                                                     <X6636>;<X05>;<X1B>;<ARABIC_LETTER_TEHEH_MEDIAL_FORM>
 <ARABIC_LETTER_TEHEH_FINAL_FORM>                                                      <X6636>;<X05>;<X26>;<ARABIC_LETTER_TEHEH_FINAL_FORM>
 <ARABIC_LETTER_TEHEH_ISOLATED_FORM>                                                   <X6636>;<X05>;<X31>;<ARABIC_LETTER_TEHEH_ISOLATED_FORM>
-<ARABIC_LETTER_TEH_WITH_SMALL_TEH_ABOVE>                                              <X6638>;<X05>;<X05>;<ARABIC_LETTER_TEH_WITH_SMALL_TEH_ABOVE>
+<ARABIC_LETTER_TEH_WITH_SMALL_TEH_ABOVE>                                              "<X6638><X0200>";<X05>;"<X05><XC0>";<ARABIC_LETTER_TEH_WITH_SMALL_TEH_ABOVE>
+<ARABIC_LETTER_TEH_WITH_SMALL_V>                                                      "<X6638><X0900>";<X05>;"<X05><XC0>";<ARABIC_LETTER_TEH_WITH_SMALL_V>
+<ARABIC_LETTER_TTEH_WITH_SMALL_V>                                                     "<X6638><X1000>";<X05>;"<X05><XC0>";<ARABIC_LETTER_TTEH_WITH_SMALL_V>
 <ARABIC_LETTER_JEEM_INITIAL_FORM>                                                     <X663A>;<X05>;<X18>;<ARABIC_LETTER_JEEM_INITIAL_FORM>
 <ARABIC_LETTER_JEEM_MEDIAL_FORM>                                                      <X663A>;<X05>;<X20>;<ARABIC_LETTER_JEEM_MEDIAL_FORM>
 <ARABIC_LETTER_JEEM_FINAL_FORM>                                                       <X663A>;<X05>;<X28>;<ARABIC_LETTER_JEEM_FINAL_FORM>
@@ -4961,7 +5002,10 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_TCHEHEH_MEDIAL_FORM>                                                   <X6644>;<X05>;<X1B>;<ARABIC_LETTER_TCHEHEH_MEDIAL_FORM>
 <ARABIC_LETTER_TCHEHEH_FINAL_FORM>                                                    <X6644>;<X05>;<X26>;<ARABIC_LETTER_TCHEHEH_FINAL_FORM>
 <ARABIC_LETTER_TCHEHEH_ISOLATED_FORM>                                                 <X6644>;<X05>;<X31>;<ARABIC_LETTER_TCHEHEH_ISOLATED_FORM>
-<ARABIC_LETTER_JEEM_WITH_TWO_DOTS_ABOVE>                                              <X6646>;<X05>;<X05>;<ARABIC_LETTER_JEEM_WITH_TWO_DOTS_ABOVE>
+<ARABIC_LETTER_JEEM_WITH_TWO_DOTS_ABOVE>                                              "<X6646><X0200>";<X05>;"<X05><XC0>";<ARABIC_LETTER_JEEM_WITH_TWO_DOTS_ABOVE>
+<ARABIC_LETTER_TCHEH_WITH_SMALL_V>                                                    "<X6646><X0900>";<X05>;"<X05><XC0>";<ARABIC_LETTER_TCHEH_WITH_SMALL_V>
+<ARABIC_LETTER_JEEM_WITH_THREE_DOTS_ABOVE>                                            "<X6646><X1000>";<X05>;"<X05><XC0>";<ARABIC_LETTER_JEEM_WITH_THREE_DOTS_ABOVE>
+<ARABIC_LETTER_JEEM_WITH_THREE_DOTS_BELOW>                                            "<X6646><X1700>";<X05>;"<X05><XC0>";<ARABIC_LETTER_JEEM_WITH_THREE_DOTS_BELOW>
 <ARABIC_LETTER_HAH_INITIAL_FORM>                                                      <X6648>;<X05>;<X18>;<ARABIC_LETTER_HAH_INITIAL_FORM>
 <ARABIC_LETTER_HAH_MEDIAL_FORM>                                                       <X6648>;<X05>;<X20>;<ARABIC_LETTER_HAH_MEDIAL_FORM>
 <ARABIC_LETTER_HAH_FINAL_FORM>                                                        <X6648>;<X05>;<X28>;<ARABIC_LETTER_HAH_FINAL_FORM>
@@ -5003,7 +5047,7 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_DAL_ISOLATED_FORM>                                                     <X6654>;<X05>;<X2C>;<ARABIC_LETTER_DAL_ISOLATED_FORM>
 <ARABIC_LETTER_THAL_FINAL_FORM>                                                       <X6656>;<X05>;<X1E>;<ARABIC_LETTER_THAL_FINAL_FORM>
 <ARABIC_LETTER_THAL_ISOLATED_FORM>                                                    <X6656>;<X05>;<X2C>;<ARABIC_LETTER_THAL_ISOLATED_FORM>
-<ARABIC_LIGATURE_THAL_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>                            <X6656>;"<X05><XEB><X82>";"<X2C><X2C><XC0>";<ARABIC_LIGATURE_THAL_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>
+<ARABIC_LIGATURE_THAL_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>                            <X6656>;"<X05><XEB><X3B>";"<X2C><X2C><XC0>";<ARABIC_LIGATURE_THAL_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>
 <ARABIC_LETTER_DDAL_FINAL_FORM>                                                       <X6658>;<X05>;<X20>;<ARABIC_LETTER_DDAL_FINAL_FORM>
 <ARABIC_LETTER_DDAL_ISOLATED_FORM>                                                    <X6658>;<X05>;<X2E>;<ARABIC_LETTER_DDAL_ISOLATED_FORM>
 <ARABIC_LETTER_DAL_WITH_RING>                                                         <X665A>;<X05>;<X05>;<ARABIC_LETTER_DAL_WITH_RING>
@@ -5026,7 +5070,7 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_DAL_WITH_INVERTED_SMALL_V_BELOW>                                       "<X666C><X1000>";<X05>;"<X05><XC0>";<ARABIC_LETTER_DAL_WITH_INVERTED_SMALL_V_BELOW>
 <ARABIC_LETTER_REH_FINAL_FORM>                                                        <X666E>;<X05>;<X1E>;<ARABIC_LETTER_REH_FINAL_FORM>
 <ARABIC_LETTER_REH_ISOLATED_FORM>                                                     <X666E>;<X05>;<X2C>;<ARABIC_LETTER_REH_ISOLATED_FORM>
-<ARABIC_LIGATURE_REH_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>                             <X666E>;"<X05><XEB><X82>";"<X2C><X2C><XC0>";<ARABIC_LIGATURE_REH_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>
+<ARABIC_LIGATURE_REH_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>                             <X666E>;"<X05><XEB><X3B>";"<X2C><X2C><XC0>";<ARABIC_LIGATURE_REH_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>
 <ARABIC_LIGATURE_RASOUL_ISOLATED_FORM>                                                "<X666E><X6686><X66DE><X66C4>";"<X05><X05><X05><X05>";"<X2C><X30><X31><X30>";<ARABIC_LIGATURE_RASOUL_ISOLATED_FORM>
 <ARABIC_LETTER_ZAIN_FINAL_FORM>                                                       <X6670>;<X05>;<X1E>;<ARABIC_LETTER_ZAIN_FINAL_FORM>
 <ARABIC_LETTER_ZAIN_ISOLATED_FORM>                                                    <X6670>;<X05>;<X2C>;<ARABIC_LETTER_ZAIN_ISOLATED_FORM>
@@ -5239,11 +5283,12 @@ order_start forward;forward;forward;forward
 <ARABIC_LIGATURE_GHAIN_WITH_YEH_FINAL_FORM>                                           "<X66A8><X66EE>";"<X05><X05>";"<X28><X2C>";<ARABIC_LIGATURE_GHAIN_WITH_YEH_FINAL_FORM>
 <ARABIC_LIGATURE_GHAIN_WITH_YEH_ISOLATED_FORM>                                        "<X66A8><X66EE>";"<X05><X05>";"<X30><X33>";<ARABIC_LIGATURE_GHAIN_WITH_YEH_ISOLATED_FORM>
 <ARABIC_LETTER_AIN_WITH_THREE_DOTS_ABOVE>                                             <X66AA>;<X05>;<X05>;<ARABIC_LETTER_AIN_WITH_THREE_DOTS_ABOVE>
-<ARABIC_LETTER_GHAIN_WITH_DOT_BELOW>                                                  "<X66AC><X0200>";<X05>;"<X05><XC0>";<ARABIC_LETTER_GHAIN_WITH_DOT_BELOW>
-<ARABIC_LETTER_AIN_WITH_TWO_DOTS_ABOVE>                                               "<X66AC><X0900>";<X05>;"<X05><XC0>";<ARABIC_LETTER_AIN_WITH_TWO_DOTS_ABOVE>
-<ARABIC_LETTER_AIN_WITH_THREE_DOTS_POINTING_DOWNWARDS_ABOVE>                          "<X66AC><X1000>";<X05>;"<X05><XC0>";<ARABIC_LETTER_AIN_WITH_THREE_DOTS_POINTING_DOWNWARDS_ABOVE>
-<ARABIC_LETTER_AIN_WITH_TWO_DOTS_VERTICALLY_ABOVE>                                    "<X66AC><X1700>";<X05>;"<X05><XC0>";<ARABIC_LETTER_AIN_WITH_TWO_DOTS_VERTICALLY_ABOVE>
-<ARABIC_LETTER_AIN_WITH_THREE_DOTS_BELOW>                                             "<X66AC><X1E00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_AIN_WITH_THREE_DOTS_BELOW>
+<ARABIC_LETTER_GHAIN_WITH_THREE_DOTS_ABOVE>                                           "<X66AC><X0200>";<X05>;"<X05><XC0>";<ARABIC_LETTER_GHAIN_WITH_THREE_DOTS_ABOVE>
+<ARABIC_LETTER_GHAIN_WITH_DOT_BELOW>                                                  "<X66AC><X0900>";<X05>;"<X05><XC0>";<ARABIC_LETTER_GHAIN_WITH_DOT_BELOW>
+<ARABIC_LETTER_AIN_WITH_TWO_DOTS_ABOVE>                                               "<X66AC><X1000>";<X05>;"<X05><XC0>";<ARABIC_LETTER_AIN_WITH_TWO_DOTS_ABOVE>
+<ARABIC_LETTER_AIN_WITH_THREE_DOTS_POINTING_DOWNWARDS_ABOVE>                          "<X66AC><X1700>";<X05>;"<X05><XC0>";<ARABIC_LETTER_AIN_WITH_THREE_DOTS_POINTING_DOWNWARDS_ABOVE>
+<ARABIC_LETTER_AIN_WITH_TWO_DOTS_VERTICALLY_ABOVE>                                    "<X66AC><X1E00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_AIN_WITH_TWO_DOTS_VERTICALLY_ABOVE>
+<ARABIC_LETTER_AIN_WITH_THREE_DOTS_BELOW>                                             "<X66AC><X2500>";<X05>;"<X05><XC0>";<ARABIC_LETTER_AIN_WITH_THREE_DOTS_BELOW>
 <ARABIC_LETTER_FEH_INITIAL_FORM>                                                      <X66AE>;<X05>;<X18>;<ARABIC_LETTER_FEH_INITIAL_FORM>
 <ARABIC_LETTER_FEH_MEDIAL_FORM>                                                       <X66AE>;<X05>;<X20>;<ARABIC_LETTER_FEH_MEDIAL_FORM>
 <ARABIC_LETTER_FEH_FINAL_FORM>                                                        <X66AE>;<X05>;<X28>;<ARABIC_LETTER_FEH_FINAL_FORM>
@@ -5302,7 +5347,8 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_QAF_WITH_DOT_ABOVE>                                                    "<X66B4><X0200>";<X05>;"<X05><XC0>";<ARABIC_LETTER_QAF_WITH_DOT_ABOVE>
 <ARABIC_LETTER_AFRICAN_QAF>                                                           "<X66B4><X0900>";<X05>;"<X05><XC0>";<ARABIC_LETTER_AFRICAN_QAF>
 <ARABIC_LETTER_QAF_WITH_THREE_DOTS_ABOVE>                                             "<X66B4><X1000>";<X05>;"<X05><XC0>";<ARABIC_LETTER_QAF_WITH_THREE_DOTS_ABOVE>
-<ARABIC_LETTER_QAF_WITH_DOT_BELOW>                                                    "<X66B4><X1700>";<X05>;"<X05><XC0>";<ARABIC_LETTER_QAF_WITH_DOT_BELOW>
+<ARABIC_LETTER_AFRICAN_QAF_WITH_THREE_DOTS_ABOVE>                                     "<X66B4><X1700>";<X05>;"<X05><XC0>";<ARABIC_LETTER_AFRICAN_QAF_WITH_THREE_DOTS_ABOVE>
+<ARABIC_LETTER_QAF_WITH_DOT_BELOW>                                                    "<X66B4><X1E00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_QAF_WITH_DOT_BELOW>
 <ARABIC_LETTER_KAF>                                                                   <X66B6>;<X05>;<X05>;<ARABIC_LETTER_KAF>
 <ARABIC_LETTER_KAF_INITIAL_FORM>                                                      <X66B6>;<X05>;<X18>;<ARABIC_LETTER_KAF_INITIAL_FORM>
 <ARABIC_LETTER_KAF_MEDIAL_FORM>                                                       <X66B6>;<X05>;<X20>;<ARABIC_LETTER_KAF_MEDIAL_FORM>
@@ -5369,6 +5415,7 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_KEHEH_WITH_THREE_DOTS_BELOW>                                           "<X66C2><X3A00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_KEHEH_WITH_THREE_DOTS_BELOW>
 <ARABIC_LETTER_KEHEH_WITH_THREE_DOTS_ABOVE>                                           "<X66C2><X4100>";<X05>;"<X05><XC0>";<ARABIC_LETTER_KEHEH_WITH_THREE_DOTS_ABOVE>
 <ARABIC_LETTER_KEHEH_WITH_THREE_DOTS_POINTING_UPWARDS_BELOW>                          "<X66C2><X4800>";<X05>;"<X05><XC0>";<ARABIC_LETTER_KEHEH_WITH_THREE_DOTS_POINTING_UPWARDS_BELOW>
+<ARABIC_LETTER_KEHEH_WITH_SMALL_V>                                                    "<X66C2><X4F00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_KEHEH_WITH_SMALL_V>
 <ARABIC_LETTER_LAM_INITIAL_FORM>                                                      <X66C4>;<X05>;<X18>;<ARABIC_LETTER_LAM_INITIAL_FORM>
 <ARABIC_LETTER_LAM_MEDIAL_FORM>                                                       <X66C4>;<X05>;<X20>;<ARABIC_LETTER_LAM_MEDIAL_FORM>
 <ARABIC_LETTER_LAM_FINAL_FORM>                                                        <X66C4>;<X05>;<X28>;<ARABIC_LETTER_LAM_FINAL_FORM>
@@ -5416,6 +5463,7 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_LAM_WITH_THREE_DOTS_BELOW>                                             "<X66C6><X1700>";<X05>;"<X05><XC0>";<ARABIC_LETTER_LAM_WITH_THREE_DOTS_BELOW>
 <ARABIC_LETTER_LAM_WITH_BAR>                                                          "<X66C6><X1E00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_LAM_WITH_BAR>
 <ARABIC_LETTER_LAM_WITH_DOUBLE_BAR>                                                   "<X66C6><X2500>";<X05>;"<X05><XC0>";<ARABIC_LETTER_LAM_WITH_DOUBLE_BAR>
+<ARABIC_LETTER_LAM_WITH_SMALL_ARABIC_LETTER_TAH_ABOVE>                                "<X66C6><X2C00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_LAM_WITH_SMALL_ARABIC_LETTER_TAH_ABOVE>
 <ARABIC_LETTER_MEEM_INITIAL_FORM>                                                     <X66C8>;<X05>;<X18>;<ARABIC_LETTER_MEEM_INITIAL_FORM>
 <ARABIC_LETTER_MEEM_MEDIAL_FORM>                                                      <X66C8>;<X05>;<X20>;<ARABIC_LETTER_MEEM_MEDIAL_FORM>
 <ARABIC_LETTER_MEEM_FINAL_FORM>                                                       <X66C8>;<X05>;<X28>;<ARABIC_LETTER_MEEM_FINAL_FORM>
@@ -5501,7 +5549,7 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_HEH_MEDIAL_FORM>                                                       <X66D6>;<X05>;<X20>;<ARABIC_LETTER_HEH_MEDIAL_FORM>
 <ARABIC_LETTER_HEH_FINAL_FORM>                                                        <X66D6>;<X05>;<X28>;<ARABIC_LETTER_HEH_FINAL_FORM>
 <ARABIC_LETTER_HEH_ISOLATED_FORM>                                                     <X66D6>;<X05>;<X30>;<ARABIC_LETTER_HEH_ISOLATED_FORM>
-<ARABIC_LIGATURE_HEH_WITH_SUPERSCRIPT_ALEF_INITIAL_FORM>                              <X66D6>;"<X05><XEB><X82>";"<X18><X10><XC0>";<ARABIC_LIGATURE_HEH_WITH_SUPERSCRIPT_ALEF_INITIAL_FORM>
+<ARABIC_LIGATURE_HEH_WITH_SUPERSCRIPT_ALEF_INITIAL_FORM>                              <X66D6>;"<X05><XEB><X3B>";"<X18><X10><XC0>";<ARABIC_LIGATURE_HEH_WITH_SUPERSCRIPT_ALEF_INITIAL_FORM>
 <ARABIC_LIGATURE_HEH_WITH_JEEM_INITIAL_FORM>                                          "<X66D6><X663A>";"<X05><X05>";"<X18><X18>";<ARABIC_LIGATURE_HEH_WITH_JEEM_INITIAL_FORM>
 <ARABIC_LIGATURE_HEH_WITH_JEEM_ISOLATED_FORM>                                         "<X66D6><X663A>";"<X05><X05>";"<X30><X30>";<ARABIC_LIGATURE_HEH_WITH_JEEM_ISOLATED_FORM>
 <ARABIC_LIGATURE_HEH_WITH_MEEM_INITIAL_FORM>                                          "<X66D6><X66C8>";"<X05><X05>";"<X18><X18>";<ARABIC_LIGATURE_HEH_WITH_MEEM_INITIAL_FORM>
@@ -5520,9 +5568,9 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_HEH_GOAL_ISOLATED_FORM>                                                <X66DA>;<X05>;<X31>;<ARABIC_LETTER_HEH_GOAL_ISOLATED_FORM>
 <ARABIC_LETTER_HEH_WITH_INVERTED_V>                                                   "<X66DC><X0900>";<X05>;"<X05><XC0>";<ARABIC_LETTER_HEH_WITH_INVERTED_V>
 <ARABIC_LETTER_AE>                                                                    "<X66DC><X1000>";<X05>;"<X05><XC0>";<ARABIC_LETTER_AE>
-<ARABIC_LETTER_HEH_WITH_YEH_ABOVE>                                                    "<X66DC><X1000>";"<X05><XE8><XB2>";"<X05><XC0><X05><XC0>";<ARABIC_LETTER_HEH_WITH_YEH_ABOVE>
-<ARABIC_LETTER_HEH_WITH_YEH_ABOVE_FINAL_FORM>                                         "<X66DC><X1000>";"<X05><XE8><XB2>";"<X20><XC0><X20><XC0>";<ARABIC_LETTER_HEH_WITH_YEH_ABOVE_FINAL_FORM>
-<ARABIC_LETTER_HEH_WITH_YEH_ABOVE_ISOLATED_FORM>                                      "<X66DC><X1000>";"<X05><XE8><XB2>";"<X2E><XC0><X2E><XC0>";<ARABIC_LETTER_HEH_WITH_YEH_ABOVE_ISOLATED_FORM>
+<ARABIC_LETTER_HEH_WITH_YEH_ABOVE>                                                    "<X66DC><X1000>";"<X05><XE8><X80>";"<X05><XC0><X05><XC0>";<ARABIC_LETTER_HEH_WITH_YEH_ABOVE>
+<ARABIC_LETTER_HEH_WITH_YEH_ABOVE_FINAL_FORM>                                         "<X66DC><X1000>";"<X05><XE8><X80>";"<X20><XC0><X20><XC0>";<ARABIC_LETTER_HEH_WITH_YEH_ABOVE_FINAL_FORM>
+<ARABIC_LETTER_HEH_WITH_YEH_ABOVE_ISOLATED_FORM>                                      "<X66DC><X1000>";"<X05><XE8><X80>";"<X2E><XC0><X2E><XC0>";<ARABIC_LETTER_HEH_WITH_YEH_ABOVE_ISOLATED_FORM>
 <ARABIC_SMALL_WAW>                                                                    <X66DE>;<X05>;<X10>;<ARABIC_SMALL_WAW>
 <ARABIC_LETTER_WAW_FINAL_FORM>                                                        <X66DE>;<X05>;<X26>;<ARABIC_LETTER_WAW_FINAL_FORM>
 <ARABIC_LETTER_WAW_ISOLATED_FORM>                                                     <X66DE>;<X05>;<X31>;<ARABIC_LETTER_WAW_ISOLATED_FORM>
@@ -5560,8 +5608,8 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_UIGHUR_KAZAKH_KIRGHIZ_ALEF_MAKSURA_MEDIAL_FORM>                        <X66EC>;<X05>;<X1B>;<ARABIC_LETTER_UIGHUR_KAZAKH_KIRGHIZ_ALEF_MAKSURA_MEDIAL_FORM>
 <ARABIC_LETTER_ALEF_MAKSURA_FINAL_FORM>                                               <X66EC>;<X05>;<X26>;<ARABIC_LETTER_ALEF_MAKSURA_FINAL_FORM>
 <ARABIC_LETTER_ALEF_MAKSURA_ISOLATED_FORM>                                            <X66EC>;<X05>;<X31>;<ARABIC_LETTER_ALEF_MAKSURA_ISOLATED_FORM>
-<ARABIC_LIGATURE_ALEF_MAKSURA_WITH_SUPERSCRIPT_ALEF_FINAL_FORM>                       <X66EC>;"<X05><XEB><X82>";"<X26><X1E><XC0>";<ARABIC_LIGATURE_ALEF_MAKSURA_WITH_SUPERSCRIPT_ALEF_FINAL_FORM>
-<ARABIC_LIGATURE_ALEF_MAKSURA_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>                    <X66EC>;"<X05><XEB><X82>";"<X31><X2C><XC0>";<ARABIC_LIGATURE_ALEF_MAKSURA_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>
+<ARABIC_LIGATURE_ALEF_MAKSURA_WITH_SUPERSCRIPT_ALEF_FINAL_FORM>                       <X66EC>;"<X05><XEB><X3B>";"<X26><X1E><XC0>";<ARABIC_LIGATURE_ALEF_MAKSURA_WITH_SUPERSCRIPT_ALEF_FINAL_FORM>
+<ARABIC_LIGATURE_ALEF_MAKSURA_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>                    <X66EC>;"<X05><XEB><X3B>";"<X31><X2C><XC0>";<ARABIC_LIGATURE_ALEF_MAKSURA_WITH_SUPERSCRIPT_ALEF_ISOLATED_FORM>
 <ARABIC_LETTER_YEH>                                                                   <X66EE>;<X05>;<X05>;<ARABIC_LETTER_YEH>
 <ARABIC_SMALL_YEH>                                                                    <X66EE>;<X05>;<X10>;<ARABIC_SMALL_YEH>
 <ARABIC_LETTER_YEH_INITIAL_FORM>                                                      <X66EE>;<X05>;<X1E>;<ARABIC_LETTER_YEH_INITIAL_FORM>
@@ -5615,8 +5663,8 @@ order_start forward;forward;forward;forward
 <ARABIC_LETTER_YEH_WITH_TWO_DOTS_BELOW_AND_SMALL_NOON_ABOVE>                          "<X66F8><X3A00>";<X05>;"<X05><XC0>";<ARABIC_LETTER_YEH_WITH_TWO_DOTS_BELOW_AND_SMALL_NOON_ABOVE>
 <ARABIC_LETTER_YEH_BARREE_FINAL_FORM>                                                 <X66FA>;<X05>;<X20>;<ARABIC_LETTER_YEH_BARREE_FINAL_FORM>
 <ARABIC_LETTER_YEH_BARREE_ISOLATED_FORM>                                              <X66FA>;<X05>;<X2E>;<ARABIC_LETTER_YEH_BARREE_ISOLATED_FORM>
-<ARABIC_LETTER_YEH_BARREE_WITH_HAMZA_ABOVE_FINAL_FORM>                                <X66FA>;"<X05><XE8><XB2>";"<X20><X20><XC0>";<ARABIC_LETTER_YEH_BARREE_WITH_HAMZA_ABOVE_FINAL_FORM>
-<ARABIC_LETTER_YEH_BARREE_WITH_HAMZA_ABOVE_ISOLATED_FORM>                             <X66FA>;"<X05><XE8><XB2>";"<X2E><X2E><XC0>";<ARABIC_LETTER_YEH_BARREE_WITH_HAMZA_ABOVE_ISOLATED_FORM>
+<ARABIC_LETTER_YEH_BARREE_WITH_HAMZA_ABOVE_FINAL_FORM>                                <X66FA>;"<X05><XE8><X80>";"<X20><X20><XC0>";<ARABIC_LETTER_YEH_BARREE_WITH_HAMZA_ABOVE_FINAL_FORM>
+<ARABIC_LETTER_YEH_BARREE_WITH_HAMZA_ABOVE_ISOLATED_FORM>                             <X66FA>;"<X05><XE8><X80>";"<X2E><X2E><XC0>";<ARABIC_LETTER_YEH_BARREE_WITH_HAMZA_ABOVE_ISOLATED_FORM>
 <ARABIC_LETTER_YEH_BARREE_WITH_EXTENDED_ARABIC-INDIC_DIGIT_TWO_ABOVE>                 "<X66FC><X0200>";<X05>;"<X05><XC0>";<ARABIC_LETTER_YEH_BARREE_WITH_EXTENDED_ARABIC-INDIC_DIGIT_TWO_ABOVE>
 <ARABIC_LETTER_YEH_BARREE_WITH_EXTENDED_ARABIC-INDIC_DIGIT_THREE_ABOVE>               "<X66FC><X0900>";<X05>;"<X05><XC0>";<ARABIC_LETTER_YEH_BARREE_WITH_EXTENDED_ARABIC-INDIC_DIGIT_THREE_ABOVE>
 <a>                                                                                   <X2A00>;<X05>;<X05>;<a>

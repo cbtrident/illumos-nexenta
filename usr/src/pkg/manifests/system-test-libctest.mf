@@ -211,7 +211,6 @@ license usr/src/test/libc-tests/tests/regex/THIRDPARTYLICENSE \
 depend fmri=locale/ar type=require
 depend fmri=locale/de type=require
 depend fmri=locale/en type=require
-depend fmri=locale/en-extra type=require
 depend fmri=locale/ja type=require
 depend fmri=locale/ru type=require
 depend fmri=system/test/testrunner type=require

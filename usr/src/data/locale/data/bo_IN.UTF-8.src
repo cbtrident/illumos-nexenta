@@ -1006,18 +1006,18 @@ LC_COLLATE
 
 collating-symbol <X01>
 collating-symbol <X05>
+collating-symbol <X14>
 collating-symbol <X15>
 collating-symbol <X16>
 collating-symbol <X20>
-collating-symbol <X66>
 collating-symbol <X70>
-collating-symbol <X88>
-collating-symbol <X8C>
 collating-symbol <X9C>
 collating-symbol <XA0>
 collating-symbol <XC0>
+collating-symbol <XF0>
 collating-symbol <XF1>
-collating-symbol <XF5>
+collating-symbol <XF4>
+collating-symbol <XF8>
 collating-symbol <X0304>
 collating-symbol <X0306>
 collating-symbol <X0308>
@@ -1028,11 +1028,11 @@ collating-symbol <X0500>
 collating-symbol <X050A>
 collating-symbol <X050E>
 collating-symbol <X0600>
-collating-symbol <X0726>
-collating-symbol <X0732>
-collating-symbol <X0748>
-collating-symbol <X0756>
-collating-symbol <X075E>
+collating-symbol <X072A>
+collating-symbol <X0736>
+collating-symbol <X074C>
+collating-symbol <X075A>
+collating-symbol <X0762>
 collating-symbol <X0800>
 collating-symbol <X096A>
 collating-symbol <X0978>
@@ -1051,10 +1051,8 @@ collating-symbol <X0A80>
 collating-symbol <X0A8A>
 collating-symbol <X0A8C>
 collating-symbol <X0A90>
-collating-symbol <X0A94>
 collating-symbol <X0A96>
-collating-symbol <X0B36>
-collating-symbol <X0B38>
+collating-symbol <X0A98>
 collating-symbol <X0B3A>
 collating-symbol <X0B3C>
 collating-symbol <X0B3E>
@@ -1075,18 +1073,20 @@ collating-symbol <X0B5A>
 collating-symbol <X0B5C>
 collating-symbol <X0B5E>
 collating-symbol <X0B60>
+collating-symbol <X0B62>
+collating-symbol <X0B64>
 collating-symbol <X0C00>
 collating-symbol <X0C04>
 collating-symbol <X0C0A>
 collating-symbol <X0C56>
 collating-symbol <X0C57>
-collating-symbol <X0C78>
-collating-symbol <X0C80>
-collating-symbol <X0C82>
-collating-symbol <X0C84>
-collating-symbol <X0C88>
-collating-symbol <X0C8C>
-collating-symbol <X0D7C>
+collating-symbol <X0C79>
+collating-symbol <X0C81>
+collating-symbol <X0C83>
+collating-symbol <X0C85>
+collating-symbol <X0C89>
+collating-symbol <X0C8D>
+collating-symbol <X0D8A>
 collating-symbol <X1300>
 collating-symbol <X1500>
 collating-symbol <X1700>
@@ -1102,6 +1102,7 @@ collating-symbol <X2800>
 collating-symbol <X2A00>
 collating-symbol <X2C00>
 collating-symbol <X2E00>
+collating-symbol <X2F00>
 collating-symbol <X3000>
 collating-symbol <X3200>
 collating-symbol <X3400>
@@ -1109,6 +1110,7 @@ collating-symbol <X3600>
 collating-symbol <X3800>
 collating-symbol <X3A00>
 collating-symbol <X3C00>
+collating-symbol <X3D00>
 collating-symbol <X3E00>
 collating-symbol <X4000>
 collating-symbol <X4200>
@@ -1116,20 +1118,20 @@ collating-symbol <X4400>
 collating-symbol <X4600>
 collating-symbol <X4800>
 collating-symbol <X4A00>
+collating-symbol <X4B00>
 collating-symbol <X4C00>
-collating-symbol <X4D00>
 collating-symbol <X4E00>
 collating-symbol <X5000>
 collating-symbol <X5200>
 collating-symbol <X5400>
 collating-symbol <X5600>
 collating-symbol <X5800>
+collating-symbol <X5900>
 collating-symbol <X5A00>
-collating-symbol <X5B00>
 collating-symbol <X5C00>
-collating-symbol <X6200>
-collating-symbol <X6900>
-collating-symbol <X7000>
+collating-symbol <X6000>
+collating-symbol <X6700>
+collating-symbol <X6E00>
 collating-symbol <X7406>
 collating-symbol <X7408>
 collating-symbol <X740A>
@@ -1226,25 +1228,21 @@ collating-symbol <X74BE>
 collating-symbol <X74C0>
 collating-symbol <X74C2>
 collating-symbol <X74C4>
-collating-symbol <X7700>
-collating-symbol <X7E00>
-collating-symbol <X8500>
-collating-symbol <X8C00>
-collating-symbol <X9300>
-collating-symbol <X9A00>
-collating-symbol <XA100>
-collating-symbol <XA800>
-collating-symbol <XAF00>
-collating-symbol <XB600>
-collating-symbol <XBD00>
-collating-symbol <XC400>
-collating-symbol <XCB00>
-collating-symbol <XD200>
-collating-symbol <XD900>
-collating-symbol <XE000>
-collating-symbol <XE700>
-collating-symbol <XEE00>
-collating-symbol <XF500>
+collating-symbol <X7500>
+collating-symbol <X7C00>
+collating-symbol <X8300>
+collating-symbol <X8A00>
+collating-symbol <X9100>
+collating-symbol <X9800>
+collating-symbol <X9F00>
+collating-symbol <XA600>
+collating-symbol <XAD00>
+collating-symbol <XB400>
+collating-symbol <XBB00>
+collating-symbol <XC200>
+collating-symbol <XC900>
+collating-symbol <XD000>
+collating-symbol <XD700>
 collating-symbol <XFC00>
 
 order_start forward;forward;forward;forward
@@ -1254,18 +1252,18 @@ order_start forward;forward;forward;forward
 
 <X01>
 <X05>
+<X14>
 <X15>
 <X16>
 <X20>
-<X66>
 <X70>
-<X88>
-<X8C>
 <X9C>
 <XA0>
 <XC0>
+<XF0>
 <XF1>
-<XF5>
+<XF4>
+<XF8>
 <X0304>
 <X0306>
 <X0308>
@@ -1276,11 +1274,11 @@ order_start forward;forward;forward;forward
 <X050A>
 <X050E>
 <X0600>
-<X0726>
-<X0732>
-<X0748>
-<X0756>
-<X075E>
+<X072A>
+<X0736>
+<X074C>
+<X075A>
+<X0762>
 <X0800>
 <X096A>
 <X0978>
@@ -1299,10 +1297,8 @@ order_start forward;forward;forward;forward
 <X0A8A>
 <X0A8C>
 <X0A90>
-<X0A94>
 <X0A96>
-<X0B36>
-<X0B38>
+<X0A98>
 <X0B3A>
 <X0B3C>
 <X0B3E>
@@ -1323,18 +1319,20 @@ order_start forward;forward;forward;forward
 <X0B5C>
 <X0B5E>
 <X0B60>
+<X0B62>
+<X0B64>
 <X0C00>
 <X0C04>
 <X0C0A>
 <X0C56>
 <X0C57>
-<X0C78>
-<X0C80>
-<X0C82>
-<X0C84>
-<X0C88>
-<X0C8C>
-<X0D7C>
+<X0C79>
+<X0C81>
+<X0C83>
+<X0C85>
+<X0C89>
+<X0C8D>
+<X0D8A>
 <X1300>
 <X1500>
 <X1700>
@@ -1350,6 +1348,7 @@ order_start forward;forward;forward;forward
 <X2A00>
 <X2C00>
 <X2E00>
+<X2F00>
 <X3000>
 <X3200>
 <X3400>
@@ -1357,6 +1356,7 @@ order_start forward;forward;forward;forward
 <X3800>
 <X3A00>
 <X3C00>
+<X3D00>
 <X3E00>
 <X4000>
 <X4200>
@@ -1364,20 +1364,20 @@ order_start forward;forward;forward;forward
 <X4600>
 <X4800>
 <X4A00>
+<X4B00>
 <X4C00>
-<X4D00>
 <X4E00>
 <X5000>
 <X5200>
 <X5400>
 <X5600>
 <X5800>
+<X5900>
 <X5A00>
-<X5B00>
 <X5C00>
-<X6200>
-<X6900>
-<X7000>
+<X6000>
+<X6700>
+<X6E00>
 <X7406>
 <X7408>
 <X740A>
@@ -1474,25 +1474,21 @@ order_start forward;forward;forward;forward
 <X74C0>
 <X74C2>
 <X74C4>
-<X7700>
-<X7E00>
-<X8500>
-<X8C00>
-<X9300>
-<X9A00>
-<XA100>
-<XA800>
-<XAF00>
-<XB600>
-<XBD00>
-<XC400>
-<XCB00>
-<XD200>
-<XD900>
-<XE000>
-<XE700>
-<XEE00>
-<XF500>
+<X7500>
+<X7C00>
+<X8300>
+<X8A00>
+<X9100>
+<X9800>
+<X9F00>
+<XA600>
+<XAD00>
+<XB400>
+<XBB00>
+<XC200>
+<XC900>
+<XD000>
+<XD700>
 <XFC00>
 
 * assignment of characters to weights
@@ -1536,9 +1532,9 @@ order_start forward;forward;forward;forward
 <TIBETAN_SIGN_LCI_RTAGS>                           IGNORE;IGNORE;IGNORE;<TIBETAN_SIGN_LCI_RTAGS>
 <TIBETAN_SIGN_YANG_RTAGS>                          IGNORE;IGNORE;IGNORE;<TIBETAN_SIGN_YANG_RTAGS>
 <TIBETAN_SYMBOL_PADMA_GDAN>                        IGNORE;IGNORE;IGNORE;<TIBETAN_SYMBOL_PADMA_GDAN>
-<TIBETAN_SIGN_RJES_SU_NGA_RO>                      IGNORE;"<XF1><X66>";"<X05><XC0>";<TIBETAN_SIGN_RJES_SU_NGA_RO>
-<TIBETAN_SIGN_RNAM_BCAD>                           IGNORE;"<XF1><X88>";"<X05><XC0>";<TIBETAN_SIGN_RNAM_BCAD>
-<TIBETAN_MARK_TSA_-PHRU>                           IGNORE;"<XF5><X8C>";"<X05><XC0>";<TIBETAN_MARK_TSA_-PHRU>
+<TIBETAN_SIGN_RJES_SU_NGA_RO>                      IGNORE;"<XF0><XF1>";"<X05><XC0>";<TIBETAN_SIGN_RJES_SU_NGA_RO>
+<TIBETAN_SIGN_RNAM_BCAD>                           IGNORE;"<XF1><X14>";"<X05><XC0>";<TIBETAN_SIGN_RNAM_BCAD>
+<TIBETAN_MARK_TSA_-PHRU>                           IGNORE;"<XF4><XF8>";"<X05><XC0>";<TIBETAN_MARK_TSA_-PHRU>
 <tab>                                              <X0304>;<X05>;<X05>;<tab>
 <newline>                                          <X0306>;<X05>;<X05>;<newline>
 <vertical-tab>                                     <X0308>;<X05>;<X05>;<vertical-tab>
@@ -1548,11 +1544,11 @@ order_start forward;forward;forward;forward
 <LOW_LINE>                                         <X050A>;<X05>;<X05>;<LOW_LINE>
 <HYPHEN-MINUS>                                     <X050E>;<X05>;<X05>;<HYPHEN-MINUS>
 <COMMA>                                            <X0600>;<X05>;<X05>;<COMMA>
-<SEMICOLON>                                        <X0726>;<X05>;<X05>;<SEMICOLON>
-<COLON>                                            <X0732>;<X05>;<X05>;<COLON>
-<TIBETAN_MARK_GTER_TSHEG>                          <X0748>;<X05>;<X05>;<TIBETAN_MARK_GTER_TSHEG>
-<EXCLAMATION_MARK>                                 <X0756>;<X05>;<X05>;<EXCLAMATION_MARK>
-<QUESTION_MARK>                                    <X075E>;<X05>;<X05>;<QUESTION_MARK>
+<SEMICOLON>                                        <X072A>;<X05>;<X05>;<SEMICOLON>
+<COLON>                                            <X0736>;<X05>;<X05>;<COLON>
+<TIBETAN_MARK_GTER_TSHEG>                          <X074C>;<X05>;<X05>;<TIBETAN_MARK_GTER_TSHEG>
+<EXCLAMATION_MARK>                                 <X075A>;<X05>;<X05>;<EXCLAMATION_MARK>
+<QUESTION_MARK>                                    <X0762>;<X05>;<X05>;<QUESTION_MARK>
 <FULL_STOP>                                        <X0800>;<X05>;<X05>;<FULL_STOP>
 <APOSTROPHE>                                       <X096A>;<X05>;<X05>;<APOSTROPHE>
 <QUOTATION_MARK>                                   <X0978>;<X05>;<X05>;<QUOTATION_MARK>
@@ -1571,72 +1567,72 @@ order_start forward;forward;forward;forward
 <SOLIDUS>                                          <X0A8A>;<X05>;<X05>;<SOLIDUS>
 <REVERSE_SOLIDUS>                                  <X0A8C>;<X05>;<X05>;<REVERSE_SOLIDUS>
 <AMPERSAND>                                        <X0A90>;<X05>;<X05>;<AMPERSAND>
-<NUMBER_SIGN>                                      <X0A94>;<X05>;<X05>;<NUMBER_SIGN>
-<PERCENT_SIGN>                                     <X0A96>;<X05>;<X05>;<PERCENT_SIGN>
-<TIBETAN_MARK_INITIAL_YIG_MGO_MDUN_MA>             <X0B36>;<X05>;<X05>;<TIBETAN_MARK_INITIAL_YIG_MGO_MDUN_MA>
-<TIBETAN_MARK_CLOSING_YIG_MGO_SGAB_MA>             <X0B38>;<X05>;<X05>;<TIBETAN_MARK_CLOSING_YIG_MGO_SGAB_MA>
-<TIBETAN_MARK_CARET_YIG_MGO_PHUR_SHAD_MA>          <X0B3A>;<X05>;<X05>;<TIBETAN_MARK_CARET_YIG_MGO_PHUR_SHAD_MA>
-<TIBETAN_MARK_YIG_MGO_TSHEG_SHAD_MA>               <X0B3C>;<X05>;<X05>;<TIBETAN_MARK_YIG_MGO_TSHEG_SHAD_MA>
-<TIBETAN_MARK_SBRUL_SHAD>                          <X0B3E>;<X05>;<X05>;<TIBETAN_MARK_SBRUL_SHAD>
-<TIBETAN_MARK_BSKUR_YIG_MGO>                       <X0B40>;<X05>;<X05>;<TIBETAN_MARK_BSKUR_YIG_MGO>
-<TIBETAN_MARK_BKA-_SHOG_YIG_MGO>                   <X0B42>;<X05>;<X05>;<TIBETAN_MARK_BKA-_SHOG_YIG_MGO>
-<TIBETAN_MARK_BSKA-_SHOG_GI_MGO_RGYAN>             <X0B44>;<X05>;<X05>;<TIBETAN_MARK_BSKA-_SHOG_GI_MGO_RGYAN>
-<TIBETAN_MARK_MNYAM_YIG_GI_MGO_RGYAN>              <X0B46>;<X05>;<X05>;<TIBETAN_MARK_MNYAM_YIG_GI_MGO_RGYAN>
-<TIBETAN_MARK_INTERSYLLABIC_TSHEG>                 <X0B48>;<X05>;<X05>;<TIBETAN_MARK_INTERSYLLABIC_TSHEG>
-<TIBETAN_MARK_DELIMITER_TSHEG_BSTAR>               <X0B48>;<X05>;<X20>;<TIBETAN_MARK_DELIMITER_TSHEG_BSTAR>
-<TIBETAN_MARK_SHAD>                                <X0B4A>;<X05>;<X05>;<TIBETAN_MARK_SHAD>
-<TIBETAN_MARK_NYIS_SHAD>                           <X0B4C>;<X05>;<X05>;<TIBETAN_MARK_NYIS_SHAD>
-<TIBETAN_MARK_TSHEG_SHAD>                          <X0B4E>;<X05>;<X05>;<TIBETAN_MARK_TSHEG_SHAD>
-<TIBETAN_MARK_NYIS_TSHEG_SHAD>                     <X0B50>;<X05>;<X05>;<TIBETAN_MARK_NYIS_TSHEG_SHAD>
-<TIBETAN_MARK_RIN_CHEN_SPUNGS_SHAD>                <X0B52>;<X05>;<X05>;<TIBETAN_MARK_RIN_CHEN_SPUNGS_SHAD>
-<TIBETAN_MARK_RGYA_GRAM_SHAD>                      <X0B54>;<X05>;<X05>;<TIBETAN_MARK_RGYA_GRAM_SHAD>
-<TIBETAN_MARK_PALUTA>                              <X0B56>;<X05>;<X05>;<TIBETAN_MARK_PALUTA>
-<TIBETAN_MARK_NYIS_TSHEG>                          <X0B58>;<X05>;<X05>;<TIBETAN_MARK_NYIS_TSHEG>
-<TIBETAN_MARK_INITIAL_BRDA_RNYING_YIG_MGO_MDUN_MA> <X0B5A>;<X05>;<X05>;<TIBETAN_MARK_INITIAL_BRDA_RNYING_YIG_MGO_MDUN_MA>
-<TIBETAN_MARK_CLOSING_BRDA_RNYING_YIG_MGO_SGAB_MA> <X0B5C>;<X05>;<X05>;<TIBETAN_MARK_CLOSING_BRDA_RNYING_YIG_MGO_SGAB_MA>
-<TIBETAN_MARK_LEADING_MCHAN_RTAGS>                 <X0B5E>;<X05>;<X05>;<TIBETAN_MARK_LEADING_MCHAN_RTAGS>
-<TIBETAN_MARK_TRAILING_MCHAN_RTAGS>                <X0B60>;<X05>;<X05>;<TIBETAN_MARK_TRAILING_MCHAN_RTAGS>
+<NUMBER_SIGN>                                      <X0A96>;<X05>;<X05>;<NUMBER_SIGN>
+<PERCENT_SIGN>                                     <X0A98>;<X05>;<X05>;<PERCENT_SIGN>
+<TIBETAN_MARK_INITIAL_YIG_MGO_MDUN_MA>             <X0B3A>;<X05>;<X05>;<TIBETAN_MARK_INITIAL_YIG_MGO_MDUN_MA>
+<TIBETAN_MARK_CLOSING_YIG_MGO_SGAB_MA>             <X0B3C>;<X05>;<X05>;<TIBETAN_MARK_CLOSING_YIG_MGO_SGAB_MA>
+<TIBETAN_MARK_CARET_YIG_MGO_PHUR_SHAD_MA>          <X0B3E>;<X05>;<X05>;<TIBETAN_MARK_CARET_YIG_MGO_PHUR_SHAD_MA>
+<TIBETAN_MARK_YIG_MGO_TSHEG_SHAD_MA>               <X0B40>;<X05>;<X05>;<TIBETAN_MARK_YIG_MGO_TSHEG_SHAD_MA>
+<TIBETAN_MARK_SBRUL_SHAD>                          <X0B42>;<X05>;<X05>;<TIBETAN_MARK_SBRUL_SHAD>
+<TIBETAN_MARK_BSKUR_YIG_MGO>                       <X0B44>;<X05>;<X05>;<TIBETAN_MARK_BSKUR_YIG_MGO>
+<TIBETAN_MARK_BKA-_SHOG_YIG_MGO>                   <X0B46>;<X05>;<X05>;<TIBETAN_MARK_BKA-_SHOG_YIG_MGO>
+<TIBETAN_MARK_BSKA-_SHOG_GI_MGO_RGYAN>             <X0B48>;<X05>;<X05>;<TIBETAN_MARK_BSKA-_SHOG_GI_MGO_RGYAN>
+<TIBETAN_MARK_MNYAM_YIG_GI_MGO_RGYAN>              <X0B4A>;<X05>;<X05>;<TIBETAN_MARK_MNYAM_YIG_GI_MGO_RGYAN>
+<TIBETAN_MARK_INTERSYLLABIC_TSHEG>                 <X0B4C>;<X05>;<X05>;<TIBETAN_MARK_INTERSYLLABIC_TSHEG>
+<TIBETAN_MARK_DELIMITER_TSHEG_BSTAR>               <X0B4C>;<X05>;<X20>;<TIBETAN_MARK_DELIMITER_TSHEG_BSTAR>
+<TIBETAN_MARK_SHAD>                                <X0B4E>;<X05>;<X05>;<TIBETAN_MARK_SHAD>
+<TIBETAN_MARK_NYIS_SHAD>                           <X0B50>;<X05>;<X05>;<TIBETAN_MARK_NYIS_SHAD>
+<TIBETAN_MARK_TSHEG_SHAD>                          <X0B52>;<X05>;<X05>;<TIBETAN_MARK_TSHEG_SHAD>
+<TIBETAN_MARK_NYIS_TSHEG_SHAD>                     <X0B54>;<X05>;<X05>;<TIBETAN_MARK_NYIS_TSHEG_SHAD>
+<TIBETAN_MARK_RIN_CHEN_SPUNGS_SHAD>                <X0B56>;<X05>;<X05>;<TIBETAN_MARK_RIN_CHEN_SPUNGS_SHAD>
+<TIBETAN_MARK_RGYA_GRAM_SHAD>                      <X0B58>;<X05>;<X05>;<TIBETAN_MARK_RGYA_GRAM_SHAD>
+<TIBETAN_MARK_PALUTA>                              <X0B5A>;<X05>;<X05>;<TIBETAN_MARK_PALUTA>
+<TIBETAN_MARK_NYIS_TSHEG>                          <X0B5C>;<X05>;<X05>;<TIBETAN_MARK_NYIS_TSHEG>
+<TIBETAN_MARK_INITIAL_BRDA_RNYING_YIG_MGO_MDUN_MA> <X0B5E>;<X05>;<X05>;<TIBETAN_MARK_INITIAL_BRDA_RNYING_YIG_MGO_MDUN_MA>
+<TIBETAN_MARK_CLOSING_BRDA_RNYING_YIG_MGO_SGAB_MA> <X0B60>;<X05>;<X05>;<TIBETAN_MARK_CLOSING_BRDA_RNYING_YIG_MGO_SGAB_MA>
+<TIBETAN_MARK_LEADING_MCHAN_RTAGS>                 <X0B62>;<X05>;<X05>;<TIBETAN_MARK_LEADING_MCHAN_RTAGS>
+<TIBETAN_MARK_TRAILING_MCHAN_RTAGS>                <X0B64>;<X05>;<X05>;<TIBETAN_MARK_TRAILING_MCHAN_RTAGS>
 <GRAVE_ACCENT>                                     <X0C04>;<X05>;<X05>;<GRAVE_ACCENT>
 <CIRCUMFLEX_ACCENT>                                <X0C0A>;<X05>;<X05>;<CIRCUMFLEX_ACCENT>
-<TIBETAN_MARK_GTER_YIG_MGO_TRUNCATED_A>            "<X0C56><X4D00>";<X05>;"<X05><XC0>";<TIBETAN_MARK_GTER_YIG_MGO_TRUNCATED_A>
-<TIBETAN_MARK_GTER_YIG_MGO_-UM_RNAM_BCAD_MA>       "<X0C56><X5400>";<X05>;"<X05><XC0>";<TIBETAN_MARK_GTER_YIG_MGO_-UM_RNAM_BCAD_MA>
-<TIBETAN_MARK_GTER_YIG_MGO_-UM_GTER_TSHEG_MA>      "<X0C56><X5B00>";<X05>;"<X05><XC0>";<TIBETAN_MARK_GTER_YIG_MGO_-UM_GTER_TSHEG_MA>
-<TIBETAN_MARK_CARET_-DZUD_RTAGS_ME_LONG_CAN>       "<X0C56><X6200>";<X05>;"<X05><XC0>";<TIBETAN_MARK_CARET_-DZUD_RTAGS_ME_LONG_CAN>
-<TIBETAN_LOGOTYPE_SIGN_CHAD_RTAGS>                 "<X0C56><X6900>";<X05>;"<X05><XC0>";<TIBETAN_LOGOTYPE_SIGN_CHAD_RTAGS>
-<TIBETAN_LOGOTYPE_SIGN_LHAG_RTAGS>                 "<X0C56><X7000>";<X05>;"<X05><XC0>";<TIBETAN_LOGOTYPE_SIGN_LHAG_RTAGS>
-<TIBETAN_ASTROLOGICAL_SIGN_SGRA_GCAN_-CHAR_RTAGS>  "<X0C56><X7700>";<X05>;"<X05><XC0>";<TIBETAN_ASTROLOGICAL_SIGN_SGRA_GCAN_-CHAR_RTAGS>
-<TIBETAN_SIGN_RDEL_DKAR_GCIG>                      "<X0C56><X7E00>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_DKAR_GCIG>
-<TIBETAN_SIGN_RDEL_DKAR_GNYIS>                     "<X0C56><X8500>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_DKAR_GNYIS>
-<TIBETAN_SIGN_RDEL_DKAR_GSUM>                      "<X0C56><X8C00>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_DKAR_GSUM>
-<TIBETAN_SIGN_RDEL_NAG_GCIG>                       "<X0C56><X9300>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_NAG_GCIG>
-<TIBETAN_SIGN_RDEL_NAG_GNYIS>                      "<X0C56><X9A00>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_NAG_GNYIS>
-<TIBETAN_SIGN_RDEL_DKAR_RDEL_NAG>                  "<X0C56><XA100>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_DKAR_RDEL_NAG>
-<TIBETAN_MARK_BSDUS_RTAGS>                         "<X0C56><XA800>";<X05>;"<X05><XC0>";<TIBETAN_MARK_BSDUS_RTAGS>
-<TIBETAN_MARK_CARET_-DZUD_RTAGS_BZHI_MIG_CAN>      "<X0C56><XAF00>";<X05>;"<X05><XC0>";<TIBETAN_MARK_CARET_-DZUD_RTAGS_BZHI_MIG_CAN>
-<TIBETAN_MARK_CHE_MGO>                             "<X0C56><XB600>";<X05>;"<X05><XC0>";<TIBETAN_MARK_CHE_MGO>
-<TIBETAN_KU_RU_KHA>                                "<X0C56><XBD00>";<X05>;"<X05><XC0>";<TIBETAN_KU_RU_KHA>
-<TIBETAN_KU_RU_KHA_BZHI_MIG_CAN>                   "<X0C56><XC400>";<X05>;"<X05><XC0>";<TIBETAN_KU_RU_KHA_BZHI_MIG_CAN>
-<TIBETAN_CANTILLATION_SIGN_HEAVY_BEAT>             "<X0C56><XCB00>";<X05>;"<X05><XC0>";<TIBETAN_CANTILLATION_SIGN_HEAVY_BEAT>
-<TIBETAN_CANTILLATION_SIGN_LIGHT_BEAT>             "<X0C56><XD200>";<X05>;"<X05><XC0>";<TIBETAN_CANTILLATION_SIGN_LIGHT_BEAT>
-<TIBETAN_CANTILLATION_SIGN_CANG_TE-U>              "<X0C56><XD900>";<X05>;"<X05><XC0>";<TIBETAN_CANTILLATION_SIGN_CANG_TE-U>
-<TIBETAN_CANTILLATION_SIGN_SBUB_-CHAL>             "<X0C56><XE000>";<X05>;"<X05><XC0>";<TIBETAN_CANTILLATION_SIGN_SBUB_-CHAL>
-<TIBETAN_SYMBOL_DRIL_BU>                           "<X0C56><XE700>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_DRIL_BU>
-<TIBETAN_SYMBOL_RDO_RJE>                           "<X0C56><XEE00>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_RDO_RJE>
-<TIBETAN_SYMBOL_RDO_RJE_RGYA_GRAM>                 "<X0C56><XF500>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_RDO_RJE_RGYA_GRAM>
-<TIBETAN_SYMBOL_PHUR_PA>                           "<X0C56><XFC00>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_PHUR_PA>
-<TIBETAN_SYMBOL_NOR_BU>                            "<X0C57><X0500>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_NOR_BU>
-<TIBETAN_SYMBOL_NOR_BU_NYIS_-KHYIL>                "<X0C57><X0C00>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_NOR_BU_NYIS_-KHYIL>
-<TIBETAN_SYMBOL_NOR_BU_GSUM_-KHYIL>                "<X0C57><X1300>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_NOR_BU_GSUM_-KHYIL>
-<TIBETAN_SYMBOL_NOR_BU_BZHI_-KHYIL>                "<X0C57><X1A00>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_NOR_BU_BZHI_-KHYIL>
-<TIBETAN_SIGN_RDEL_NAG_RDEL_DKAR>                  "<X0C57><X2100>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_NAG_RDEL_DKAR>
-<TIBETAN_SIGN_RDEL_NAG_GSUM>                       "<X0C57><X2800>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_NAG_GSUM>
-<PLUS_SIGN>                                        <X0C78>;<X05>;<X05>;<PLUS_SIGN>
-<LESS-THAN_SIGN>                                   <X0C80>;<X05>;<X05>;<LESS-THAN_SIGN>
-<EQUALS_SIGN>                                      <X0C82>;<X05>;<X05>;<EQUALS_SIGN>
-<GREATER-THAN_SIGN>                                <X0C84>;<X05>;<X05>;<GREATER-THAN_SIGN>
-<VERTICAL_LINE>                                    <X0C88>;<X05>;<X05>;<VERTICAL_LINE>
-<TILDE>                                            <X0C8C>;<X05>;<X05>;<TILDE>
-<DOLLAR_SIGN>                                      <X0D7C>;<X05>;<X05>;<DOLLAR_SIGN>
+<TIBETAN_MARK_GTER_YIG_MGO_TRUNCATED_A>            "<X0C56><XFC00>";<X05>;"<X05><XC0>";<TIBETAN_MARK_GTER_YIG_MGO_TRUNCATED_A>
+<TIBETAN_MARK_GTER_YIG_MGO_-UM_RNAM_BCAD_MA>       "<X0C57><X0500>";<X05>;"<X05><XC0>";<TIBETAN_MARK_GTER_YIG_MGO_-UM_RNAM_BCAD_MA>
+<TIBETAN_MARK_GTER_YIG_MGO_-UM_GTER_TSHEG_MA>      "<X0C57><X0C00>";<X05>;"<X05><XC0>";<TIBETAN_MARK_GTER_YIG_MGO_-UM_GTER_TSHEG_MA>
+<TIBETAN_MARK_CARET_-DZUD_RTAGS_ME_LONG_CAN>       "<X0C57><X1300>";<X05>;"<X05><XC0>";<TIBETAN_MARK_CARET_-DZUD_RTAGS_ME_LONG_CAN>
+<TIBETAN_LOGOTYPE_SIGN_CHAD_RTAGS>                 "<X0C57><X1A00>";<X05>;"<X05><XC0>";<TIBETAN_LOGOTYPE_SIGN_CHAD_RTAGS>
+<TIBETAN_LOGOTYPE_SIGN_LHAG_RTAGS>                 "<X0C57><X2100>";<X05>;"<X05><XC0>";<TIBETAN_LOGOTYPE_SIGN_LHAG_RTAGS>
+<TIBETAN_ASTROLOGICAL_SIGN_SGRA_GCAN_-CHAR_RTAGS>  "<X0C57><X2800>";<X05>;"<X05><XC0>";<TIBETAN_ASTROLOGICAL_SIGN_SGRA_GCAN_-CHAR_RTAGS>
+<TIBETAN_SIGN_RDEL_DKAR_GCIG>                      "<X0C57><X2F00>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_DKAR_GCIG>
+<TIBETAN_SIGN_RDEL_DKAR_GNYIS>                     "<X0C57><X3600>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_DKAR_GNYIS>
+<TIBETAN_SIGN_RDEL_DKAR_GSUM>                      "<X0C57><X3D00>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_DKAR_GSUM>
+<TIBETAN_SIGN_RDEL_NAG_GCIG>                       "<X0C57><X4400>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_NAG_GCIG>
+<TIBETAN_SIGN_RDEL_NAG_GNYIS>                      "<X0C57><X4B00>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_NAG_GNYIS>
+<TIBETAN_SIGN_RDEL_DKAR_RDEL_NAG>                  "<X0C57><X5200>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_DKAR_RDEL_NAG>
+<TIBETAN_MARK_BSDUS_RTAGS>                         "<X0C57><X5900>";<X05>;"<X05><XC0>";<TIBETAN_MARK_BSDUS_RTAGS>
+<TIBETAN_MARK_CARET_-DZUD_RTAGS_BZHI_MIG_CAN>      "<X0C57><X6000>";<X05>;"<X05><XC0>";<TIBETAN_MARK_CARET_-DZUD_RTAGS_BZHI_MIG_CAN>
+<TIBETAN_MARK_CHE_MGO>                             "<X0C57><X6700>";<X05>;"<X05><XC0>";<TIBETAN_MARK_CHE_MGO>
+<TIBETAN_KU_RU_KHA>                                "<X0C57><X6E00>";<X05>;"<X05><XC0>";<TIBETAN_KU_RU_KHA>
+<TIBETAN_KU_RU_KHA_BZHI_MIG_CAN>                   "<X0C57><X7500>";<X05>;"<X05><XC0>";<TIBETAN_KU_RU_KHA_BZHI_MIG_CAN>
+<TIBETAN_CANTILLATION_SIGN_HEAVY_BEAT>             "<X0C57><X7C00>";<X05>;"<X05><XC0>";<TIBETAN_CANTILLATION_SIGN_HEAVY_BEAT>
+<TIBETAN_CANTILLATION_SIGN_LIGHT_BEAT>             "<X0C57><X8300>";<X05>;"<X05><XC0>";<TIBETAN_CANTILLATION_SIGN_LIGHT_BEAT>
+<TIBETAN_CANTILLATION_SIGN_CANG_TE-U>              "<X0C57><X8A00>";<X05>;"<X05><XC0>";<TIBETAN_CANTILLATION_SIGN_CANG_TE-U>
+<TIBETAN_CANTILLATION_SIGN_SBUB_-CHAL>             "<X0C57><X9100>";<X05>;"<X05><XC0>";<TIBETAN_CANTILLATION_SIGN_SBUB_-CHAL>
+<TIBETAN_SYMBOL_DRIL_BU>                           "<X0C57><X9800>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_DRIL_BU>
+<TIBETAN_SYMBOL_RDO_RJE>                           "<X0C57><X9F00>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_RDO_RJE>
+<TIBETAN_SYMBOL_RDO_RJE_RGYA_GRAM>                 "<X0C57><XA600>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_RDO_RJE_RGYA_GRAM>
+<TIBETAN_SYMBOL_PHUR_PA>                           "<X0C57><XAD00>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_PHUR_PA>
+<TIBETAN_SYMBOL_NOR_BU>                            "<X0C57><XB400>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_NOR_BU>
+<TIBETAN_SYMBOL_NOR_BU_NYIS_-KHYIL>                "<X0C57><XBB00>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_NOR_BU_NYIS_-KHYIL>
+<TIBETAN_SYMBOL_NOR_BU_GSUM_-KHYIL>                "<X0C57><XC200>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_NOR_BU_GSUM_-KHYIL>
+<TIBETAN_SYMBOL_NOR_BU_BZHI_-KHYIL>                "<X0C57><XC900>";<X05>;"<X05><XC0>";<TIBETAN_SYMBOL_NOR_BU_BZHI_-KHYIL>
+<TIBETAN_SIGN_RDEL_NAG_RDEL_DKAR>                  "<X0C57><XD000>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_NAG_RDEL_DKAR>
+<TIBETAN_SIGN_RDEL_NAG_GSUM>                       "<X0C57><XD700>";<X05>;"<X05><XC0>";<TIBETAN_SIGN_RDEL_NAG_GSUM>
+<PLUS_SIGN>                                        <X0C79>;<X05>;<X05>;<PLUS_SIGN>
+<LESS-THAN_SIGN>                                   <X0C81>;<X05>;<X05>;<LESS-THAN_SIGN>
+<EQUALS_SIGN>                                      <X0C83>;<X05>;<X05>;<EQUALS_SIGN>
+<GREATER-THAN_SIGN>                                <X0C85>;<X05>;<X05>;<GREATER-THAN_SIGN>
+<VERTICAL_LINE>                                    <X0C89>;<X05>;<X05>;<VERTICAL_LINE>
+<TILDE>                                            <X0C8D>;<X05>;<X05>;<TILDE>
+<DOLLAR_SIGN>                                      <X0D8A>;<X05>;<X05>;<DOLLAR_SIGN>
 <zero>                                             <X1300>;<X05>;<X05>;<zero>
 <TIBETAN_DIGIT_ZERO>                               <X1300>;<X05>;<X05>;<TIBETAN_DIGIT_ZERO>
 <TIBETAN_DIGIT_HALF_ZERO>                          <X1300>;<X05>;<X15>;<TIBETAN_DIGIT_HALF_ZERO>
@@ -1806,7 +1802,7 @@ order_start forward;forward;forward;forward
 <TIBETAN_LETTER_HA>                                <X748E>;<X05>;<X05>;<TIBETAN_LETTER_HA>
 <TIBETAN_SUBJOINED_LETTER_HA>                      <X7490>;<X05>;<X05>;<TIBETAN_SUBJOINED_LETTER_HA>
 <TIBETAN_LETTER_A>                                 <X7492>;<X05>;<X05>;<TIBETAN_LETTER_A>
-<TIBETAN_SYLLABLE_OM>                              "<X7492><X74C0>";"<X05><X05><XF1><X66>";"<X20><X20><X20><XC0>";<TIBETAN_SYLLABLE_OM>
+<TIBETAN_SYLLABLE_OM>                              "<X7492><X74C0>";"<X05><X05><XF0><XF1>";"<X20><X20><X20><XC0>";<TIBETAN_SYLLABLE_OM>
 <TIBETAN_SUBJOINED_LETTER_A>                       <X7494>;<X05>;<X05>;<TIBETAN_SUBJOINED_LETTER_A>
 <TIBETAN_SIGN_LCE_TSA_CAN>                         <X7496>;<X05>;<X05>;<TIBETAN_SIGN_LCE_TSA_CAN>
 <TIBETAN_SUBJOINED_SIGN_LCE_TSA_CAN>               <X7498>;<X05>;<X05>;<TIBETAN_SUBJOINED_SIGN_LCE_TSA_CAN>
