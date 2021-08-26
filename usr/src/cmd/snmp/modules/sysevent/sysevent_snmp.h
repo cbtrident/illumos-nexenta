@@ -16,6 +16,8 @@
 #ifndef _SNMP_MOD_H
 #define	_SNMP_MOD_H
 
+#include <sys/debug.h>
+
 #include <sys/sysevent/eventdefs.h>
 
 #include <net-snmp/net-snmp-config.h>
@@ -26,15 +28,13 @@
 
 #include <netdb.h>
 
-#include "syseventd.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern char hostname[MAXHOSTNAMELEN + 1];
+extern const char *const modname;
 
-#define	SNMP_SUPPCONF	"syseventd-trapgen"
+extern char hostname[MAXHOSTNAMELEN + 1];
 
 /* nexenta-core-storage-ssm-mib OID */
 #define	SSM_OID	1, 3, 6, 1, 4, 1, 40045, 1, 1, 2, 1

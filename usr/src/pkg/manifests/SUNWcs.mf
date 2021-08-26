@@ -1234,10 +1234,10 @@ file path=usr/lib/saf/nlps_server group=sys mode=0755
 file path=usr/lib/saf/sac group=sys mode=0555
 file path=usr/lib/saf/ttymon group=sys mode=0555
 file path=usr/lib/snmp/fm_mod.so mode=0555
+file path=usr/lib/snmp/sysevent_mod.so mode=0555
 file path=usr/lib/snmp/zfs_mod.so mode=0555
 file path=usr/lib/sysevent/modules/datalink_mod.so
 file path=usr/lib/sysevent/modules/devfsadmd_mod.so
-file path=usr/lib/sysevent/modules/snmp_mod.so
 file path=usr/lib/sysevent/modules/sysevent_conf_mod.so
 file path=usr/lib/sysevent/modules/sysevent_reg_mod.so
 file path=usr/lib/sysevent/syseventconfd mode=0555

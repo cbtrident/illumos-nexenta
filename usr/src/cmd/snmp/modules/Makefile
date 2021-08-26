@@ -14,6 +14,7 @@
 #
 
 SUBDIRS=	fm \
+		sysevent \
 		zfs
 
 all :=		TARGET=all

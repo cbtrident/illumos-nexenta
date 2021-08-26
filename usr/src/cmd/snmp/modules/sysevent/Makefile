@@ -10,33 +10,26 @@
 #
 
 #
-# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
-LIBRARY=	snmp_mod
+MODULE=		sysevent_mod.so
+
+OBJECTS=	datalink.o \
+		disk.o \
+		sysevent.o
 
 MIBS=		NEXENTA-SSM-MIB.txt
 
-include		$(SRC)/cmd/snmp/Makefile.snmp
 include		../Makefile.com
 
-OBJECTS=	snmp_mod.o \
-		ssm_datalink.o \
-		ssm_disk.o
-
-CFLAGS +=	$(C_PICFLAGS)
-
-LDLIBS +=	-lavl -lnetsnmp -lnetsnmpagent -lnvpair
-LDLIBS +=	-L$(ROOT)/usr/lib/fm -R/usr/lib/fm -ltopo
+LDLIBS +=	-lavl -lnetsnmp -lnetsnmpagent -lnvpair -lsysevent
+LDLIBS +=	-L$(ROOT)/usr/lib/fm/$(MACH64) -R/usr/lib/fm/$(MACH64) -ltopo
 
 .KEEP_STATE:
 
 all:		$(DYNLIB)
 
-install:	all				\
-		$(ROOTLIBSYSEVENTDIR)		\
-		$(ROOTLIBDIR)			\
-		$(ROOTLIBS)			\
-		$(ROOTMIBS)
+install:	all $(ROOTMODULE) $(ROOTMIBS)
 
-include		../Makefile.targ
+include		$(SRC)/lib/Makefile.targ

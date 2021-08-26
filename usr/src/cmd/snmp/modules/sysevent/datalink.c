@@ -10,10 +10,10 @@
  */
 
 /*
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
-#include "snmp_mod.h"
+#include "sysevent_snmp.h"
 
 #include <sys/sysevent/datalink.h>
 
@@ -39,8 +39,8 @@ ssm_datalink_handler(sysevent_t *ev)
 	if (sysevent_get_attr_list(ev, &evnv) != 0 ||
 	    nvlist_lookup_string(evnv, DATALINK_EV_LINK_NAME, &name) != 0 ||
 	    nvlist_lookup_int32(evnv, DATALINK_EV_LINK_STATE, &state) != 0) {
-		syseventd_print(9, "%s: failed to parse attr nvlist\n",
-		    __func__);
+		DEBUGMSGTL((modname, "%s: failed to parse attr nvlist\n",
+		    __func__));
 		return;
 	}
 

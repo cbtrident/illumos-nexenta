@@ -10,10 +10,10 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
-#include "snmp_mod.h"
+#include "sysevent_snmp.h"
 
 #include <sys/avl.h>
 #include <sys/fm/protocol.h>
@@ -133,13 +133,14 @@ ssm_disk_walker(topo_hdl_t *thp, tnode_t *np, void *arg)
 	 * added disk.
 	 */
 	if ((tsdp = avl_find(&ssm_disk_tree, sdp, NULL)) != NULL) {
-		syseventd_print(9, "duplicate entry %s\n", tsdp->devname);
+		DEBUGMSGTL((modname, "duplicate entry %s\n",
+		    tsdp->devname));
 		avl_remove(&ssm_disk_tree, tsdp);
 		ssm_disk_free(tsdp);
 	}
 	avl_add(&ssm_disk_tree, sdp);
-	syseventd_print(9, "added %s: %s:%d %s:%s\n", ndevname,
-	    sdp->encid, sdp->slotid, sdp->encname, sdp->slotname);
+	DEBUGMSGTL((modname, "added %s: %s:%d %s:%s\n", ndevname,
+	    sdp->encid, sdp->slotid, sdp->encname, sdp->slotname));
 
 	return (TOPO_WALK_TERMINATE);
 
@@ -195,7 +196,7 @@ ssm_disk_remove(char *devname)
 	pthread_mutex_lock(&ssm_disk_tree_lock);
 	if ((ret = avl_find(&ssm_disk_tree, &sdp, NULL)) != NULL) {
 		avl_remove(&ssm_disk_tree, ret);
-		syseventd_print(9, "removed %s\n", devname);
+		DEBUGMSGTL((modname, "removed %s\n", devname));
 	}
 	pthread_mutex_unlock(&ssm_disk_tree_lock);
 	free(sdp.devname);
@@ -228,8 +229,8 @@ ssm_disk_handler(sysevent_t *ev)
 
 	if (sysevent_get_attr_list(ev, &evnv) != 0 ||
 	    nvlist_lookup_string(evnv, "dev_name", &devname) != 0) {
-		syseventd_print(9, "%s: failed to parse attr nvlist\n",
-		    __func__);
+		DEBUGMSGTL((modname, "%s: failed to parse attr nvlist\n",
+		    __func__));
 		return;
 	}
 
@@ -289,6 +290,7 @@ ssm_disk_handler(sysevent_t *ev)
 	send_enterprise_trap_vars(SNMP_TRAP_ENTERPRISESPECIFIC,
 	    ssm_disk_trap_oid[ssm_disk_trap_len - 1], (oid *)ssm_disk_trap_oid,
 	    ssm_disk_trap_len - 2, notification_vars);
+	DEBUGMSGTL((modname, "sent trap for %s\n", devname));
 	snmp_free_varbind(notification_vars);
 }
 
