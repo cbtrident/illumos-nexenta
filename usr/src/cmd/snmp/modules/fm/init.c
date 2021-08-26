@@ -21,11 +21,7 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
- */
-
-/*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <net-snmp/net-snmp-config.h>
@@ -36,6 +32,8 @@
 #include "module.h"
 #include "problem.h"
 #include "resource.h"
+
+const char *const modname = "fm";
 
 void
 init_fm(void)

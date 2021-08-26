@@ -13,21 +13,25 @@
 # Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
-SUBDIRS=	fm \
-		fmnotify \
-		sysevent \
-		zfs
+MODULE=		fmnotify_mod.so
 
-all :=		TARGET=all
-clean :=	TARGET=clean
-clobber :=	TARGET=clobber
-install :=	TARGET=install
+OBJECTS=	fmnotify.o
+
+include		../Makefile.com
+
+CSTD=		$(CSTD_GNU99)
+
+CPPFLAGS +=	-I$(SRC)/cmd/snmp/modules/fm
+CPPFLAGS +=	-I$(SRC)/lib/fm/libfmnotify/common
+
+LDLIBS +=	-lnetsnmp -lnetsnmpagent -lnvpair
+LDLIBS +=	-L$(ROOT)/usr/lib/fm/$(MACH64) -R/usr/lib/fm/$(MACH64)
+LDLIBS +=	-lfmevent -lfmnotify -lfmd_msg
 
 .KEEP_STATE:
 
-all clean clobber install: $(SUBDIRS)
+all:		$(DYNLIB)
 
-$(SUBDIRS):	FRC
-		cd $@; pwd; $(MAKE) $(TARGET)
+install:	all $(ROOTMODULE)
 
-FRC:
+include		$(SRC)/lib/Makefile.targ

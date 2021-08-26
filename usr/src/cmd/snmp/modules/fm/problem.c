@@ -116,7 +116,7 @@ problem_lookup_uuid_exact(const char *uuid)
 
 	key = problem_key_build(uuid);
 
-	DEBUGMSGTL((MODNAME_STR, "lookup_exact for uuid %s\n", uuid));
+	DEBUGMSGTL((modname, "lookup_exact for uuid %s\n", uuid));
 	data = uu_avl_find(problem_uuid_avl, key, NULL, NULL);
 
 	return (data);
@@ -130,12 +130,12 @@ problem_lookup_uuid_next(const char *uuid)
 
 	key = problem_key_build(uuid);
 
-	DEBUGMSGTL((MODNAME_STR, "lookup_next for uuid %s\n", uuid));
+	DEBUGMSGTL((modname, "lookup_next for uuid %s\n", uuid));
 	(void) uu_avl_find(problem_uuid_avl, key, NULL, &idx);
 
 	data = uu_avl_nearest_next(problem_uuid_avl, idx);
 
-	DEBUGMSGTL((MODNAME_STR, "lookup_next: entry is %p\n", data));
+	DEBUGMSGTL((modname, "lookup_next: entry is %p\n", data));
 
 	return (data);
 }
@@ -201,23 +201,25 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 				cr++;
 		}
 		if (cr == nelem) {
-			DEBUGMSGTL((MODNAME_STR,
+			DEBUGMSGTL((modname,
 			    "problem %s is resolved, skipping\n",
 			    acp->aci_uuid));
 			return (0);
 		}
 
-		DEBUGMSGTL((MODNAME_STR, "found new problem %s\n",
+		DEBUGMSGTL((modname, "found new problem %s\n",
 		    acp->aci_uuid));
 		if ((data = SNMP_MALLOC_TYPEDEF(sunFmProblem_data_t)) == NULL) {
-			(void) snmp_log(LOG_ERR, MODNAME_STR
-			    ": out of memory for new problem data\n");
+			(void) snmp_log(LOG_ERR,
+			    "%s: out of memory for new problem data\n",
+			    modname);
 			return (0);
 		}
 		if ((err = nvlist_dup(acp->aci_event, &data->d_aci_event, 0))
 		    != 0) {
-			(void) snmp_log(LOG_ERR, MODNAME_STR
-			    ": problem data setup failed: %s\n", strerror(err));
+			(void) snmp_log(LOG_ERR,
+			    "%s: problem data setup failed: %s\n",
+			    modname, strerror(err));
 			SNMP_FREE(data);
 			return (0);
 		}
@@ -284,7 +286,7 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 
 		data->d_valid = valid_stamp;
 
-		DEBUGMSGTL((MODNAME_STR, "completed new problem %s@%p\n",
+		DEBUGMSGTL((modname, "completed new problem %s@%p\n",
 		    data->d_aci_uuid, data));
 	} else {
 		if (nvlist_lookup_uint8_array(acp->aci_event,
@@ -292,7 +294,7 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 			return (0);
 
 		if (nelem != data->d_nsuspects) {
-			DEBUGMSGTL((MODNAME_STR,
+			DEBUGMSGTL((modname,
 			    "problem %s is malformed; deleting\n",
 			    data->d_aci_uuid));
 			goto delete;
@@ -304,7 +306,7 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 			data->d_statuses[i] = statuses[i];
 		}
 		if (cr == nelem) {
-			DEBUGMSGTL((MODNAME_STR,
+			DEBUGMSGTL((modname,
 			    "problem %s is now resolved; deleting\n",
 			    data->d_aci_uuid));
 			goto delete;
@@ -329,7 +331,7 @@ update_thread(void *arg)
 	fmd_adm_t *adm;
 	static struct timespec tv;
 
-	DEBUGMSGTL((MODNAME_STR, "problem update thread starting\n"));
+	DEBUGMSGTL((modname, "problem update thread starting\n"));
 
 	/* Do a 1-minute checks for changes */
 	tv.tv_sec = 60;
@@ -348,21 +350,21 @@ update_thread(void *arg)
 		if ((adm = fmd_adm_open(NULL, FMD_ADM_PROGRAM,
 		    FMD_ADM_VERSION)) == NULL) {
 			(void) pthread_mutex_unlock(&update_lock);
-			(void) snmp_log(LOG_ERR, MODNAME_STR
-			    ": communication with fmd failed: %s\n",
-			    strerror(errno));
+			(void) snmp_log(LOG_ERR,
+			    "%s: communication with fmd failed: %s\n",
+			    modname, strerror(errno));
 			continue;
 		}
 
 		valid_stamp++;
 
-		DEBUGMSGTL((MODNAME_STR, "case iteration started\n"));
+		DEBUGMSGTL((modname, "case iteration started\n"));
 		if (fmd_adm_case_iter(adm, SNMP_URL_MSG, problem_update_one,
 		    NULL) != 0) {
 			(void) pthread_mutex_unlock(&update_lock);
-			(void) snmp_log(LOG_ERR, MODNAME_STR
-			    ": fmd case information update failed: %s\n",
-			    fmd_adm_errmsg(adm));
+			(void) snmp_log(LOG_ERR,
+			    "%s: fmd case information update failed: %s\n",
+			    modname, fmd_adm_errmsg(adm));
 			fmd_adm_close(adm);
 			continue;
 		}
@@ -370,10 +372,10 @@ update_thread(void *arg)
 		fmd_adm_close(adm);
 		(void) pthread_mutex_unlock(&update_lock);
 
-		DEBUGMSGTL((MODNAME_STR, "case iteration completed\n"));
+		DEBUGMSGTL((modname, "case iteration completed\n"));
 	}
 
-	DEBUGMSGTL((MODNAME_STR, "problem update thread exiting\n"));
+	DEBUGMSGTL((modname, "problem update thread exiting\n"));
 	return (NULL);
 }
 
@@ -412,7 +414,7 @@ sunFmProbTable_nextpr(netsnmp_handler_registration *reginfo,
 	if (table_info->number_indexes < 1) {
 		oid tmpoid[MAX_OID_LEN];
 
-		DEBUGMSGTL((MODNAME_STR, "nextpr: no indexes given\n"));
+		DEBUGMSGTL((modname, "nextpr: no indexes given\n"));
 
 		snmp_free_varbind(table_info->indexes);
 		table_info->indexes =
@@ -432,9 +434,9 @@ sunFmProbTable_nextpr(netsnmp_handler_registration *reginfo,
 		(void) memcpy(table_info->index_oid, table_info->indexes->name,
 		    table_info->indexes->name_length);
 
-		DEBUGMSGTL((MODNAME_STR, "nextpr: built fake index: "));
-		DEBUGMSGVAR((MODNAME_STR, table_info->indexes));
-		DEBUGMSG((MODNAME_STR, "\n"));
+		DEBUGMSGTL((modname, "nextpr: built fake index: "));
+		DEBUGMSGVAR((modname, table_info->indexes));
+		DEBUGMSG((modname, "\n"));
 	} else {
 		/*
 		 * Construct the next possible UUID to look for.  We can
@@ -449,28 +451,28 @@ sunFmProbTable_nextpr(netsnmp_handler_registration *reginfo,
 		    table_info->indexes->val_len + 1);
 		++uuid[table_info->indexes->val_len - 1];
 
-		DEBUGMSGTL((MODNAME_STR, "nextpr: received index:\n"));
-		DEBUGMSGVAR((MODNAME_STR, table_info->indexes));
-		DEBUGMSG((MODNAME_STR, "\n"));
+		DEBUGMSGTL((modname, "nextpr: received index:\n"));
+		DEBUGMSGVAR((modname, table_info->indexes));
+		DEBUGMSG((modname, "\n"));
 	}
 
 	if ((data = problem_lookup_uuid_next(uuid)) == NULL) {
-		DEBUGMSGTL((MODNAME_STR, "nextpr: next match not found for "
+		DEBUGMSGTL((modname, "nextpr: next match not found for "
 		    "%s; trying next column\n", uuid));
 		if (table_info->colnum >=
 		    netsnmp_find_table_registration_info(reginfo)->max_column) {
 			snmp_free_varbind(table_info->indexes);
 			table_info->indexes = NULL;
 			table_info->number_indexes = 0;
-			DEBUGMSGTL((MODNAME_STR, "nextpr: out of columns\n"));
+			DEBUGMSGTL((modname, "nextpr: out of columns\n"));
 			return (NULL);
 		}
 		table_info->colnum++;
-		DEBUGMSGTL((MODNAME_STR, "nextpr: search for col %u empty "
+		DEBUGMSGTL((modname, "nextpr: search for col %u empty "
 		    "uuid\n", table_info->colnum));
 
 		if ((data = problem_lookup_uuid_next("")) == NULL) {
-			DEBUGMSGTL((MODNAME_STR, "nextpr: next match not found "
+			DEBUGMSGTL((modname, "nextpr: next match not found "
 			    "for empty uuid; stopping\n"));
 			snmp_free_varbind(table_info->indexes);
 			table_info->indexes = NULL;
@@ -483,7 +485,7 @@ sunFmProbTable_nextpr(netsnmp_handler_registration *reginfo,
 	    (uchar_t *)data->d_aci_uuid, strlen(data->d_aci_uuid));
 	table_info->number_indexes = 1;
 
-	DEBUGMSGTL((MODNAME_STR, "matching data is %s@%p\n", data->d_aci_uuid,
+	DEBUGMSGTL((modname, "matching data is %s@%p\n", data->d_aci_uuid,
 	    data));
 
 	return (data);
@@ -526,12 +528,12 @@ sunFmFaultEventTable_nextfe(netsnmp_handler_registration *reginfo,
 		switch (table_info->number_indexes) {
 		case 2:
 		default:
-			DEBUGMSGTL((MODNAME_STR, "nextfe: 2 indices:\n"));
-			DEBUGMSGVAR((MODNAME_STR, table_info->indexes));
-			DEBUGMSG((MODNAME_STR, "\n"));
-			DEBUGMSGVAR((MODNAME_STR,
+			DEBUGMSGTL((modname, "nextfe: 2 indices:\n"));
+			DEBUGMSGVAR((modname, table_info->indexes));
+			DEBUGMSG((modname, "\n"));
+			DEBUGMSGVAR((modname,
 			    table_info->indexes->next_variable));
-			DEBUGMSG((MODNAME_STR, "\n"));
+			DEBUGMSG((modname, "\n"));
 			index = *(ulong_t *)
 			    table_info->indexes->next_variable->val.integer + 1;
 
@@ -558,9 +560,9 @@ sunFmFaultEventTable_nextfe(netsnmp_handler_registration *reginfo,
 				oid tmpoid[MAX_OID_LEN];
 				index = 0;
 
-				DEBUGMSGTL((MODNAME_STR, "nextfe: 1 index:\n"));
-				DEBUGMSGVAR((MODNAME_STR, table_info->indexes));
-				DEBUGMSG((MODNAME_STR, "\n"));
+				DEBUGMSGTL((modname, "nextfe: 1 index:\n"));
+				DEBUGMSGVAR((modname, table_info->indexes));
+				DEBUGMSG((modname, "\n"));
 				var =
 				    SNMP_MALLOC_TYPEDEF(netsnmp_variable_list);
 				(void) snmp_set_var_typed_value(var,
@@ -579,13 +581,13 @@ sunFmFaultEventTable_nextfe(netsnmp_handler_registration *reginfo,
 				    table_info->indexes->next_variable);
 				table_info->indexes->next_variable = var;
 				table_info->number_indexes = 2;
-				DEBUGMSGTL((MODNAME_STR,
+				DEBUGMSGTL((modname,
 				    "nextfe: built fake index: "));
-				DEBUGMSGVAR((MODNAME_STR, table_info->indexes));
-				DEBUGMSG((MODNAME_STR, "\n"));
-				DEBUGMSGVAR((MODNAME_STR,
+				DEBUGMSGVAR((modname, table_info->indexes));
+				DEBUGMSG((modname, "\n"));
+				DEBUGMSGVAR((modname,
 				    table_info->indexes->next_variable));
-				DEBUGMSG((MODNAME_STR, "\n"));
+				DEBUGMSG((modname, "\n"));
 			} else {
 				if (sunFmProbTable_nextpr(reginfo,
 				    table_info) == NULL)
@@ -668,8 +670,9 @@ sunFmProbTable_handler(netsnmp_mib_handler *handler,
 				goto out;
 			break;
 		default:
-			(void) snmp_log(LOG_ERR, MODNAME_STR
-			    ": unsupported request mode: %d\n", reqinfo->mode);
+			(void) snmp_log(LOG_ERR,
+			    "%s: unsupported request mode: %d\n",
+			    modname, reqinfo->mode);
 			ret = SNMP_ERR_GENERR;
 			goto out;
 		}
@@ -820,8 +823,9 @@ sunFmFaultEventTable_handler(netsnmp_mib_handler *handler,
 				goto out;
 			break;
 		default:
-			(void) snmp_log(LOG_ERR, MODNAME_STR
-			    ": unsupported request mode: %d\n", reqinfo->mode);
+			(void) snmp_log(LOG_ERR,
+			    "%s: unsupported request mode: %d\n",
+			    modname, reqinfo->mode);
 			ret = SNMP_ERR_GENERR;
 			goto out;
 		}
@@ -945,7 +949,7 @@ out:
 void
 sunFmProblemTable_init(void)
 {
-	DEBUGMSGTL((MODNAME_STR, "initializing problem\n"));
+	DEBUGMSGTL((modname, "initializing problem\n"));
 
 	/* Create fault event table and handler */
 	fault_tinfo = SNMP_MALLOC_TYPEDEF(netsnmp_table_registration_info);
@@ -1004,7 +1008,7 @@ sunFmProblemTable_fini(void)
 	uu_avl_walk_t *walk;
 	sunFmProblem_data_t *node;
 
-	DEBUGMSGTL((MODNAME_STR, "finalizing problem\n"));
+	DEBUGMSGTL((modname, "finalizing problem\n"));
 
 	(void) fmev_shdl_unsubscribe(evhdl, "list.*");
 	(void) fmev_shdl_fini(evhdl);

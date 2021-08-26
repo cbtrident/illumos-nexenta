@@ -24,7 +24,7 @@
 # Copyright (c) 2013 Gary Mills
 # Copyright 2014 PALO, Richard. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
-# Copyright 2019 Nexenta by DDN, Inc.  All rights reserved.
+# Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 # Copyright 2017 Toomas Soome <tsoome@me.com>
 #
 
@@ -1234,6 +1234,7 @@ file path=usr/lib/saf/nlps_server group=sys mode=0755
 file path=usr/lib/saf/sac group=sys mode=0555
 file path=usr/lib/saf/ttymon group=sys mode=0555
 file path=usr/lib/snmp/fm_mod.so mode=0555
+file path=usr/lib/snmp/fmnotify_mod.so mode=0555
 file path=usr/lib/snmp/sysevent_mod.so mode=0555
 file path=usr/lib/snmp/zfs_mod.so mode=0555
 file path=usr/lib/sysevent/modules/datalink_mod.so

@@ -167,13 +167,12 @@ rsrcinfo_update_one(const fmd_adm_rsrcinfo_t *rsrcinfo, void *arg)
 	if (data == NULL) {
 		uu_avl_index_t idx;
 
-		DEBUGMSGTL((MODNAME_STR, "found new resource %s\n",
+		DEBUGMSGTL((modname, "found new resource %s\n",
 		    rsrcinfo->ari_fmri));
 		if ((data = SNMP_MALLOC_TYPEDEF(sunFmResource_data_t)) ==
 		    NULL) {
-			(void) snmp_log(LOG_ERR, MODNAME_STR ": Out of memory "
-			    "for new resource data at %s:%d\n", __FILE__,
-			    __LINE__);
+			(void) snmp_log(LOG_ERR, "%s: out of memory "
+			    "for new resource data\n", modname);
 			return (1);
 		}
 		/*
@@ -183,7 +182,7 @@ rsrcinfo_update_one(const fmd_adm_rsrcinfo_t *rsrcinfo, void *arg)
 		 * more consistent view of the fault manager.
 		 */
 		data->d_index = ++max_index;
-		DEBUGMSGTL((MODNAME_STR, "index %lu is %s@%p\n", data->d_index,
+		DEBUGMSGTL((modname, "index %lu is %s@%p\n", data->d_index,
 		    rsrcinfo->ari_fmri, data));
 
 		(void) strlcpy(data->d_ari_fmri, rsrcinfo->ari_fmri,
@@ -197,13 +196,13 @@ rsrcinfo_update_one(const fmd_adm_rsrcinfo_t *rsrcinfo, void *arg)
 		(void) uu_avl_find(rsrc_index_avl, data, NULL, &idx);
 		uu_avl_insert(rsrc_index_avl, data, idx);
 
-		DEBUGMSGTL((MODNAME_STR, "completed new resource %lu/%s@%p\n",
+		DEBUGMSGTL((modname, "completed new resource %lu/%s@%p\n",
 		    data->d_index, data->d_ari_fmri, data));
 	}
 
 	data->d_valid = valid_stamp;
 
-	DEBUGMSGTL((MODNAME_STR, "timestamp updated for %lu/%s@%p: %d\n",
+	DEBUGMSGTL((modname, "timestamp updated for %lu/%s@%p: %d\n",
 	    data->d_index, data->d_ari_fmri, data, data->d_valid));
 
 	if ((update_ctx->uc_type & UCT_ALL) ||
@@ -240,8 +239,9 @@ rsrcinfo_update(sunFmResource_update_ctx_t *update_ctx)
 
 	if ((adm = fmd_adm_open(update_ctx->uc_host, update_ctx->uc_prog,
 	    update_ctx->uc_version)) == NULL) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": Communication with fmd "
-		    "failed: %s\n", strerror(errno));
+		(void) snmp_log(LOG_ERR,
+		    "%s: communication with fmd failed: %s\n",
+		    modname, strerror(errno));
 		return (SNMP_ERR_RESOURCEUNAVAILABLE);
 	}
 
@@ -252,14 +252,15 @@ rsrcinfo_update(sunFmResource_update_ctx_t *update_ctx)
 		rsrc_count = 0;
 		err = fmd_adm_rsrc_iter(adm, update_ctx->uc_all,
 		    rsrcinfo_update_one, update_ctx);
-		DEBUGMSGTL((MODNAME_STR, "resource iteration completed\n"));
+		DEBUGMSGTL((modname, "resource iteration completed\n"));
 	}
 
 	fmd_adm_close(adm);
 
 	if (err != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": fmd resource "
-		    "information update failed: %s\n", fmd_adm_errmsg(adm));
+		(void) snmp_log(LOG_ERR,
+		    "%s: fmd resource information update failed: %s\n",
+		    modname, fmd_adm_errmsg(adm));
 		return (SNMP_ERR_RESOURCEUNAVAILABLE);
 	}
 
@@ -339,7 +340,7 @@ sunFmResourceTable_nextrsrc(netsnmp_handler_registration *reginfo,
 		oid tmpoid[MAX_OID_LEN];
 		index = 1;
 
-		DEBUGMSGTL((MODNAME_STR, "nextrsrc: no indexes given\n"));
+		DEBUGMSGTL((modname, "nextrsrc: no indexes given\n"));
 		var = SNMP_MALLOC_TYPEDEF(netsnmp_variable_list);
 		(void) snmp_set_var_typed_value(var, ASN_UNSIGNED,
 		    (uchar_t *)&index, sizeof (index));
@@ -352,15 +353,15 @@ sunFmResourceTable_nextrsrc(netsnmp_handler_registration *reginfo,
 			snmp_free_varbind(var);
 			return (NULL);
 		}
-		DEBUGMSGTL((MODNAME_STR, "nextrsrc: built fake index:\n"));
-		DEBUGMSGVAR((MODNAME_STR, var));
-		DEBUGMSG((MODNAME_STR, "\n"));
+		DEBUGMSGTL((modname, "nextrsrc: built fake index:\n"));
+		DEBUGMSGVAR((modname, var));
+		DEBUGMSG((modname, "\n"));
 	} else {
 		var = snmp_clone_varbind(table_info->indexes);
 		index = *var->val.integer;
-		DEBUGMSGTL((MODNAME_STR, "nextrsrc: received index:\n"));
-		DEBUGMSGVAR((MODNAME_STR, var));
-		DEBUGMSG((MODNAME_STR, "\n"));
+		DEBUGMSGTL((modname, "nextrsrc: received index:\n"));
+		DEBUGMSGVAR((modname, var));
+		DEBUGMSG((modname, "\n"));
 		index++;
 	}
 
@@ -369,12 +370,12 @@ sunFmResourceTable_nextrsrc(netsnmp_handler_registration *reginfo,
 	table_info->number_indexes = 0;
 
 	if ((data = resource_lookup_index_nextvalid(index)) == NULL) {
-		DEBUGMSGTL((MODNAME_STR, "nextrsrc: exact match not found for "
+		DEBUGMSGTL((modname, "nextrsrc: exact match not found for "
 		    "index %lu; trying next column\n", index));
 		if (table_info->colnum >=
 		    netsnmp_find_table_registration_info(reginfo)->max_column) {
 			snmp_free_varbind(var);
-			DEBUGMSGTL((MODNAME_STR, "nextrsrc: out of columns\n"));
+			DEBUGMSGTL((modname, "nextrsrc: out of columns\n"));
 			return (NULL);
 		}
 		table_info->colnum++;
@@ -384,7 +385,7 @@ sunFmResourceTable_nextrsrc(netsnmp_handler_registration *reginfo,
 	}
 
 	if (data == NULL) {
-		DEBUGMSGTL((MODNAME_STR, "nextrsrc: exact match not found for "
+		DEBUGMSGTL((modname, "nextrsrc: exact match not found for "
 		    "index %lu; stopping\n", index));
 		snmp_free_varbind(var);
 		return (NULL);
@@ -394,7 +395,7 @@ sunFmResourceTable_nextrsrc(netsnmp_handler_registration *reginfo,
 	table_info->indexes = var;
 	table_info->number_indexes = 1;
 
-	DEBUGMSGTL((MODNAME_STR, "matching data is %lu/%s@%p\n", data->d_index,
+	DEBUGMSGTL((modname, "matching data is %lu/%s@%p\n", data->d_index,
 	    data->d_ari_fmri, data));
 
 	return (data);
@@ -462,8 +463,9 @@ sunFmResourceTable_handler(netsnmp_mib_handler *handler,
 				goto out;
 			break;
 		default:
-			(void) snmp_log(LOG_ERR, MODNAME_STR
-			    ": unsupported request mode %d\n", reqinfo->mode);
+			(void) snmp_log(LOG_ERR,
+			    "%s: unsupported request mode %d\n",
+			    modname, reqinfo->mode);
 			ret = SNMP_ERR_GENERR;
 			goto out;
 		}
@@ -544,7 +546,7 @@ sunFmResourceCount_handler(netsnmp_mib_handler *handler,
 		 */
 		case MODE_GET:
 		case MODE_GETNEXT:
-			DEBUGMSGTL((MODNAME_STR, "resource count is %u\n",
+			DEBUGMSGTL((modname, "resource count is %u\n",
 			    rsrc_count));
 			rsrc_count_long = (ulong_t)rsrc_count;
 			(void) snmp_set_var_typed_value(request->requestvb,
@@ -552,8 +554,9 @@ sunFmResourceCount_handler(netsnmp_mib_handler *handler,
 			    sizeof (rsrc_count_long));
 			break;
 		default:
-			(void) snmp_log(LOG_ERR, MODNAME_STR
-			    ": unsupported request mode: %d\n", reqinfo->mode);
+			(void) snmp_log(LOG_ERR,
+			    "%s: unsupported request mode: %d\n",
+			    modname, reqinfo->mode);
 			ret = SNMP_ERR_GENERR;
 		}
 	}
@@ -565,7 +568,7 @@ sunFmResourceCount_handler(netsnmp_mib_handler *handler,
 void
 sunFmResourceTable_init(void)
 {
-	DEBUGMSGTL((MODNAME_STR, "initializing resource\n"));
+	DEBUGMSGTL((modname, "initializing resource\n"));
 
 	rsrc_tinfo = SNMP_MALLOC_TYPEDEF(netsnmp_table_registration_info);
 	VERIFY3P(rsrc_tinfo, !=, NULL);
@@ -614,7 +617,7 @@ sunFmResourceTable_fini(void)
 	uu_avl_walk_t *walk;
 	sunFmResource_data_t *node;
 
-	DEBUGMSGTL((MODNAME_STR, "finalizing resource\n"));
+	DEBUGMSGTL((modname, "finalizing resource\n"));
 
 	VERIFY3U(unregister_mib(sunFmResourceTable_oid,
 	    OID_LENGTH(sunFmResourceTable_oid)), ==, MIB_UNREGISTERED_OK);

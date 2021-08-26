@@ -160,12 +160,11 @@ modinfo_update_one(const fmd_adm_modinfo_t *modinfo, void *arg)
 	if (data == NULL) {
 		uu_avl_index_t idx;
 
-		DEBUGMSGTL((MODNAME_STR, "found new fmd module %s\n",
+		DEBUGMSGTL((modname, "found new fmd module %s\n",
 		    modinfo->ami_name));
 		if ((data = SNMP_MALLOC_TYPEDEF(sunFmModule_data_t)) == NULL) {
-			(void) snmp_log(LOG_ERR, MODNAME_STR ": Out of memory "
-			    "for new module data at %s:%d\n", __FILE__,
-			    __LINE__);
+			(void) snmp_log(LOG_ERR, "%s: out of memory "
+			    "for new module data\n", modname);
 			return (1);
 		}
 		/*
@@ -175,7 +174,7 @@ modinfo_update_one(const fmd_adm_modinfo_t *modinfo, void *arg)
 		 * more consistent view of the fault manager.
 		 */
 		data->d_index = ++max_index;
-		DEBUGMSGTL((MODNAME_STR, "index %lu is %s@%p\n", data->d_index,
+		DEBUGMSGTL((modname, "index %lu is %s@%p\n", data->d_index,
 		    modinfo->ami_name, data));
 
 		(void) strlcpy(data->d_ami_name, modinfo->ami_name,
@@ -189,13 +188,13 @@ modinfo_update_one(const fmd_adm_modinfo_t *modinfo, void *arg)
 		(void) uu_avl_find(mod_index_avl, data, NULL, &idx);
 		uu_avl_insert(mod_index_avl, data, idx);
 
-		DEBUGMSGTL((MODNAME_STR, "completed new module %lu/%s@%p\n",
+		DEBUGMSGTL((modname, "completed new module %lu/%s@%p\n",
 		    data->d_index, data->d_ami_name, data));
 	}
 
 	data->d_valid = valid_stamp;
 
-	DEBUGMSGTL((MODNAME_STR, "timestamp updated for %lu/%s@%p: %d\n",
+	DEBUGMSGTL((modname, "timestamp updated for %lu/%s@%p: %d\n",
 	    data->d_index, data->d_ami_name, data, data->d_valid));
 
 	if ((update_ctx->uc_type & UCT_ALL) ||
@@ -231,20 +230,20 @@ modinfo_update(sunFmModule_update_ctx_t *update_ctx)
 
 	if ((adm = fmd_adm_open(update_ctx->uc_host, update_ctx->uc_prog,
 	    update_ctx->uc_version)) == NULL) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": Communication with fmd "
-		    "failed: %s\n", strerror(errno));
+		(void) snmp_log(LOG_ERR, "%s: communication with fmd "
+		    "failed: %s\n", modname, strerror(errno));
 		return (SNMP_ERR_RESOURCEUNAVAILABLE);
 	}
 
 	++valid_stamp;
 	if (fmd_adm_module_iter(adm, modinfo_update_one, update_ctx) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": fmd module information "
-		    "update failed: %s\n", fmd_adm_errmsg(adm));
+		(void) snmp_log(LOG_ERR, "%s: fmd module information "
+		    "update failed: %s\n", modname, fmd_adm_errmsg(adm));
 		fmd_adm_close(adm);
 		return (SNMP_ERR_RESOURCEUNAVAILABLE);
 	}
 
-	DEBUGMSGTL((MODNAME_STR, "module iteration completed\n"));
+	DEBUGMSGTL((modname, "module iteration completed\n"));
 
 	fmd_adm_close(adm);
 	return (SNMP_ERR_NOERROR);
@@ -320,7 +319,7 @@ sunFmModuleTable_nextmod(netsnmp_handler_registration *reginfo,
 		oid tmpoid[MAX_OID_LEN];
 		index = 1;
 
-		DEBUGMSGTL((MODNAME_STR, "nextmod: no indexes given\n"));
+		DEBUGMSGTL((modname, "nextmod: no indexes given\n"));
 		var = SNMP_MALLOC_TYPEDEF(netsnmp_variable_list);
 		(void) snmp_set_var_typed_value(var, ASN_UNSIGNED,
 		    (uchar_t *)&index, sizeof (index));
@@ -333,15 +332,15 @@ sunFmModuleTable_nextmod(netsnmp_handler_registration *reginfo,
 			snmp_free_varbind(var);
 			return (NULL);
 		}
-		DEBUGMSGTL((MODNAME_STR, "nextmod: built fake index: "));
-		DEBUGMSGVAR((MODNAME_STR, var));
-		DEBUGMSG((MODNAME_STR, "\n"));
+		DEBUGMSGTL((modname, "nextmod: built fake index: "));
+		DEBUGMSGVAR((modname, var));
+		DEBUGMSG((modname, "\n"));
 	} else {
 		var = snmp_clone_varbind(table_info->indexes);
 		index = *var->val.integer;
-		DEBUGMSGTL((MODNAME_STR, "nextmod: received index: "));
-		DEBUGMSGVAR((MODNAME_STR, var));
-		DEBUGMSG((MODNAME_STR, "\n"));
+		DEBUGMSGTL((modname, "nextmod: received index: "));
+		DEBUGMSGVAR((modname, var));
+		DEBUGMSG((modname, "\n"));
 		index++;
 	}
 
@@ -350,12 +349,12 @@ sunFmModuleTable_nextmod(netsnmp_handler_registration *reginfo,
 	table_info->number_indexes = 0;
 
 	if ((data = module_lookup_index_nextvalid(index)) == NULL) {
-		DEBUGMSGTL((MODNAME_STR, "nextmod: exact match not found for "
+		DEBUGMSGTL((modname, "nextmod: exact match not found for "
 		    "index %lu; trying next column\n", index));
 		if (table_info->colnum >=
 		    netsnmp_find_table_registration_info(reginfo)->max_column) {
 			snmp_free_varbind(var);
-			DEBUGMSGTL((MODNAME_STR, "nextmod: out of columns\n"));
+			DEBUGMSGTL((modname, "nextmod: out of columns\n"));
 			return (NULL);
 		}
 		table_info->colnum++;
@@ -365,7 +364,7 @@ sunFmModuleTable_nextmod(netsnmp_handler_registration *reginfo,
 	}
 
 	if (data == NULL) {
-		DEBUGMSGTL((MODNAME_STR, "nextmod: exact match not found for "
+		DEBUGMSGTL((modname, "nextmod: exact match not found for "
 		    "index %lu; stopping\n", index));
 		snmp_free_varbind(var);
 		return (NULL);
@@ -375,7 +374,7 @@ sunFmModuleTable_nextmod(netsnmp_handler_registration *reginfo,
 	table_info->indexes = var;
 	table_info->number_indexes = 1;
 
-	DEBUGMSGTL((MODNAME_STR, "matching data is %lu/%s@%p\n", data->d_index,
+	DEBUGMSGTL((modname, "matching data is %lu/%s@%p\n", data->d_index,
 	    data->d_ami_name, data));
 
 	return (data);
@@ -443,8 +442,9 @@ sunFmModuleTable_handler(netsnmp_mib_handler *handler,
 				goto out;
 			break;
 		default:
-			(void) snmp_log(LOG_ERR, MODNAME_STR
-			    ": unsupported request mode: %d\n", reqinfo->mode);
+			(void) snmp_log(LOG_ERR,
+			    "%s: unsupported request mode: %d\n", modname,
+			    reqinfo->mode);
 			ret = SNMP_ERR_GENERR;
 			goto out;
 		}
@@ -488,7 +488,7 @@ out:
 void
 sunFmModuleTable_init(void)
 {
-	DEBUGMSGTL((MODNAME_STR, "initializing module\n"));
+	DEBUGMSGTL((modname, "initializing module\n"));
 
 	mod_tinfo = SNMP_MALLOC_TYPEDEF(netsnmp_table_registration_info);
 	VERIFY3P(mod_tinfo, !=, NULL);
@@ -530,7 +530,7 @@ sunFmModuleTable_fini(void)
 	uu_avl_walk_t *walk;
 	sunFmModule_data_t *node;
 
-	DEBUGMSGTL((MODNAME_STR, "finalizing module\n"));
+	DEBUGMSGTL((modname, "finalizing module\n"));
 
 	VERIFY3U(unregister_mib(sunFmModuleTable_oid,
 	    OID_LENGTH(sunFmModuleTable_oid)), ==, MIB_UNREGISTERED_OK);

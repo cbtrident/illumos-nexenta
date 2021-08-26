@@ -21,21 +21,22 @@
 
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
-#ifndef _FMD_SNMP_H
-#define	_FMD_SNMP_H
+#ifndef _FM_SNMP_H
+#define	_FM_SNMP_H
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
+extern const char *const modname;
+
 /*
  * These values are derived from, and must remain consistent with, the
  * MIB definitions in SUN-FM-MIB.
  */
-#define	MODNAME_STR	"fm"
 #define	SUNFM_OID	1, 3, 6, 1, 4, 1, 42, 2, 195, 1
 
 #define	SUNFMPROBLEMTABLE_OID		SUNFM_OID, 1
@@ -144,4 +145,4 @@ extern void	deinit_fm(void);
 }
 #endif
 
-#endif	/* _FMD_SNMP_H */
+#endif	/* _FM_SNMP_H */
