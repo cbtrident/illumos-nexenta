@@ -21,8 +21,6 @@
 
 #include "sysevent_snmp.h"
 
-#include <pthread.h>
-
 const char *const modname = "sysevent";
 
 char hostname[MAXHOSTNAMELEN + 1];
@@ -39,68 +37,32 @@ static struct ssm_handler {
 	{ "", "", NULL, NULL }
 };
 
-static pthread_t ptid;
-
-static void *
-pid_thread(void *arg)
-{
-	pid_t pid = getpid();
-	int wait = 0;
-
-	DEBUGMSGTL((modname, "pid thread starting\n"));
-
-	/*
-	 * Workaround the forking madness in snmpd -- we need to
-	 * subscribe from the *forked* process so that event notifications
-	 * get our PID correctly.
-	 *
-	 * We also limit the wait to arbitrary long time of 10 seconds so that
-	 * we subscribe to event notifications when running with -f (don't fork)
-	 * specified.
-	 */
-	for (;;) {
-		struct ssm_handler *ssmhp = ssm_handlers;
-		const char *sc[1];
-
-		if (getpid() == pid && wait++ < 10) {
-			sleep(1);
-			continue;
-		}
-
-		for (ssmhp = ssm_handlers; ssmhp->handler != NULL; ssmhp++) {
-			VERIFY3P(ssmhp->shp, ==, NULL);
-			ssmhp->shp = sysevent_bind_handle(ssmhp->handler);
-			VERIFY3P(ssmhp->shp, !=, NULL);
-			sc[0] = ssmhp->subclass;
-			VERIFY3U(sysevent_subscribe_event(ssmhp->shp,
-			    ssmhp->class, sc, 1), ==, 0);
-			DEBUGMSGTL((modname, "subscribed to %s:%s\n",
-			    ssmhp->class, ssmhp->subclass));
-		}
-		break;
-	}
-
-	DEBUGMSGTL((modname, "pid thread exiting\n"));
-	return (NULL);
-}
-
 void
 init_sysevent(void)
 {
+	struct ssm_handler *ssmhp = ssm_handlers;
+	const char *sc[1];
+
 	(void) gethostname(hostname, MAXHOSTNAMELEN + 1);
 
 	ssm_disk_init();
 
-	/* Create PID change waiter thread */
-	VERIFY3U(pthread_create(&ptid, NULL, pid_thread, 0), ==, 0);
+	for (ssmhp = ssm_handlers; ssmhp->handler != NULL; ssmhp++) {
+		VERIFY3P(ssmhp->shp, ==, NULL);
+		ssmhp->shp = sysevent_bind_handle(ssmhp->handler);
+		VERIFY3P(ssmhp->shp, !=, NULL);
+		sc[0] = ssmhp->subclass;
+		VERIFY3U(sysevent_subscribe_event(ssmhp->shp, ssmhp->class,
+		    sc, 1), ==, 0);
+		DEBUGMSGTL((modname, "subscribed to %s:%s\n", ssmhp->class,
+		    ssmhp->subclass));
+	}
 }
 
 void
 deinit_sysevent(void)
 {
 	struct ssm_handler *ssmhp = ssm_handlers;
-
-	VERIFY3U(pthread_join(ptid, NULL), ==, 0);
 
 	for (ssmhp = ssm_handlers; ssmhp->handler != NULL; ssmhp++) {
 		sysevent_unsubscribe_event(ssmhp->shp, ssmhp->class);

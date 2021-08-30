@@ -67,7 +67,6 @@ static fmev_shdl_t evhdl;
 static pthread_mutex_t update_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t update_cv = PTHREAD_COND_INITIALIZER;
 
-static pthread_t ptid;
 static pthread_t utid;
 
 static oid sunFmFaultEventTable_oid[] = { SUNFMFAULTEVENTTABLE_OID };
@@ -395,42 +394,6 @@ problem_compare_uuid(const void *l, const void *r, void *private)
 	ASSERT(l_data != NULL && r_data != NULL);
 
 	return (strcmp(l_data->d_aci_uuid, r_data->d_aci_uuid));
-}
-
-static void *
-pid_thread(void *arg)
-{
-	pid_t pid = getpid();
-	int wait = 0;
-
-	DEBUGMSGTL((MODNAME_STR, "problem pid thread starting\n"));
-
-	/*
-	 * Workaround the forking madness in snmpd -- we need to
-	 * subscribe from the *forked* process so that event notifications
-	 * get our PID correctly.
-	 *
-	 * We also limit the wait to arbitrary long time of 10 seconds so that
-	 * we subscribe to event notifications when running with -f (don't fork)
-	 * specified.
-	 */
-	while (!exiting) {
-		if (exiting)
-			break;
-		if (getpid() != pid || wait == 10) {
-			/* Subscribe to fault event notifications */
-			evhdl = fmev_shdl_init(LIBFMEVENT_VERSION_2, NULL, NULL,
-			    NULL);
-			(void) fmev_shdl_subscribe(evhdl, "list.*", event_cb,
-			    NULL);
-			break;
-		}
-		wait++;
-		(void) sleep(1);
-	}
-
-	DEBUGMSGTL((MODNAME_STR, "problem pid thread exiting\n"));
-	return (NULL);
 }
 
 /*
@@ -1027,8 +990,9 @@ sunFmProblemTable_init(void)
 	VERIFY3U(netsnmp_register_table(problem_handler, problem_tinfo), ==,
 	    MIB_REGISTERED_OK);
 
-	/* Create PID change waiter thread */
-	VERIFY3U(pthread_create(&ptid, NULL, pid_thread, 0), ==, 0);
+	/* Subscribe to fault event notifications */
+	evhdl = fmev_shdl_init(LIBFMEVENT_VERSION_2, NULL, NULL, NULL);
+	(void) fmev_shdl_subscribe(evhdl, "list.*", event_cb, NULL);
 
 	/* Create update thread */
 	VERIFY3U(pthread_create(&utid, NULL, update_thread, 0), ==, 0);
@@ -1042,7 +1006,8 @@ sunFmProblemTable_fini(void)
 
 	DEBUGMSGTL((MODNAME_STR, "finalizing problem\n"));
 
-	VERIFY3U(pthread_join(ptid, NULL), ==, 0);
+	(void) fmev_shdl_unsubscribe(evhdl, "list.*");
+	(void) fmev_shdl_fini(evhdl);
 
 	(void) pthread_mutex_lock(&update_lock);
 	exiting = true;
