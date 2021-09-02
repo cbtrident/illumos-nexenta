@@ -21,16 +21,15 @@
 
 # standalone components and stuff we have modified locally
 SRCS=	$(ZLIB)/gzguts.h $(ZLIB)/zutil.h
-SRCS += $(SASRC)/__main.c $(SASRC)/assert.c
+SRCS += $(SASRC)/__main.c $(SASRC)/abort.c $(SASRC)/assert.c
 SRCS +=	$(SASRC)/bcd.c $(SASRC)/environment.c
-SRCS += $(SASRC)/getopt.c $(SASRC)/strtol.c
-SRCS += $(SASRC)/strtoul.c $(SASRC)/random.c
+SRCS += $(SASRC)/getopt.c $(SASRC)/random.c
 SRCS += $(SASRC)/sbrk.c $(SASRC)/twiddle.c
 SRCS += $(SASRC)/zalloc.c $(SASRC)/zalloc_malloc.c
 
-OBJS=	__main.o assert.o bcd.o environment.o \
+OBJS=	__main.o abort.o assert.o bcd.o environment.o \
 	getopt.o gets.o globals.o pager.o panic.o printf.o \
-	strdup.o strerror.o strtol.o strtoul.o random.o \
+	strdup.o strerror.o strtol.o strtoll.o strtoul.o strtoull.o random.o \
 	sbrk.o twiddle.o zalloc.o zalloc_malloc.o
 
 # private (pruned) versions of libc string functions
@@ -158,6 +157,11 @@ libstand_gzguts.h: $(ZLIB)/gzguts.h
 	    $^ > $@
 
 CLEANFILES += libstand_zutil.h libstand_gzguts.h
+
+# lz4 decompression functionality
+lz4.o := CPPFLAGS += -I$(LZ4)
+SRCS += $(LZ4)/lz4.c
+OBJS += lz4.o
 
 # io routines
 SRCS +=	$(SASRC)/closeall.c $(SASRC)/dev.c \

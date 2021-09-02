@@ -2,7 +2,9 @@
 \ Copyright (c) 2003 Aleksander Fafula <alex@fafula.com>
 \ Copyright (c) 2006-2015 Devin Teske <dteske@FreeBSD.org>
 \ All rights reserved.
-\ Copyright 2019 Nexenta Systems, Inc.
+\ Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+\ All rights reserved.
+\ Copyright 2020 Tintri by DDN. All rights reserved.
 \
 \ Redistribution and use in source and binary forms, with or without
 \ modification, are permitted provided that the following conditions
@@ -25,41 +27,45 @@
 \ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 \ SUCH DAMAGE.
 \
-\ $FreeBSD$
 
-39 logoX ! 1 logoY ! \ Initialize logo placement defaults
+variable PNGLogo
+0 PNGLogo !
+
+51 logoX !
+2 logoY !
 
 : logo+ ( x y c-addr/u -- x y' )
-	2swap 2dup at-xy 2swap \ position the cursor
-	[char] @ escc! \ replace @ with Esc
-	type \ print to the screen
-	1+ \ increase y for next time we're called
+	2swap 2dup at-xy 2swap	\ position the cursor
+	[char] @ escc!		\ replace @ with Esc
+	type			\ print to the screen
+	1+			\ increase y for next time we're called
 ;
 
-: logo ( x y -- ) \ color nexenta logo
-	s" loadfont /boot/fonts/10x18.fnt" evaluate
-	0 30 20 0 0 s" /boot/nexenta.png" fb-putimage if 2drop exit then
+: menupos ( y -- )	\ Adjust menu position
+	dup 14 +	\ timeout is 14 lines below menu start
+	n2s s" loader_menu_timeout_y" setenv
+	n2s s" loader_menu_y" setenv
+;
 
-	s"                                     " logo+
-	s"                                     " logo+
-	s"                                     " logo+
-	s"       `         ````                " logo+
-	s"      `:/`    `-/+ooooo++/-.         " logo+
-	s"    `/o+`   `/oooooooooooooo+:`      " logo+
-	s"   .+oo/   `+oooooooooooooooooo:`    " logo+
-	s"  .+ooo+   .oooooooooooooooooooo+`   " logo+
-	s"  +ooooo:   :oooooooooo+//::/+ooo+`  " logo+
-	s" .ooooooo+.  `-:///:-.`       `-/o:  " logo+
-	s" .ooooooooo/-         .:///:.    -/  " logo+
-	s" `+oooooooooo+-     `+ooooooo/    .  " logo+
-	s"  -oooooooooooo/   `+ooooooooo-      " logo+
-	s"   :oooooooooooo-  -oooooooooo:      " logo+
-	s"    .+ooooooooo+.  +oooooooooo-      " logo+
-	s"      .:+ooooo/.  -oooooooooo/       " logo+
-	s"         ``.`    -+ooooooooo/`       " logo+
-	s"               ./ooooooooo/.         " logo+
-	s"         .-::/ooooooooo+:`           " logo+
-	s"           `.-::::::-.`              " logo+
+: nexenta     0  30  20   0   0	s" /boot/nexenta.png" fb-putimage ;
+
+: logo ( x y -- )
+	framebuffer? if
+		s" loader_font" set_font
+		clear
+		at-bl
+		nexenta if
+			1 PNGLogo !
+			13 menupos
+			2drop
+			exit
+		then
+	then
+
+	0 PNGLogo !
+	11 menupos
+	at-bl
 
 	2drop
 ;
+

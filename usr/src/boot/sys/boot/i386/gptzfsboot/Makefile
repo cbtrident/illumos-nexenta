@@ -62,7 +62,7 @@ all: $(PROG)
 
 install: all $(ROOTBOOTPROG)
 
-OBJS =	multiboot.o zfsboot.o sio.o cons.o devopen.o \
+OBJS =	mb_header.o zfsboot.o sio.o cons.o devopen.o \
 	part.o disk.o bcache.o zfs_cmd.o
 
 part.o := CPPFLAGS += -I$(ZLIB)
@@ -89,7 +89,7 @@ CLEANFILES +=	gptzfsboot.bin gptzfsboot.out
 gptzfsboot.bin: gptzfsboot.out
 	$(OBJCOPY) -S -O binary gptzfsboot.out $@
 
-gptzfsboot.out: $(BTXCRT) $(OBJS) $(LIBSTAND)
+gptzfsboot.out: $(BTXCRT) $(OBJS) $(LIBI386) $(LIBSTAND)
 	$(LD) $(LD_FLAGS) -T $(LDSCRIPT) -o $@ $(BTXCRT) $(OBJS) $(LIBS)
 
 machine:
@@ -108,8 +108,8 @@ $(OBJS): machine x86
 %.o:	../../common/%.c
 	$(COMPILE.c) $<
 
-multiboot.o: ../../common/multiboot.S
-	$(COMPILE.S) ../../common/multiboot.S
+%.o: ../../common/%.S
+	$(COMPILE.S) $<
 
 clobber: clean
 

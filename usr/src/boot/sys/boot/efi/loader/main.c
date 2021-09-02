@@ -81,7 +81,7 @@ efi_zfs_is_preferred(EFI_HANDLE *h)
 	EFI_DEVICE_PATH *devpath, *dp, *node;
 	HARDDRIVE_DEVICE_PATH *hd;
 	bool ret;
-	extern UINT64 start_sector;	/* from multiboot.S */
+	extern UINT64 start_sector;	/* from mb_header.S */
 
 	/* This check is true for chainloader case. */
 	if (h == img->DeviceHandle)
@@ -173,7 +173,7 @@ has_keyboard(void)
 	 */
 	hin_end = &hin[sz / sizeof (*hin)];
 	for (walker = hin; walker < hin_end; walker++) {
-		status = BS->HandleProtocol(*walker, &devid, (void **)&path);
+		status = OpenProtocolByHandle(*walker, &devid, (void **)&path);
 		if (EFI_ERROR(status))
 			continue;
 
@@ -269,12 +269,12 @@ set_currdev_pdinfo(pdinfo_t *dp)
 		currdev.dd.d_dev = dp->pd_devsw;
 		if (dp->pd_parent == NULL) {
 			currdev.dd.d_unit = dp->pd_unit;
-			currdev.d_slice = -1;
-			currdev.d_partition = -1;
+			currdev.d_slice = D_SLICENONE;
+			currdev.d_partition = D_PARTNONE;
 		} else {
 			currdev.dd.d_unit = dp->pd_parent->pd_unit;
 			currdev.d_slice = dp->pd_unit;
-			currdev.d_partition = 255;	/* Assumes GPT */
+			currdev.d_partition = D_PARTISGPT; /* Assumes GPT */
 		}
 		set_currdev_devdesc((struct devdesc *)&currdev);
 	} else {
@@ -482,7 +482,7 @@ main(int argc, CHAR16 *argv[])
 	archsw.arch_zfs_probe = efi_zfs_probe;
 
 	/* Get our loaded image protocol interface structure. */
-	BS->HandleProtocol(IH, &imgid, (void **)&img);
+	(void) OpenProtocolByHandle(IH, &imgid, (void **)&img);
 
 	/* Init the time source */
 	efi_time_init();
@@ -648,7 +648,7 @@ main(int argc, CHAR16 *argv[])
 		efi_free_devpath_name(text);
 	}
 
-	status = BS->HandleProtocol(img->DeviceHandle, &devid,
+	status = OpenProtocolByHandle(img->DeviceHandle, &devid,
 	    (void **)&imgpath);
 	if (status == EFI_SUCCESS) {
 		text = efi_devpath_name(imgpath);
@@ -694,7 +694,7 @@ main(int argc, CHAR16 *argv[])
 		if (!interactive_interrupt("Failed to find bootable partition"))
 			return (EFI_NOT_FOUND);
 
-	autoload_font();		/* Set up the font list for console. */
+	autoload_font(false);		/* Set up the font list for console. */
 	efi_init_environment();
 	setenv("ISADIR", "amd64", 1);	/* we only build 64bit */
 	bi_isadir();			/* set ISADIR */
@@ -1066,7 +1066,7 @@ command_chain(int argc, char *argv[])
 		command_errmsg = "LoadImage failed";
 		return (CMD_ERROR);
 	}
-	status = BS->HandleProtocol(loaderhandle, &LoadedImageGUID,
+	status = OpenProtocolByHandle(loaderhandle, &LoadedImageGUID,
 	    (void **)&loaded_image);
 
 	if (argc > 2) {

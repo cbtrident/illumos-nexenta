@@ -11,6 +11,8 @@
 
 #
 # Copyright 2017 Toomas Soome <tsoome@me.com>
+# Copyright 2019 Joyent, Inc.
+# Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 #
 
 # loader.help build needs better awk
@@ -20,13 +22,16 @@ OBJCOPY=	$(GNU_ROOT)/bin/gobjcopy
 OBJDUMP=	$(GNU_ROOT)/bin/gobjdump
 GSTRIP=		$(GNU_ROOT)/bin/gstrip
 
+GLDTARGET=	-melf_i386_sol2
+LDFLAGS	+=	$(GLDTARGET)
+
 # Default Console font setup.
 # We want it to be the same as kernel.
 # We build compressed, stripped down version of the default font, so we have
 # bare minimum for case we can not load font from the OS root.
 
 FONT=		8x16
-FONT_SRC=	ter-u16n.bdf
+FONT_SRC=	ter-u16b.bdf
 FONT_DIR=	$(SRC)/data/consfonts
 
 PNGLITE=	$(SRC)/common/pnglite
@@ -36,6 +41,7 @@ LIBSRC=		$(SRC)/boot/lib
 SASRC=		$(LIBSRC)/libstand
 ZFSSRC=		$(SASRC)/zfs
 ZLIB=		$(SRC)/contrib/zlib
+LZ4=		$(SRC)/common/lz4
 
 # set standard values
 AS_CPPFLAGS=

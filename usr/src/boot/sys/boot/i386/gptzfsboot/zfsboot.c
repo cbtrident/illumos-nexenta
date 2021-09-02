@@ -30,6 +30,7 @@
 #include <machine/pc/bios.h>
 
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stddef.h>
 
 #include <a.out.h>
@@ -48,7 +49,7 @@
 #include "libzfs.h"
 
 #define	ARGS		0x900
-#define	NOPT		14
+#define	NOPT		15
 #define	NDEV		3
 
 #define	BIOS_NUMDRIVES	0x475
@@ -70,7 +71,7 @@ extern uint32_t _end;
 extern const struct multiboot_header mb_header;
 extern uint64_t start_sector;
 
-static const char optstr[NOPT] = "DhaCcdgmnpqrsv"; /* Also 'P', 'S' */
+static const char optstr[NOPT] = "DhaCcdgmnpqrstv"; /* Also 'P', 'S' */
 static const unsigned char flags[NOPT] = {
     RBX_DUAL,
     RBX_SERIAL,
@@ -85,9 +86,22 @@ static const unsigned char flags[NOPT] = {
     RBX_QUIET,
     RBX_DFLTROOT,
     RBX_SINGLE,
+    RBX_TEXT_MODE,
     RBX_VERBOSE
 };
 uint32_t opts;
+
+/*
+ * Paths to try loading before falling back to the boot2 prompt.
+ */
+#define	PATH_ZFSLOADER "/boot/zfsloader"
+static const struct string {
+	const char *p;
+	size_t len;
+} loadpath[] = {
+	{ PATH_LOADER, sizeof (PATH_LOADER) },
+	{ PATH_ZFSLOADER, sizeof (PATH_ZFSLOADER) }
+};
 
 static const unsigned char dev_maj[NDEV] = {30, 4, 2};
 
@@ -129,7 +143,9 @@ struct fs_ops *file_system[] = {
 int
 main(void)
 {
-	int auto_boot, i, fd;
+	unsigned i;
+	int fd;
+	bool auto_boot;
 	struct disk_devdesc devdesc;
 
 	bios_getmem();
@@ -197,14 +213,19 @@ main(void)
 
 	/* Process configuration file */
 	setenv("screen-#rows", "24", 1);
-	auto_boot = 1;
+	auto_boot = true;
 
 	fd = open(PATH_CONFIG, O_RDONLY);
 	if (fd == -1)
 		fd = open(PATH_DOTCONFIG, O_RDONLY);
 
 	if (fd != -1) {
-		read(fd, cmd, sizeof (cmd));
+		ssize_t cmdlen;
+
+		if ((cmdlen = read(fd, cmd, sizeof (cmd))) > 0)
+			cmd[cmdlen] = '\0';
+		else
+			*cmd = '\0';
 		close(fd);
 	}
 
@@ -216,37 +237,29 @@ main(void)
 		 */
 		memcpy(cmddup, cmd, sizeof (cmd));
 		if (parse_cmd())
-			auto_boot = 0;
+			auto_boot = false;
 		if (!OPT_CHECK(RBX_QUIET))
 			printf("%s: %s\n", PATH_CONFIG, cmddup);
 		/* Do not process this command twice */
 		*cmd = 0;
 	}
 
-	/*
-	 * Try to exec stage 3 boot loader. If interrupted by a keypress,
-	 * or in case of failure, switch off auto boot.
-	 */
-
 	if (auto_boot && !*kname) {
-		memcpy(kname, PATH_LOADER, sizeof (PATH_LOADER));
-		if (!keyhit(3)) {
+		/*
+		 * Try to exec stage 3 boot loader. If interrupted by a
+		 * keypress, or in case of failure, drop the user to the
+		 * boot2 prompt..
+		 */
+		auto_boot = false;
+		for (i = 0; i < nitems(loadpath); i++) {
+			memcpy(kname, loadpath[i].p, loadpath[i].len);
+			if (keyhit(3))
+				break;
 			load();
-			auto_boot = 0;
-			/*
-			 * Try to fall back to /boot/zfsloader.
-			 * This fallback should be eventually removed.
-			 * Created: 08/03/2018
-			 */
-#define	PATH_ZFSLOADER "/boot/zfsloader"
-			memcpy(kname, PATH_ZFSLOADER, sizeof (PATH_ZFSLOADER));
-			load();
-			/*
-			 * Still there? restore default loader name for prompt.
-			 */
-			memcpy(kname, PATH_LOADER, sizeof (PATH_LOADER));
 		}
 	}
+	/* Reset to default */
+	memcpy(kname, loadpath[0].p, loadpath[0].len);
 
 	/* Present the user with the boot2 prompt. */
 
@@ -261,7 +274,7 @@ main(void)
 			getstr(cmd, sizeof (cmd));
 		else if (!auto_boot || !OPT_CHECK(RBX_QUIET))
 			putchar('\n');
-		auto_boot = 0;
+		auto_boot = false;
 		if (parse_cmd())
 			putchar('\a');
 		else
@@ -273,8 +286,7 @@ main(void)
 void
 exit(int x)
 {
-	while (1)
-		;
+	__exit(x);
 }
 
 static void
@@ -416,10 +428,9 @@ mount_root(char *arg)
 	struct i386_devdesc *ddesc;
 	uint8_t part;
 
-	root = malloc(strlen(arg) + 2);
-	if (root == NULL)
+	if (asprintf(&root, "%s:", arg) < 0)
 		return (1);
-	sprintf(root, "%s:", arg);
+
 	if (i386_getdev((void **)&ddesc, root, NULL)) {
 		free(root);
 		return (1);
@@ -438,6 +449,7 @@ mount_root(char *arg)
 		    bdev->dd.d_unit, part);
 		bootinfo.bi_bios_dev = bd_unit2bios(bdev);
 	}
+	strncpy(boot_devname, root, sizeof (boot_devname));
 	setenv("currdev", root, 1);
 	free(root);
 	return (0);
@@ -470,18 +482,22 @@ parse_cmd(void)
 	char *ep, *p, *q;
 	const char *cp;
 	char line[80];
-	int c, i, j;
+	int c, i;
 
 	while ((c = *arg++)) {
-		if (c == ' ' || c == '\t' || c == '\n')
+		if (isspace(c))
 			continue;
-		for (p = arg; *p && *p != '\n' && *p != ' ' && *p != '\t'; p++)
+
+		for (p = arg; *p != '\0' && !isspace(*p); p++)
 			;
 		ep = p;
-		if (*p)
-			*p++ = 0;
+		if (*p != '\0')
+			*p++ = '\0';
 		if (c == '-') {
 			while ((c = *arg++)) {
+				if (isspace(c))
+					break;
+
 				if (c == 'P') {
 					if (*(uint8_t *)PTOV(0x496) & 0x10) {
 						cp = "yes";
@@ -493,14 +509,22 @@ parse_cmd(void)
 					printf("Keyboard: %s\n", cp);
 					continue;
 				} else if (c == 'S') {
-					j = 0;
-					while ((unsigned int)
-					    (i = *arg++ - '0') <= 9)
-						j = j * 10 + i;
-					if (j > 0 && i == -'0') {
-						comspeed = j;
+					char *end;
+
+					errno = 0;
+					i = strtol(arg, &end, 10);
+					if (errno == 0 &&
+					    *arg != '\0' &&
+					    *end == '\0' &&
+					    i > 0 &&
+					    i <= 115200) {
+						comspeed = i;
 						break;
+					} else {
+						printf("warning: bad value for "
+						    "speed: %s\n", arg);
 					}
+					arg = end;
 					/*
 					 * Fall through to error below
 					 * ('S' not in optstr[]).
@@ -556,10 +580,11 @@ parse_cmd(void)
 			 * If there is a colon, switch pools.
 			 */
 			if (strncmp(arg, "zfs:", 4) == 0)
-				q = strchr(arg + 4, ':');
+				q = strrchr(arg + 4, ':');
 			else
-				q = strchr(arg, ':');
-			if (q) {
+				q = strrchr(arg, ':');
+
+			if (q != NULL) {
 				*q++ = '\0';
 				if (mount_root(arg) != 0)
 					return (-1);

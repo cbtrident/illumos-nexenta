@@ -28,10 +28,13 @@ include $(SRC)/lib/Makefile.lib
 LIBS=	$(DYNLIB) $(LINTLIB)
 
 FICLDIR=	$(SRC)/common/ficl
+LZ4=		$(SRC)/common/lz4
 CSTD=	$(CSTD_GNU99)
 PNGLITE=	$(SRC)/common/pnglite
 CPPFLAGS +=	-I.. -I$(FICLDIR) -I$(FICLDIR)/emu -D_LARGEFILE64_SOURCE=1
-CPPFLAGS +=	-I$(PNGLITE)
+CPPFLAGS +=	-I$(PNGLITE) -I$(LZ4)
+CFLAGS += $(C_BIGPICFLAGS)
+CFLAGS64 += $(C_BIGPICFLAGS64)
 
 # As variable "count" is marked volatile, gcc 4.4.4 will complain about
 # function argument. So we switch this warning off
@@ -59,7 +62,7 @@ pics/%.o:	$(FICLDIR)/emu/%.c $(HEADERS)
 	$(COMPILE.c) -o $@ $<
 	$(POST_PROCESS_O)
 
-pics/%.o:	$(FICLDIR)/softcore/%.c $(HEADERS)
+pics/%.o:	$(LZ4)/%.c $(HEADERS)
 	$(COMPILE.c) -o $@ $<
 	$(POST_PROCESS_O)
 
