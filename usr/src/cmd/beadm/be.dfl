@@ -20,16 +20,15 @@
 #
 
 #
-# Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
 #
-# BE_HAS_GRUB is used to control the transition from GRUB to the
+# BE_HAS_GRUB was used to control the transition from GRUB to the
 # FreeBSD boot loader "loader".
-# The current default setting for BE_HAS_GRUB is "true". Setting this
-# to "false" will activate "loader". Once the new "loader" is
-# activated, changing this variable will have no impact.
+# This file is provided for backwards compatibility and will
+# be removed in a future release of the operating system.
 #
 # The current consumers of this file are bootadm, beadm.
 
-BE_HAS_GRUB=true
+BE_HAS_GRUB=false
