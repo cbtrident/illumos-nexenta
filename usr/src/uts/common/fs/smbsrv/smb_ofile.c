@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2011-2020 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2011-2021 Tintri by DDN, Inc. All rights reserved.
  * Copyright 2016 Syneto S.R.L. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
@@ -754,6 +754,18 @@ again:
 		cv_wait(&of->f_cv, &of->f_mutex);
 		goto again;
 
+	/*
+	 * Leases whose owner is EXPIRED may still have other non-closing ofiles
+	 * onto which the breaking state will move once the owner is closed.
+	 * That break will still need to be acknowledged, so we'll still need to
+	 * dispatch the thread that will do a 'local ACK'.
+	 * Non-leased ofiles will have their breaking state cleared once they're
+	 * closed.
+	 */
+	case SMB_OFILE_STATE_EXPIRED:
+		if (of->f_lease == NULL)
+			break;
+		/* FALLTHROUGH */
 	case SMB_OFILE_STATE_OPEN:
 	case SMB_OFILE_STATE_ORPHANED:
 	case SMB_OFILE_STATE_SAVE_DH:

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2021 Tintri by DDN, Inc.  All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -708,6 +708,7 @@ smb2_lease_ofile_close(smb_ofile_t *ofile)
 		return;
 	}
 	smb_oplock_move(node, ofile, o);
+	lease->ls_oplock_ofile = o;
 
 	smb_ofile_release(o);
 }

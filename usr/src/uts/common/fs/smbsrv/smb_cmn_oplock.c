@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2020 Tintri by DDN, Inc.  All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -1492,6 +1492,34 @@ smb_oplock_ack_break(
 		goto out;
 	}
 
+	/*
+	 * The lease owner may have changed before the lock was taken.
+	 * Only the lease owner has valid oplock state, so we need to
+	 * switch to using that ofile.
+	 *
+	 * Note: there is no hold on the lease owner. Its validity
+	 * is guaranteed by the fact that it is the lease owner and
+	 * we hold the oplock mutex; it will no longer be the lease
+	 * owner once it is closed (and is at risk of becoming invalid).
+	 */
+	if (ofile->f_lease != NULL) {
+#ifndef	TESTJIG
+		ofile = ofile->f_lease->ls_oplock_ofile;
+#endif
+		/*
+		 * The owner should only be NULL if there are no more
+		 * open ofiles using the lease.
+		 * Any BREAKING flags associated with this lease should have
+		 * been cleared when the final open was closed
+		 * (in smb_oplock_break_CLOSE()).
+		 */
+		if (ofile == NULL) {
+			*rop = LEVEL_NONE;
+			status = NT_STATUS_SUCCESS;
+			goto out;
+		}
+	}
+
 	if (type == LEVEL_NONE || type == LEVEL_TWO) {
 		/*
 		 * If Open.Stream.Oplock.ExclusiveOpen is not equal to Open,
@@ -2087,7 +2115,11 @@ out:
 	    type == LEVEL_GRANULAR &&
 	    *rop != LEVEL_NONE) {
 		*rop |= LEVEL_GRANULAR;
-		/* As above, leased oplock may have moved. */
+		/*
+		 * If a new oplock was granted, then ls_oplock_ofile may
+		 * be NULL. Set it to the ofile on which the new oplock
+		 * was granted.
+		 */
 #ifndef	TESTJIG
 		if (ofile->f_lease != NULL)
 			ofile->f_lease->ls_oplock_ofile = ofile;
@@ -2674,8 +2706,14 @@ smb_oplock_break_DELETE(smb_node_t *node, smb_ofile_t *ofile)
  */
 
 /*
- * Common section for all cases above
- * Note: When called via FEM: ofile == NULL
+ * Common section for all cases above.
+ *
+ * Once we decide to set one of the BREAKING flags, the break MUST be
+ * acknowledged (via smb_oplock_ack_break() or the final
+ * smb_oplock_break_CLOSE()), so that they may be cleared. Callers will wait for
+ * these to clear (up to smb_oplock_timeout_def milliseconds).
+ *
+ * Note: When called via FEM: ofile == NULL.
  */
 static uint32_t
 smb_oplock_break_cmn(smb_node_t *node,
