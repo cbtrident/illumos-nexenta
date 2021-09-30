@@ -111,7 +111,7 @@ struct paletteentry {
 	uint8_t Blue;
 	uint8_t Green;
 	uint8_t Red;
-	uint8_t Alignment;
+	uint8_t Reserved;
 } __packed;
 
 struct flatpanelinfo
@@ -142,6 +142,7 @@ struct flatpanelinfo
 
 #define	CMAP_SIZE		256	/* Number of colors in palette */
 
+extern struct paletteentry pe8[CMAP_SIZE];
 extern int palette_format;
 
 /* high-level VBE helpers, from vbe.c */

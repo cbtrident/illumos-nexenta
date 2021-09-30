@@ -144,14 +144,6 @@ static void	tem_pix_cls_range(struct tem_vt_state *, screen_pos_t, int,
 static void	tem_pix_cls(struct tem_vt_state *, int,
 		    screen_pos_t, screen_pos_t);
 
-static void	bit_to_pix4(struct tem_vt_state *tem, tem_char_t c,
-		    text_color_t fg_color, text_color_t bg_color);
-static void	bit_to_pix8(struct tem_vt_state *tem, tem_char_t c,
-		    text_color_t fg_color, text_color_t bg_color);
-static void	bit_to_pix16(struct tem_vt_state *tem, tem_char_t c,
-		    text_color_t fg_color, text_color_t bg_color);
-static void	bit_to_pix24(struct tem_vt_state *tem, tem_char_t c,
-		    text_color_t fg_color, text_color_t bg_color);
 static void	bit_to_pix32(struct tem_vt_state *tem, tem_char_t c,
 		    text_color_t fg_color, text_color_t bg_color);
 
@@ -221,6 +213,11 @@ tem_internal_init(struct tem_vt_state *ptem,
 	size = width * sizeof (tem_char_t);
 	ptem->tvs_outbuf = malloc(size);
 	if (ptem->tvs_outbuf == NULL)
+		panic("out of memory in tem_internal_init()\n");
+
+	ptem->tvs_maxtab = width / 8;
+	ptem->tvs_tabs = calloc(ptem->tvs_maxtab, sizeof (*ptem->tvs_tabs));
+	if (ptem->tvs_tabs == NULL)
 		panic("out of memory in tem_internal_init()\n");
 
 	tem_reset_display(ptem, clear_screen, init_color);
@@ -303,6 +300,9 @@ tem_free_buf(struct tem_vt_state *tem)
 
 	free(tem->tvs_screen_buf);
 	tem->tvs_screen_buf = NULL;
+
+	free(tem->tvs_tabs);
+	tem->tvs_tabs = NULL;
 }
 
 static int
@@ -2292,35 +2292,12 @@ static void
 tem_pix_bit2pix(struct tem_vt_state *tem, term_char_t c)
 {
 	text_color_t fg, bg;
-	void (*fp)(struct tem_vt_state *, tem_char_t,
-	    unsigned char, unsigned char);
 
 	fg = DEFAULT_ANSI_FOREGROUND;
 	bg = DEFAULT_ANSI_BACKGROUND;
 
 	tem_get_color(&fg, &bg, c);
-	switch (tems.ts_pdepth) {
-	case 4:
-		fp = bit_to_pix4;
-		break;
-	case 8:
-		fp = bit_to_pix8;
-		break;
-	case 15:
-	case 16:
-		fp = bit_to_pix16;
-		break;
-	case 24:
-		fp = bit_to_pix24;
-		break;
-	case 32:
-		fp = bit_to_pix32;
-		break;
-	default:
-		return;
-	}
-
-	fp(tem, c.tc_char, fg, bg);
+	bit_to_pix32(tem, c.tc_char, fg, bg);
 }
 
 
@@ -2431,7 +2408,7 @@ tem_back_tab(struct tem_vt_state *tem)
 static void
 tem_tab(struct tem_vt_state *tem)
 {
-	int	i;
+	size_t	i;
 	screen_pos_t	tabstop;
 
 	tabstop = tems.ts_c_dimension.width - 1;
@@ -2449,10 +2426,9 @@ tem_tab(struct tem_vt_state *tem)
 static void
 tem_set_tab(struct tem_vt_state *tem)
 {
-	int	i;
-	int	j;
+	size_t	i, j;
 
-	if (tem->tvs_ntabs == TEM_MAXTAB)
+	if (tem->tvs_ntabs == tem->tvs_maxtab)
 		return;
 	if (tem->tvs_ntabs == 0 ||
 	    tem->tvs_tabs[tem->tvs_ntabs] < tem->tvs_c_cursor.col) {
@@ -2475,8 +2451,7 @@ tem_set_tab(struct tem_vt_state *tem)
 static void
 tem_clear_tabs(struct tem_vt_state *tem, int action)
 {
-	int	i;
-	int	j;
+	size_t	i, j;
 
 	switch (action) {
 	case 3: /* clear all tabs */
@@ -2658,36 +2633,14 @@ tem_pix_cursor(struct tem_vt_state *tem, short action)
 	bg = DEFAULT_ANSI_BACKGROUND;
 	tem_get_color(&fg, &bg, c);
 
-	switch (tems.ts_pdepth) {
-	case 4:
-		ca.fg_color.mono = fg;
-		ca.bg_color.mono = bg;
-		break;
-	case 8:
-		ca.fg_color.mono = tems.ts_color_map(fg);
-		ca.bg_color.mono = tems.ts_color_map(bg);
-		break;
-	case 15:
-	case 16:
-		color = tems.ts_color_map(fg);
-		ca.fg_color.sixteen[0] = (color >> 8) & 0xFF;
-		ca.fg_color.sixteen[1] = color & 0xFF;
-		color = tems.ts_color_map(bg);
-		ca.bg_color.sixteen[0] = (color >> 8) & 0xFF;
-		ca.bg_color.sixteen[1] = color & 0xFF;
-		break;
-	case 24:
-	case 32:
-		color = tems.ts_color_map(fg);
-		ca.fg_color.twentyfour[0] = (color >> 16) & 0xFF;
-		ca.fg_color.twentyfour[1] = (color >> 8) & 0xFF;
-		ca.fg_color.twentyfour[2] = color & 0xFF;
-		color = tems.ts_color_map(bg);
-		ca.bg_color.twentyfour[0] = (color >> 16) & 0xFF;
-		ca.bg_color.twentyfour[1] = (color >> 8) & 0xFF;
-		ca.bg_color.twentyfour[2] = color & 0xFF;
-		break;
-	}
+	color = tems.ts_color_map(fg);
+	ca.fg_color.twentyfour[0] = (color >> 16) & 0xFF;
+	ca.fg_color.twentyfour[1] = (color >> 8) & 0xFF;
+	ca.fg_color.twentyfour[2] = color & 0xFF;
+	color = tems.ts_color_map(bg);
+	ca.bg_color.twentyfour[0] = (color >> 16) & 0xFF;
+	ca.bg_color.twentyfour[1] = (color >> 8) & 0xFF;
+	ca.bg_color.twentyfour[2] = color & 0xFF;
 
 	ca.action = action;
 
@@ -2706,61 +2659,6 @@ tem_pix_cursor(struct tem_vt_state *tem, short action)
 			    tems.ts_font.vf_width;
 		}
 	}
-}
-
-static void
-bit_to_pix4(struct tem_vt_state *tem,
-    tem_char_t c,
-    text_color_t fg_color,
-    text_color_t bg_color)
-{
-	uint8_t *dest = (uint8_t *)tem->tvs_pix_data;
-	font_bit_to_pix4(&tems.ts_font, dest, c, fg_color, bg_color);
-}
-
-static void
-bit_to_pix8(struct tem_vt_state *tem,
-    tem_char_t c,
-    text_color_t fg_color,
-    text_color_t bg_color)
-{
-	uint8_t *dest = (uint8_t *)tem->tvs_pix_data;
-
-	fg_color = (text_color_t)tems.ts_color_map(fg_color);
-	bg_color = (text_color_t)tems.ts_color_map(bg_color);
-	font_bit_to_pix8(&tems.ts_font, dest, c, fg_color, bg_color);
-}
-
-static void
-bit_to_pix16(struct tem_vt_state *tem,
-    tem_char_t c,
-    text_color_t fg_color4,
-    text_color_t bg_color4)
-{
-	uint16_t fg_color16, bg_color16;
-	uint16_t *dest;
-
-	fg_color16 = (uint16_t)tems.ts_color_map(fg_color4);
-	bg_color16 = (uint16_t)tems.ts_color_map(bg_color4);
-
-	dest = (uint16_t *)tem->tvs_pix_data;
-	font_bit_to_pix16(&tems.ts_font, dest, c, fg_color16, bg_color16);
-}
-
-static void
-bit_to_pix24(struct tem_vt_state *tem,
-    tem_char_t c,
-    text_color_t fg_color4,
-    text_color_t bg_color4)
-{
-	uint32_t fg_color32, bg_color32;
-	uint8_t *dest;
-
-	fg_color32 = tems.ts_color_map(fg_color4);
-	bg_color32 = tems.ts_color_map(bg_color4);
-
-	dest = (uint8_t *)tem->tvs_pix_data;
-	font_bit_to_pix24(&tems.ts_font, dest, c, fg_color32, bg_color32);
 }
 
 static void

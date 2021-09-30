@@ -1953,7 +1953,7 @@ static void
 tem_safe_tab(struct tem_vt_state *tem,
     cred_t *credp, enum called_from called_from)
 {
-	int	i;
+	size_t	i;
 	screen_pos_t	tabstop;
 
 	ASSERT((MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&tem->tvs_lock)) ||
@@ -1975,10 +1975,9 @@ tem_safe_tab(struct tem_vt_state *tem,
 static void
 tem_safe_set_tab(struct tem_vt_state *tem)
 {
-	int	i;
-	int	j;
+	size_t	i, j;
 
-	if (tem->tvs_ntabs == TEM_MAXTAB)
+	if (tem->tvs_ntabs == tem->tvs_maxtab)
 		return;
 	if (tem->tvs_ntabs == 0 ||
 	    tem->tvs_tabs[tem->tvs_ntabs] < tem->tvs_c_cursor.col) {
@@ -2001,8 +2000,7 @@ tem_safe_set_tab(struct tem_vt_state *tem)
 static void
 tem_safe_clear_tabs(struct tem_vt_state *tem, int action)
 {
-	int	i;
-	int	j;
+	size_t	i, j;
 
 	switch (action) {
 	case 3: /* clear all tabs */
@@ -2218,9 +2216,17 @@ tem_safe_pix_cursor(struct tem_vt_state *tem, short action,
 
 	switch (tems.ts_pdepth) {
 	case 4:
-	case 8:
 		ca.fg_color.mono = fg;
 		ca.bg_color.mono = bg;
+		break;
+	case 8:
+#ifdef _HAVE_TEM_FIRMWARE
+		ca.fg_color.mono = fg;
+		ca.bg_color.mono = bg;
+#else
+		ca.fg_color.mono = tems.ts_color_map(fg);
+		ca.bg_color.mono = tems.ts_color_map(bg);
+#endif
 		break;
 	case 15:
 	case 16:
@@ -2261,8 +2267,8 @@ tem_safe_pix_cursor(struct tem_vt_state *tem, short action,
 		ca.bg_color.twentyfour[0] = (color >> 16) & 0xFF;
 		ca.bg_color.twentyfour[1] = (color >> 8) & 0xFF;
 		ca.bg_color.twentyfour[2] = color & 0xFF;
-		break;
 #endif
+		break;
 	}
 
 	ca.action = action;
@@ -2297,6 +2303,11 @@ bit_to_pix8(struct tem_vt_state *tem, tem_char_t c, text_color_t fg_color,
     text_color_t bg_color)
 {
 	uint8_t *dest = (uint8_t *)tem->tvs_pix_data;
+
+#ifndef _HAVE_TEM_FIRMWARE
+	fg_color = (text_color_t)tems.ts_color_map(fg_color);
+	bg_color = (text_color_t)tems.ts_color_map(bg_color);
+#endif
 	font_bit_to_pix8(&tems.ts_font, dest, c, fg_color, bg_color);
 }
 
