@@ -21,11 +21,11 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Joyent, Inc.
  * Copyright 2017 RackTop Systems.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -4772,18 +4772,19 @@ ztest_get_random_vdev_leaf(spa_t *spa)
 {
 	vdev_t *lvd = NULL, *tvd = NULL;
 	uint64_t top = 0;
+	int i = 0;
+	static const int MAX_RETRIES = 10;
 
 	spa_config_enter(spa, SCL_ALL, FTAG, RW_READER);
 
-	for (;;) {
+	for (i = 0; i < MAX_RETRIES; i++) {
 		/* Pick a leaf of a random top-level vdev */
 		top = ztest_random_vdev_top(spa, B_TRUE);
 		tvd = spa->spa_root_vdev->vdev_child[top];
 		lvd = vdev_walk_tree(tvd, check_valid_vdev, NULL);
 		if (lvd == NULL) {
 			/*
-			 * We cannot  return NULL and no reasons to crash.
-			 * Just let other threads to finish their work and
+			 * Let other threads finish their work and
 			 * maybe next time we will have leaf-vdev
 			 */
 			spa_config_exit(spa, SCL_ALL, FTAG);
@@ -4797,6 +4798,10 @@ ztest_get_random_vdev_leaf(spa_t *spa)
 	}
 
 	spa_config_exit(spa, SCL_ALL, FTAG);
+
+	if ((i == MAX_RETRIES) && (ztest_opts.zo_verbose > 4)) {
+		printf("ztest_get_random_vdev_leaf: NULL");
+	}
 
 	return (lvd);
 }
@@ -4998,6 +5003,11 @@ ztest_cos_prop_get_set(ztest_ds_t *zd, uint64_t id)
 	mutex_enter(&ztest_vdev_lock);
 
 	lvd = ztest_get_random_vdev_leaf(spa);
+	if (lvd == NULL) {
+		mutex_exit(&ztest_vdev_lock);
+		mutex_exit(&ztest_props_lock);
+		return;
+	}
 
 	VERIFY(0 == nvlist_alloc(&sprops, NV_UNIQUE_NAME, 0));
 
@@ -5078,6 +5088,11 @@ ztest_vdev_prop_get_set(ztest_ds_t *zd, uint64_t id)
 	mutex_enter(&ztest_vdev_lock);
 
 	lvd = ztest_get_random_vdev_leaf(spa);
+	if (lvd == NULL) {
+		mutex_exit(&ztest_vdev_lock);
+		mutex_exit(&ztest_props_lock);
+		return;
+	}
 
 	/* Test uint64 properties */
 	sprops = ztest_props_set(lvd, NULL, VDEV_PROP_UINT64,
