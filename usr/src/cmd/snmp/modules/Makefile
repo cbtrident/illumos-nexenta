@@ -13,7 +13,8 @@
 # Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
-SUBDIRS=	fm \
+SUBDIRS=	fen \
+		fm \
 		fmnotify \
 		sysevent \
 		zfs

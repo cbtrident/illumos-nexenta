@@ -13,22 +13,24 @@
 # Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
-include		$(SRC)/cmd/Makefile.cmd
+MODULE=		fen_mod.so
 
-ROOTETCSNMP=	$(ROOTETC)/net-snmp/snmp
-ROOTETCSNMPMIB=	$(ROOTETCSNMP)/mibs
-ROOTLIBSNMP=	$(ROOTLIB)/snmp
+OBJECTS=	fen.o
 
-ROOTCONFS=	$(CONFS:%=$(ROOTETCSNMP)/%)
-$(ROOTCONFS) :=	FILEMODE=0644
-ROOTMIBS=	$(MIBS:%=$(ROOTETCSNMPMIB)/%)
-$(ROOTMIBS) :=	FILEMODE=0444
+CONFS=		fen.conf
 
-$(ROOTETCSNMP)/%: %
-		$(INS.file)
+MIBS=		NEXENTA-FEN-MIB.txt
 
-$(ROOTETCSNMPMIB)/%: %
-		$(INS.file)
+include		../Makefile.com
 
-$(ROOTLIBSNMP)/%: %
-		$(INS.file)
+CSTD=		$(CSTD_GNU99)
+
+LDLIBS +=	-lnetsnmp -lnetsnmpagent
+
+.KEEP_STATE:
+
+all:		$(DYNLIB)
+
+install:	all $(ROOTMODULE) $(ROOTCONFS) $(ROOTMIBS)
+
+include		$(SRC)/lib/Makefile.targ

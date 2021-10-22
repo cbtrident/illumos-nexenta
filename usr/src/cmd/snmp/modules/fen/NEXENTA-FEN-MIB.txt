@@ -1,0 +1,77 @@
+--
+-- This file and its contents are supplied under the terms of the
+-- Common Development and Distribution License ("CDDL"), version 1.0.
+-- You may only use this file in accordance with the terms of version
+-- 1.0 of the CDDL.
+--
+-- A full copy of the text of the CDDL should have accompanied this
+-- source.  A copy of the CDDL is also available via the Internet at
+-- http://www.illumos.org/license/CDDL.
+--
+
+-- Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+
+NEXENTA-FEN-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	fen
+		FROM NEXENTA-MIB
+	MODULE-IDENTITY, NOTIFICATION-TYPE, OBJECT-TYPE, Unsigned32
+		FROM SNMPv2-SMI
+	TEXTUAL-CONVENTION, DisplayString
+		FROM SNMPv2-TC;
+
+nexentaFenMIB MODULE-IDENTITY
+	LAST-UPDATED	"202110220000Z"
+	ORGANIZATION	"Tintri by DDN, Inc."
+	CONTACT-INFO	"Support"
+	DESCRIPTION	"MIB exposing file events"
+	REVISION	"202110220000Z"
+	DESCRIPTION	"none"
+	::= { fen 1 }
+
+nexentaFenTraps OBJECT IDENTIFIER ::= { nexentaFenMIB 1 0 }
+nexentaFenObjects OBJECT IDENTIFIER ::= { nexentaFenMIB 2 }
+
+NexentaFenAction ::= TEXTUAL-CONVENTION
+	STATUS          current
+	DESCRIPTION	"Represents file action"
+	SYNTAX		INTEGER {
+				create(0),
+				modify(1),
+				rename(2),
+				delete(3)
+			}
+
+nexentaFenHostname OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"Trap hostname"
+	::= { nexentaFenObjects 1 }
+
+nexentaFenAction OBJECT-TYPE
+	SYNTAX		NexentaFenAction
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"File action"
+	::= { nexentaFenObjects 2 }
+
+nexentaFenPath OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"File path"
+	::= { nexentaFenObjects 3 }
+
+nexentaFenTrap NOTIFICATION-TYPE
+	OBJECTS {
+		nexentaFenHostname,
+		nexentaFenAction,
+		nexentaFenPath
+	}
+	STATUS		current
+	DESCRIPTION	"File event notification trap"
+	::= { nexentaFenTraps 1 }
+
+END

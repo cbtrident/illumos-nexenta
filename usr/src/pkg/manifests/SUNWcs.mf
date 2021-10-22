@@ -397,7 +397,9 @@ file path=etc/mailcap preserve=true
 file path=etc/mime.types preserve=true
 file path=etc/mnttab group=root mode=0444 preserve=true
 file path=etc/motd group=sys preserve=true
+file path=etc/net-snmp/snmp/fen.conf preserve=true
 file path=etc/net-snmp/snmp/mibs/NETWORK-SERVICES-MIB.txt mode=0444
+file path=etc/net-snmp/snmp/mibs/NEXENTA-FEN-MIB.txt mode=0444
 file path=etc/net-snmp/snmp/mibs/NEXENTA-MIB.txt mode=0444
 file path=etc/net-snmp/snmp/mibs/NEXENTA-SSM-MIB.txt mode=0444
 file path=etc/net-snmp/snmp/mibs/NEXENTA-ZFS-MIB.txt mode=0444
@@ -1233,6 +1235,7 @@ file path=usr/lib/saf/listen group=sys mode=0755
 file path=usr/lib/saf/nlps_server group=sys mode=0755
 file path=usr/lib/saf/sac group=sys mode=0555
 file path=usr/lib/saf/ttymon group=sys mode=0555
+file path=usr/lib/snmp/fen_mod.so mode=0555
 file path=usr/lib/snmp/fm_mod.so mode=0555
 file path=usr/lib/snmp/fmnotify_mod.so mode=0555
 file path=usr/lib/snmp/sysevent_mod.so mode=0555
