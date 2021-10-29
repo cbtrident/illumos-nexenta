@@ -21,6 +21,7 @@
 #
 # Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
+# Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 #
 
 PROG=	bart
@@ -30,7 +31,7 @@ BART=	bart
 
 include ../Makefile.cmd
 
-LDLIBS +=	-lsec -lmd
+LDLIBS +=	-lsec -lpkcs11
 CERRWARN +=	-_gcc=-Wno-parentheses
 CERRWARN +=	-_gcc=-Wno-uninitialized
 

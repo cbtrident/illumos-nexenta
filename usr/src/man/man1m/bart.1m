@@ -1,22 +1,23 @@
 '\" te
 .\" Copyright (c) 2006, Sun Microsystems, Inc. All Rights Reserved
+.\" Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License.
 .\" You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.  See the License for the specific language governing permissions and limitations under the License.
 .\" When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE.  If applicable, add the following below this CDDL HEADER, with the fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.TH BART 1M "Oct 26, 2005"
+.TH BART 1M "Oct 25, 2021"
 .SH NAME
 bart \- basic audit reporting tool
 .SH SYNOPSIS
 .LP
 .nf
-\fB/usr/bin/bart\fR create [ \fB-n\fR] [\fB-R\fR \fIroot_directory\fR]
-     [\fB-r\fR \fIrules_file\fR | -]
+\fB/usr/bin/bart\fR create [ \fB-n|-a\fR \fImd5|sha1|sha256|sha384|sha512\fR]
+     [\fB-R\fR \fIroot_directory\fR] [\fB-r\fR \fIrules_file\fR | -]
 .fi
 
 .LP
 .nf
-\fB/usr/bin/bart\fR create [\fB-n\fR] [\fB-R\fR \fIroot_directory\fR] \fB-I\fR
-     [\fIfile_name\fR]...
+\fB/usr/bin/bart\fR create [\fB-n|-a\fR \fImd5|sha1|sha256|sha384|sha512\fR]
+	[\fB-R\fR \fIroot_directory\fR] \fB-I\fR  [\fIfile_name\fR]...
 .fi
 
 .LP
@@ -130,6 +131,18 @@ line or read from standard input.
 .RS 21n
 Prevent computation of content signatures for all regular files in the file
 list.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-a\fR \fIhash\fR\fR
+.ad
+.RS 21n
+Select the cryptographic algorithm to compute the file hash. If not specified,
+\fBsha256\fR will be used by default in a Version 1.1 manifest and \fBmd5\fR in
+a Version 1.0. Supported algorithms are \fBmd5\fR, \fBsha1\fR, \fBsha256\fR,
+\fBsha384\fR, \fBsha512\fR.
 .RE
 
 .sp

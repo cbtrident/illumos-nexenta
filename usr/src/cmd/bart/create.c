@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <signal.h>
@@ -29,6 +30,9 @@
 #include <sys/wait.h>
 #include "bart.h"
 #include <aclutils.h>
+#include <security/cryptoki.h>
+#include <security/pkcs11.h>
+#include <sys/sha2.h>
 
 static int	sanitize_reloc_root(char *root, size_t bufsize);
 static int	create_manifest_filelist(char **argv, char *reloc_root);
@@ -50,24 +54,45 @@ static int	walker(const char *name, const struct stat64 *sp,
  * provided by nftw().  Since there is no way to pass them through to the
  * walker function, they must be global.
  */
-static int		compute_chksum = 1, eval_err = 0;
+static int eval_err = 0;
 static struct rule	*subtree_root;
 static char		reloc_root[PATH_MAX];
 static struct statvfs64	parent_vfs;
+static CK_MECHANISM_TYPE compute_chksum;
+static CK_SESSION_HANDLE hSession;
 
 int
 bart_create(int argc, char **argv)
 {
 	boolean_t	filelist_input;
+	boolean_t aflag = B_FALSE;
+	boolean_t nflag = B_FALSE;
 	int		ret, c, output_pipe[2];
 	FILE 		*rules_fd = NULL;
 	pid_t		pid;
 
 	filelist_input = B_FALSE;
 	reloc_root[0] = '\0';
+	compute_chksum = CKM_SHA256; /* default algorithm */
 
-	while ((c = getopt(argc, argv, "Inr:R:")) != EOF) {
+	while ((c = getopt(argc, argv, "a:Inr:R:")) != EOF) {
 		switch (c) {
+		case 'a':
+			if (strcmp(optarg, "md5") == 0) {
+				compute_chksum = CKM_MD5;
+			} else if (strcmp(optarg, "sha1") == 0) {
+				compute_chksum = CKM_SHA_1;
+			} else if (strcmp(optarg, "sha256") == 0) {
+				compute_chksum = CKM_SHA256;
+			} else if (strcmp(optarg, "sha384") == 0) {
+				compute_chksum = CKM_SHA384;
+			} else if (strcmp(optarg, "sha512") == 0) {
+				compute_chksum = CKM_SHA512;
+			} else {
+				usage();
+			}
+			aflag = B_TRUE;
+			break;
 		case 'I':
 			if (rules_fd != NULL) {
 				(void) fprintf(stderr, "%s", INPUT_ERR);
@@ -78,6 +103,7 @@ bart_create(int argc, char **argv)
 
 		case 'n':
 			compute_chksum = 0;
+			nflag = B_TRUE;
 			break;
 
 		case 'r':
@@ -104,6 +130,9 @@ bart_create(int argc, char **argv)
 			usage();
 		}
 	}
+	if (aflag && nflag)
+		usage();
+
 	argv += optind;
 
 	if (pipe(output_pipe) < 0) {
@@ -115,6 +144,11 @@ bart_create(int argc, char **argv)
 	if (pid < 0) {
 		perror(NULL);
 		exit(FATAL_EXIT);
+	}
+
+	if (compute_chksum != 0 &&
+	    SUNW_C_GetMechSession(compute_chksum, &hSession) != CKR_OK) {
+		return (ENOTSUP);
 	}
 
 	/*
@@ -230,7 +264,7 @@ create_manifest_rule(char *reloc_root, FILE *rule_fp)
 	int		ret_status = EXIT;
 	uint_t		flags;
 
-	if (compute_chksum)
+	if (compute_chksum != 0)
 		flags = ATTR_CONTENTS;
 	else
 		flags = 0;
@@ -316,7 +350,25 @@ output_manifest(void)
 	struct tm	*tm;
 	char		time_buf[1024];
 
-	(void) printf("%s", MANIFEST_VER);
+	if (compute_chksum == CKM_MD5) {
+		(void) printf("%s", MANIFEST_VER_1_0);
+	} else {
+		(void) printf("%s", MANIFEST_VER_1_1);
+		switch (compute_chksum) {
+			case CKM_SHA_1:
+				(void) printf(HASH_SHA1);
+				break;
+			case CKM_SHA256:
+				(void) printf(HASH_SHA256);
+				break;
+			case CKM_SHA384:
+				(void) printf(HASH_SHA384);
+				break;
+			case CKM_SHA512:
+				(void) printf(HASH_SHA512);
+				break;
+		}
+	}
 	time_val = time((time_t)0);
 	tm = localtime(&time_val);
 	(void) strftime(time_buf, sizeof (time_buf), "%A, %B %d, %Y (%T)", tm);
@@ -351,10 +403,7 @@ walker(const char *name, const struct stat64 *sp, int type, struct FTW *ftwx)
 	switch (type) {
 	case FTW_F:	/* file 		*/
 		rule = check_rules(name, 'F');
-		if (rule != NULL) {
-			if (rule->attr_list & ATTR_CONTENTS)
-				compute_chksum = 1;
-			else
+		if (rule != NULL && !(rule->attr_list & ATTR_CONTENTS)) {
 				compute_chksum = 0;
 		}
 		break;
@@ -463,11 +512,11 @@ eval_file(const char *fname, const struct stat64 *statb, struct FTW *ftwx)
 		last_field[i] = '\0';
 
 	/*
-	 * Regular files, compute the MD5 checksum and put it into 'last_field'
+	 * Regular files, compute the checksum and put it into 'last_field'
 	 * UNLESS instructed to ignore the checksums.
 	 */
 	if (ftype == 'F') {
-		if (compute_chksum) {
+		if (compute_chksum != 0) {
 			fd = open(fname, O_RDONLY|O_LARGEFILE);
 			if (fd < 0) {
 				err_code = WARNING_EXIT;
@@ -641,21 +690,25 @@ get_acl_string(const char *fname, const struct stat64 *statb, int *err_code)
 /*
  *
  * description:	This routine reads stdin in BUF_SIZE chunks, uses the bits
- *		to update the md5 hash buffer, and outputs the chunks
+ *		to update the hash buffer, and outputs the chunks
  *		to stdout.  When stdin is exhausted, the hash is computed,
  *		converted to a hexadecimal string, and returned.
  *
- * returns:	The md5 hash of stdin, or NULL if unsuccessful for any reason.
+ * returns:	The hash of stdin, or NULL if unsuccessful for any reason.
  */
 static int
 generate_hash(int fdin, char *hash_str)
 {
 	unsigned char buf[BUF_SIZE];
-	unsigned char hash[MD5_DIGEST_LENGTH];
+	unsigned char hash[SHA512_DIGEST_LENGTH];
 	int i, amtread;
-	MD5_CTX ctx;
+	CK_MECHANISM mech;
+	CK_ULONG outlen = sizeof (hash);
+	CK_RV rv;
 
-	MD5Init(&ctx);
+	mech.mechanism = compute_chksum;
+	if ((rv = C_DigestInit(hSession, &mech)) !=  CKR_OK)
+		return (rv);
 
 	for (;;) {
 		amtread = read(fdin, buf, sizeof (buf));
@@ -665,13 +718,14 @@ generate_hash(int fdin, char *hash_str)
 			return (1);
 
 		/* got some data.  Now update hash */
-		MD5Update(&ctx, buf, amtread);
+		if ((rv = C_DigestUpdate(hSession, buf, amtread)) != CKR_OK)
+			return (rv);
 	}
-
 	/* done passing through data, calculate hash */
-	MD5Final(hash, &ctx);
+	if ((rv = C_DigestFinal(hSession, hash, &outlen)) != CKR_OK)
+		return (rv);
 
-	for (i = 0; i < MD5_DIGEST_LENGTH; i++)
+	for (i = 0; i < outlen; i++)
 		(void) sprintf(hash_str + (i*2), "%2.2x", hash[i]);
 
 	return (0);

@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_MSGS_H
@@ -40,11 +41,17 @@ extern "C" {
 	gettext("ERROR: Cannot use -I and -r options together\n")
 #define	MISSING_VER	\
 	gettext("WARNING: %s has missing/invalid version string\n")
-#define	MANIFEST_ERR	gettext("ERROR: Manifest corrupt, cannot continue\n")
+#define	MISMATCH_VER	gettext("ERROR: Manifest versions mismatch\n")
+#define	MISSING_HASH \
+	gettext("ERROR: %s Manifest hash string missing/invalid\n")
+#define	MISMATCH_HASH	gettext("ERROR: Manifest hash mismatch\n")
+#define	MANIFEST_ERR	gettext("ERROR: %s Manifest corrupt, cannot continue\n")
 #define	CONTENTS_WARN	gettext("WARNING: Checksum failed: %s\n")
 #define	USAGE_MSG gettext("Usage:\n"\
-	"\tbart create [-n] [-R root] [-r rules|-]\n"\
-	"\tbart create [-n] [-R root] [-I | -I filelist]\n"\
+	"\tbart create [-n|-a md5|sha1|sha256|sha384|sha512] [-R root]\n"\
+	"\t\t[-r rules|-]\n"\
+	"\tbart create [-n|-a md5|sha1|sha256|sha384|sha512] [-R Root]\n"\
+	"\t\t[-I | -I filelist]\n"\
 	"\tbart compare [-r rules|-] [-i keywords] [-p] "\
 		"control-manifest test-manifest\n")
 

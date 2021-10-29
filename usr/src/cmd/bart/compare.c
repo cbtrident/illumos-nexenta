@@ -22,8 +22,8 @@
 /*
  * Copyright 2003 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #include <unistd.h>
 #include "bart.h"
@@ -109,6 +109,9 @@ boolean_t prog_fmt, uint_t flags)
 		test_type[TYPE_SIZE];
 	int	control_pos, test_pos, ret, fname_cmp, return_status;
 
+	char control_ver[BUF_SIZE], test_ver[BUF_SIZE],
+	    control_hash[BUF_SIZE], test_hash[BUF_SIZE];
+
 	return_status = EXIT;
 
 	return_status = read_rules(rulesfile, "", flags, 0);
@@ -124,6 +127,56 @@ boolean_t prog_fmt, uint_t flags)
 		perror(test);
 		return (FATAL_EXIT);
 	}
+
+	/* Compare manifest versions */
+	if (fgets(control_ver, BUF_SIZE, control_fd) == NULL) {
+		(void) fprintf(stderr, MANIFEST_ERR, control);
+		return (FATAL_EXIT);
+	}
+
+	if (fgets(test_ver, BUF_SIZE, test_fd) == NULL) {
+		(void) fprintf(stderr, MANIFEST_ERR, test);
+		return (FATAL_EXIT);
+	}
+
+	if (strcmp(control_ver, test_ver) != 0) {
+		(void) fprintf(stderr, MISMATCH_VER);
+		return (FATAL_EXIT);
+	}
+
+	/*
+	 * Check existence of hash header in Version 1.1
+	 * manifest and compare between control and test.
+	 */
+	if (strcmp(control_ver, MANIFEST_VER_1_1) == 0) {
+		if (fgets(control_hash, BUF_SIZE, control_fd) == NULL) {
+			(void) fprintf(stderr, MANIFEST_ERR, control);
+			return (FATAL_EXIT);
+		}
+
+		if (fgets(test_hash, BUF_SIZE, test_fd) == NULL) {
+			(void) fprintf(stderr, MANIFEST_ERR, test);
+			return (FATAL_EXIT);
+		}
+
+		if (strncmp(control_hash, HASH_STR, strlen(HASH_STR)) != 0) {
+			(void) fprintf(stderr, MISSING_HASH, control);
+			return (FATAL_EXIT);
+		}
+
+		if (strncmp(test_hash, HASH_STR, strlen(HASH_STR)) != 0) {
+			(void) fprintf(stderr, MISSING_HASH, test);
+			return (FATAL_EXIT);
+		}
+
+		if (strcmp(control_hash, test_hash) != 0) {
+			(void) fprintf(stderr, MISMATCH_HASH);
+			return (FATAL_EXIT);
+		}
+	}
+
+	(void) fseek(control_fd, 0, SEEK_SET);
+	(void) fseek(test_fd, 0, SEEK_SET);
 
 	control_pos = read_manifest_line(control_fd, control_buf,
 	    BUF_SIZE, 0, &control_line, control);
@@ -549,8 +602,10 @@ read_manifest_line(FILE *fd, char *buf, int buf_size, int start_pos,
 		*line = buf;
 
 		if (filepos == 0) {
-			if (strncmp(buf, MANIFEST_VER,
-			    strlen(MANIFEST_VER)) != 0)
+			if ((strncmp(buf, MANIFEST_VER_1_0,
+			    strlen(MANIFEST_VER_1_0)) != 0) &&
+				(strncmp(buf, MANIFEST_VER_1_1,
+			    strlen(MANIFEST_VER_1_1)) != 0))
 				(void) fprintf(stderr, MISSING_VER, fname);
 			if ((*line[0] == '!') || (*line[0] == '#'))
 				iscomment++;
@@ -586,7 +641,7 @@ read_manifest_line(FILE *fd, char *buf, int buf_size, int start_pos,
 				return (-1);
 		}
 
-		(void) fprintf(stderr, MANIFEST_ERR);
+		(void) fprintf(stderr, MANIFEST_ERR, fname);
 		exit(FATAL_EXIT);
 	}
 
@@ -640,7 +695,7 @@ read_manifest_line(FILE *fd, char *buf, int buf_size, int start_pos,
 			return (-1);
 	}
 
-	(void) fprintf(stderr, MANIFEST_ERR);
+	(void) fprintf(stderr, MANIFEST_ERR, fname);
 	exit(FATAL_EXIT);
 
 	/* NOTREACHED */

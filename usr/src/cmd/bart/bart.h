@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_BART_H
@@ -73,7 +74,13 @@ extern "C" {
 #define	ADD_KEYWORD		"add"
 #define	DELETE_KEYWORD		"delete"
 
-#define	MANIFEST_VER	"! Version 1.0\n"
+#define	MANIFEST_VER_1_0	"! Version 1.0\n"
+#define	MANIFEST_VER_1_1	"! Version 1.1\n"
+#define	HASH_STR	"! Hash "
+#define	HASH_SHA1	"! Hash SHA1\n"
+#define	HASH_SHA256	"! Hash SHA256\n"
+#define	HASH_SHA384	"! Hash SHA384\n"
+#define	HASH_SHA512	"! Hash SHA512\n"
 #define	FORMAT_STR	"# Format:\n\
 #fname D size mode acl dirmtime uid gid\n\
 #fname P size mode acl mtime uid gid\n\

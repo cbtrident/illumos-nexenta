@@ -1,9 +1,10 @@
 '\" te
 .\" Copyright (c) 2003, Sun Microsystems, Inc. All Rights Reserved
+.\" Copyright 2021 Tintri by DDN, Inc. All rights reserved.
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License.
 .\" You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.  See the License for the specific language governing permissions and limitations under the License.
 .\" When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE.  If applicable, add the following below this CDDL HEADER, with the fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.TH BART_MANIFEST 4 "Sep 9, 2003"
+.TH BART_MANIFEST 4 "Oct 25, 2021"
 .SH NAME
 bart_manifest \- system audit manifest file
 .SH DESCRIPTION
@@ -284,8 +285,9 @@ the encoded versions of the file names to correctly handle special characters.
 .sp
 .in +2
 .nf
-! Version 1.0
-! Mon Feb 11 10:55:30 2002
+! Version 1.1
+! Hash SHA256
+! Wednesday October 13, 2021 (19:31:39)
 # Format:
 # fname D size mode acl dirmtime uid gid
 # fname P size mode acl mtime uid gid
@@ -297,9 +299,9 @@ the encoded versions of the file names to correctly handle special characters.
 /etc D 3584 40755 user::rwx,group::r-x,mask::r-x,other::r-x,
      3c6803d7 0 3
 /etc/.login F 524 100644 user::rw-,group::r--,mask::r--,other::r--,
-     3c165878 0 3 27b53d5c3e844af3306f1f12b330b318
+     3c165878 0 3 0ef91f07f702aa37f0979acea3662e89f2fe6fb9d4cfe2e1f14655d748c8b5c2
 /etc/.pwd.lock F 0 100600 user::rw-,group::---,mask::---,other::---,
-     3c166121 0 0 d41d8cd98f00b204e9800998ecf8427e
+     3c166121 0 0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 /etc/.syslog_door L 20 120777 user::rw-,group::r--,mask::
      rwx,other::r--,3c6803d5 0 0 /var/run/syslog_door
 /etc/autopush L 16 120777 user::r-x,group::r-x,mask::r-x,other::r-x,
