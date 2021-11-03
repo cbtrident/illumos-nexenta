@@ -158,7 +158,7 @@ ssm_disk_add(char *devname)
 	char *uuid = NULL;
 	int err = 0;
 
-	pthread_mutex_lock(&ssm_disk_tree_lock);
+	(void) pthread_mutex_lock(&ssm_disk_tree_lock);
 	if ((thp = topo_open(TOPO_VERSION, NULL, &err)) == NULL ||
 	    (uuid = topo_snap_hold(thp, NULL, &err)) == NULL || err != 0)
 		goto fail;
@@ -182,7 +182,7 @@ fail:
 	topo_hdl_strfree(thp, uuid);
 	topo_snap_release(thp);
 	topo_close(thp);
-	pthread_mutex_unlock(&ssm_disk_tree_lock);
+	(void) pthread_mutex_unlock(&ssm_disk_tree_lock);
 	return (ret);
 }
 
@@ -193,12 +193,12 @@ ssm_disk_remove(char *devname)
 
 	if ((sdp.devname = strdup(devname)) == NULL)
 		return (NULL);
-	pthread_mutex_lock(&ssm_disk_tree_lock);
+	(void) pthread_mutex_lock(&ssm_disk_tree_lock);
 	if ((ret = avl_find(&ssm_disk_tree, &sdp, NULL)) != NULL) {
 		avl_remove(&ssm_disk_tree, ret);
 		DEBUGMSGTL((modname, "removed %s\n", devname));
 	}
-	pthread_mutex_unlock(&ssm_disk_tree_lock);
+	(void) pthread_mutex_unlock(&ssm_disk_tree_lock);
 	free(sdp.devname);
 
 	return (ret);
@@ -320,7 +320,9 @@ ssm_disk_fini(void)
 	ssm_disk_t *sdp;
 	void *c = NULL;
 
+	(void) pthread_mutex_lock(&ssm_disk_tree_lock);
 	while ((sdp = avl_destroy_nodes(&ssm_disk_tree, &c)) != NULL)
 		ssm_disk_free(sdp);
 	avl_destroy(&ssm_disk_tree);
+	(void) pthread_mutex_unlock(&ssm_disk_tree_lock);
 }
