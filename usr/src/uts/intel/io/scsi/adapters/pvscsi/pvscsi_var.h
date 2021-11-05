@@ -225,7 +225,11 @@ typedef struct pvscsi_device {
 #define	SENSE_BUFFER_SIZE	SENSE_LENGTH
 #define	USECS_TO_WAIT		1000
 
-#define	PVSCSI_MAXTGTS	64
+/*
+ * Historically, target 7 is reserved for HBA, hence to expose 64 disks
+ * ESXi provides 65 targets.
+ */
+#define	PVSCSI_MAXTGTS	65
 
 #define	PAGE_SIZE	4096
 #define	PAGE_SHIFT	12
