@@ -400,9 +400,63 @@ PKGLISTS= \
 
 ALL_TARGETS= $(PROC_SYNTH_PKGS) proto_list_$(PKGMACH)
 
-# This may be empty, or set to "ips", or "deb"
-PKGTYPE=ips
-include Makefile.$(PKGTYPE)
+PKGDEP_FLAGS= -R $(PKGDEP_RESOLVE_IMAGE)
+PKGRES_FLAGS= -m
+
+install: $(ALL_TARGETS) repository-metadata
+
+repository-metadata: publish_pkgs
+	$(PKGDEBUG)for r in $(REPOS); do \
+		pkgrepo refresh -s $(PKGDEST)/repo.$$r; \
+	done
+
+#
+# Since we create zero-length processed manifests for a graceful abort
+# from pkgmogrify, we need to detect that here and make no effort to
+# publish the package.
+#
+# For all other packages, we publish them regardless of status.  We
+# derive the target repository as a component of the metadata-derived
+# symlink for each package.
+#
+publish_pkgs: $(REPOS:%=$(PKGDEST)/repo.%) $(PDIR)/gendeps .WAIT $(PUB_PKGS)
+
+#
+# Before publishing, we want to pull the license files from $CODEMGR_WS
+# into the proto area.  This allows us to NOT pass $SRC (or
+# $CODEMGR_WS) as a basedir for publication.
+#
+$(PUB_PKGS): stage-licenses
+
+#
+# Initialize the empty on-disk repositories
+#
+$(REPOS:%=$(PKGDEST)/repo.%):
+	@print "Initializing $(@F)"
+	$(PKGDEBUG)$(INS.dir)
+	$(PKGDEBUG)pkgsend -s file://$(@) create-repository \
+		--set-property publisher.prefix=$(PKGPUBLISHER)
+
+#
+# The full chain implies that there should be a .dep.res suffix rule,
+# but dependency generation is done on a set of manifests, rather than
+# on a per-manifest basis.  Instead, see the gendeps rule above.
+#
+
+$(PDIR)/%.pub: $(PDIR)/%.res
+	$(PKGDEBUG)m=$$(basename $(@:%.pub=%).metadata.*); \
+	r=$${m#$(@F:%.pub=%.metadata.)+(?).}; \
+	if [ -s $(<) ]; then \
+		print "Publishing $(@F:%.pub=%) to $$r repository"; \
+		pkgsend -s file://$(PKGDEST)/repo.$$r publish \
+		    -d $(PKGROOT) -d $(TOOLSROOT) \
+		    -d license_files -d $(PKGROOT)/licenses \
+		    --fmri-in-manifest --no-index --no-catalog $(<) \
+		    > /dev/null; \
+	fi; \
+	$(TOUCH) $(@);
+
+$(PKGS:%=%.pub) $(SYNTH_PKGS:%=%.pub): $(PDIR)/$$(@)
 
 all: $(ALL_TARGETS)
 

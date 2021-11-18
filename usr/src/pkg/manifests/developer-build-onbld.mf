@@ -120,7 +120,6 @@ file path=opt/onbld/bin/git-pbchk mode=0555
 file path=opt/onbld/bin/hdrchk mode=0555
 file path=opt/onbld/bin/interface_check mode=0555
 file path=opt/onbld/bin/interface_cmp mode=0555
-file path=opt/onbld/bin/ips2deb mode=0555
 file path=opt/onbld/bin/jstyle mode=0555
 file path=opt/onbld/bin/mapfilechk mode=0555
 file path=opt/onbld/bin/nightly mode=0555
@@ -146,9 +145,6 @@ file path=opt/onbld/env/nza
 file path=opt/onbld/etc/exception_lists/check_rtime
 file path=opt/onbld/etc/exception_lists/interface_check
 file path=opt/onbld/etc/exception_lists/interface_cmp
-file path=opt/onbld/etc/ips2deb.priorities
-file path=opt/onbld/etc/ips2deb.replaces
-file path=opt/onbld/etc/ips2deb.versions
 file path=opt/onbld/etc/its.conf
 file path=opt/onbld/etc/its.reg
 file path=opt/onbld/lib/$(ARCH)/64/libmakestate.so.1

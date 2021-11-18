@@ -49,7 +49,6 @@ COMMON_SUBDIRS= \
 	ctf \
 	env \
 	findunref \
-	ips2deb \
 	lintdump \
 	make \
 	makesoftcore \

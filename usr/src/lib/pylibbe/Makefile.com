@@ -46,9 +46,6 @@ CFLAGS +=	$(CCVERBOSE)
 CPPFLAGS +=	-D_FILE_OFFSET_BITS=64 -I../../libbe/common \
 	-I$(ADJUNCT_PROTO)/usr/include/python$(PYVER)$(PYSUFFIX)
 
-LINTFLAGS +=	-errhdr=no%$(ADJUNCT_PROTO)/usr/include/python2.6
-LINTFLAGS64 +=	-errhdr=no%$(ADJUNCT_PROTO)/usr/include/python2.6
-
 .KEEP_STATE:
 
 all install := LDLIBS += -lpython$(PYVER)$(PYSUFFIX)
@@ -56,7 +53,5 @@ all install := LDLIBS += -lpython$(PYVER)$(PYSUFFIX)
 all: $(PYOBJS) $(LIBS)
 
 install: all $(ROOTPYBEFILES)
-
-lint: lintcheck
 
 include ../../Makefile.targ
