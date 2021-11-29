@@ -11,6 +11,8 @@
 
 /*
  * Copyright (c) 2013 Joyent Inc., All rights reserved.
+ * Copyright 2021 RackTop Systems, Inc.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -42,6 +44,7 @@ typedef struct di_opts {
 	boolean_t di_parseable;
 	boolean_t di_physical;
 	boolean_t di_condensed;
+	boolean_t di_basic;
 } di_opts_t;
 
 typedef struct di_phys {
@@ -212,7 +215,7 @@ populate_physical(topo_hdl_t *hp, di_phys_t *pp)
 static void
 enumerate_disks(di_opts_t *opts)
 {
-	topo_hdl_t *hp;
+	topo_hdl_t *hp = NULL;
 	dm_descriptor_t *media;
 	int err, i;
 	int filter[] = { DM_DT_FIXED, -1 };
@@ -240,26 +243,36 @@ enumerate_disks(di_opts_t *opts)
 	}
 
 	err = 0;
-	hp = topo_open(TOPO_VERSION, NULL, &err);
-	if (hp == NULL) {
-		fatal(-1, "unable to obtain topo handle: %s",
-		    topo_strerror(err));
+	if (!opts->di_basic) {
+		hp = topo_open(TOPO_VERSION, NULL, &err);
+		if (hp == NULL) {
+			fatal(-1, "unable to obtain topo handle: %s",
+			    topo_strerror(err));
+		}
+
+		err = 0;
+		(void) topo_snap_hold(hp, NULL, &err);
+		if (err != 0) {
+			fatal(-1, "unable to hold topo snapshot: %s",
+			    topo_strerror(err));
+		}
 	}
 
-	err = 0;
-	(void) topo_snap_hold(hp, NULL, &err);
-	if (err != 0) {
-		fatal(-1, "unable to hold topo snapshot: %s",
-		    topo_strerror(err));
-	}
-
-	for (i = 0; media != NULL && media[i] != NULL; i++) {
+	for (i = 0; media != NULL && media[i] != 0; i++) {
 		if ((disk = dm_get_associated_descriptors(media[i],
 		    DM_DRIVE, &err)) == NULL) {
 			continue;
 		}
 
 		mattrs = dm_get_attributes(media[i], &err);
+		/*
+		 * The attributes depend on us being able to get the media
+		 * info with DKIOCGMEDIAINFO which may not be the case for
+		 * disks which are failing.
+		 */
+		if ((mattrs = dm_get_attributes(media[i], &err)) == NULL) {
+			continue;
+		}
 		err = nvlist_lookup_uint64(mattrs, DM_SIZE, &size);
 		assert(err == 0);
 		err = nvlist_lookup_uint32(mattrs, DM_BLOCKSIZE, &blocksize);
@@ -305,8 +318,9 @@ enumerate_disks(di_opts_t *opts)
 
 		bzero(&phys, sizeof (phys));
 		phys.dp_dev = device;
-		populate_physical(hp, &phys);
-
+		if (!opts->di_basic) {
+			populate_physical(hp, &phys);
+		}
 		/*
 		 * The size is given in blocks, so multiply the number
 		 * of blocks by the block size to get the total size,
@@ -394,8 +408,10 @@ enumerate_disks(di_opts_t *opts)
 	}
 
 	dm_free_descriptors(media);
-	topo_snap_release(hp);
-	topo_close(hp);
+	if (!opts->di_basic) {
+		topo_snap_release(hp);
+		topo_close(hp);
+	}
 }
 
 int
@@ -407,7 +423,8 @@ main(int argc, char *argv[])
 		.di_condensed = B_FALSE,
 		.di_scripted = B_FALSE,
 		.di_physical = B_FALSE,
-		.di_parseable = B_FALSE
+		.di_parseable = B_FALSE,
+		.di_basic = B_FALSE
 	};
 
 	while ((c = getopt(argc, argv, ":cHPp")) != EOF) {
@@ -440,6 +457,9 @@ main(int argc, char *argv[])
 		}
 	}
 
+	if (!opts.di_condensed && !opts.di_physical) {
+		opts.di_basic = B_TRUE;
+	}
 	if (!opts.di_scripted) {
 		if (opts.di_physical) {
 			printf("DISK                    VID      PID"
