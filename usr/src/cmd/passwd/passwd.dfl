@@ -1,7 +1,7 @@
-#ident	"%Z%%M%	%I%	%E% SMI"
 #
 # Copyright 2005 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
+# Copyright 2022 Tintri by DDN, Inc. All rights reserved.
 #
 # CDDL HEADER START
 #
@@ -25,7 +25,7 @@
 #
 MAXWEEKS=
 MINWEEKS=
-PASSLENGTH=6
+PASSLENGTH=8
 
 # NAMECHECK enables/disables login name checking.
 # The default is to do login name checking.
