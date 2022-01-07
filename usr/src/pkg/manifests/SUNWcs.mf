@@ -579,7 +579,6 @@ file path=lib/svc/manifest/system/rmtmpfiles.xml group=sys mode=0444
 file path=lib/svc/manifest/system/sac.xml group=sys mode=0444
 file path=lib/svc/manifest/system/svc/global.xml group=sys mode=0444
 file path=lib/svc/manifest/system/svc/restarter.xml group=sys mode=0444
-file path=lib/svc/manifest/system/system-log.xml group=sys mode=0444
 file path=lib/svc/manifest/system/utmp.xml group=sys mode=0444
 file path=lib/svc/manifest/system/vtdaemon.xml group=sys mode=0444
 file path=lib/svc/method/boot-archive mode=0555
@@ -630,7 +629,6 @@ file path=lib/svc/method/svc-nscd mode=0555
 file path=lib/svc/method/svc-rbac mode=0555
 file path=lib/svc/method/svc-sockfilter mode=0555
 file path=lib/svc/method/svc-utmpd mode=0555
-file path=lib/svc/method/system-log mode=0555
 file path=lib/svc/method/vtdaemon mode=0555
 file path=lib/svc/method/yp mode=0555
 # global.db is not needed in non-global zones, and it's pretty large.
