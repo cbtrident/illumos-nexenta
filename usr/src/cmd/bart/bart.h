@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_BART_H
@@ -165,7 +165,6 @@ void process_glob_ignores(char *, uint_t *);
 void *safe_calloc(size_t);
 char *safe_strdup(char *);
 int read_rules(FILE *, char *, uint_t, int);
-int read_line(FILE *, char *, int, int, char **, char *);
 #ifdef	__cplusplus
 }
 #endif

@@ -22,7 +22,7 @@
 /*
  * Copyright 2003 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <unistd.h>
@@ -45,6 +45,9 @@ static void parse_line(char *line, char *fname, char *type, char *size,
 static void init_default_flags(uint_t *flags);
 static void get_token(char *line, int *curr_pos, int line_len, char *buf,
     int buf_size);
+
+#define	TIME_FORMAT	"%Y-%m-%d %H:%M:%S %z"
+#define	TIME_BUF_LEN	26
 
 int
 bart_compare(int argc, char **argv)
@@ -381,6 +384,17 @@ report_delete(char *fname, char *type)
 		return (0);
 }
 
+static void
+format_time(char *buf)
+{
+	struct tm tm;
+	struct timespec ts;
+
+	ts.tv_sec = strtol(buf, NULL, 16);
+	(void) localtime_r(&ts.tv_sec, &tm);
+	(void) strftime(buf, TIME_BUF_LEN, TIME_FORMAT, &tm);
+}
+
 /*
  * This function takes in the two entries, which have been flagged as
  * different, breaks them up and reports discrepancies.  Note, discrepancies
@@ -551,6 +565,13 @@ report_error(char *fname, char *type, char *ctrl_val, char *test_val,
 		if (strcmp(fname, last_fname) != 0) {
 			(void) printf("%s:\n", fname);
 			(void) strlcpy(last_fname, fname, sizeof (last_fname));
+		}
+
+		if (strcmp(type, MTIME_KEYWORD) == 0 ||
+		    strcmp(type, LNMTIME_KEYWORD) == 0 ||
+		    strcmp(type, DIRMTIME_KEYWORD) == 0) {
+			(void) format_time(ctrl_val);
+			(void) format_time(test_val);
 		}
 
 		if (strcmp(type, ADD_KEYWORD) == 0 ||
