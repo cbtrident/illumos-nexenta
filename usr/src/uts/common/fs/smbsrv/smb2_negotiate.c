@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  * Copyright 2021 RackTop Systems, Inc.
  */
 
@@ -218,16 +218,24 @@ typedef struct smb2_negotiate_ctx {
 #define	SMB31_PREAUTH_CTX_SALT_LEN	32
 
 /*
- * SMB 3.1.1 specifies the only hashing algorithm - SHA-512 and
- * two encryption ones - AES-128-CCM and AES-128-GCM.
+ * SMB 3.1.1 specifies one hashing algorithm: SHA-256.
+ * It also specifies four encryption ciphers: AES-128-CCM, AES-128-GCM,
+ * AES-256-CCM, and AES-256-GCM.
+ *
+ * The following represent the maximum number of entries we'll examine in the
+ * relevant negotiation context, and are chosen to allow us some wiggle room
+ * if new algorithms are introduced in a future specification.
  */
-#define	MAX_HASHID_NUM	(1)
-#define	MAX_CIPHER_NUM	(2)
+#define	MAX_HASHID_NUM	(4)	/* Preauth Integrity hashes */
+#define	MAX_CIPHER_NUM	(8)	/* Encryption ciphers */
+
+/* OTW bytes per hash/cipher ID */
+#define	SMB3_BYTES_PER_ID	2
 
 typedef struct smb2_preauth_integrity_caps {
 	uint16_t	picap_hash_count;
 	uint16_t	picap_salt_len;
-	uint16_t	picap_hash_id;
+	uint16_t	picap_hash_ids[MAX_HASHID_NUM];
 	uint8_t		picap_salt[SMB31_PREAUTH_CTX_SALT_LEN];
 } smb2_preauth_caps_t;
 
@@ -376,8 +384,7 @@ smb31_decode_neg_ctxs(smb_request_t *sr, smb2_neg_ctxs_t *neg_ctxs)
 			    &sr->command, "ww",
 			    &picap->picap_hash_count,	/* w */
 			    &picap->picap_salt_len);	/* w */
-			if (rc != 0 || picap->picap_hash_count >
-			    MAX_HASHID_NUM) {
+			if (rc != 0) {
 				status = NT_STATUS_INVALID_PARAMETER;
 				goto errout;
 			}
@@ -385,10 +392,25 @@ smb31_decode_neg_ctxs(smb_request_t *sr, smb2_neg_ctxs_t *neg_ctxs)
 			/*
 			 * Get hash id
 			 */
-			rc = smb_mbc_decodef(
-			    &sr->command, "#w",
-			    picap->picap_hash_count,
-			    &picap->picap_hash_id);	/* w */
+			if (picap->picap_hash_count > MAX_HASHID_NUM) {
+				uint16_t skip_cnt = picap->picap_hash_count -
+				    MAX_HASHID_NUM;
+				DTRACE_PROBE2(smb3__too__many__preauth__ids,
+				    smb_request_t *, sr,
+				    uint16_t, picap->picap_hash_count);
+				rc = smb_mbc_decodef(
+				    &sr->command, "#w#.",
+				    MAX_HASHID_NUM,
+				    &picap->picap_hash_ids[0],		/* w */
+				    skip_cnt * SMB3_BYTES_PER_ID);	/* #. */
+				picap->picap_hash_count = MAX_HASHID_NUM;
+			} else {
+				rc = smb_mbc_decodef(
+				    &sr->command, "#w",
+				    picap->picap_hash_count,
+				    &picap->picap_hash_ids[0]);	/* w */
+			}
+
 			if (rc != 0) {
 				status = NT_STATUS_INVALID_PARAMETER;
 				goto errout;
@@ -406,18 +428,19 @@ smb31_decode_neg_ctxs(smb_request_t *sr, smb2_neg_ctxs_t *neg_ctxs)
 				goto errout;
 			}
 
-			/*
-			 * In SMB 0x311 there should be exactly 1 preauth
-			 * negotiate context, and there should be exactly 1
-			 * hash value in the list - SHA512.
-			 */
-			if (picap->picap_hash_count != 1) {
-				status = NT_STATUS_INVALID_PARAMETER;
-				continue;
+			for (int k = 0; k < picap->picap_hash_count; k++) {
+				switch (picap->picap_hash_ids[k]) {
+				case SMB3_HASH_SHA512:
+					preauth_sha512_enabled = B_TRUE;
+					break;
+				default:
+					DTRACE_PROBE2(
+					    smb3__preauth__unknown__id,
+					    smb_request_t *, sr,
+					    uint16_t, picap->picap_hash_ids[k]);
+					break;
+				}
 			}
-
-			if (picap->picap_hash_id == SMB3_HASH_SHA512)
-				preauth_sha512_enabled = B_TRUE;
 			break;
 		case SMB2_ENCRYPTION_CAPS:
 			memcpy(&neg_ctxs->preauth_ctx.neg_ctx, &neg_ctx,
@@ -431,8 +454,7 @@ smb31_decode_neg_ctxs(smb_request_t *sr, smb2_neg_ctxs_t *neg_ctxs)
 			rc = smb_mbc_decodef(
 			    &sr->command, "w",
 			    &encap->encap_cipher_count);	/* w */
-			if (rc != 0 || encap->encap_cipher_count >
-			    MAX_CIPHER_NUM) {
+			if (rc != 0) {
 				status = NT_STATUS_INVALID_PARAMETER;
 				goto errout;
 			}
@@ -440,10 +462,25 @@ smb31_decode_neg_ctxs(smb_request_t *sr, smb2_neg_ctxs_t *neg_ctxs)
 			/*
 			 * Get cipher list
 			 */
-			rc = smb_mbc_decodef(
-			    &sr->command, "#w",
-			    encap->encap_cipher_count,
-			    &encap->encap_cipher_ids[0]);	/* w */
+			if (encap->encap_cipher_count > MAX_CIPHER_NUM) {
+				uint16_t skip_cnt = encap->encap_cipher_count -
+				    MAX_CIPHER_NUM;
+				DTRACE_PROBE2(smb3__too__many__ciphers,
+				    smb_request_t *, sr,
+				    uint16_t, encap->encap_cipher_count);
+				rc = smb_mbc_decodef(
+				    &sr->command, "#w#.",
+				    MAX_CIPHER_NUM,
+				    &encap->encap_cipher_ids[0],	/* w */
+				    skip_cnt * SMB3_BYTES_PER_ID);	/* #. */
+				encap->encap_cipher_count = MAX_CIPHER_NUM;
+			} else {
+				rc = smb_mbc_decodef(
+				    &sr->command, "#w",
+				    encap->encap_cipher_count,
+				    &encap->encap_cipher_ids[0]);	/* w */
+			}
+
 			if (rc != 0) {
 				status = NT_STATUS_INVALID_PARAMETER;
 				goto errout;
@@ -458,7 +495,11 @@ smb31_decode_neg_ctxs(smb_request_t *sr, smb2_neg_ctxs_t *neg_ctxs)
 					encrypt_gcm_enabled = B_TRUE;
 					break;
 				default:
-					;
+					DTRACE_PROBE2(smb3__cipher__unknown__id,
+					    smb_request_t *, sr,
+					    uint16_t,
+					    encap->encap_cipher_ids[k]);
+					break;
 				}
 			}
 			break;
@@ -525,7 +566,7 @@ smb31_encode_neg_ctxs(smb_request_t *sr, smb2_neg_ctxs_t *neg_ctxs)
 	ASSERT3S(neg_ctx_off, ==, sr->reply.chain_offset);
 
 	encap->encap_cipher_ids[0] = s->smb31_enc_cipherid;
-	picap->picap_hash_id = s->smb31_preauth_hashid;
+	picap->picap_hash_ids[0] = s->smb31_preauth_hashid;
 	picap->picap_salt_len = salt_len;
 
 	(void) random_get_pseudo_bytes(picap->picap_salt, salt_len);
