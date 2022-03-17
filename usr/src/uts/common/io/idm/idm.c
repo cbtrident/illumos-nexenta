@@ -1687,9 +1687,10 @@ idm_task_abort_one(idm_conn_t *ic, idm_task_t *idt, idm_abort_type_t abort_type)
 		}
 		break;
 	case TASK_COMPLETE:
+		mutex_exit(&idt->idt_mutex);
 		idm_refcnt_wait_ref(&idt->idt_refcnt);
 		s = STMF_ABORT_SUCCESS;
-		break;
+		return (s);
 	default:
 		ASSERT(0);
 	}
