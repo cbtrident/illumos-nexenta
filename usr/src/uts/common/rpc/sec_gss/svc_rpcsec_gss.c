@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  * Copyright (c) 1996, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Milan Jurik. All rights reserved.
  * Copyright 2012 Marcel Telka <marcel@telka.sk>
@@ -105,6 +105,7 @@ typedef struct _svc_rpc_gss_data {
 	int				ref_cnt;
 	time_t				last_ref_time;
 	bool_t				stale;
+	bool_t				invalid;
 	retrans_entry			*retrans_data;
 } svc_rpc_gss_data;
 
@@ -891,7 +892,6 @@ do_gss_accept(
 		    "_svc_rpcsec_gss gss_accept_sec_context");
 		(void) svc_sendreply(rqst->rq_xprt,
 		    __xdr_rpc_gss_init_res, (caddr_t)&call_res);
-		client_data->stale = TRUE;
 		ret = AUTH_OK;
 		goto error2;
 	}
@@ -916,7 +916,6 @@ do_gss_accept(
 
 		if (!transfer_sec_context(client_data)) {
 			ret = RPCSEC_GSS_FAILED;
-			client_data->stale = TRUE;
 			RPCGSS_LOG0(1,
 			    "_svc_rpcsec_gss: transfer sec context failed\n");
 			goto error2;
@@ -941,7 +940,6 @@ do_gss_accept(
 		if (!set_response_verf(rqst, msg, client_data,
 		    (uint_t)SEQ_WIN)) {
 			ret = RPCSEC_GSS_FAILED;
-			client_data->stale = TRUE;
 			RPCGSS_LOG0(1,
 			    "_svc_rpcsec_gss:set response verifier failed\n");
 			goto error2;
@@ -951,7 +949,6 @@ do_gss_accept(
 	if (!svc_sendreply(rqst->rq_xprt, __xdr_rpc_gss_init_res,
 	    (caddr_t)&call_res)) {
 		ret = RPCSEC_GSS_FAILED;
-		client_data->stale = TRUE;
 		RPCGSS_LOG0(1, "_svc_rpcsec_gss:send reply failed\n");
 		goto error2;
 	}
@@ -970,9 +967,23 @@ do_gss_accept(
 	return (AUTH_OK);
 
 error2:
-	ASSERT(client_data->ref_cnt > 0);
-	client_data->ref_cnt--;
-	mutex_exit(&client_data->clm);
+	/*
+	 * Mark as stale so cleanup can occur.
+	 * If ref_cnt == 0, mark as invalid so we can safely destroy
+	 * after dropping the lock.
+	 */
+	client_data->stale = TRUE;
+	ASSERT3S(client_data->ref_cnt, >, 0);
+	if (--client_data->ref_cnt == 0) {
+		client_data->invalid = TRUE;
+		mutex_exit(&client_data->clm);
+		mutex_enter(&ctx_mutex);
+		destroy_client(client_data);
+		mutex_exit(&ctx_mutex);
+	} else {
+		mutex_exit(&client_data->clm);
+	}
+
 	(void) gss_release_buffer(&minor_stat, &output_token);
 	if (free_mech_type && mech_type)
 		kgss_free_oid(mech_type);
@@ -1043,13 +1054,6 @@ rpcsec_gss_init(
 		return (ret);
 	}
 
-	mutex_enter(&client_data->clm);
-	if (client_data->stale) {
-		ret = RPCSEC_GSS_NOCRED;
-		RPCGSS_LOG0(1, "_svcrpcsec_gss: client data stale\n");
-		goto error2;
-	}
-
 	/*
 	 * kgss_accept_sec_context()/gssd(1M) can be overly time
 	 * consuming so let's queue it and return asap.
@@ -1061,11 +1065,17 @@ rpcsec_gss_init(
 	/* taskq func must free rpc_call_arg & deserialized arguments */
 	arg->rpc_call_arg = kmem_zalloc(sizeof (*arg->rpc_call_arg), KM_SLEEP);
 
+	mutex_enter(&client_data->clm);
+	if (client_data->stale) {
+		ret = RPCSEC_GSS_NOCRED;
+		RPCGSS_LOG0(1, "_svcrpcsec_gss: client data stale\n");
+		goto error2;
+	}
+
 	/* deserialize arguments */
 	if (!SVC_GETARGS(rqst->rq_xprt, __xdr_rpc_gss_init_arg,
 	    (caddr_t)arg->rpc_call_arg)) {
 		ret = RPCSEC_GSS_FAILED;
-		client_data->stale = TRUE;
 		goto error2;
 	}
 
@@ -1100,7 +1110,7 @@ rpcsec_gss_init(
 		SVC_RELE(arg->rq_xprt, NULL, FALSE);
 		svc_clone_unlink(arg->rq_xprt);
 		svc_clone_free(arg->rq_xprt);
-		kmem_free(arg, sizeof (*arg));
+		xdr_free(__xdr_rpc_gss_init_arg, (caddr_t)arg->rpc_call_arg);
 		goto error2;
 	}
 
@@ -1109,9 +1119,26 @@ rpcsec_gss_init(
 	return (AUTH_OK);
 
 error2:
-	ASSERT(client_data->ref_cnt > 0);
-	client_data->ref_cnt--;
-	mutex_exit(&client_data->clm);
+	/*
+	 * Mark as stale so cleanup can occur.
+	 * If ref_cnt == 0, mark as invalid so we can safely destroy
+	 * after dropping the lock.
+	 */
+	client_data->stale = TRUE;
+	ASSERT3S(client_data->ref_cnt, >, 0);
+	if (--client_data->ref_cnt == 0) {
+		client_data->invalid = TRUE;
+		mutex_exit(&client_data->clm);
+		mutex_enter(&ctx_mutex);
+		destroy_client(client_data);
+		mutex_exit(&ctx_mutex);
+	} else {
+		mutex_exit(&client_data->clm);
+	}
+
+	kmem_free(arg->rpc_call_arg, sizeof (*arg->rpc_call_arg));
+	kmem_free(arg, sizeof (*arg));
+
 	cmn_err(CE_NOTE, "rpcsec_gss_init: error 0x%x", ret);
 	return (ret);
 }
@@ -1641,6 +1668,7 @@ create_client()
 	client_data->qop = GSS_C_QOP_DEFAULT;
 	client_data->done_docallback = FALSE;
 	client_data->stale = FALSE;
+	client_data->invalid = FALSE;
 	client_data->retrans_data = NULL;
 	bzero(&client_data->raw_cred, sizeof (client_data->raw_cred));
 
@@ -1702,8 +1730,9 @@ get_client(gss_buffer_t ctx_handle)
 	mutex_enter(&ctx_mutex);
 	if ((cl = find_client(key)) != NULL) {
 		mutex_enter(&cl->clm);
+		/* invalid entries are about to be destroyed elsewhere */
 		if (cl->stale) {
-			if (cl->ref_cnt == 0) {
+			if (cl->ref_cnt == 0 && !cl->invalid) {
 				mutex_exit(&cl->clm);
 				destroy_client(cl);
 			} else {
@@ -1836,30 +1865,31 @@ sweep_clients(bool_t from_reclaim)
 
 		mutex_enter(&cl->clm);
 
+		/* invalid entries are about to be destroyed elsewhere */
+		if (cl->invalid) {
+			mutex_exit(&cl->clm);
+			cl = next;
+			continue;
+		}
+
 		if ((cl->expiration != GSS_C_INDEFINITE &&
 		    cl->expiration <= now) || cl->stale ||
-		    cl->last_ref_time <= last_reference_needed) {
+		    (cl->last_ref_time <= last_reference_needed &&
+		    cl->ref_cnt == 0)) {
+			cl->stale = TRUE;
 
-			if ((cl->expiration != GSS_C_INDEFINITE &&
-			    cl->expiration <= now) || cl->stale ||
-			    (cl->last_ref_time <= last_reference_needed &&
-			    cl->ref_cnt == 0)) {
-
-				cl->stale = TRUE;
-
-				if (cl->ref_cnt == 0) {
-					mutex_exit(&cl->clm);
-					if (from_reclaim)
-						svc_rpc_gss_cache_stats.
-						    no_returned_by_reclaim++;
-					destroy_client(cl);
-				} else
-					mutex_exit(&cl->clm);
-			} else
+			if (cl->ref_cnt == 0) {
 				mutex_exit(&cl->clm);
-		} else
-			mutex_exit(&cl->clm);
+				if (from_reclaim)
+					svc_rpc_gss_cache_stats.
+					    no_returned_by_reclaim++;
+				destroy_client(cl);
+				cl = next;
+				continue;
+			}
+		}
 
+		mutex_exit(&cl->clm);
 		cl = next;
 	}
 
