@@ -1460,6 +1460,8 @@ error2:
 	return (ret);
 }
 
+bool_t rpcsec_gss_enabled = TRUE;
+
 /*
  * Server side authentication for RPCSEC_GSS.
  */
@@ -1483,6 +1485,9 @@ __svcrpcsec_gss(
 	rqst->rq_xprt->xp_verf.oa_flavor = AUTH_NONE;
 	rqst->rq_xprt->xp_verf.oa_base = NULL;
 	rqst->rq_xprt->xp_verf.oa_length = 0;
+
+	if (!rpcsec_gss_enabled)
+		return (AUTH_REJECTEDCRED);
 
 	/*
 	 * Pull out and check credential and verifier.
