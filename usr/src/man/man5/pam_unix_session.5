@@ -21,9 +21,10 @@ The \fBpam_unix_session\fR module implements \fBpam_sm_open_session\fR(3PAM)
 and \fBpam_sm_close_session\fR(3PAM).
 .sp
 .LP
-\fBpam_sm_open_session()\fR updates the \fB/var/adm/lastlog\fR file with the
-information contained in the \fBPAM_USER\fR, \fBPAM_TTY\fR, and
-\fBPAM_RHOSTS\fR items. \fBpam_unix_account\fR(5) uses this account to
+\fBpam_sm_open_session()\fR reads \fB/var/adm/lastlog.v2\fR to report the
+user's last login time via a PAM_TEXT_INFO message as well as updates the file
+with information contained in the \fBPAM_USER\fR, \fBPAM_TTY\fR, and
+\fBPAM_RHOSTS\fR items.  \fBpam_unix_account\fR(5) also uses this file to
 determine the previous time the user logged in.
 .sp
 .LP
