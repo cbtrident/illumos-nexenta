@@ -105,7 +105,7 @@ typedef struct ipmi_set_user_password {
 static ipmi_get_user_access_t *
 ipmi_get_user_access(ipmi_handle_t *ihp, uint8_t channel, uint8_t uid)
 {
-	ipmi_cmd_t cmd, *resp;
+	ipmi_cmd_t cmd = { 0 }, *resp;
 	ipmi_get_user_access_req_t req = { 0 };
 
 	req.igua_channel = channel;
@@ -141,7 +141,7 @@ ipmi_get_user_access(ipmi_handle_t *ihp, uint8_t channel, uint8_t uid)
 static const char *
 ipmi_get_user_name(ipmi_handle_t *ihp, uint8_t uid)
 {
-	ipmi_cmd_t cmd, *resp;
+	ipmi_cmd_t cmd = { 0 }, *resp;
 
 	cmd.ic_netfn = IPMI_NETFN_APP;
 	cmd.ic_cmd = IPMI_CMD_GET_USER_NAME;
@@ -325,7 +325,7 @@ int
 ipmi_user_set_password(ipmi_handle_t *ihp, uint8_t uid, const char *passwd)
 {
 	ipmi_set_user_password_t req = { 0 };
-	ipmi_cmd_t cmd;
+	ipmi_cmd_t cmd = { 0 };
 
 	req.isup_uid = uid;
 	req.isup_op = IPMI_PASSWORD_OP_SET;

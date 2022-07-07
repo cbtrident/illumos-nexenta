@@ -31,7 +31,7 @@
 ipmi_deviceid_t *
 ipmi_get_deviceid(ipmi_handle_t *ihp)
 {
-	ipmi_cmd_t cmd, *resp;
+	ipmi_cmd_t cmd = { 0 }, *resp;
 	uint16_t id_prod;
 
 	if (ihp->ih_deviceid != NULL)
@@ -127,7 +127,7 @@ ipmi_firmware_version(ipmi_handle_t *ihp)
 ipmi_channel_auth_caps_t *
 ipmi_get_channel_auth_caps(ipmi_handle_t *ihp, uint8_t channel, uint8_t priv)
 {
-	ipmi_cmd_t cmd, *resp;
+	ipmi_cmd_t cmd = { 0 }, *resp;
 	uint8_t msg_data[2];
 	ipmi_channel_auth_caps_t *caps;
 
@@ -166,7 +166,7 @@ ipmi_get_channel_auth_caps(ipmi_handle_t *ihp, uint8_t channel, uint8_t priv)
 ipmi_channel_info_t *
 ipmi_get_channel_info(ipmi_handle_t *ihp, int number)
 {
-	ipmi_cmd_t cmd, *rsp;
+	ipmi_cmd_t cmd = { 0 }, *rsp;
 	uint8_t channel;
 
 	if (number > 0xF) {
@@ -200,7 +200,7 @@ ipmi_get_channel_info(ipmi_handle_t *ihp, int number)
 int
 ipmi_chassis_identify(ipmi_handle_t *ihp, boolean_t enable)
 {
-	ipmi_cmd_t cmd;
+	ipmi_cmd_t cmd = { 0 };
 	uint8_t msg_data[2];
 
 	if (enable) {
@@ -229,7 +229,7 @@ ipmi_chassis_identify(ipmi_handle_t *ihp, boolean_t enable)
 ipmi_chassis_status_t *
 ipmi_chassis_status(ipmi_handle_t *ihp)
 {
-	ipmi_cmd_t cmd, *rsp;
+	ipmi_cmd_t cmd = { 0 }, *rsp;
 	ipmi_chassis_status_t *chs;
 
 	cmd.ic_netfn = IPMI_NETFN_CHASSIS;

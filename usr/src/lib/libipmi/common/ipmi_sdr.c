@@ -25,6 +25,7 @@
  */
 /*
  * Copyright (c) 2018, Joyent, Inc.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 
@@ -111,7 +112,7 @@ typedef struct ipmi_rsp_get_sdr {
 ipmi_sdr_info_t *
 ipmi_sdr_get_info(ipmi_handle_t *ihp)
 {
-	ipmi_cmd_t cmd, *rsp;
+	ipmi_cmd_t cmd = { 0 }, *rsp;
 	ipmi_sdr_info_t *sip;
 	uint16_t tmp16;
 	uint32_t tmp32;
@@ -148,7 +149,7 @@ ipmi_sdr_get_info(ipmi_handle_t *ihp)
 static int
 ipmi_sdr_reserve_repository(ipmi_handle_t *ihp)
 {
-	ipmi_cmd_t cmd, *rsp;
+	ipmi_cmd_t cmd = { 0 }, *rsp;
 
 	cmd.ic_netfn = IPMI_NETFN_STORAGE;
 	cmd.ic_lun = 0;
@@ -478,7 +479,7 @@ ipmi_sdr_t *
 ipmi_sdr_get(ipmi_handle_t *ihp, uint16_t id, uint16_t *next)
 {
 	uint8_t offset = IPMI_SDR_HDR_SZ, count = 0, chunksz = 16, sdr_sz;
-	ipmi_cmd_t cmd, *rsp;
+	ipmi_cmd_t cmd = { 0 }, *rsp;
 	ipmi_cmd_get_sdr_t req;
 	ipmi_sdr_t *sdr;
 	int i = 0;

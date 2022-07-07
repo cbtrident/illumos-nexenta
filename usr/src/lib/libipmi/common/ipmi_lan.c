@@ -77,7 +77,7 @@ typedef struct ipmi_lan {
 	char		il_authcode[IPMI_AUTHCODE_BUF_SIZE + 1];
 	uint8_t		il_challenge[16];
 	uint32_t	il_session_id;
-	int 		il_sd;
+	int		il_sd;
 	boolean_t	il_send_authcode;
 	boolean_t	il_session_active;
 	uint8_t		il_authtype;
@@ -120,7 +120,6 @@ ipmi_req_add_entry(ipmi_handle_t *ihp, ipmi_cmd_t *req)
 	return (e);
 }
 
-/*ARGSUSED*/
 static ipmi_rq_entry_t *
 ipmi_req_lookup_entry(ipmi_handle_t *ihp, uint8_t seq, uint8_t cmd)
 {
@@ -199,7 +198,7 @@ ipmi_lan_recv_packet(ipmi_handle_t *ihp)
 	FD_ZERO(&err_set);
 	FD_SET(ilp->il_sd, &err_set);
 
-	tmout.tv_sec = 	ilp->il_timeout;
+	tmout.tv_sec = ilp->il_timeout;
 	tmout.tv_usec = 0;
 
 	ret = select(ilp->il_sd + 1, &read_set, NULL, &err_set, &tmout);
@@ -274,7 +273,6 @@ struct rmcp_pong {
  * returns 0 if IPMI is NOT supported
  * returns 1 if IPMI is supported
  */
-/*ARGSUSED*/
 static int
 ipmi_handle_pong(ipmi_handle_t *ihp, ipmi_rs_t *rsp)
 {
@@ -283,7 +281,6 @@ ipmi_handle_pong(ipmi_handle_t *ihp, ipmi_rs_t *rsp)
 	if (rsp == NULL)
 		return (-1);
 
-	/*LINTED: E_BAD_PTR_CAST_ALIGN*/
 	pong = (struct rmcp_pong *)rsp->ir_data;
 
 	return ((pong->rp_sup_entities & 0x80) ? 1 : 0);
@@ -570,7 +567,7 @@ static int
 ipmi_get_session_challenge_cmd(ipmi_handle_t *ihp, uint32_t *session_id,
     uint8_t *challenge)
 {
-	ipmi_cmd_t cmd, resp;
+	ipmi_cmd_t cmd = { 0 }, resp;
 	ipmi_lan_t *ilp = (ipmi_lan_t *)ihp->ih_tdata;
 	char msg_data[17];
 	int ccode;
@@ -619,7 +616,7 @@ ipmi_get_session_challenge_cmd(ipmi_handle_t *ihp, uint32_t *session_id,
 static int
 ipmi_activate_session_cmd(ipmi_handle_t *ihp)
 {
-	ipmi_cmd_t cmd, resp;
+	ipmi_cmd_t cmd = { 0 }, resp;
 	ipmi_lan_t *ilp = (ipmi_lan_t *)ihp->ih_tdata;
 	uint8_t msg_data[22], *resp_data;
 	int ccode;
@@ -681,14 +678,14 @@ ipmi_activate_session_cmd(ipmi_handle_t *ihp)
 static int
 ipmi_set_session_privlvl_cmd(ipmi_handle_t *ihp, uint8_t privlvl)
 {
-	ipmi_cmd_t cmd, resp;
+	ipmi_cmd_t cmd = { 0 }, resp;
 	int ret = 0, ccode;
 
 	if (privlvl > IPMI_SESSION_PRIV_OEM)
 		return (ipmi_set_error(ihp, EIPMI_BADPARAM, NULL));
 
 	cmd.ic_netfn	= IPMI_NETFN_APP;
-	cmd.ic_lun 	= 0;
+	cmd.ic_lun	= 0;
 	cmd.ic_cmd	= IPMI_CMD_SET_SESSION_PRIVLVL;
 	cmd.ic_data	= &privlvl;
 	cmd.ic_dlen	= 1;
@@ -706,7 +703,7 @@ static int
 ipmi_close_session_cmd(ipmi_handle_t *ihp)
 {
 	ipmi_lan_t *ilp = (ipmi_lan_t *)ihp->ih_tdata;
-	ipmi_cmd_t cmd, resp;
+	ipmi_cmd_t cmd = { 0 }, resp;
 	uint8_t msg_data[4];
 	int ret = 0, ccode;
 

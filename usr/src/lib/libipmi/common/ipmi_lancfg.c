@@ -98,7 +98,7 @@ static int
 ipmi_lan_get_param(ipmi_handle_t *ihp, int channel, int param, int set,
     int block, void *data, size_t len)
 {
-	ipmi_cmd_t cmd, *rsp;
+	ipmi_cmd_t cmd = { 0 }, *rsp;
 	ipmi_cmd_lan_get_config_t lcmd = { 0 };
 
 	lcmd.ilgc_number = channel;
@@ -160,7 +160,7 @@ static int
 ipmi_lan_set_param(ipmi_handle_t *ihp, int channel, int param, void *data,
     size_t len)
 {
-	ipmi_cmd_t cmd;
+	ipmi_cmd_t cmd = { 0 };
 	ipmi_cmd_lan_set_config_t lcmd = { 0 };
 
 	lcmd.ilsc_number = channel;

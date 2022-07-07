@@ -22,12 +22,11 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD: src/sys/sys/ipmi.h,v 1.2 2006/09/22 22:11:29 jhb Exp $
  */
 
 /*
  * Copyright 2012 Joyent, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SYS_IPMI_H_
@@ -42,14 +41,16 @@ extern "C" {
 
 #define	IPMI_MAX_ADDR_SIZE		0x20
 #define	IPMI_MAX_RX			1024
-#define	IPMI_BMC_SLAVE_ADDR		0x20 /* Default slave address */
-#define	IPMI_BMC_CHANNEL		0x0f /* BMC channel */
-
-#define	IPMI_BMC_SMS_LUN		0x02
 
 #define	IPMI_SYSTEM_INTERFACE_ADDR_TYPE	0x0c
 #define	IPMI_IPMB_ADDR_TYPE		0x01
 #define	IPMI_IPMB_BROADCAST_ADDR_TYPE	0x41
+
+#define	IPMI_BMC_CHANNEL		0x0f /* BMC channel */
+#define	IPMI_BMC_SLAVE_ADDR		0x20 /* Default slave address */
+#define	IPMI_BMC_SMS_LUN		0x02
+
+#define	IPMI_IPMB_CHANNEL		0x00
 
 #define	IPMI_IOC_MAGIC			'i'
 #define	IPMICTL_RECEIVE_MSG_TRUNC	\

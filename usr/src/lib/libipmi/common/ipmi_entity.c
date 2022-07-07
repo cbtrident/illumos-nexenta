@@ -22,8 +22,9 @@
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
+/*
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
+ */
 
 /*
  * IPMI entities are a strange beast.  A reasonable assumption for those
@@ -189,7 +190,6 @@ ipmi_entity_sdr_parse(ipmi_sdr_t *sdrp, uint8_t *id, uint8_t *instance,
  * This function is responsible for gathering all entities, inserting them into
  * the global hash, and establishing any associations.
  */
-/*ARGSUSED*/
 static int
 ipmi_entity_visit(ipmi_handle_t *ihp, const char *name, ipmi_sdr_t *sdrp,
     void *unused)
@@ -288,7 +288,7 @@ ipmi_entity_present_sdr(ipmi_handle_t *ihp, ipmi_sdr_t *sdrp,
     boolean_t *valp)
 {
 	uint16_t mask;
-	uint8_t number, sensor_type, reading_type;
+	uint8_t sensor_type, reading_type;
 	ipmi_sdr_compact_sensor_t *csp;
 	ipmi_sdr_full_sensor_t *fsp;
 	ipmi_sensor_reading_t *srp;
@@ -296,14 +296,12 @@ ipmi_entity_present_sdr(ipmi_handle_t *ihp, ipmi_sdr_t *sdrp,
 	switch (sdrp->is_type) {
 	case IPMI_SDR_TYPE_COMPACT_SENSOR:
 		csp = (ipmi_sdr_compact_sensor_t *)sdrp->is_record;
-		number = csp->is_cs_number;
 		sensor_type = csp->is_cs_type;
 		reading_type = csp->is_cs_reading_type;
 		break;
 
 	case IPMI_SDR_TYPE_FULL_SENSOR:
 		fsp = (ipmi_sdr_full_sensor_t *)sdrp->is_record;
-		number = fsp->is_fs_number;
 		sensor_type = fsp->is_fs_type;
 		reading_type = fsp->is_fs_reading_type;
 		break;
@@ -351,7 +349,8 @@ ipmi_entity_present_sdr(ipmi_handle_t *ihp, ipmi_sdr_t *sdrp,
 	 * If we've reached here, then we have a dedicated sensor that
 	 * indicates presence.
 	 */
-	if ((srp = ipmi_get_sensor_reading(ihp, number)) == NULL) {
+	if ((srp = ipmi_get_sensor_reading(ihp,
+	    (ipmi_sensor_keys_t *)sdrp->is_record)) == NULL) {
 		if (ipmi_errno(ihp) == EIPMI_NOT_PRESENT) {
 			*valp = B_FALSE;
 			return (0);
@@ -368,45 +367,43 @@ ipmi_entity_present_sdr(ipmi_handle_t *ihp, ipmi_sdr_t *sdrp,
  * This function follows the procedure documented in section 40 of the spec.
  * To quote the conclusion from section 40.2:
  *
- * 	Thus, the steps to detecting an Entity are:
+ *	Thus, the steps to detecting an Entity are:
  *
- * 	a) Scan the SDRs for sensors associated with the entity.
+ *	a) Scan the SDRs for sensors associated with the entity.
  *
- * 	b) If there is an active sensor that includes a presence bit, or the
+ *	b) If there is an active sensor that includes a presence bit, or the
  *	   entity has an active Entity Presence sensor, use the sensor to
  *	   determine the presence of the entity.
  *
- * 	c) Otherwise, check to see that there is at least one active sensor
+ *	c) Otherwise, check to see that there is at least one active sensor
  *	   associated with the entity.  Do this by doing 'Get Sensor Readings'
  *	   to the sensors associated with the entity until a scanning sensor is
  *	   found.
  *
- * 	d) If there are no active sensors directly associated with the entity,
+ *	d) If there are no active sensors directly associated with the entity,
  *	   check the SDRs to see if the entity is a container entity in an
  *	   entity-association.  If so, check to see if any of the contained
  *	   entities are present, if so, assume the container entity exists.
  *	   Note that this may need to be iterative, since it's possible to have
  *	   multi-level entity associations.
  *
- * 	e) If there are no active sensors for the entity, and the entity is not
+ *	e) If there are no active sensors for the entity, and the entity is not
  *	   the container entity in an active entity-assocation, then the entity
  *         is present if (sic) there there is a FRU device for the entity, and
  *         the FRU device is present.
  *
  *	It should not be considered an error if a FRU device locator record is
  *	present for a FRU device, but the FRU device is not there.
- *
  */
 int
 ipmi_entity_present(ipmi_handle_t *ihp, ipmi_entity_t *ep, boolean_t *valp)
 {
-	/* LINTED - alignment */
 	ipmi_entity_impl_t *eip = ENTITY_TO_IMPL(ep);
 	ipmi_entity_impl_t *cp;
 	ipmi_entity_sdr_t *esp;
 	ipmi_sdr_t *sdrp;
 	uint16_t mask;
-	uint8_t number, sensor_type, reading_type;
+	uint8_t sensor_type, reading_type;
 	ipmi_sensor_reading_t *srp;
 	ipmi_sdr_compact_sensor_t *csp;
 	ipmi_sdr_full_sensor_t *fsp;
@@ -423,14 +420,12 @@ ipmi_entity_present(ipmi_handle_t *ihp, ipmi_entity_t *ep, boolean_t *valp)
 		switch (sdrp->is_type) {
 		case IPMI_SDR_TYPE_COMPACT_SENSOR:
 			csp = (ipmi_sdr_compact_sensor_t *)sdrp->is_record;
-			number = csp->is_cs_number;
 			sensor_type = csp->is_cs_type;
 			reading_type = csp->is_cs_reading_type;
 			break;
 
 		case IPMI_SDR_TYPE_FULL_SENSOR:
 			fsp = (ipmi_sdr_full_sensor_t *)sdrp->is_record;
-			number = fsp->is_fs_number;
 			sensor_type = fsp->is_fs_type;
 			reading_type = fsp->is_fs_reading_type;
 			break;
@@ -475,7 +470,8 @@ ipmi_entity_present(ipmi_handle_t *ihp, ipmi_entity_t *ep, boolean_t *valp)
 		 * If we've reached here, then we have a dedicated sensor that
 		 * indicates presence.
 		 */
-		if ((srp = ipmi_get_sensor_reading(ihp, number)) == NULL) {
+		if ((srp = ipmi_get_sensor_reading(ihp,
+		    (ipmi_sensor_keys_t *)sdrp->is_record)) == NULL) {
 			if (ipmi_errno(ihp) == EIPMI_NOT_PRESENT) {
 				*valp = B_FALSE;
 				return (0);
@@ -495,22 +491,11 @@ ipmi_entity_present(ipmi_handle_t *ihp, ipmi_entity_t *ep, boolean_t *valp)
 	for (esp = ipmi_list_next(&eip->ie_sdr_list); esp != NULL;
 	    esp = ipmi_list_next(esp)) {
 		sdrp = esp->ies_sdr;
-		switch (sdrp->is_type) {
-		case IPMI_SDR_TYPE_COMPACT_SENSOR:
-			csp = (ipmi_sdr_compact_sensor_t *)sdrp->is_record;
-			number = csp->is_cs_number;
-			break;
-
-		case IPMI_SDR_TYPE_FULL_SENSOR:
-			fsp = (ipmi_sdr_full_sensor_t *)sdrp->is_record;
-			number = fsp->is_fs_number;
-			break;
-
-		default:
+		if (sdrp->is_type != IPMI_SDR_TYPE_COMPACT_SENSOR &&
+		    sdrp->is_type != IPMI_SDR_TYPE_FULL_SENSOR)
 			continue;
-		}
-
-		if ((srp = ipmi_get_sensor_reading(ihp, number)) == NULL) {
+		if ((srp = ipmi_get_sensor_reading(ihp,
+		    (ipmi_sensor_keys_t *)sdrp->is_record)) == NULL) {
 			if (ipmi_errno(ihp) == EIPMI_NOT_PRESENT)
 				continue;
 
@@ -600,7 +585,6 @@ ipmi_entity_iter_sdr(ipmi_handle_t *ihp, ipmi_entity_t *ep,
     int (*func)(ipmi_handle_t *, ipmi_entity_t *, const char *, ipmi_sdr_t *,
     void *), void *data)
 {
-	/* LINTED - alignment */
 	ipmi_entity_impl_t *eip = ENTITY_TO_IMPL(ep);
 	ipmi_entity_sdr_t *isp;
 	int ret;
@@ -619,7 +603,6 @@ int
 ipmi_entity_iter_children(ipmi_handle_t *ihp, ipmi_entity_t *ep,
     int (*func)(ipmi_handle_t *, ipmi_entity_t *, void *), void *data)
 {
-	/* LINTED - alignment */
 	ipmi_entity_impl_t *eip = ENTITY_TO_IMPL(ep);
 	ipmi_entity_impl_t *cp;
 	int ret;
@@ -636,7 +619,6 @@ ipmi_entity_iter_children(ipmi_handle_t *ihp, ipmi_entity_t *ep,
 ipmi_entity_t *
 ipmi_entity_parent(ipmi_handle_t *ihp, ipmi_entity_t *ep)
 {
-	/* LINTED - alignment */
 	ipmi_entity_impl_t *eip = ENTITY_TO_IMPL(ep);
 
 	if (eip->ie_parent == NULL) {

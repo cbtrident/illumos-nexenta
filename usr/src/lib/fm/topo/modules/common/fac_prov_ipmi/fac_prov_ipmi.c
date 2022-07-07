@@ -23,7 +23,8 @@
  * Use is subject to license terms.
  */
 /*
- * Copyright (c) 2018, Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 #include <unistd.h>
 #include <stdio.h>
@@ -309,8 +310,8 @@ ipmi_platform_message(topo_mod_t *mod, tnode_t *node, topo_version_t vers,
 		/*
 		 * Get the LED mode
 		 */
-		if ((reading = ipmi_get_sensor_reading(hdl, csp->is_cs_number))
-		    == NULL) {
+		if ((reading = ipmi_get_sensor_reading(hdl,
+		    (ipmi_sensor_keys_t *)csp)) == NULL) {
 			topo_mod_dprintf(mod, "Failed to get sensor reading "
 			    "for sensor %s: %s\n", entity_ref,
 			    ipmi_errmsg(hdl));
@@ -347,14 +348,14 @@ static int
 ipmi_sensor_state(topo_mod_t *mod, tnode_t *node, topo_version_t vers,
     nvlist_t *in, nvlist_t **out)
 {
-	char **entity_refs;
+	char **entity_refs, *sensor_class;
 	uint_t nelems;
 	ipmi_sdr_t *sdr = NULL;
 	ipmi_sensor_reading_t *reading;
 	ipmi_handle_t *hdl;
 	int err, i;
 	uint8_t sensor_num;
-	uint32_t e_id, e_inst;
+	uint32_t e_id, e_inst, state;
 	ipmi_sdr_full_sensor_t *fsensor;
 	ipmi_sdr_compact_sensor_t *csensor;
 	nvlist_t *nvl;
@@ -418,8 +419,8 @@ ipmi_sensor_state(topo_mod_t *mod, tnode_t *node, topo_version_t vers,
 			strarr_free(mod, entity_refs, nelems);
 			return (-1);
 	}
-	if ((reading = ipmi_get_sensor_reading(hdl, sensor_num))
-	    == NULL) {
+	if ((reading = ipmi_get_sensor_reading(hdl,
+	    (ipmi_sensor_keys_t *)sdr->is_record)) == NULL) {
 		topo_mod_dprintf(mod, "Failed to get sensor reading for sensor "
 		    "%s, sensor_num=%d (%s)\n", entity_refs[i], sensor_num,
 		    ipmi_errmsg(hdl));
@@ -427,15 +428,41 @@ ipmi_sensor_state(topo_mod_t *mod, tnode_t *node, topo_version_t vers,
 		topo_mod_ipmi_rele(mod);
 		return (-1);
 	}
+	if (reading->isr_state_unavailable) {
+		topo_mod_dprintf(mod, "Unavailable sensor %s, sensor_num=%d\n",
+		    entity_refs[i], sensor_num);
+		strarr_free(mod, entity_refs, nelems);
+		topo_mod_ipmi_rele(mod);
+		return (-1);
+	}
 	strarr_free(mod, entity_refs, nelems);
 	topo_mod_ipmi_rele(mod);
+
+	if (topo_prop_get_string(node, TOPO_PGROUP_FACILITY, TOPO_SENSOR_CLASS,
+	    &sensor_class, &err) != 0) {
+		topo_mod_dprintf(mod, "Failed to lookup prop %s/%s on node %s ",
+		    "(%s)", TOPO_PGROUP_FACILITY, TOPO_SENSOR_CLASS,
+		    topo_node_name(node), topo_strerror(err));
+		return (topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM));
+	}
+	/*
+	 * Mask off bits that are marked as reserved in the IPMI spec.
+	 * For threshold sensors, bits 6:7 are reserved.
+	 * For discrete sensors, bit 15 is reserved.
+	 */
+	state = reading->isr_state;
+	if (strcmp(sensor_class, TOPO_SENSOR_CLASS_THRESHOLD) == 0)
+		state = state & 0x3F;
+	else
+		state = state & 0x7FFF;
+
+	topo_mod_strfree(mod, sensor_class);
 
 	if (topo_mod_nvalloc(mod, &nvl, NV_UNIQUE_NAME) != 0 ||
 	    nvlist_add_string(nvl, TOPO_PROP_VAL_NAME,
 	    TOPO_SENSOR_STATE) != 0 ||
 	    nvlist_add_uint32(nvl, TOPO_PROP_VAL_TYPE, TOPO_TYPE_UINT32) != 0 ||
-	    nvlist_add_uint32(nvl, TOPO_PROP_VAL_VAL, reading->isr_state)
-	    != 0) {
+	    nvlist_add_uint32(nvl, TOPO_PROP_VAL_VAL, state) != 0) {
 		topo_mod_dprintf(mod, "Failed to allocate 'out' nvlist\n");
 		nvlist_free(nvl);
 		return (topo_mod_seterrno(mod, EMOD_NOMEM));
@@ -517,7 +544,8 @@ ipmi_sensor_reading(topo_mod_t *mod, tnode_t *node, topo_version_t vers,
 			return (-1);
 	}
 
-	if ((reading = ipmi_get_sensor_reading(hdl, sensor_num)) == NULL) {
+	if ((reading = ipmi_get_sensor_reading(hdl,
+	    (ipmi_sensor_keys_t *)sdr->is_record)) == NULL) {
 		topo_mod_dprintf(mod, "Failed to get sensor reading for sensor "
 		    "%s, sensor_num=%d (%s)\n", entity_refs[i],
 		    sensor_num, ipmi_errmsg(hdl));
@@ -1104,8 +1132,8 @@ x4500_present_mode(topo_mod_t *mod, tnode_t *node, topo_version_t vers,
 		ipmi_sensor_reading_t *sr_in;
 
 		topo_mod_dprintf(mod, "Getting LED mode\n");
-		if ((sr_in = ipmi_get_sensor_reading(hdl, cs->is_cs_number))
-		    == NULL) {
+		if ((sr_in = ipmi_get_sensor_reading(hdl,
+		    (ipmi_sensor_keys_t *)cs)) == NULL) {
 			topo_mod_dprintf(mod, "Failed to get sensor reading "
 			    "for sensor %s (sensor num: %d) (error: %s)\n",
 			    entity_refs[i], cs->is_cs_number, ipmi_errmsg(hdl));
@@ -1585,8 +1613,17 @@ make_sensor_node(topo_mod_t *mod, tnode_t *pnode, struct sensor_data *sd,
 	if (sd->sd_fs_sdr == NULL)
 		return (0);
 
-	if (ipmi_get_sensor_thresholds(hdl, &thresh,
-	    sd->sd_fs_sdr->is_fs_number) != 0) {
+	if (ipmi_get_sensor_thresholds(hdl, (ipmi_sensor_keys_t *)sd->sd_fs_sdr,
+	    &thresh) != 0) {
+		/*
+		 * Some sensors report supporting reading thresholds, but Get
+		 * Sensor Thresholds returns Invalid Command.  Do not consider
+		 * this an error so we could continue enumerating sensors for
+		 * the entity.
+		 */
+		if (ipmi_errno(hdl) == EIPMI_INVALID_COMMAND)
+			return (0);
+
 		topo_mod_dprintf(mod, "Failed to get sensor thresholds for "
 		    "node %s (%s)\n", topo_node_name(fnode), ipmi_errmsg(hdl));
 		return (topo_mod_seterrno(mod, EMOD_PARTIAL_ENUM));

@@ -529,12 +529,19 @@ size_t len)
 			(void) snprintf(buf, len, "0x%02x", state);
 			return;
 	}
+	if (state == 0) {
+		(void) snprintf(buf, len, "NO_STATES_ASSERTED");
+		return;
+	}
+	buf[0] = '\0';
 	for (; ntp->int_name != NULL; ntp++) {
-		if (ntp->int_value == state) {
-			(void) strlcpy(buf, ntp->int_name, len);
-			return;
+		if (state & ntp->int_value) {
+			if (buf[0] != '\0')
+				(void) strlcat(buf, "|", len);
+			(void) strlcat(buf, ntp->int_name, len);
 		}
 	}
 
-	(void) snprintf(buf, len, "0x%02x", state);
+	if (buf[0] == '\0')
+		(void) snprintf(buf, len, "0x%02x", state);
 }

@@ -56,6 +56,8 @@ INSTALL_TARGET  = $(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
 #
 LDFLAGS += -dy
 
+CFLAGS +=	-DKCS_LOG
+
 #
 #       Default build targets.
 #

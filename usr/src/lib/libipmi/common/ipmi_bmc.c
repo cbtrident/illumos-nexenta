@@ -22,6 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2012 Joyent, Inc.  All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <errno.h>
@@ -64,7 +65,6 @@ ipmi_bmc_close(void *data)
 	ipmi_free(ibp->ib_ihp, ibp);
 }
 
-/*ARGSUSED*/
 static void *
 ipmi_bmc_open(ipmi_handle_t *ihp, nvlist_t *params)
 {
@@ -100,16 +100,29 @@ ipmi_bmc_send(void *data, ipmi_cmd_t *cmd, ipmi_cmd_t *response,
 	struct ipmi_recv recv;
 	struct ipmi_addr addr;
 	fd_set rset;
-	struct ipmi_system_interface_addr bmc_addr;
 
-	bmc_addr.addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
-	bmc_addr.channel = IPMI_BMC_CHANNEL;
-	bmc_addr.lun = cmd->ic_lun;
+	/* If address was not set explicitly, default to BMC */
+	if (cmd->ic_addr == 0 || cmd->ic_addr == IPMI_BMC_SLAVE_ADDR) {
+		struct ipmi_system_interface_addr *bmc_addr =
+		    (struct ipmi_system_interface_addr *)&addr;
+
+		bmc_addr->addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
+		bmc_addr->channel = IPMI_BMC_CHANNEL;
+		bmc_addr->lun = cmd->ic_lun;
+	} else {
+		struct ipmi_ipmb_addr *ipmb_addr =
+		    (struct ipmi_ipmb_addr *)&addr;
+
+		ipmb_addr->addr_type = IPMI_IPMB_ADDR_TYPE;
+		ipmb_addr->slave_addr = cmd->ic_addr;
+		ipmb_addr->channel = cmd->ic_channel;
+		ipmb_addr->lun = cmd->ic_lun;
+	}
 
 	(void) memset(&req, 0, sizeof (struct ipmi_req));
 
-	req.addr = (unsigned char *) &bmc_addr;
-	req.addr_len = sizeof (bmc_addr);
+	req.addr = (unsigned char *)&addr;
+	req.addr_len = sizeof (addr);
 
 	req.msgid = ibp->ib_msgseq++;
 	req.msg.netfn = cmd->ic_netfn;

@@ -20,8 +20,8 @@
  */
 
 /*
- * Copyright 2017 Joyent, Inc.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Joyent, Inc.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -66,6 +66,7 @@ static struct ipmi_softc	*sc = &softc;
 static list_t			dev_list;
 static id_space_t		*minor_ids;
 static kmutex_t			dev_list_lock;
+static kmutex_t			ipmb_lock;
 
 #define	PTRIN(p)	((void *)(uintptr_t)(p))
 #define	PTROUT(p)	((uintptr_t)(p))
@@ -89,7 +90,7 @@ get_smbios_ipmi_info(void)
 	 * it is not installed. In this case we see 0x0 as the base address.
 	 * If we see this address, assume the device is not really present.
 	 */
-	if (ipmi.smbip_addr == NULL) {
+	if (ipmi.smbip_addr == 0) {
 		cmn_err(CE_WARN, "!SMBIOS: Invalid base address");
 		return (DDI_FAILURE);
 	}
@@ -145,12 +146,12 @@ lookup_ipmidev_by_dev(dev_t dev)
 /*
  * Each open returns a new pseudo device.
  */
-/*ARGSUSED*/
 static int
 ipmi_open(dev_t *devp, int flag, int otyp, cred_t *cred)
 {
 	minor_t minor;
 	ipmi_device_t *dev;
+	id_t mid;
 
 	if (ipmi_attached == B_FALSE)
 		return (ENXIO);
@@ -162,8 +163,9 @@ ipmi_open(dev_t *devp, int flag, int otyp, cred_t *cred)
 	if (flag & FEXCL)
 		return (ENOTSUP);
 
-	if ((minor = (minor_t)id_alloc_nosleep(minor_ids)) == 0)
+	if ((mid = id_alloc_nosleep(minor_ids)) == -1)
 		return (ENODEV);
+	minor = (minor_t)mid;
 
 	/* Initialize the per file descriptor data. */
 	dev = kmem_zalloc(sizeof (ipmi_device_t), KM_SLEEP);
@@ -184,7 +186,6 @@ ipmi_open(dev_t *devp, int flag, int otyp, cred_t *cred)
 	return (0);
 }
 
-/*ARGSUSED*/
 static int
 ipmi_close(dev_t dev, int flag, int otyp, cred_t *cred)
 {
@@ -229,7 +230,17 @@ ipmi_close(dev_t dev, int flag, int otyp, cred_t *cred)
 	return (0);
 }
 
-/*ARGSUSED*/
+static uchar_t
+ipmi_ipmb_checksum(uchar_t *data, int data_len)
+{
+	uchar_t sum;
+
+	sum = 0;
+	for (; data_len > 0; data_len--)
+		sum += *data++;
+	return (-sum);
+}
+
 static int
 ipmi_ioctl(dev_t dv, int cmd, intptr_t data, int flags, cred_t *cr, int *rvalp)
 {
@@ -306,27 +317,99 @@ ipmi_ioctl(dev_t dv, int cmd, intptr_t data, int flags, cred_t *cr, int *rvalp)
 		if (req.msg.data_len > IPMI_MAX_RX)
 			return (EINVAL);
 
-		kreq = ipmi_alloc_request(dev, req.msgid,
-		    IPMI_ADDR(req.msg.netfn, 0), req.msg.cmd,
-		    req.msg.data_len, IPMI_MAX_RX);
-		/* This struct is the same for 32/64 */
-		if (req.msg.data_len > 0 &&
-		    copyin(req.msg.data, kreq->ir_request, req.msg.data_len)) {
-			ipmi_free_request(kreq);
+		if (ddi_copyin(req.addr, &addr, sizeof (addr), flags) == -1)
 			return (EFAULT);
+
+		if (addr.addr_type == IPMI_SYSTEM_INTERFACE_ADDR_TYPE) {
+			struct ipmi_system_interface_addr *saddr =
+			    (struct ipmi_system_interface_addr *)&addr;
+
+			kreq = ipmi_alloc_request(dev, req.msgid,
+			    IPMI_ADDR(req.msg.netfn, saddr->lun & 0x3),
+			    req.msg.cmd, req.msg.data_len, IPMI_MAX_RX);
+			if (req.msg.data_len > 0) {
+				if (ddi_copyin(req.msg.data, kreq->ir_request,
+				    req.msg.data_len, flags) == -1) {
+					ipmi_free_request(kreq);
+					return (EFAULT);
+				}
+			}
+			IPMI_LOCK(sc);
+			dev->ipmi_requests++;
+			error = sc->ipmi_enqueue_request(sc, kreq);
+			IPMI_UNLOCK(sc);
+			if (error != 0)
+				return (error);
+			break;
 		}
+
+		/* Special processing for IPMB commands */
+		struct ipmi_ipmb_addr *iaddr =
+		    (struct ipmi_ipmb_addr *)&addr;
+
+		/*
+		 * Serialize IPMB requests due to lack of any control of
+		 * i2c bus.
+		 */
+		mutex_enter(&ipmb_lock);
+		/* SEND MSG will be sent directly bypassing the queue */
+		kreq = ipmi_alloc_driver_request(IPMI_ADDR(IPMI_APP_REQUEST, 0),
+		    IPMI_SEND_MSG, req.msg.data_len + 8, IPMI_MAX_RX);
+		/* Construct the SEND MSG header */
+		kreq->ir_request[0] = iaddr->channel;
+		kreq->ir_request[1] = iaddr->slave_addr;
+		kreq->ir_request[2] =
+		    IPMI_ADDR(req.msg.netfn, iaddr->lun);
+		kreq->ir_request[3] =
+		    ipmi_ipmb_checksum(&kreq->ir_request[1], 2);
+		kreq->ir_request[4] = dev->ipmi_address;
+		kreq->ir_request[5] = IPMI_ADDR(0, dev->ipmi_lun);
+		kreq->ir_request[6] = req.msg.cmd;
+		/* Copy the message data */
+		if (req.msg.data_len > 0) {
+			if (ddi_copyin(req.msg.data, &kreq->ir_request[7],
+			    req.msg.data_len, flags) == -1) {
+				ipmi_free_request(kreq);
+				mutex_exit(&ipmb_lock);
+				return (EFAULT);
+			}
+		}
+		kreq->ir_request[req.msg.data_len + 7] =
+		    ipmi_ipmb_checksum(&kreq->ir_request[4],
+		    req.msg.data_len + 3);
+		error = ipmi_submit_driver_request(sc, &kreq, MAX_TIMEOUT);
+		ipmi_free_request(kreq);
+		if (error != 0) {
+			mutex_exit(&ipmb_lock);
+			return (error);
+		}
+
+		/*
+		 * GET MSG will go through queue so that RECEIVE MSG ioctl
+		 * would get the correct response.
+		 */
+		kreq = ipmi_alloc_request(dev, req.msgid,
+		    IPMI_ADDR(IPMI_APP_REQUEST, 0), IPMI_GET_MSG,
+		    0, IPMI_MAX_RX);
+		kreq->ir_ipmb = true;
+		kreq->ir_ipmb_addr = IPMI_ADDR(req.msg.netfn, 0);
+		kreq->ir_ipmb_command = req.msg.cmd;
 		IPMI_LOCK(sc);
 		dev->ipmi_requests++;
 		error = sc->ipmi_enqueue_request(sc, kreq);
 		IPMI_UNLOCK(sc);
-		if (error)
+
+		mutex_exit(&ipmb_lock);
+
+		if (error != 0)
 			return (error);
+
 		break;
 
 	case IPMICTL_RECEIVE_MSG_TRUNC:
 	case IPMICTL_RECEIVE_MSG:
 		/* This struct is the same for 32/64 */
-		if (copyin(recv.addr, &addr, sizeof (addr)))
+		if (ddi_copyin(recv.addr, &addr, sizeof (addr), flags) == -1)
 			return (EFAULT);
 
 		IPMI_LOCK(sc);
@@ -335,13 +418,8 @@ ipmi_ioctl(dev_t dv, int cmd, intptr_t data, int flags, cred_t *cr, int *rvalp)
 			IPMI_UNLOCK(sc);
 			return (EAGAIN);
 		}
-		addr.channel = IPMI_BMC_CHANNEL;
-		recv.recv_type = IPMI_RESPONSE_RECV_TYPE;
-		recv.msgid = kreq->ir_msgid;
-		recv.msg.netfn = IPMI_REPLY_ADDR(kreq->ir_addr) >> 2;
-		recv.msg.cmd = kreq->ir_command;
 		error = kreq->ir_error;
-		if (error) {
+		if (error != 0) {
 			TAILQ_REMOVE(&dev->ipmi_completed_requests, kreq,
 			    ir_link);
 			dev->ipmi_requests--;
@@ -349,7 +427,25 @@ ipmi_ioctl(dev_t dv, int cmd, intptr_t data, int flags, cred_t *cr, int *rvalp)
 			ipmi_free_request(kreq);
 			return (error);
 		}
-		len = kreq->ir_replylen + 1;
+		recv.recv_type = IPMI_RESPONSE_RECV_TYPE;
+		recv.msgid = kreq->ir_msgid;
+		if (kreq->ir_ipmb) {
+			addr.channel = IPMI_IPMB_CHANNEL;
+			recv.msg.netfn =
+			    IPMI_REPLY_ADDR(kreq->ir_ipmb_addr) >> 2;
+			recv.msg.cmd = kreq->ir_ipmb_command;
+			/* Get the compcode of response */
+			kreq->ir_compcode = kreq->ir_reply[6];
+			/* Move the reply head past response header */
+			kreq->ir_reply += 7;
+			len = kreq->ir_replylen - 7;
+		} else {
+			addr.channel = IPMI_BMC_CHANNEL;
+			recv.msg.netfn = IPMI_REPLY_ADDR(kreq->ir_addr) >> 2;
+			recv.msg.cmd = kreq->ir_command;
+			len = kreq->ir_replylen + 1;
+		}
+
 		if (recv.msg.data_len < len && cmd == IPMICTL_RECEIVE_MSG) {
 			IPMI_UNLOCK(sc);
 			return (EMSGSIZE);
@@ -468,7 +564,6 @@ ipmi_poll(dev_t dv, short events, int anyyet, short *reventsp,
 	return (0);
 }
 
-/*ARGSUSED*/
 static int
 ipmi_info(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **resultp)
 {
@@ -495,6 +590,8 @@ ipmi_cleanup(dev_info_t *dip)
 	ipmi_shutdown(sc);
 	ddi_remove_minor_node(dip, NULL);
 	ipmi_dip = NULL;
+
+	mutex_destroy(&ipmb_lock);
 
 	mutex_destroy(&dev_list_lock);
 	list_destroy(&dev_list);
@@ -545,6 +642,8 @@ ipmi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	list_create(&dev_list, sizeof (ipmi_device_t),
 	    offsetof(ipmi_device_t, ipmi_node));
 	mutex_init(&dev_list_lock, NULL, MUTEX_DRIVER, NULL);
+
+	mutex_init(&ipmb_lock, NULL, MUTEX_DRIVER, NULL);
 
 	/* Create ID space for open devs.  ID 0 is reserved. */
 	minor_ids = id_space_create("ipmi_id_space", 1, 128);

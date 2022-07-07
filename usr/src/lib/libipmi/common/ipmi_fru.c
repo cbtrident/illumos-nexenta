@@ -58,7 +58,7 @@ typedef struct ipmi_fru_read
 int
 ipmi_fru_read(ipmi_handle_t *ihp, ipmi_sdr_fru_locator_t *fru_loc, char **buf)
 {
-	ipmi_cmd_t cmd, *resp;
+	ipmi_cmd_t cmd = { 0 }, *resp;
 	int ierrno;
 	uint8_t count, devid, chunksz;
 	uint16_t sz, offset = 0;

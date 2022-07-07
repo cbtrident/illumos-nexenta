@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2018, Joyent, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_LIBIPMI_H
@@ -149,6 +150,8 @@ extern const char *ipmi_errmsg(ipmi_handle_t *);
  * Raw requests.  See section 5.
  */
 typedef struct ipmi_cmd {
+	uint8_t		ic_addr;
+	uint8_t		ic_channel;
 	uint8_t		ic_netfn:6;
 	uint8_t		ic_lun:2;
 	uint8_t		ic_cmd;
@@ -700,6 +703,19 @@ typedef struct ipmi_sdr_compact_sensor {
 	    is_cs_idtype			:2);
 	char		is_cs_idstring[1];
 } ipmi_sdr_compact_sensor_t;
+
+/*
+ * Common header for both compact and full sensor types, to
+ * be used for message routing.
+ */
+typedef struct ipmi_sensor_keys {
+	uint8_t		isk_owner;
+	DECL_BITFIELD3(
+	    isk_sensor_lun			:2,
+	    __reserved1				:2,
+	    isk_channel				:4);
+	uint8_t		isk_number;
+} ipmi_sensor_keys_t;
 
 /*
  * Threshold sensor masks for is_cs_assert_mask and is_cs_deassert_mask.
@@ -1612,7 +1628,7 @@ typedef struct ipmi_sensor_thresholds {
 } ipmi_sensor_thresholds_t;
 
 extern int ipmi_get_sensor_thresholds(ipmi_handle_t *,
-    ipmi_sensor_thresholds_t *, uint8_t);
+    ipmi_sensor_keys_t *, ipmi_sensor_thresholds_t *);
 
 /*
  * Get Sensor Reading.  See section 35.14.
@@ -1637,7 +1653,8 @@ typedef struct ipmi_sensor_reading {
 #define	IPMI_SENSOR_THRESHOLD_UPPER_CRIT		0x0010
 #define	IPMI_SENSOR_THRESHOLD_UPPER_NONRECOV		0x0020
 
-extern ipmi_sensor_reading_t *ipmi_get_sensor_reading(ipmi_handle_t *, uint8_t);
+extern ipmi_sensor_reading_t *ipmi_get_sensor_reading(ipmi_handle_t *,
+    ipmi_sensor_keys_t *);
 extern int ipmi_sdr_conv_reading(ipmi_sdr_full_sensor_t *, uint8_t,
     double *);
 /*

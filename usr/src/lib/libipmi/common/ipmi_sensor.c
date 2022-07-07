@@ -24,6 +24,7 @@
  */
 /*
  * Copyright (c) 2018, Joyent, Inc.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <libipmi.h>
@@ -31,17 +32,26 @@
 
 #include "ipmi_impl.h"
 
-ipmi_sensor_reading_t *
-ipmi_get_sensor_reading(ipmi_handle_t *ihp, uint8_t id)
+static void
+ipmi_setup_cmd(ipmi_sensor_keys_t *isk, ipmi_cmd_t *cmd)
 {
-	ipmi_cmd_t cmd, *resp;
+	cmd->ic_addr = isk->isk_owner;
+	cmd->ic_channel = isk->isk_channel;
+	cmd->ic_lun = isk->isk_sensor_lun;
+	cmd->ic_data = &isk->isk_number;
+	cmd->ic_dlen = sizeof (isk->isk_number);
+}
+
+ipmi_sensor_reading_t *
+ipmi_get_sensor_reading(ipmi_handle_t *ihp, ipmi_sensor_keys_t *isk)
+{
+	ipmi_cmd_t cmd = { 0 }, *resp;
 	ipmi_sensor_reading_t *srp;
+
+	ipmi_setup_cmd(isk, &cmd);
 
 	cmd.ic_netfn = IPMI_NETFN_SE;
 	cmd.ic_cmd = IPMI_CMD_GET_SENSOR_READING;
-	cmd.ic_lun = 0;
-	cmd.ic_data = &id;
-	cmd.ic_dlen = sizeof (id);
 
 	if ((resp = ipmi_send(ihp, &cmd)) == NULL)
 		return (NULL);
@@ -69,7 +79,7 @@ int
 ipmi_set_sensor_reading(ipmi_handle_t *ihp, ipmi_set_sensor_reading_t *req)
 {
 	ipmi_set_sensor_reading_t realreq;
-	ipmi_cmd_t cmd, *resp;
+	ipmi_cmd_t cmd = { 0 }, *resp;
 	uint16_t tmp;
 
 	/*
@@ -82,6 +92,7 @@ ipmi_set_sensor_reading(ipmi_handle_t *ihp, ipmi_set_sensor_reading_t *req)
 	tmp = LE_IN16(&realreq.iss_deassert_state);
 	(void) memcpy(&realreq.iss_deassert_state, &tmp, sizeof (tmp));
 
+	/* FIXME set sensor should learn about IPMB too */
 	cmd.ic_netfn = IPMI_NETFN_SE;
 	cmd.ic_cmd = IPMI_CMD_SET_SENSOR_READING;
 	cmd.ic_lun = 0;
@@ -98,16 +109,15 @@ ipmi_set_sensor_reading(ipmi_handle_t *ihp, ipmi_set_sensor_reading_t *req)
 }
 
 int
-ipmi_get_sensor_thresholds(ipmi_handle_t *ihp, ipmi_sensor_thresholds_t *thresh,
-    uint8_t id)
+ipmi_get_sensor_thresholds(ipmi_handle_t *ihp, ipmi_sensor_keys_t *isk,
+    ipmi_sensor_thresholds_t *thresh)
 {
-	ipmi_cmd_t cmd, *resp;
+	ipmi_cmd_t cmd = { 0 }, *resp;
+
+	ipmi_setup_cmd(isk, &cmd);
 
 	cmd.ic_netfn = IPMI_NETFN_SE;
 	cmd.ic_cmd = IPMI_CMD_GET_SENSOR_THRESHOLDS;
-	cmd.ic_lun = 0;
-	cmd.ic_data = &id;
-	cmd.ic_dlen = sizeof (id);
 
 	if ((resp = ipmi_send(ihp, &cmd)) == NULL)
 		return (-1);

@@ -38,7 +38,6 @@ usage()
 	    "[-p password]\n", pname);
 }
 
-/*ARGSUSED*/
 static int
 sdr_print(ipmi_handle_t *ihp, ipmi_entity_t *ep, const char *name,
     ipmi_sdr_t *sdrp, void *data)
@@ -46,7 +45,7 @@ sdr_print(ipmi_handle_t *ihp, ipmi_entity_t *ep, const char *name,
 	int indentation = (uintptr_t)data;
 	ipmi_sdr_compact_sensor_t *csp;
 	ipmi_sdr_full_sensor_t *fsp;
-	uint8_t sensor_number, sensor_type, reading_type;
+	uint8_t sensor_type, reading_type;
 	boolean_t get_reading = B_FALSE;
 	ipmi_sensor_reading_t *srp;
 	char sensor_name[128];
@@ -58,7 +57,6 @@ sdr_print(ipmi_handle_t *ihp, ipmi_entity_t *ep, const char *name,
 	switch (sdrp->is_type) {
 	case IPMI_SDR_TYPE_COMPACT_SENSOR:
 		csp = (ipmi_sdr_compact_sensor_t *)sdrp->is_record;
-		sensor_number = csp->is_cs_number;
 		sensor_type = csp->is_cs_type;
 		reading_type = csp->is_cs_reading_type;
 		get_reading = B_TRUE;
@@ -66,7 +64,6 @@ sdr_print(ipmi_handle_t *ihp, ipmi_entity_t *ep, const char *name,
 
 	case IPMI_SDR_TYPE_FULL_SENSOR:
 		fsp = (ipmi_sdr_full_sensor_t *)sdrp->is_record;
-		sensor_number = fsp->is_fs_number;
 		sensor_type = fsp->is_fs_type;
 		reading_type = fsp->is_fs_reading_type;
 		get_reading = B_TRUE;
@@ -83,7 +80,7 @@ sdr_print(ipmi_handle_t *ihp, ipmi_entity_t *ep, const char *name,
 		    reading_name, sizeof (reading_name));
 		(void) printf("%12s  %12s", sensor_name, reading_name);
 		if ((srp = ipmi_get_sensor_reading(ihp,
-		    sensor_number)) == NULL) {
+		    (ipmi_sensor_keys_t *)sdrp->is_record)) == NULL) {
 			if (ipmi_errno(ihp) == EIPMI_NOT_PRESENT) {
 				(void) printf("      -\n");
 			} else {

@@ -24,8 +24,6 @@
  * Use is subject to license terms.
  */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #include <libipmi.h>
 #include <stddef.h>
 #include <string.h>
@@ -39,7 +37,7 @@
 ipmi_sel_info_t *
 ipmi_sel_get_info(ipmi_handle_t *ihp)
 {
-	ipmi_cmd_t cmd, *rsp;
+	ipmi_cmd_t cmd = { 0 }, *rsp;
 	ipmi_sel_info_t *ip;
 	uint16_t tmp16;
 	uint32_t tmp32;
@@ -77,7 +75,7 @@ typedef struct ipmi_cmd_get_sel_entry {
 ipmi_sel_event_t *
 ipmi_sel_get_entry(ipmi_handle_t *ihp, uint16_t id)
 {
-	ipmi_cmd_t cmd, *rsp;
+	ipmi_cmd_t cmd = { 0 }, *rsp;
 	ipmi_sel_event_t *evp;
 	ipmi_cmd_get_sel_entry_t data;
 	uint32_t tmp;
@@ -122,7 +120,7 @@ ipmi_sel_get_entry(ipmi_handle_t *ihp, uint16_t id)
 int
 ipmi_sel_get_time(ipmi_handle_t *ihp, uint32_t *tp)
 {
-	ipmi_cmd_t cmd, *rsp;
+	ipmi_cmd_t cmd = { 0 }, *rsp;
 
 	cmd.ic_netfn = IPMI_NETFN_STORAGE;
 	cmd.ic_lun = 0;
@@ -144,7 +142,7 @@ ipmi_sel_get_time(ipmi_handle_t *ihp, uint32_t *tp)
 int
 ipmi_sel_set_time(ipmi_handle_t *ihp, uint32_t t)
 {
-	ipmi_cmd_t cmd;
+	ipmi_cmd_t cmd = { 0 };
 
 	t = LE_32(t);
 
@@ -163,7 +161,7 @@ ipmi_sel_set_time(ipmi_handle_t *ihp, uint32_t t)
 int
 ipmi_sel_get_utc_offset(ipmi_handle_t *ihp, int *offp)
 {
-	ipmi_cmd_t cmd, *rsp;
+	ipmi_cmd_t cmd = { 0 }, *rsp;
 	int16_t off16;
 
 	cmd.ic_netfn = IPMI_NETFN_STORAGE;
@@ -187,7 +185,7 @@ ipmi_sel_get_utc_offset(ipmi_handle_t *ihp, int *offp)
 int
 ipmi_sel_set_utc_offset(ipmi_handle_t *ihp, int off)
 {
-	ipmi_cmd_t cmd;
+	ipmi_cmd_t cmd = { 0 };
 	int16_t off16 = off;
 
 	off16 = LE_16(off16);

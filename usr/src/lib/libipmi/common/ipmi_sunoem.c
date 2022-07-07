@@ -92,7 +92,7 @@ check_sunoem(ipmi_handle_t *ihp)
 static int
 ipmi_send_sunoem_led_set(ipmi_handle_t *ihp, ipmi_cmd_sunoem_led_set_t *req)
 {
-	ipmi_cmd_t cmd, *resp;
+	ipmi_cmd_t cmd = { 0 }, *resp;
 
 	cmd.ic_netfn = IPMI_NETFN_OEM;
 	cmd.ic_cmd = IPMI_CMD_SUNOEM_LED_SET;
@@ -113,7 +113,7 @@ static int
 ipmi_send_sunoem_led_get(ipmi_handle_t *ihp, ipmi_cmd_sunoem_led_get_t *req,
     uint8_t *result)
 {
-	ipmi_cmd_t cmd, *resp;
+	ipmi_cmd_t cmd = { 0 }, *resp;
 
 	cmd.ic_netfn = IPMI_NETFN_OEM;
 	cmd.ic_cmd = IPMI_CMD_SUNOEM_LED_GET;
@@ -175,7 +175,7 @@ ipmi_sunoem_led_get(ipmi_handle_t *ihp, ipmi_sdr_generic_locator_t *dev,
 int
 ipmi_sunoem_uptime(ipmi_handle_t *ihp, uint32_t *uptime, uint32_t *gen)
 {
-	ipmi_cmd_t cmd, *resp;
+	ipmi_cmd_t cmd = { 0 }, *resp;
 	uint8_t unused;
 
 	if (check_sunoem(ihp) != 0)
@@ -204,7 +204,7 @@ ipmi_sunoem_uptime(ipmi_handle_t *ihp, uint32_t *uptime, uint32_t *gen)
 int
 ipmi_sunoem_update_fru(ipmi_handle_t *ihp, ipmi_sunoem_fru_t *req)
 {
-	ipmi_cmd_t cmd, *resp;
+	ipmi_cmd_t cmd = { 0 }, *resp;
 
 	if (check_sunoem(ihp) != 0)
 		return (-1);

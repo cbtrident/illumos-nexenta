@@ -22,13 +22,11 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD: src/sys/dev/ipmi/ipmivars.h,v 1.3 2008/08/28 02:13:53 jhb Exp $
  */
 
 /*
  * Copyright 2012, Joyent, Inc.  All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef _IPMIVARS_H_
@@ -36,6 +34,7 @@
 
 #include <sys/types.h>
 #include <sys/queue.h>
+#include <sys/stdbool.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -66,9 +65,13 @@ struct ipmi_request {
 	uint8_t		ir_command;
 	uint8_t		ir_compcode;
 	int		ir_sz;		/* size of request */
-
+	hrtime_t	ir_tstamp;	/* Timestamp of the command start */
 	kcondvar_t	ir_cv;
 	ir_status_t	ir_status;
+	/* IPMB */
+	bool		ir_ipmb;
+	uint8_t		ir_ipmb_addr;
+	uint8_t		ir_ipmb_command;
 };
 
 #define	MAX_RES				3
@@ -80,6 +83,14 @@ struct ipmi_request {
 
 #define	IPMI_BUSY	0x1
 #define	IPMI_CLOSING	0x2
+
+struct ipmi_softc;
+
+typedef struct ipmi_kcs_errstats {
+	int			iks_errval;
+	int			iks_count;
+} ipmi_kcs_errstats_t;
+#define	NUM_KCS_ERRVALS		10 /* space for how many different values */
 
 /* Per file descriptor data. */
 typedef struct ipmi_device {
@@ -103,6 +114,19 @@ struct ipmi_softc {
 	int			ipmi_io_irq;
 	void			*ipmi_irq;
 	int			ipmi_detaching;
+	hrtime_t		ipmi_kcsl_errtstamp;
+	int			ipmi_kcs_neio_aberr;
+	ipmi_kcs_errstats_t	ipmi_kcs_errstats[NUM_KCS_ERRVALS];
+	int			ipmi_kcs_overflowerrs;
+	int			ipmi_kcs_underrun;
+	int			ipmi_kcs_overrun;
+	uint32_t		ipmi_kcsl_maxtime; /* uSec */
+	uint32_t		ipmi_kcsl_maxerrtime; /* uSec */
+	uint32_t		ipmi_kcsl_mintime; /* uSec */
+#ifdef KCS_LOG
+	uint8_t			ipmi_kcsl_index;
+	hrtime_t		ipmi_kcsl_ctstamp;
+#endif
 	TAILQ_HEAD(, ipmi_request) ipmi_pending_requests;
 	kmutex_t		ipmi_lock;
 	kcondvar_t		ipmi_request_added;
@@ -116,6 +140,51 @@ struct ipmi_softc {
 #define	SMIC_MODE		0x02
 #define	BT_MODE			0x03
 #define	SSIF_MODE		0x04
+
+/* Driver timeout specific reason codes. */
+#define	KCS_REASON(v)				((v)&0xff)
+#define	KCS_SUCCESS_IDLE			1 /* Last byte */
+#define	KCS_SUCCESS_UNDERRUN			2 /* BMC did not send enough */
+#define	KCS_SUCCESS_OVERRUN			3 /* BMC sent too much data */
+#define	KCS_SUCCESS				4 /* <= this is success */
+#define	KCSTO_IBF_STUCK_HIGH			5
+#define	KCSTO_OBF_STUCK_HIGH_BEFORE_WS		6 /* Before Write State (WS) */
+#define	KCSTO_NO_WRITE_STATE			7 /* Could not get to WS */
+#define	KCSTO_OBF_STUCK_HIGH_AFTER_WS		8 /* After Write State (WS) */
+#define	KCSTO_IBF_STAYS_HIGH_AFTER_WB		9 /* After Write Byte (WB) */
+#define	KCSTO_EXITED_WRITE_STATE_AFTER_WB	10
+#define	KCSTO_OBF_STUCK_HIGH_AFTER_WB		11 /* After Write Byte (WB) */
+#define	KCSTO_IBF_STAYS_HIGH_AFTER_WLB		12 /* After Write Last Byte */
+#define	KCSTO_EXITED_WRITE_STATE_AFTER_WLB	13
+#define	KCSTO_OBF_STUCK_HIGH_AFTER_WLB		14
+#define	KCSTO_IBF_STAYS_HIGH_AFTER_WRITE	15
+#define	KCSTO_NO_READ_STATE			16 /* Could not get to RS */
+#define	KCSTO_IBF_STUCK_HIGH_BEFORE_RB		17 /* Before Read Byte */
+#define	KCSTO_NO_OBF_FOR_READ			18
+#define	KCSTO_NO_OBF_FOR_IDLE			19
+#define	KCSTO_UNEXPECTED_STATE_FOR_RB		20
+#define	KCSTO_REPLY_ADDRESS_MISMATCH		21
+#define	KCSTO_REPLY_COMMAND_MISMATCH		22
+#define	KCSTO_IBF_STAYS_HIGH_AFTER_GSA		23 /* After Get Status Abort */
+#define	KCSTO_OBF_STUCK_HIGH_AFTER_GSA		24
+#define	KCSTO_OBF_STUCK_HIGH_BEFORE_00		25
+#define	KCSTO_IBF_STAYS_HIGH_AFTER_ABT_READ	26
+#define	KCSTO_NO_IDLE_STATE			27 /* Could not get to IS */
+#define	KCSTO_OBF_STUCK_HIGH_AFTER_IDLE		28
+#define	KCSTO_UNEXPECTED_IDLE_STATE		29
+#define	KCSTO_UNEXPECTED_IDLE_STATE_KS		30
+
+/* Driver failure phase codes */
+#define	KCS_PHASE(v)				(((v)>>8)&0xff)
+#define	KCSPH_WRITE_ADDRESS			(1<<8)
+#define	KCSPH_WRITE_COMMAND			(2<<8)
+#define	KCSPH_WRITE_DATA			(3<<8)
+#define	KCSPH_READ_NFNLUN			(4<<8)
+#define	KCSPH_READ_NFNLUN_KS			(5<<8)
+#define	KCSPH_READ_COMMAND			(6<<8)
+#define	KCSPH_READ_COMPLETION			(7<<8)
+#define	KCSPH_READ_DATA				(8<<8)
+#define	KCSPH_ABORT				(9<<8)
 
 /* KCS status flags */
 #define	KCS_STATUS_OBF			0x01 /* Data Out ready from BMC */
@@ -180,10 +249,15 @@ struct ipmi_softc {
 #define	ipmi_alloc_driver_request(addr, cmd, reqlen, replylen)		\
 	ipmi_alloc_request(NULL, 0, (addr), (cmd), (reqlen), (replylen))
 
+#ifdef KCS_LOG
+#define	INB(sc, x) kcs_inb(sc, x)
+#define	OUTB(sc, x, value) kcs_outb(sc, x, value)
+#else
 #define	INB(sc, x)							\
 	inb((sc)->ipmi_io_address + ((sc)->ipmi_io_spacing * (x)))
 #define	OUTB(sc, x, value)						\
 	outb((sc)->ipmi_io_address + ((sc)->ipmi_io_spacing * (x)), value)
+#endif
 
 #define	MAX_TIMEOUT (3 * hz)
 
@@ -191,6 +265,8 @@ struct ipmi_softc {
 void	ipmi_complete_request(struct ipmi_softc *, struct ipmi_request *);
 struct ipmi_request *ipmi_dequeue_request(struct ipmi_softc *);
 int	ipmi_polled_enqueue_request(struct ipmi_softc *, struct ipmi_request *);
+int	ipmi_submit_driver_request(struct ipmi_softc *, struct ipmi_request **,
+	    int);
 struct ipmi_request *ipmi_alloc_request(struct ipmi_device *, long msgid,
 	    uint8_t, uint8_t, size_t, size_t);
 void	ipmi_free_request(struct ipmi_request *);

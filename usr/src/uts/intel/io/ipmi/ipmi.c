@@ -24,11 +24,9 @@
  * SUCH DAMAGE.
  */
 
-/* $FreeBSD: src/sys/dev/ipmi/ipmi.c,v 1.16 2011/11/07 15:43:11 ed Exp $ */
-
 /*
  * Copyright 2012, Joyent, Inc.  All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <sys/devops.h>
@@ -95,7 +93,6 @@ ipmi_free_request(struct ipmi_request *req)
 }
 
 /* Store a processed request on the appropriate completion queue. */
-/*ARGSUSED*/
 void
 ipmi_complete_request(struct ipmi_softc *sc, struct ipmi_request *req)
 {
@@ -120,7 +117,8 @@ ipmi_complete_request(struct ipmi_softc *sc, struct ipmi_request *req)
 	} else {
 		dev = req->ir_owner;
 		TAILQ_INSERT_TAIL(&dev->ipmi_completed_requests, req, ir_link);
-		pollwakeup(dev->ipmi_pollhead, POLLIN | POLLRDNORM);
+		if (dev->ipmi_pollhead != NULL)
+			pollwakeup(dev->ipmi_pollhead, POLLIN | POLLRDNORM);
 
 		dev->ipmi_status &= ~IPMI_BUSY;
 		if (dev->ipmi_status & IPMI_CLOSING)
@@ -131,7 +129,7 @@ ipmi_complete_request(struct ipmi_softc *sc, struct ipmi_request *req)
 /*
  * Enqueue an internal driver request and wait until it is completed.
  */
-static int
+int
 ipmi_submit_driver_request(struct ipmi_softc *sc, struct ipmi_request **preq,
     int timo)
 {
@@ -156,22 +154,21 @@ ipmi_submit_driver_request(struct ipmi_softc *sc, struct ipmi_request **preq,
 			    ddi_get_lbolt() + timo);
 
 	switch (req->ir_status) {
-		case IRS_QUEUED:
-			TAILQ_REMOVE(&sc->ipmi_pending_requests, req, ir_link);
-			req->ir_status = IRS_CANCELED;
-			error = EWOULDBLOCK;
-			break;
-		case IRS_PROCESSED:
-			req->ir_status = IRS_CANCELED;
-			error = EWOULDBLOCK;
-			*preq = NULL;
-			break;
-		case IRS_COMPLETED:
-			error = req->ir_error;
-			break;
-		default:
-			panic("IPMI: Invalid request status");
-			break;
+	case IRS_QUEUED:
+		TAILQ_REMOVE(&sc->ipmi_pending_requests, req, ir_link);
+		req->ir_status = IRS_CANCELED;
+		error = EWOULDBLOCK;
+		break;
+	case IRS_PROCESSED:
+		req->ir_status = IRS_CANCELED;
+		error = EWOULDBLOCK;
+		*preq = NULL;
+		break;
+	case IRS_COMPLETED:
+		error = req->ir_error;
+		break;
+	default:
+		panic("IPMI: Invalid request status");
 	}
 	IPMI_UNLOCK(sc);
 
