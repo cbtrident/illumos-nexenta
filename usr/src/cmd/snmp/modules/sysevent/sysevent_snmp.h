@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SNMP_MOD_H
@@ -27,6 +27,7 @@
 #include <libsysevent.h>
 
 #include <netdb.h>
+#include <unistd.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -21,7 +21,7 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <sys/debug.h>
@@ -45,6 +45,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <unistd.h>
 
 #include "fm_snmp.h"
 #include "problem.h"
