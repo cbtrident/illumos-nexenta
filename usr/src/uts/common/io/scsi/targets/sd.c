@@ -28,7 +28,7 @@
  * Copyright (c) 2011 Bayard G. Bell.  All rights reserved.
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -8621,14 +8621,15 @@ no_attach_cleanup:
 	mutex_exit(SD_MUTEX(un));
 
 	/*
-	 * XXX Ideally, we need to keep running over here. However, for
-	 * that, perfect job needs to be done wrt abort of outstanding I/O
-	 * within the detach processs. That must be implemented at all
-	 * underlying layers, and errors from scsi_abort() must be handled
-	 * accordingly. Then, dev_err() below can be changed for ASSERT().
+	 * XXX Hopefully there will be nothing left in this instance of the
+	 * driver. But we really don't want to panic, so fail the detach.
+	 * If there is still I/O around the zfs deadman should detect it soon
+	 * and the message should be visible to indicate we had a problem here.
+	 * If not then, dev_err() below can be changed for ASSERT().
 	 */
 	if (un->un_ncmds_in_driver != 0) {
-		dev_err(devi, CE_PANIC, "Ongoing I/O to drive detached");
+		dev_err(devi, CE_WARN, "Ongoing I/O to drive detached");
+		goto err_remove_event;
 	}
 
 	cmlb_detach(un->un_cmlbhandle, (void *)SD_PATH_DIRECT);
@@ -14458,8 +14459,8 @@ sd_start_cmds(struct sd_lun *un, struct buf *immed_bp)
 	if (DEVI(un->un_sd->sd_dev)->devi_flags & DEVI_RETIRED) {
 		if (immed_bp) {
 			immed_bp->b_resid = immed_bp->b_bcount;
-			bioerror(immed_bp, ENXIO);
-			biodone(immed_bp);
+			sd_return_failed_command_no_restart(un, immed_bp,
+			    ENXIO);
 		}
 		/* abort in-flight IO */
 		(void) scsi_abort(SD_ADDRESS(un), NULL);
@@ -15881,13 +15882,15 @@ sd_start_retry_command(void *arg)
 
 	mutex_enter(SD_MUTEX(un));
 
-	un->un_retry_timeid = NULL;
+	if (un->un_retry_timeid != NULL) {
+		un->un_retry_timeid = NULL;
 
-	if (un->un_retry_bp != NULL) {
-		SD_TRACE(SD_LOG_IO_CORE | SD_LOG_ERROR, un,
-		    "sd_start_retry_command: un:0x%p STARTING bp:0x%p\n",
-		    un, un->un_retry_bp);
-		sd_start_cmds(un, un->un_retry_bp);
+		if (un->un_retry_bp != NULL) {
+			SD_TRACE(SD_LOG_IO_CORE | SD_LOG_ERROR, un,
+			    "sd_start_retry_command: un:0x%p STARTING "
+			    "bp:0x%p\n", un, un->un_retry_bp);
+			sd_start_cmds(un, un->un_retry_bp);
+		}
 	}
 
 	mutex_exit(SD_MUTEX(un));
