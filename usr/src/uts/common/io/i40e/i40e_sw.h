@@ -13,7 +13,7 @@
  * Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2017 Tegile Systems, Inc.  All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  * Copyright 2020 Ryan Zezeski
  * Copyright 2020 RackTop Systems, Inc.
  */
@@ -89,7 +89,7 @@ extern "C" {
  */
 #define	I40E_MIN_TX_RING_SIZE	64
 #define	I40E_MAX_TX_RING_SIZE	4096
-#define	I40E_DEF_TX_RING_SIZE	1024
+#define	I40E_DEF_TX_RING_SIZE	4096
 
 /*
  * Place an artificial limit on the max number of groups. The X710
@@ -99,7 +99,7 @@ extern "C" {
  */
 #define	I40E_MIN_NUM_RX_GROUPS	1
 #define	I40E_MAX_NUM_RX_GROUPS	32
-#define	I40E_DEF_NUM_RX_GROUPS	16
+#define	I40E_DEF_NUM_RX_GROUPS	1
 
 #define	I40E_MIN_RX_RING_SIZE	64
 #define	I40E_MAX_RX_RING_SIZE	4096
@@ -150,8 +150,8 @@ extern "C" {
  */
 #define	I40E_MIN_ITR		0x0000
 #define	I40E_MAX_ITR		0x0FF0
-#define	I40E_DEF_RX_ITR		0x0019
-#define	I40E_DEF_TX_ITR		0x0064
+#define	I40E_DEF_RX_ITR		0x000A
+#define	I40E_DEF_TX_ITR		0x000A
 #define	I40E_DEF_OTHER_ITR	0x00FA
 
 /*
