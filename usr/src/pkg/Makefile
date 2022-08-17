@@ -26,6 +26,7 @@
 # Copyright 2015 Igor Kozhukhov <ikozhukhov@gmail.com>
 # Copyright 2016 RackTop Systems.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2022 Tintri by DDN, All rights reserved.
 #
 
 include $(SRC)/Makefile.master
@@ -140,7 +141,7 @@ PKGPUBLISHER= $(PKGPUBLISHER_REDIST)
 #
 PKGVERS_COMPONENT= 0.$(RELEASE)
 PKGVERS_BUILTON= $(RELEASE)
-NEXENTA_RELEASE= 5.3.0
+NEXENTA_RELEASE= 5.4.0
 PKGVERS_BRANCH= $(NEXENTA_RELEASE).$(ONNV_BUILDNUM)
 PKGVERS= $(PKGVERS_COMPONENT),$(PKGVERS_BUILTON)-$(PKGVERS_BRANCH)
 
