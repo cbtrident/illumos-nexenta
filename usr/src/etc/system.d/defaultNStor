@@ -1,0 +1,14 @@
+set apix:apic_panic_on_nmi = 1
+set nfs:nfs3_bsize = 131072
+set nfs:nfs4_bsize = 131072
+set nfs:nfs_allow_preepoch_time = 1
+set nfssrv:nfs_portmon = 1
+set scsi_vhci:et vhci_io_time = 30
+set sd:sd_io_time = 10
+set noexec_user_stack = 1
+set noexec_user_stack_log = 1
+set zfs:zio_dva_throttle_enabled = 0x0
+set dump_metrics_on = 1
+set ddi_msix_alloc_limit = 15
+set idle_cpu_prefer_mwait = 0
+set idle_cpu_no_deep_c = 1
