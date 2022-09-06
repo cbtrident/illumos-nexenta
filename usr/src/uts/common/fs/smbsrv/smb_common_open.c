@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -433,6 +433,7 @@ smb_common_open(smb_request_t *sr)
 
 	if (rc == 0) {
 		last_comp_found = B_TRUE;
+		fnode = op->fqi.fq_fnode;
 		fnode_held = B_TRUE;
 
 		/*
@@ -457,9 +458,6 @@ smb_common_open(smb_request_t *sr)
 	}
 
 	if (last_comp_found) {
-
-		fnode = op->fqi.fq_fnode;
-		dnode = op->fqi.fq_dnode;
 
 		if (!smb_node_is_file(fnode) &&
 		    !smb_node_is_dir(fnode) &&
