@@ -1776,6 +1776,7 @@ extern ipmi_entity_t *ipmi_entity_lookup(ipmi_handle_t *, uint8_t,
     uint8_t);
 extern ipmi_entity_t *ipmi_entity_lookup_sdr(ipmi_handle_t *, const char *);
 extern ipmi_entity_t *ipmi_entity_parent(ipmi_handle_t *, ipmi_entity_t *);
+extern int ipmi_entity_installed(ipmi_handle_t *, ipmi_entity_t *, boolean_t *);
 extern int ipmi_entity_present(ipmi_handle_t *, ipmi_entity_t *, boolean_t *);
 extern int ipmi_entity_present_sdr(ipmi_handle_t *, ipmi_sdr_t *, boolean_t *);
 

@@ -21,7 +21,7 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <ctype.h>
@@ -197,6 +197,34 @@ topo_fmri_present(topo_hdl_t *thp, nvlist_t *fmri, int *err)
 	nvlist_free(out);
 
 	return (present);
+}
+
+int
+topo_fmri_installed(topo_hdl_t *thp, nvlist_t *fmri, int *err)
+{
+	uint32_t installed;
+	char *scheme;
+	nvlist_t *out = NULL;
+	tnode_t *rnode;
+
+	if (nvlist_lookup_string(fmri, FM_FMRI_SCHEME, &scheme) != 0)
+		return (set_error(thp, ETOPO_FMRI_MALFORM, err,
+		    TOPO_METH_INSTALLED, out));
+
+	if ((rnode = topo_hdl_root(thp, scheme)) == NULL)
+		return (set_error(thp, ETOPO_METHOD_NOTSUP, err,
+		    TOPO_METH_INSTALLED, out));
+
+	if (topo_method_invoke(rnode, TOPO_METH_INSTALLED,
+	    TOPO_METH_INSTALLED_VERSION, fmri, &out, err) < 0) {
+		(void) set_error(thp, *err, err, TOPO_METH_INSTALLED, out);
+		return (0);
+	}
+
+	(void) nvlist_lookup_uint32(out, TOPO_METH_INSTALLED_RET, &installed);
+	nvlist_free(out);
+
+	return (installed);
 }
 
 int
@@ -787,17 +815,17 @@ topo_fmri_next_auth(const char *auth)
  * List of authority information we care about.  Note that we explicitly ignore
  * things that are properties of the chassis and not the resource itself:
  *
- * 	FM_FMRI_AUTH_PRODUCT_SN		"product-sn"
- * 	FM_FMRI_AUTH_PRODUCT		"product-id"
- * 	FM_FMRI_AUTH_DOMAIN		"domain-id"
- * 	FM_FMRI_AUTH_SERVER		"server-id"
+ *	FM_FMRI_AUTH_PRODUCT_SN		"product-sn"
+ *	FM_FMRI_AUTH_PRODUCT		"product-id"
+ *	FM_FMRI_AUTH_DOMAIN		"domain-id"
+ *	FM_FMRI_AUTH_SERVER		"server-id"
  *	FM_FMRI_AUTH_HOST		"host-id"
  *
  * We also ignore the "revision" authority member, as that typically indicates
  * the firmware revision and is not a static property of the FRU.  This leaves
  * the following interesting members:
  *
- * 	FM_FMRI_AUTH_CHASSIS		"chassis-id"
+ *	FM_FMRI_AUTH_CHASSIS		"chassis-id"
  *	FM_FMRI_HC_SERIAL_ID		"serial"
  *	FM_FMRI_HC_PART			"part"
  */

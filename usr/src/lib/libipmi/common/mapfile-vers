@@ -18,12 +18,11 @@
 #
 # CDDL HEADER END
 #
-#
-# Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
-#
 
 #
+# Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2018, Joyent, Inc.
+# Copyright 2022 Tintri by DDN, Inc. All rights reserved.
 #
 
 #
@@ -47,6 +46,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	ipmi_chassis_identify;
 	ipmi_chassis_status;
 	ipmi_close;
+	ipmi_entity_installed;
 	ipmi_entity_iter;
 	ipmi_entity_iter_children;
 	ipmi_entity_iter_sdr;

@@ -46,6 +46,8 @@ typedef struct ipmi_enum_data {
 	ipmi_sdr_fru_locator_t	*ed_frusdr;
 } ipmi_enum_data_t;
 
+static int ipmi_installed(topo_mod_t *, tnode_t *, topo_version_t, nvlist_t *,
+    nvlist_t **);
 static int ipmi_present(topo_mod_t *, tnode_t *, topo_version_t, nvlist_t *,
     nvlist_t **);
 static int ipmi_unusable(topo_mod_t *, tnode_t *, topo_version_t, nvlist_t *,
@@ -63,6 +65,9 @@ extern int ipmi_fru_fmri(topo_mod_t *mod, tnode_t *node,
 static const topo_method_t ipmi_methods[] = {
 	{ TOPO_METH_PRESENT, TOPO_METH_PRESENT_DESC,
 	    TOPO_METH_PRESENT_VERSION0, TOPO_STABILITY_INTERNAL, ipmi_present },
+	{ TOPO_METH_INSTALLED, TOPO_METH_INSTALLED_DESC,
+	    TOPO_METH_INSTALLED_VERSION0, TOPO_STABILITY_INTERNAL,
+	    ipmi_installed },
 	{ TOPO_METH_UNUSABLE, TOPO_METH_UNUSABLE_DESC,
 	    TOPO_METH_UNUSABLE_VERSION, TOPO_STABILITY_INTERNAL,
 	    ipmi_unusable },
@@ -219,6 +224,53 @@ ipmi_present(topo_mod_t *mod, tnode_t *tn, topo_version_t version,
 
 	*out = nvl;
 
+	return (0);
+}
+
+/*
+ * Check whether presence sensor reports that entity is installed.
+ */
+static int
+ipmi_installed(topo_mod_t *mod, tnode_t *tn, topo_version_t version,
+    nvlist_t *in, nvlist_t **out)
+{
+	ipmi_handle_t *ihp;
+	ipmi_entity_t *ep;
+	char *unused1;
+	ipmi_sdr_t *unused2;
+	int err;
+	boolean_t installed = B_TRUE;
+	nvlist_t *nvl;
+
+	err = ipmi_find_entity(mod, tn, &ihp, &ep, &unused1, &unused2);
+	if (err != 0)
+		return (err);
+	topo_mod_strfree(mod, unused1);
+
+	if (ep != NULL) {
+		if (ipmi_entity_installed(ihp, ep, &installed) != 0) {
+			topo_mod_dprintf(mod,
+			    "ipmi_entity_installed() failed: %s",
+			    ipmi_errmsg(ihp));
+			topo_mod_ipmi_rele(mod);
+			return (-1);
+		}
+
+		topo_mod_dprintf(mod,
+		    "ipmi_entity_installed(%d, %d) = %d\n", ep->ie_type,
+		    ep->ie_instance, installed);
+	}
+	topo_mod_ipmi_rele(mod);
+
+	if (topo_mod_nvalloc(mod, &nvl, NV_UNIQUE_NAME) != 0)
+		return (topo_mod_seterrno(mod, EMOD_FMRI_NVL));
+
+	if (nvlist_add_uint32(nvl, TOPO_METH_INSTALLED_RET, installed) != 0) {
+		nvlist_free(nvl);
+		return (topo_mod_seterrno(mod, EMOD_FMRI_NVL));
+	}
+
+	*out = nvl;
 	return (0);
 }
 

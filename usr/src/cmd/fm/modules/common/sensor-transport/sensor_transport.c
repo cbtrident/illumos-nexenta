@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2018, Joyent, Inc.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <fm/fmd_api.h>
@@ -34,7 +35,8 @@
 
 #include <string.h>
 
-#define	ST_EREPORT_CLASS	"ereport.sensor.failure"
+#define	ST_EREPORT_CLASS		"ereport.sensor.failure"
+#define	ST_EREPORT_MISSING_CLASS	"ereport.sensor.missing"
 
 typedef struct sensor_fault {
 	struct sensor_fault	*sf_next;
@@ -42,22 +44,24 @@ typedef struct sensor_fault {
 	uint32_t		sf_num_fails;
 	boolean_t		sf_last_faulted;
 	boolean_t		sf_faulted;
+	boolean_t		sf_last_missing;
+	boolean_t		sf_missing;
 	boolean_t		sf_unknown;
 } sensor_fault_t;
 
 typedef struct sensor_transport {
-	fmd_hdl_t	*st_hdl;
-	fmd_xprt_t	*st_xprt;
-	hrtime_t	st_interval;
-	id_t		st_timer;
-	sensor_fault_t	*st_faults;
-	boolean_t	st_first;
+	fmd_hdl_t		*st_hdl;
+	fmd_xprt_t		*st_xprt;
+	hrtime_t		st_interval;
+	id_t			st_timer;
+	sensor_fault_t		*st_faults;
+	boolean_t		st_first;
 	/*
 	 * The number of consecutive sensor readings indicating failure that
 	 * we'll tolerate before sending an ereport.
 	 */
-	uint32_t	st_tolerance;
-	nvlist_t	*st_spoofs;
+	uint32_t		st_tolerance;
+	nvlist_t		*st_spoofs;
 } sensor_transport_t;
 
 typedef struct st_stats {
@@ -86,13 +90,15 @@ st_check_component(topo_hdl_t *thp, tnode_t *node, void *arg)
 	char *fmri;
 	int err, ret;
 	int32_t last_source, source = -1;
-	boolean_t nonrecov, faulted, predictive, source_diff, injected;
+	boolean_t missing, nonrecov, faulted, predictive, source_diff, injected;
 	nvpair_t *nvp;
 	uint64_t ena;
 	nvlist_t *event;
-	sensor_fault_t *sfp, **current;
+	sensor_fault_t *sfp;
 
-	if (strcmp(name, FAN) != 0 && strcmp(name, PSU) != 0)
+	if (strcmp(name, CONTROLLER) != 0 &&
+	    strcmp(name, FAN) != 0 &&
+	    strcmp(name, PSU) != 0)
 		return (0);
 
 	if (topo_node_resource(node, &rsrc, NULL) != 0) {
@@ -101,50 +107,33 @@ st_check_component(topo_hdl_t *thp, tnode_t *node, void *arg)
 	}
 
 	/*
-	 * If the resource isn't present, don't bother invoking the sensor
-	 * failure method.  It may be that the sensors aren't part of the same
-	 * physical FRU and will report failure if the FRU is no longer there.
+	 * Check to see whether the resource is missing.
 	 */
-	if ((ret = topo_fmri_present(thp, rsrc, &err)) < 0) {
+	ret = topo_fmri_present(thp, rsrc, &err);
+	if (ret < 0) {
 		fmd_hdl_debug(hdl, "topo_fmri_present() failed for %s=%d",
 		    name, topo_node_instance(node));
 		nvlist_free(rsrc);
 		return (0);
 	}
+	/*
+	 * In some specific cases (e.g. PSUs enumerated through IPMI) entity
+	 * is always reported as present to be able to fault it once the actual
+	 * unit is physically removed.
+	 */
+	missing = ret == 0 || topo_fmri_installed(thp, rsrc, &err) == 0;
 
-	if (!ret) {
-		fmd_hdl_debug(hdl, "%s=%d is not present, ignoring",
-		    name, topo_node_instance(node));
-		nvlist_free(rsrc);
-		return (0);
-	}
-
-	if (topo_method_invoke(node, TOPO_METH_SENSOR_FAILURE,
-	    TOPO_METH_SENSOR_FAILURE_VERSION, stp->st_spoofs, &nvl, &err) !=
-	    0) {
-		if (err == ETOPO_METHOD_NOTSUP) {
-			st_check_component_complaints++;
-			if (!have_complained) {
-				fmd_hdl_debug(hdl, "Method %s not supported "
-				    "on %s=%d", TOPO_METH_SENSOR_FAILURE, name,
-				    topo_node_instance(node));
-			}
-			nvlist_free(rsrc);
-			return (0);
-		}
-		nvl = NULL;
-	}
-
+	/*
+	 * Find the FRU for the node.
+	 */
 	if (topo_node_fru(node, &fru, NULL, &err) != 0) {
 		st_stats.st_bad_fmri.fmds_value.ui64++;
-		nvlist_free(nvl);
 		nvlist_free(rsrc);
 		return (0);
 	}
 
 	if (topo_fmri_nvl2str(thp, fru, &fmri, &err) != 0) {
 		st_stats.st_bad_fmri.fmds_value.ui64++;
-		nvlist_free(nvl);
 		nvlist_free(fru);
 		nvlist_free(rsrc);
 		return (0);
@@ -153,78 +142,102 @@ st_check_component(topo_hdl_t *thp, tnode_t *node, void *arg)
 	nvlist_free(fru);
 
 	faulted = nonrecov = source_diff = injected = B_FALSE;
-	predictive = B_TRUE;
-	if (nvl != NULL)  {
-		nvp = NULL;
-		while ((nvp = nvlist_next_nvpair(nvl, nvp)) != NULL) {
-			if (nvpair_value_nvlist(nvp, &props) != 0)
-				continue;
 
-			faulted = B_TRUE;
-
-			/*
-			 * We need some simple rules to handle the case where
-			 * there are multiple facility nodes that indicate
-			 * a problem with this FRU, but disagree on the values
-			 * of nonrecov, predictive or source:
-			 *
-			 * 1) nonrecov will be set to true if one or more
-			 *   facility nodes indicates true.  Otherwise it will
-			 *   default to false
-			 *
-			 * 2) predictive will default to false and remain false
-			 *    if one or more facility nodes indicate false.
-			 *
-			 * 3) source will be set to unknown unless all facility
-			 *    nodes agree on the source
-			 *
-			 * 4) injected defaults to false, but will be set to
-			 *    true if any of the sensor states were injected.
-			 */
-			if (nonrecov == B_FALSE)
-				if (nvlist_lookup_boolean_value(props,
-				    "nonrecov", &nonrecov) != 0)
-					nonrecov = B_FALSE;
-			if (predictive == B_TRUE)
-				if (nvlist_lookup_boolean_value(props,
-				    "predictive", &predictive) != 0)
-					predictive = B_FALSE;
-			(void) nvlist_lookup_boolean_value(props,
-			    "injected", &injected);
-
-			last_source = source;
-			if (nvlist_lookup_uint32(props, "source",
-			    (uint32_t *)&source) != 0)
-				source = TOPO_SENSOR_ERRSRC_UNKNOWN;
-			if (last_source != -1 && last_source != source)
-				source_diff = B_TRUE;
+	/*
+	 * Only look for faults if the resource is not missing as it may be the
+	 * case that the sensors aren't part of the same physical FRU and will
+	 * report failure if the FRU is no longer there.
+	 */
+	if (!missing) {
+		if (topo_method_invoke(node, TOPO_METH_SENSOR_FAILURE,
+		    TOPO_METH_SENSOR_FAILURE_VERSION, stp->st_spoofs,
+		    &nvl, &err) != 0) {
+			if (err == ETOPO_METHOD_NOTSUP) {
+				st_check_component_complaints++;
+				if (!have_complained) {
+					fmd_hdl_debug(hdl,
+					    "Method %s not supported on %s=%d",
+					    TOPO_METH_SENSOR_FAILURE, name,
+					    topo_node_instance(node));
+				}
+				nvlist_free(rsrc);
+				return (0);
+			}
+			nvl = NULL;
 		}
-		if (source_diff)
-			source = TOPO_SENSOR_ERRSRC_UNKNOWN;
+
+		predictive = B_TRUE;
+		if (nvl != NULL)  {
+			nvp = NULL;
+			while ((nvp = nvlist_next_nvpair(nvl, nvp)) != NULL) {
+				if (nvpair_value_nvlist(nvp, &props) != 0)
+					continue;
+
+				faulted = B_TRUE;
+
+				/*
+				 * We need some simple rules to handle the case
+				 * where there are multiple facility nodes that
+				 * indicate a problem with this FRU, but
+				 * disagree on the values of nonrecov,
+				 * predictive or source:
+				 *
+				 * 1) nonrecov will be set to true if one or
+				 *    more facility nodes indicates true.
+				 *    Otherwise it will default to false
+				 *
+				 * 2) predictive will default to false and
+				 *    remain false if one or more facility nodes
+				 *    indicate false.
+				 *
+				 * 3) source will be set to unknown unless all
+				 *    facility nodes agree on the source
+				 *
+				 * 4) injected defaults to false, but will be
+				 *    set to true if any of the sensor states
+				 *    were injected.
+				 */
+				if (nonrecov == B_FALSE)
+					if (nvlist_lookup_boolean_value(props,
+					    "nonrecov", &nonrecov) != 0)
+						nonrecov = B_FALSE;
+				if (predictive == B_TRUE)
+					if (nvlist_lookup_boolean_value(props,
+					    "predictive", &predictive) != 0)
+						predictive = B_FALSE;
+				(void) nvlist_lookup_boolean_value(props,
+				    "injected", &injected);
+
+				last_source = source;
+				if (nvlist_lookup_uint32(props, "source",
+				    (uint32_t *)&source) != 0)
+					source = TOPO_SENSOR_ERRSRC_UNKNOWN;
+				if (last_source != -1 && last_source != source)
+					source_diff = B_TRUE;
+			}
+			if (source_diff)
+				source = TOPO_SENSOR_ERRSRC_UNKNOWN;
+		}
 	}
 
 	/*
-	 * See if we know about this fru.
+	 * See if we know about this FRU.
 	 */
-	for (current = &stp->st_faults; *current != NULL;
-	    current = &(*current)->sf_next) {
-		if (topo_fmri_strcmp(thp, fmri,
-		    (*current)->sf_fru))
+	for (sfp = stp->st_faults; sfp != NULL; sfp = sfp->sf_next) {
+		if (topo_fmri_strcmp(thp, fmri, sfp->sf_fru))
 			break;
 	}
 
-	sfp = *current;
 	if (sfp == NULL) {
 		/*
 		 * We add this FRU to our list under two circumstances:
 		 *
-		 *	1. This FRU is faulted and needs to be remembered to
-		 *	   avoid duplicate ereports.
-		 *
-		 *	2. This is the initial pass, and we want to repair the
-		 *	   FRU in case it was repaired while we were offline.
+		 * 1. This FRU is faulted and needs to be remembered to
+		 *    avoid duplicate ereports.
+		 * 2. This is the initial pass, and we want to repair the
+		 *    FRU in case it was repaired while we were offline.
 		 */
-		if (stp->st_first || faulted) {
+		if (stp->st_first || missing || faulted) {
 			sfp = fmd_hdl_zalloc(hdl, sizeof (sensor_fault_t),
 			    FMD_SLEEP);
 			sfp->sf_fru = fmd_hdl_strdup(hdl, fmri, FMD_SLEEP);
@@ -235,13 +248,11 @@ st_check_component(topo_hdl_t *thp, tnode_t *node, void *arg)
 		}
 	}
 
-	if (faulted)
-		sfp->sf_num_fails++;
-
-	if (nvl == NULL)
+	if (!missing && nvl == NULL)
 		sfp->sf_unknown = B_TRUE;
 
 	if (faulted) {
+		sfp->sf_num_fails++;
 		/*
 		 * Construct and post the ereport.
 		 *
@@ -279,6 +290,40 @@ st_check_component(topo_hdl_t *thp, tnode_t *node, void *arg)
 		sfp->sf_faulted = B_TRUE;
 	}
 
+	if (missing) {
+		fmd_hdl_debug(hdl, "%s=%d is not present",
+		    name, topo_node_instance(node));
+		/*
+		 * Construct and post the ereport.
+		 *
+		 * XXFM we only post one ereport per fru.  It should be possible
+		 * to uniquely identify missing resources instead and post one
+		 * per resource, even if they share the same FRU.
+		 */
+		if (!sfp->sf_last_missing) {
+			ena = fmd_event_ena_create(hdl);
+			event = fmd_nvl_alloc(hdl, FMD_SLEEP);
+
+			(void) nvlist_add_string(event, "type", name);
+			(void) nvlist_add_boolean_value(event, "nonrecov",
+			    B_TRUE);
+			(void) nvlist_add_uint32(event, "source",
+			    (uint32_t)TOPO_SENSOR_ERRSRC_EXTERNAL);
+			(void) nvlist_add_nvlist(event, "details", nvl);
+			(void) nvlist_add_string(event, FM_CLASS,
+			    ST_EREPORT_MISSING_CLASS);
+			(void) nvlist_add_uint8(event, FM_VERSION,
+			    FM_EREPORT_VERSION);
+			(void) nvlist_add_uint64(event, FM_EREPORT_ENA, ena);
+			(void) nvlist_add_nvlist(event, FM_EREPORT_DETECTOR,
+			    rsrc);
+			fmd_xprt_post(hdl, stp->st_xprt, event, 0);
+			fmd_hdl_debug(hdl, "posted ereport: %s",
+			    ST_EREPORT_MISSING_CLASS);
+		}
+		sfp->sf_missing = B_TRUE;
+	}
+
 out:
 	topo_hdl_strfree(thp, fmri);
 	nvlist_free(rsrc);
@@ -293,7 +338,7 @@ static void
 st_timeout(fmd_hdl_t *hdl, id_t id, void *data)
 {
 	sensor_transport_t *stp;
-	sensor_fault_t *sfp, **current;
+	sensor_fault_t *sfp, **cur_sfp;
 	topo_hdl_t *thp;
 	topo_walk_t *twp;
 	int err;
@@ -327,6 +372,8 @@ st_timeout(fmd_hdl_t *hdl, id_t id, void *data)
 		if (sfp->sf_num_fails > stp->st_tolerance)
 			sfp->sf_last_faulted = sfp->sf_faulted;
 		sfp->sf_faulted = B_FALSE;
+		sfp->sf_last_missing = sfp->sf_missing;
+		sfp->sf_missing = B_FALSE;
 	}
 
 	if (topo_walk_step(twp, TOPO_WALK_CHILD) == TOPO_WALK_ERR) {
@@ -340,17 +387,17 @@ st_timeout(fmd_hdl_t *hdl, id_t id, void *data)
 	/*
 	 * Remove any faults that weren't seen in the last pass.
 	 */
-	for (current = &stp->st_faults; *current != NULL; ) {
-		sfp = *current;
-		if (!sfp->sf_faulted && !sfp->sf_unknown) {
+	for (cur_sfp = &stp->st_faults; *cur_sfp != NULL; ) {
+		sfp = *cur_sfp;
+		if (!sfp->sf_faulted && !sfp->sf_missing && !sfp->sf_unknown) {
 			fmd_hdl_debug(hdl, "repairing %s", sfp->sf_fru);
 			fmd_repair_fru(hdl, sfp->sf_fru);
 			st_stats.st_repairs.fmds_value.ui64++;
-			*current = sfp->sf_next;
+			*cur_sfp = sfp->sf_next;
 			fmd_hdl_strfree(hdl, sfp->sf_fru);
 			fmd_hdl_free(hdl, sfp, sizeof (sensor_fault_t));
 		} else {
-			current = &sfp->sf_next;
+			cur_sfp = &sfp->sf_next;
 		}
 	}
 

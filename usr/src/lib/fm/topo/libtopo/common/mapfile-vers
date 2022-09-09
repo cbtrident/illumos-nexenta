@@ -18,8 +18,10 @@
 #
 # CDDL HEADER END
 #
+
 #
 # Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2022 Tintri by DDN, Inc. All rights reserved.
 #
 
 #
@@ -51,6 +53,7 @@ SYMBOL_VERSION SUNWprivate {
 	topo_fmri_fru;
 	topo_fmri_getpgrp;
 	topo_fmri_getprop;
+	topo_fmri_installed;
 	topo_fmri_label;
 	topo_fmri_nvl2str;
 	topo_fmri_present;

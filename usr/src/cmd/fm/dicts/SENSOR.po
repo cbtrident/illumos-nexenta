@@ -21,8 +21,7 @@
 
 #
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
-# Use is subject to license terms.
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2022 Tintri by DDN, Inc. All rights reserved.
 #
 
 #
@@ -153,3 +152,35 @@ msgid "SENSOR-8000-7L.impact"
 msgstr "The enclosure may be getting inadequate power.  Subsequent loss of power supplies may force the enclosure to shutdown."
 msgid "SENSOR-8000-7L.action"
 msgstr "Check to see if the power cord is connected properly or if there are other conditions that may be causing inadequate power to be provided to the indicated power supply."
+#
+# code: SENSOR-8000-8U
+# keys: fault.fan.missing
+#
+msgid "SENSOR-8000-8U.type"
+msgstr "Fault"
+msgid "SENSOR-8000-8U.severity"
+msgstr "Major"
+msgid "SENSOR-8000-8U.description"
+msgstr "External sensors indicate that a fan is missing/removed."
+msgid "SENSOR-8000-8U.response"
+msgstr "None."
+msgid "SENSOR-8000-8U.impact"
+msgstr "The enclosure may be getting inadequate cooling.  If the problem persists, the components may overheat and the enclosure may shutdown."
+msgid "SENSOR-8000-8U.action"
+msgstr "Install the fan."
+#
+# code: SENSOR-8000-97
+# keys: fault.psu.missing
+#
+msgid "SENSOR-8000-97.type"
+msgstr "Fault"
+msgid "SENSOR-8000-97.severity"
+msgstr "Major"
+msgid "SENSOR-8000-97.description"
+msgstr "External sensors indicate that a power supply is missing/removed."
+msgid "SENSOR-8000-97.response"
+msgstr "None."
+msgid "SENSOR-8000-97.impact"
+msgstr "The enclosure power supply is non-redundant.  Subsequent loss of power supplies may force the enclosure to shutdown."
+msgid "SENSOR-8000-97.action"
+msgstr "Install the power supply."

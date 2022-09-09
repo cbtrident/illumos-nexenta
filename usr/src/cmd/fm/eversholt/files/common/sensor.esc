@@ -20,7 +20,7 @@
  */
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #pragma dictionary "SENSOR"
@@ -37,7 +37,8 @@ fru psu;
  */
 event fault.fan.failed@fan;
 event fault.psu.failed@psu;
-
+event fault.fan.missing@fan;
+event fault.psu.missing@psu;
 
 /*
  * Fine-grained fan/psu fault events
@@ -52,6 +53,8 @@ event fault.psu.failed-pred@psu;
  */
 event ereport.sensor.failure@fan;
 event ereport.sensor.failure@psu;
+event ereport.sensor.missing@fan;
+event ereport.sensor.missing@psu;
 
 /*
  * Propagations.
@@ -65,20 +68,26 @@ prop fault.fan.failed-pred@fan ->
 	payloadprop("predictive") == 1 };
 
 prop fault.psu.failed@psu ->
-    ereport.sensor.failure@psu { payloadprop("type") == "psu" &&
-        payloadprop("source") == TOPO_SENSOR_ERRSRC_UNKNOWN &&
+   ereport.sensor.failure@psu { payloadprop("type") == "psu" &&
+	payloadprop("source") == TOPO_SENSOR_ERRSRC_UNKNOWN &&
 	payloadprop("predictive") == 0 };
 
 prop fault.psu.failed-int@psu ->
     ereport.sensor.failure@psu { payloadprop("type") == "psu" &&
-        payloadprop("source") == TOPO_SENSOR_ERRSRC_INTERNAL &&
+	payloadprop("source") == TOPO_SENSOR_ERRSRC_INTERNAL &&
 	payloadprop("predictive") == 0 };
 
 prop fault.psu.failed-ext@psu ->
     ereport.sensor.failure@psu { payloadprop("type") == "psu" &&
-        payloadprop("source") == TOPO_SENSOR_ERRSRC_EXTERNAL &&
+	payloadprop("source") == TOPO_SENSOR_ERRSRC_EXTERNAL &&
 	payloadprop("predictive") == 0 };
 
 prop fault.psu.failed-pred@psu ->
     ereport.sensor.failure@psu { payloadprop("type") == "psu" &&
-        payloadprop("predictive") == 1 };
+	payloadprop("predictive") == 1 };
+
+prop fault.fan.missing@fan ->
+    ereport.sensor.missing@fan { payloadprop("type") == "fan" };
+
+prop fault.psu.missing@psu ->
+    ereport.sensor.missing@psu { payloadprop("type") == "psu" };

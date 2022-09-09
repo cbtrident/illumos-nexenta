@@ -363,52 +363,17 @@ ipmi_entity_present_sdr(ipmi_handle_t *ihp, ipmi_sdr_t *sdrp,
 	return (0);
 }
 
-/*
- * This function follows the procedure documented in section 40 of the spec.
- * To quote the conclusion from section 40.2:
- *
- *	Thus, the steps to detecting an Entity are:
- *
- *	a) Scan the SDRs for sensors associated with the entity.
- *
- *	b) If there is an active sensor that includes a presence bit, or the
- *	   entity has an active Entity Presence sensor, use the sensor to
- *	   determine the presence of the entity.
- *
- *	c) Otherwise, check to see that there is at least one active sensor
- *	   associated with the entity.  Do this by doing 'Get Sensor Readings'
- *	   to the sensors associated with the entity until a scanning sensor is
- *	   found.
- *
- *	d) If there are no active sensors directly associated with the entity,
- *	   check the SDRs to see if the entity is a container entity in an
- *	   entity-association.  If so, check to see if any of the contained
- *	   entities are present, if so, assume the container entity exists.
- *	   Note that this may need to be iterative, since it's possible to have
- *	   multi-level entity associations.
- *
- *	e) If there are no active sensors for the entity, and the entity is not
- *	   the container entity in an active entity-assocation, then the entity
- *         is present if (sic) there there is a FRU device for the entity, and
- *         the FRU device is present.
- *
- *	It should not be considered an error if a FRU device locator record is
- *	present for a FRU device, but the FRU device is not there.
- */
-int
-ipmi_entity_present(ipmi_handle_t *ihp, ipmi_entity_t *ep, boolean_t *valp)
+static int
+ipmi_presence_sensor(ipmi_handle_t *ihp, ipmi_entity_impl_t *eip,
+    boolean_t *present, boolean_t *removable)
 {
-	ipmi_entity_impl_t *eip = ENTITY_TO_IMPL(ep);
-	ipmi_entity_impl_t *cp;
 	ipmi_entity_sdr_t *esp;
 	ipmi_sdr_t *sdrp;
-	uint16_t mask;
-	uint8_t sensor_type, reading_type;
-	ipmi_sensor_reading_t *srp;
 	ipmi_sdr_compact_sensor_t *csp;
 	ipmi_sdr_full_sensor_t *fsp;
-	ipmi_sdr_fru_locator_t *frup;
-	char *frudata;
+	ipmi_sensor_reading_t *srp;
+	uint16_t mask;
+	uint8_t sensor_type, reading_type;
 
 	/*
 	 * Search the sensors for a present sensor or a discrete sensor that
@@ -470,17 +435,81 @@ ipmi_entity_present(ipmi_handle_t *ihp, ipmi_entity_t *ep, boolean_t *valp)
 		 * If we've reached here, then we have a dedicated sensor that
 		 * indicates presence.
 		 */
-		if ((srp = ipmi_get_sensor_reading(ihp,
-		    (ipmi_sensor_keys_t *)sdrp->is_record)) == NULL) {
-			if (ipmi_errno(ihp) == EIPMI_NOT_PRESENT) {
-				*valp = B_FALSE;
-				return (0);
-			}
-
-			return (-1);
+		*removable = B_FALSE;
+		srp = ipmi_get_sensor_reading(ihp,
+		    (ipmi_sensor_keys_t *)sdrp->is_record);
+		if (srp == NULL) {
+			if (ipmi_errno(ihp) != EIPMI_NOT_PRESENT)
+				return (-1);
+			*present = B_FALSE;
+		} else {
+			if (sensor_type == IPMI_ST_POWER_SUPPLY)
+				*removable = B_TRUE;
+			*present = (srp->isr_state & mask) != 0;
 		}
+		return (1);
+	}
+	return (0);
+}
 
-		*valp = (srp->isr_state & mask) != 0;
+/*
+ * This function follows the procedure documented in section 40 of the spec.
+ * To quote the conclusion from section 40.2:
+ *
+ *	Thus, the steps to detecting an Entity are:
+ *
+ *	a) Scan the SDRs for sensors associated with the entity.
+ *
+ *	b) If there is an active sensor that includes a presence bit, or the
+ *	   entity has an active Entity Presence sensor, use the sensor to
+ *	   determine the presence of the entity.
+ *
+ *	c) Otherwise, check to see that there is at least one active sensor
+ *	   associated with the entity.  Do this by doing 'Get Sensor Readings'
+ *	   to the sensors associated with the entity until a scanning sensor is
+ *	   found.
+ *
+ *	d) If there are no active sensors directly associated with the entity,
+ *	   check the SDRs to see if the entity is a container entity in an
+ *	   entity-association.  If so, check to see if any of the contained
+ *	   entities are present, if so, assume the container entity exists.
+ *	   Note that this may need to be iterative, since it's possible to have
+ *	   multi-level entity associations.
+ *
+ *	e) If there are no active sensors for the entity, and the entity is not
+ *	   the container entity in an active entity-assocation, then the entity
+ *         is present if (sic) there there is a FRU device for the entity, and
+ *         the FRU device is present.
+ *
+ *	It should not be considered an error if a FRU device locator record is
+ *	present for a FRU device, but the FRU device is not there.
+ */
+int
+ipmi_entity_present(ipmi_handle_t *ihp, ipmi_entity_t *ep, boolean_t *valp)
+{
+	ipmi_entity_impl_t *eip = ENTITY_TO_IMPL(ep);
+	ipmi_entity_impl_t *cp;
+	ipmi_entity_sdr_t *esp;
+	ipmi_sdr_t *sdrp;
+	ipmi_sensor_reading_t *srp;
+	ipmi_sdr_fru_locator_t *frup;
+	boolean_t present, removable;
+	char *frudata;
+	int ret;
+
+	/*
+	 * If there is an explicit presence sensor, report entity as present so
+	 * we could fault missing/removed PSUs.
+	 */
+	ret = ipmi_presence_sensor(ihp, eip, &present, &removable);
+	if (ret == -1) {
+		*valp = B_FALSE;
+		return (-1);
+	} else if (ret == 1) {
+		if (removable)
+			*valp = B_TRUE;
+		else
+			*valp = present;
 		return (0);
 	}
 
@@ -542,6 +571,22 @@ ipmi_entity_present(ipmi_handle_t *ihp, ipmi_entity_t *ep, boolean_t *valp)
 	}
 
 	*valp = B_FALSE;
+	return (0);
+}
+
+int
+ipmi_entity_installed(ipmi_handle_t *ihp, ipmi_entity_t *ep, boolean_t *valp)
+{
+	ipmi_entity_impl_t *eip = ENTITY_TO_IMPL(ep);
+	boolean_t present, removable;
+	int ret;
+
+	*valp = B_TRUE;
+	ret = ipmi_presence_sensor(ihp, eip, &present, &removable);
+	if (ret == -1)
+		return (-1);
+	else if (ret == 1 && removable)
+		*valp = present;
 	return (0);
 }
 

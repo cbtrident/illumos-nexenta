@@ -24,6 +24,7 @@
  */
 /*
  * Copyright (c) 2018, Joyent, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef _LIBTOPO_H
@@ -92,6 +93,7 @@ extern di_prom_handle_t topo_hdl_prominfo(topo_hdl_t *);
 /*
  * FMRI helper routines
  */
+extern int topo_fmri_installed(topo_hdl_t *, nvlist_t *, int *);
 extern int topo_fmri_present(topo_hdl_t *, nvlist_t *, int *);
 extern int topo_fmri_replaced(topo_hdl_t *, nvlist_t *, int *);
 extern int topo_fmri_contains(topo_hdl_t *, nvlist_t *, nvlist_t *, int *);

@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef _TOPO_MOD_H
@@ -135,6 +136,12 @@ extern int topo_method_sensor_failure(topo_mod_t *, tnode_t *, topo_version_t,
 /*
  * FMRI methods
  */
+#define	TOPO_METH_INSTALLED		"topo_installed"
+#define	TOPO_METH_INSTALLED_DESC	"physical presence indicator"
+#define	TOPO_METH_INSTALLED_VERSION0	0
+#define	TOPO_METH_INSTALLED_VERSION	TOPO_METH_INSTALLED_VERSION0
+#define	TOPO_METH_INSTALLED_RET		"installed-ret"
+
 #define	TOPO_METH_LABEL			"topo_label"
 #define	TOPO_METH_LABEL_DESC		"label constructor"
 #define	TOPO_METH_LABEL_VERSION0	0

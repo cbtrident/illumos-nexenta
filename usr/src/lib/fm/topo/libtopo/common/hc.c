@@ -23,6 +23,7 @@
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2017, Joyent, Inc.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include <stdio.h>
@@ -60,6 +61,8 @@ static int hc_fmri_str2nvl(topo_mod_t *, tnode_t *, topo_version_t,
     nvlist_t *, nvlist_t **);
 static int hc_compare(topo_mod_t *, tnode_t *, topo_version_t, nvlist_t *,
     nvlist_t **);
+static int hc_fmri_installed(topo_mod_t *, tnode_t *, topo_version_t,
+    nvlist_t *, nvlist_t **);
 static int hc_fmri_present(topo_mod_t *, tnode_t *, topo_version_t, nvlist_t *,
     nvlist_t **);
 static int hc_fmri_replaced(topo_mod_t *, tnode_t *, topo_version_t, nvlist_t *,
@@ -98,6 +101,9 @@ const topo_method_t hc_methods[] = {
 	    TOPO_STABILITY_INTERNAL, hc_compare },
 	{ TOPO_METH_PRESENT, TOPO_METH_PRESENT_DESC, TOPO_METH_PRESENT_VERSION,
 	    TOPO_STABILITY_INTERNAL, hc_fmri_present },
+	{ TOPO_METH_INSTALLED, TOPO_METH_INSTALLED_DESC,
+	    TOPO_METH_INSTALLED_VERSION, TOPO_STABILITY_INTERNAL,
+	    hc_fmri_installed },
 	{ TOPO_METH_REPLACED, TOPO_METH_REPLACED_DESC,
 	    TOPO_METH_REPLACED_VERSION, TOPO_STABILITY_INTERNAL,
 	    hc_fmri_replaced },
@@ -1812,6 +1818,74 @@ hc_fmri_present(topo_mod_t *mod, tnode_t *node, topo_version_t version,
 	hap->ha_fmri = in;
 	hap->ha_nvl = NULL;
 	if ((hwp = hc_walk_init(mod, node, hap->ha_fmri, hc_is_present,
+	    (void *)hap)) != NULL) {
+		if (topo_walk_step(hwp->hcw_wp, TOPO_WALK_CHILD) ==
+		    TOPO_WALK_ERR)
+			err = -1;
+		else
+			err = 0;
+		topo_walk_fini(hwp->hcw_wp);
+		topo_mod_free(mod, hwp, sizeof (struct hc_walk));
+	} else {
+		err = -1;
+	}
+
+	if (hap->ha_nvl != NULL)
+		*out = hap->ha_nvl;
+
+	topo_mod_free(mod, hap, sizeof (struct hc_args));
+
+	return (err);
+}
+
+static int
+hc_is_installed(topo_mod_t *mod, tnode_t *node, void *pdata)
+{
+	int err;
+	struct hc_args *hap = (struct hc_args *)pdata;
+
+	if (topo_method_invoke(node, TOPO_METH_INSTALLED,
+	    TOPO_METH_INSTALLED_VERSION, hap->ha_fmri,
+	    &hap->ha_nvl, &err) < 0) {
+		/*
+		 * If the method exists but failed for some other reason,
+		 * propagate the error as making any decision over presence is
+		 * impossible.
+		 */
+		if (err != ETOPO_METHOD_NOTSUP)
+			return (err);
+
+		if (topo_mod_nvalloc(mod, &hap->ha_nvl, NV_UNIQUE_NAME) != 0)
+			return (EMOD_NOMEM);
+
+		if (nvlist_add_uint32(hap->ha_nvl,
+		    TOPO_METH_INSTALLED_RET, 1) != 0) {
+			nvlist_free(hap->ha_nvl);
+			hap->ha_nvl = NULL;
+			return (EMOD_NOMEM);
+		}
+	}
+
+	return (0);
+}
+
+static int
+hc_fmri_installed(topo_mod_t *mod, tnode_t *node, topo_version_t version,
+    nvlist_t *in, nvlist_t **out)
+{
+	int err;
+	struct hc_walk *hwp;
+	struct hc_args *hap;
+
+	if (version > TOPO_METH_INSTALLED_VERSION)
+		return (topo_mod_seterrno(mod, ETOPO_METHOD_VERNEW));
+
+	if ((hap = topo_mod_alloc(mod, sizeof (struct hc_args))) == NULL)
+		return (topo_mod_seterrno(mod, EMOD_NOMEM));
+
+	hap->ha_fmri = in;
+	hap->ha_nvl = NULL;
+	if ((hwp = hc_walk_init(mod, node, hap->ha_fmri, hc_is_installed,
 	    (void *)hap)) != NULL) {
 		if (topo_walk_step(hwp->hcw_wp, TOPO_WALK_CHILD) ==
 		    TOPO_WALK_ERR)
