@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -248,7 +248,7 @@ typedef struct mptsas_lun {
  * CFGBUSY (if there are further config requests). Finally if it's sure there
  * are no further config requests waiting and an offline event occured during
  * this whole sequence it will schedule a task to offline the target.
- * 
+ *
  */
 typedef enum {
 	TINIT_DONE,	/* Idle state */
@@ -309,8 +309,8 @@ typedef	struct mptsas_target {
 #define	TFGL_OFFLINE	0x2	/* Offline once last sequence complete */
 #define	TFGL_FREEHDL	0x4	/* Need to free the devhandle during offline */
 #define	TFGL_WAITING	0x8	/* Thread waiting to do another sequence */
-#define TFGL_PFAIL	0x10	/* Probe failed */
-#define TFGL_CFAIL	0x20	/* Config failed */
+#define	TFGL_PFAIL	0x10	/* Probe failed */
+#define	TFGL_CFAIL	0x20	/* Config failed */
 
 /*
  * If you change this structure, be sure that mptsas_smp_target_copy()
@@ -1068,6 +1068,10 @@ typedef struct mptsas {
 	mptsas_fw_diagnostic_buffer_t
 		m_fw_diag_buffer_list[MPI2_DIAG_BUF_TYPE_COUNT];
 
+	/* IOC type flags */
+	uint8_t			m_is_sea_ioc;
+	uint8_t			m_is_gen35_ioc;
+
 	/* GEN3 support */
 	uint8_t			m_MPI25;
 
@@ -1085,6 +1089,11 @@ typedef struct mptsas {
 	 * Is HBA processing a diag reset?
 	 */
 	uint8_t			m_in_reset;
+
+	/*
+	 * index for the pci memory BAR
+	 */
+	uint8_t			m_mem_bar;
 
 	/*
 	 * per instance cmd data structures for task management cmds
@@ -1285,7 +1294,7 @@ _NOTE(DATA_READABLE_WITHOUT_LOCK(mptsas::m_instance))
 #define	MPTSAS_QUIESCE_TIMEOUT	1		/* 1 sec */
 #define	MPTSAS_PM_IDLE_TIMEOUT	60		/* 60 seconds */
 
-#define	MPTSAS_GET_ISTAT(mpt)  (ddi_get32((mpt)->m_datap, \
+#define	MPTSAS_GET_ISTAT(mpt)  (mptsas_hirrd((mpt), \
 			&(mpt)->m_reg->HostInterruptStatus))
 
 #define	MPTSAS_SET_SIGP(P) \
@@ -1294,7 +1303,7 @@ _NOTE(DATA_READABLE_WITHOUT_LOCK(mptsas::m_instance))
 #define	MPTSAS_RESET_SIGP(P) (void) ddi_get8(mpt->m_datap, \
 			(uint8_t *)(mpt->m_devaddr + NREG_CTEST2))
 
-#define	MPTSAS_GET_INTCODE(P) (ddi_get32(mpt->m_datap, \
+#define	MPTSAS_GET_INTCODE(P) (mptsas_hirrd(mpt, \
 			(uint32_t *)(mpt->m_devaddr + NREG_DSPS)))
 
 
@@ -1330,7 +1339,7 @@ _NOTE(DATA_READABLE_WITHOUT_LOCK(mptsas::m_instance))
 
 #define	ClrSetBits32(hdl, reg, clr, set) \
 	ddi_put32(hdl, (reg), \
-	    ((ddi_get32(mpt->m_datap, (reg)) & ~(clr)) | (set)))
+	    ((mptsas_hirrd(mpt, (reg)) & ~(clr)) | (set)))
 
 #define	ClrSetBits(reg, clr, set) \
 	ddi_put8(mpt->m_datap, (uint8_t *)(reg), \
@@ -1453,6 +1462,7 @@ void mptsas_doneq_apempty(mptsas_t *mpt);
 int mptsas_target_eval_devhdl(const void *op, void *arg);
 void mptsas_return_replyframe(mptsas_t *mpt, uint32_t reply_addr);
 void mptsas_insert_expiration(mptsas_active_cmdq_t *exq, mptsas_cmd_t *cmd);
+uint32_t mptsas_hirrd(mptsas_t *mpt, uint32_t *regaddr);
 
 /*
  * impl functions

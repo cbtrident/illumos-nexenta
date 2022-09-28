@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2014 OmniTI Computer Consulting, Inc. All rights reserved.
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -104,6 +104,25 @@ static void mptsas_ioc_event_cmdq_add(mptsas_t *mpt, m_event_struct_t *cmd);
 static void mptsas_ioc_event_cmdq_delete(mptsas_t *mpt, m_event_struct_t *cmd);
 static m_event_struct_t *mptsas_ioc_event_find_by_cmd(mptsas_t *mpt,
     struct mptsas_cmd *cmd);
+
+/*
+ * Use to read Host interface registers.  May read up to 3 times for
+ * certain IOC's due to chip bug where zero can be erroneously returned
+ * when under high i/o load.
+ */
+uint32_t
+mptsas_hirrd(mptsas_t *mpt, uint32_t *regaddr)
+{
+	int i, ntries;
+	uint32_t ret;
+
+	ntries = (mpt->m_is_sea_ioc == 1) ? 3 : 1;
+	for (i = 0; i < ntries; i++) {
+		if ((ret = ddi_get32(mpt->m_datap, regaddr)) != 0)
+			break;
+	}
+	return (ret);
+}
 
 /*
  * add ioc evnet cmd into the queue
@@ -637,8 +656,8 @@ page_done:
 
 int
 mptsas_send_config_request_msg(mptsas_t *mpt, uint8_t action, uint8_t pagetype,
-	uint32_t pageaddress, uint8_t pagenumber, uint8_t pageversion,
-	uint8_t pagelength, uint32_t SGEflagslength, uint64_t SGEaddress)
+    uint32_t pageaddress, uint8_t pagenumber, uint8_t pageversion,
+    uint8_t pagelength, uint32_t SGEflagslength, uint64_t SGEaddress)
 {
 	pMpi2ConfigRequest_t	config;
 	int			send_numbytes;
@@ -676,9 +695,9 @@ mptsas_send_config_request_msg(mptsas_t *mpt, uint8_t action, uint8_t pagetype,
 
 int
 mptsas_send_extended_config_request_msg(mptsas_t *mpt, uint8_t action,
-	uint8_t extpagetype, uint32_t pageaddress, uint8_t pagenumber,
-	uint8_t pageversion, uint16_t extpagelength,
-	uint32_t SGEflagslength, uint64_t SGEaddress)
+    uint8_t extpagetype, uint32_t pageaddress, uint8_t pagenumber,
+    uint8_t pageversion, uint16_t extpagelength,
+    uint32_t SGEflagslength, uint64_t SGEaddress)
 {
 	pMpi2ConfigRequest_t	config;
 	int			send_numbytes;
@@ -719,10 +738,10 @@ mptsas_ioc_wait_for_response(mptsas_t *mpt)
 {
 	int	polls = 0;
 
-	while ((ddi_get32(mpt->m_datap,
+	while ((mptsas_hirrd(mpt,
 	    &mpt->m_reg->HostInterruptStatus) & MPI2_HIS_IOP_DOORBELL_STATUS)) {
 		drv_usecwait(1000);
-		if (polls++ > 60000) {
+		if (polls++ > 5000) {
 			return (-1);
 		}
 	}
@@ -734,7 +753,7 @@ mptsas_ioc_wait_for_doorbell(mptsas_t *mpt)
 {
 	int	polls = 0;
 
-	while ((ddi_get32(mpt->m_datap,
+	while ((mptsas_hirrd(mpt,
 	    &mpt->m_reg->HostInterruptStatus) & MPI2_HIM_DIM) == 0) {
 		drv_usecwait(1000);
 		if (polls++ > 300000) {
@@ -746,7 +765,7 @@ mptsas_ioc_wait_for_doorbell(mptsas_t *mpt)
 
 int
 mptsas_send_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
-	ddi_acc_handle_t accessp)
+    ddi_acc_handle_t accessp)
 {
 	int	i;
 
@@ -799,7 +818,7 @@ mptsas_send_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 
 int
 mptsas_get_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
-	ddi_acc_handle_t accessp)
+    ddi_acc_handle_t accessp)
 {
 	int		i, totalbytes, bytesleft;
 	uint16_t	val;
@@ -818,7 +837,7 @@ mptsas_get_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 	 * data we will be getting
 	 */
 	for (i = 0; i < 2; i++, memp += 2) {
-		val = (ddi_get32(mpt->m_datap,
+		val = (mptsas_hirrd(mpt,
 		    &mpt->m_reg->Doorbell) & MPI2_DOORBELL_DATA_MASK);
 		ddi_put32(mpt->m_datap, &mpt->m_reg->HostInterruptStatus, 0);
 		if (mptsas_ioc_wait_for_doorbell(mpt)) {
@@ -847,7 +866,7 @@ mptsas_get_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 	 * Get the rest of the data
 	 */
 	for (i = 0; i < bytesleft; i++, memp += 2) {
-		val = (ddi_get32(mpt->m_datap,
+		val = (mptsas_hirrd(mpt,
 		    &mpt->m_reg->Doorbell) & MPI2_DOORBELL_DATA_MASK);
 		ddi_put32(mpt->m_datap, &mpt->m_reg->HostInterruptStatus, 0);
 		if (mptsas_ioc_wait_for_doorbell(mpt)) {
@@ -866,7 +885,7 @@ mptsas_get_handshake_msg(mptsas_t *mpt, caddr_t memp, int numbytes,
 	 */
 	if (totalbytes > (numbytes / 2)) {
 		for (i = (numbytes / 2); i < totalbytes; i++) {
-			val = (ddi_get32(mpt->m_datap,
+			val = (mptsas_hirrd(mpt,
 			    &mpt->m_reg->Doorbell) &
 			    MPI2_DOORBELL_DATA_MASK);
 			ddi_put32(mpt->m_datap,
@@ -896,53 +915,71 @@ mptsas_kick_start(mptsas_t *mpt)
 {
 	int		polls = 0;
 	uint32_t	diag_reg, ioc_state, saved_HCB_size;
+	int		retries = 20;
 
+	do {
+		if (--retries == 0) {
+			mptsas_log(mpt, CE_WARN, "mptsas reset no diag WE");
+			return (DDI_FAILURE);
+		}
+		/*
+		 * Start a hard reset.  Write magic number and wait 100 mSecs.
+		 */
+		MPTSAS_ENABLE_DRWE(mpt);
+		drv_usecwait(100000);
+
+		/*
+		 * Read the current Diag Reg.
+		 */
+		diag_reg = mptsas_hirrd(mpt, &mpt->m_reg->HostDiagnostic);
+	} while ((diag_reg & MPI2_DIAG_DIAG_WRITE_ENABLE) == 0);
 	/*
-	 * Start a hard reset.  Write magic number and wait 500 mSeconds.
+	 * Save the Host Controlled Boot size.
 	 */
-	MPTSAS_ENABLE_DRWE(mpt);
-	drv_usecwait(500000);
+	saved_HCB_size = mptsas_hirrd(mpt, &mpt->m_reg->HCBSize);
 
 	/*
-	 * Read the current Diag Reg and save the Host Controlled Boot size.
-	 */
-	diag_reg = ddi_get32(mpt->m_datap, &mpt->m_reg->HostDiagnostic);
-	saved_HCB_size = ddi_get32(mpt->m_datap, &mpt->m_reg->HCBSize);
-
-	/*
-	 * Set Reset Adapter bit and wait 50 mSeconds.
+	 * Set Reset Adapter bit and wait 256 mSeconds.
 	 */
 	diag_reg |= MPI2_DIAG_RESET_ADAPTER;
 	ddi_put32(mpt->m_datap, &mpt->m_reg->HostDiagnostic, diag_reg);
-	drv_usecwait(50000);
+	drv_usecwait(256000);
 
 	/*
-	 * Poll, waiting for Reset Adapter bit to clear.  30 Seconds max
-	 * (60000 * 500 = 30,000,000 uSeconds, 30 seconds).
+	 * Poll, waiting for Reset Adapter bit to clear.  300 Seconds max
+	 * (6000 * 50000 = 300,000,000 uSeconds, 300 seconds).
 	 * If no more adapter (all FF's), just return failure.
 	 */
-	for (polls = 0; polls < 60000; polls++) {
-		diag_reg = ddi_get32(mpt->m_datap,
-		    &mpt->m_reg->HostDiagnostic);
+	for (polls = 0; polls < 6000; polls++) {
+		drv_usecwait(50000);
+		diag_reg = mptsas_hirrd(mpt, &mpt->m_reg->HostDiagnostic);
 		if (diag_reg == 0xFFFFFFFF) {
 			return (DDI_FAILURE);
 		}
-		if (!(diag_reg & MPI2_DIAG_RESET_ADAPTER)) {
-			break;
+		/*
+		 * Check if RESET ADAPTER bit is cleared, If not keep waiting.
+		 */
+		if ((diag_reg & MPI2_DIAG_RESET_ADAPTER) != 0) {
+			continue;
 		}
-		drv_usecwait(500);
+		/*
+		 * Then wait for RESET state to be cleared.
+		 */
+		ioc_state = mptsas_hirrd(mpt,  &mpt->m_reg->Doorbell);
+		if ((ioc_state & MPI2_IOC_STATE_MASK) != MPI2_IOC_STATE_RESET)
+			break;
 	}
-	if (polls == 60000) {
+	if (polls == 6000) {
 		return (DDI_FAILURE);
 	}
 
 #if defined(MPTSAS_DEBUG)
 	if (quiesce_active) {
 		prom_printf("%d: mptsas_kick_start() , reset cleared in %d "
-		    "MSec\n", mpt->m_instance, polls/2);
+		    "MSec\n", mpt->m_instance, polls*50);
 	} else {
 		NDBG26(("%d: mptsas_kick_start() , reset cleared in %d "
-		    "MSec\n", mpt->m_instance, polls/2));
+		    "MSec\n", mpt->m_instance, polls*50));
 	}
 #endif
 	/*
@@ -978,7 +1015,7 @@ mptsas_kick_start(mptsas_t *mpt)
 	 * Wait 30 seconds max for FW to come to ready state.
 	 */
 	for (polls = 0; polls < 30000; polls++) {
-		ioc_state = ddi_get32(mpt->m_datap, &mpt->m_reg->Doorbell);
+		ioc_state = mptsas_hirrd(mpt, &mpt->m_reg->Doorbell);
 		if (ioc_state == 0xFFFFFFFF) {
 			return (DDI_FAILURE);
 		}
@@ -1010,81 +1047,103 @@ mptsas_kick_start(mptsas_t *mpt)
 }
 
 int
+mptsas_message_unit_reset(mptsas_t *mpt, int first_time)
+{
+	uint32_t	reset_msg;
+
+	/*
+	 * If the first time, try MUR anyway, because we haven't even
+	 * queried the card for m_event_replay and other capabilities.
+	 * Other platforms do it this way, we can still do a hard
+	 * reset if we need to, MUR takes less time than a full
+	 * adapter reset, and there are reports that some HW
+	 * combinations will lock up when receiving a hard reset.
+	 */
+	if ((first_time || mpt->m_event_replay) &&
+	    (mpt->m_softstate & MPTSAS_SS_MSG_UNIT_RESET)) {
+		mpt->m_softstate &= ~MPTSAS_SS_MSG_UNIT_RESET;
+		reset_msg = MPI2_FUNCTION_IOC_MESSAGE_UNIT_RESET;
+		ddi_put32(mpt->m_datap, &mpt->m_reg->Doorbell,
+		    (reset_msg << MPI2_DOORBELL_FUNCTION_SHIFT));
+		if (mptsas_ioc_wait_for_response(mpt)) {
+			NDBG19(("%d: ioc_reset failure sending "
+			    "message_unit_reset", mpt->m_instance));
+			return (MPTSAS_RESET_FAIL);
+		}
+
+	}
+	/*
+	 * Save the last reset mode done on IOC which will be
+	 * helpful while resuming from suspension.
+	 */
+	mpt->m_softstate |= MPTSAS_DID_MSG_UNIT_RESET;
+
+	/*
+	 * The message unit reset would do reset operations
+	 * clear reply and request queue, so we should clear
+	 * ACK event cmd.
+	 */
+	mptsas_destroy_ioc_event_cmd(mpt);
+	return (MPTSAS_SUCCESS_MUR);
+}
+
+/*
+ * Reset the IOC to ready state.
+ */
+int
 mptsas_ioc_reset(mptsas_t *mpt, int first_time)
 {
-	int		polls = 0;
-	uint32_t	reset_msg;
+	int		ret;
+	int		ntries = 0;
 	uint32_t	ioc_state;
 
-	ioc_state = ddi_get32(mpt->m_datap, &mpt->m_reg->Doorbell);
-	/*
-	 * If chip is already in ready state then there is nothing to do.
-	 */
-	if (ioc_state == MPI2_IOC_STATE_READY) {
-		return (MPTSAS_NO_RESET);
-	}
-	/*
-	 * If the chip is already operational, we just need to send
-	 * it a message unit reset to put it back in the ready state
-	 */
-	if (ioc_state & MPI2_IOC_STATE_OPERATIONAL) {
+	ret = MPTSAS_NO_RESET;
+	while (ntries++ < 1200) {
+		ioc_state = mptsas_hirrd(mpt, &mpt->m_reg->Doorbell);
 		/*
-		 * If the first time, try MUR anyway, because we haven't even
-		 * queried the card for m_event_replay and other capabilities.
-		 * Other platforms do it this way, we can still do a hard
-		 * reset if we need to, MUR takes less time than a full
-		 * adapter reset, and there are reports that some HW
-		 * combinations will lock up when receiving a hard reset.
+		 * If chip already in ready state then there is nothing to do.
 		 */
-		if ((first_time || mpt->m_event_replay) &&
-		    (mpt->m_softstate & MPTSAS_SS_MSG_UNIT_RESET)) {
-			mpt->m_softstate &= ~MPTSAS_SS_MSG_UNIT_RESET;
-			reset_msg = MPI2_FUNCTION_IOC_MESSAGE_UNIT_RESET;
-			ddi_put32(mpt->m_datap, &mpt->m_reg->Doorbell,
-			    (reset_msg << MPI2_DOORBELL_FUNCTION_SHIFT));
-			if (mptsas_ioc_wait_for_response(mpt)) {
-				NDBG19(("%d: ioc_reset failure sending "
-				    "message_unit_reset", mpt->m_instance));
-				goto hard_reset;
-			}
-
-			/*
-			 * Wait no more than 30 seconds for chip to become
-			 * ready.
-			 */
-			while ((ddi_get32(mpt->m_datap, &mpt->m_reg->Doorbell) &
-			    MPI2_IOC_STATE_READY) == 0x0) {
-				drv_usecwait(1000);
-				if (polls++ > 30000) {
-					goto hard_reset;
-				}
-			}
-
-#if defined(MPTSAS_DEBUG)
-			if (quiesce_active) {
-				prom_printf("%d: mptsas_ioc_reset(), Ready "
-				    "in %d MSec\n", mpt->m_instance, polls);
-			} else {
-				NDBG26(("%d: mptsas_ioc_reset(), Ready "
-				    "in %d MSec\n", mpt->m_instance, polls));
-			}
-#endif
-			/*
-			 * Save the last reset mode done on IOC which will be
-			 * helpful while resuming from suspension.
-			 */
-			mpt->m_softstate |= MPTSAS_DID_MSG_UNIT_RESET;
-
-			/*
-			 * the message unit reset would do reset operations
-			 * clear reply and request queue, so we should clear
-			 * ACK event cmd.
-			 */
-			mptsas_destroy_ioc_event_cmd(mpt);
-			return (MPTSAS_SUCCESS_MUR);
+		if (ioc_state & MPI2_IOC_STATE_READY) {
+			return (ret);
 		}
+		/*
+		 * If the IOC is not ready to talk, try resetting it.
+		 */
+		if (ioc_state & MPI2_DOORBELL_USED)
+			break;
+		if (ioc_state & MPI2_IOC_STATE_FAULT) {
+			mptsas_log(mpt, CE_WARN,
+			    "%d: IOC in fault state 0x%x, resetting",
+			    mpt->m_instance,
+			    ioc_state & MPI2_DOORBELL_FAULT_CODE_MASK);
+			break;
+		} else if (ioc_state & MPI2_IOC_STATE_OPERATIONAL) {
+			/*
+			 * If the chip is already operational, we just need
+			 * to send it a message unit reset to put it back in
+			 * the ready state.
+			 */
+			ret = mptsas_message_unit_reset(mpt, first_time);
+			if (ret == MPTSAS_RESET_FAIL) {
+				mptsas_log(mpt, CE_WARN,
+				"%d: ioc_reset failure sending "
+				    "message_unit_reset", mpt->m_instance);
+				break;
+			}
+		} else if ((ioc_state & MPI2_IOC_STATE_MASK) !=
+		    MPI2_IOC_STATE_RESET) { /* If in reset we'll keep waiting */
+			mptsas_log(mpt, CE_WARN,
+			    "%d: IOC in unknown state 0x%x, resetting",
+			    mpt->m_instance, ioc_state);
+			break;
+		}
+		drv_usecwait(50000);
 	}
-hard_reset:
+	if (ntries >= 1200) {
+		mptsas_log(mpt, CE_WARN,
+		    "%d: IOC did not transition to ready, resetting",
+		    mpt->m_instance);
+	}
 	mpt->m_softstate &= ~MPTSAS_DID_MSG_UNIT_RESET;
 	if (mptsas_kick_start(mpt) == DDI_FAILURE) {
 		if (quiesce_active == 0) {

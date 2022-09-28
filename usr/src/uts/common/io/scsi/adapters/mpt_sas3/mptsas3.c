@@ -23,7 +23,7 @@
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, Joyent, Inc. All rights reserved.
  * Copyright 2014 OmniTI Computer Consulting, Inc. All rights reserved.
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -1229,7 +1229,7 @@ mptsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	char			doneq_thread_create = 0;
 	char			added_watchdog = 0;
 	scsi_hba_tran_t		*hba_tran;
-	uint_t			mem_bar = MEM_SPACE;
+	uint_t			mem_bar;
 	int			rval = DDI_FAILURE;
 
 	/* CONSTCOND */
@@ -1415,6 +1415,7 @@ mptsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	}
 	config_setup++;
 
+	mem_bar = mpt->m_mem_bar;
 	if (ddi_regs_map_setup(dip, mem_bar, (caddr_t *)&mpt->m_reg,
 	    0, 0, &mpt->m_reg_acc_attr, &mpt->m_datap) != DDI_SUCCESS) {
 		mptsas_log(mpt, CE_WARN, "map setup failed");
@@ -2016,6 +2017,7 @@ mptsas_quiesce(dev_info_t *devi)
 	 * Reset the chip so that it does not continue to access memory
 	 * structures.
 	 */
+	mpt->m_softstate |= MPTSAS_SS_MSG_UNIT_RESET;
 	if (mptsas_ioc_reset(mpt, FALSE) == MPTSAS_RESET_FAIL) {
 		return (DDI_FAILURE);
 	}
@@ -2608,7 +2610,7 @@ mptsas_power(dev_info_t *dip, int component, int level)
 		/*
 		 * Wait up to 30 seconds for IOC to come out of reset.
 		 */
-		while (((ioc_status = ddi_get32(mpt->m_datap,
+		while (((ioc_status = mptsas_hirrd(mpt,
 		    &mpt->m_reg->Doorbell)) &
 		    MPI2_IOC_STATE_MASK) == MPI2_IOC_STATE_RESET) {
 			if (polls++ > 3000) {
@@ -2644,6 +2646,58 @@ mptsas_power(dev_info_t *dip, int component, int level)
 	}
 	mutex_exit(&mpt->m_mutex);
 	return (rval);
+}
+
+/*
+ * Check for newer v2.6 SAS chips.
+ */
+static void
+mptsas_ioc_check_rev(mptsas_t *mpt)
+{
+	switch (mpt->m_devid) {
+	case MPI26_MFGPAGE_DEVID_SAS3816:
+		mpt->m_is_sea_ioc = 1;
+		mptsas_log(mpt, CE_NOTE, "mptsas3%d: SAS3816 IOC Detected",
+		    mpt->m_instance);
+		/* fallthrough */
+	case MPI26_MFGPAGE_DEVID_SAS3616:
+	case MPI26_MFGPAGE_DEVID_SAS3708:
+	case MPI26_MFGPAGE_DEVID_SAS3716:
+		mptsas_log(mpt, CE_NOTE, "mptsas3%d: gen3.5 IOC Detected",
+		    mpt->m_instance);
+		mpt->m_is_gen35_ioc = 1;
+		break;
+	default:
+		break;
+	}
+}
+
+/*
+ * Search through the reg property for the first memory BAR.
+ */
+static void
+mptsas_find_mem_bar(mptsas_t *mpt)
+{
+	int		i, rcount;
+	pci_regspec_t	*reg_data;
+	int		reglen;
+
+	mpt->m_mem_bar = MEM_SPACE; /* old default */
+	/*
+	 * Lookup the 'reg' property.
+	 */
+	if (ddi_getlongprop(DDI_DEV_T_ANY, mpt->m_dip,
+	    DDI_PROP_DONTPASS, "reg", (caddr_t)&reg_data, &reglen) ==
+	    DDI_PROP_SUCCESS) {
+		rcount = reglen / sizeof (pci_regspec_t);
+		for (i = 0; i < rcount; i++) {
+			if (PCI_REG_ADDR_G(reg_data[i].pci_phys_hi) ==
+			    PCI_REG_ADDR_G(PCI_ADDR_MEM64)) {
+				mpt->m_mem_bar = i;
+				break;
+			}
+		}
+	}
 }
 
 /*
@@ -2692,15 +2746,8 @@ mptsas_config_space_init(mptsas_t *mpt)
 	mpt->m_svid = pci_config_get16(mpt->m_config_handle, PCI_CONF_SUBVENID);
 	mpt->m_ssid = pci_config_get16(mpt->m_config_handle, PCI_CONF_SUBSYSID);
 
-	/*
-	 * Set the latency timer to 0x40 as specified by the upa -> pci
-	 * bridge chip design team.  This may be done by the sparc pci
-	 * bus nexus driver, but the driver should make sure the latency
-	 * timer is correct for performance reasons.
-	 */
-	pci_config_put8(mpt->m_config_handle, PCI_CONF_LATENCY_TIMER,
-	    MPTSAS_LATENCY_TIMER);
-
+	mptsas_ioc_check_rev(mpt);
+	mptsas_find_mem_bar(mpt);
 	(void) mptsas_get_pci_cap(mpt);
 	return (TRUE);
 }
@@ -3765,7 +3812,8 @@ mptsas_accept_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 		 * commands immediately and allow them to be re-submitted when
 		 * the reset delay is complete.
 		 */
-		if (ptgt->m_reset_delay == 0 && ptgt->m_cnfg_luns != 0 && !do_polled) {
+		if (ptgt->m_reset_delay == 0 && ptgt->m_cnfg_luns != 0 &&
+		    !do_polled) {
 			/*
 			 * With cnfg_luns set it means we have the global
 			 * ndi_devi locks and *nothing* else can proceed until
@@ -3786,7 +3834,7 @@ mptsas_accept_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 				    ptgt->m_devhdl);
 				DTRACE_PROBE2(error__cfglun__cmd, mptsas_t *,
 				    mpt, mptsas_cmd_t *, cmd);
-				
+
 				/*
 				 * This is bad news. Most likely the command is
 				 * from vhci or driver attach.
@@ -4745,8 +4793,7 @@ mptsas_pkt_comp(mptsas_cmd_t *cmd)
 
 static void
 mptsas_sge_mainframe(mptsas_cmd_t *cmd, pMpi2SCSIIORequest_t frame,
-		ddi_acc_handle_t acc_hdl, uint_t cookiec,
-		uint32_t end_flags)
+    ddi_acc_handle_t acc_hdl, uint_t cookiec, uint32_t end_flags)
 {
 	pMpi2SGESimple64_t	sge;
 	mptti_t			*dmap;
@@ -5471,7 +5518,7 @@ mptsas_poll(mptsas_t *mpt, mptsas_cmd_t *poll_cmd, int polltime)
 	 * Get the current interrupt mask and disable interrupts.  When
 	 * re-enabling ints, set mask to saved value.
 	 */
-	int_mask = ddi_get32(mpt->m_datap, &mpt->m_reg->HostInterruptMask);
+	int_mask = mptsas_hirrd(mpt, &mpt->m_reg->HostInterruptMask);
 	MPTSAS_DISABLE_INTR(mpt);
 
 	mpt->m_polled_intr = 1;
@@ -6287,7 +6334,7 @@ mptsas_check_scsi_io_error(mptsas_t *mpt, pMpi2SCSIIOReply_t reply,
 
 static void
 mptsas_check_task_mgt(mptsas_t *mpt, pMpi2SCSIManagementReply_t reply,
-	mptsas_cmd_t *cmd)
+    mptsas_cmd_t *cmd)
 {
 	uint8_t		task_type;
 	uint16_t	ioc_status;
@@ -6569,14 +6616,13 @@ mptsas_intr(caddr_t arg1, caddr_t arg2)
 		    &mpt->m_reg->SuppReplyPostHostIndex[i],
 		    rpqp->rpq_index |
 		    ((reply_q&0x7)<<MPI2_RPHI_MSIX_INDEX_SHIFT));
-		(void) ddi_get32(mpt->m_datap,
+		(void) mptsas_hirrd(mpt,
 		    &mpt->m_reg->SuppReplyPostHostIndex[i]);
 	} else {
 		ddi_put32(mpt->m_datap,
 		    &mpt->m_reg->ReplyPostHostIndex,
 		    rpqp->rpq_index | (reply_q<<MPI2_RPHI_MSIX_INDEX_SHIFT));
-		(void) ddi_get32(mpt->m_datap,
-		    &mpt->m_reg->ReplyPostHostIndex);
+		(void) mptsas_hirrd(mpt, &mpt->m_reg->ReplyPostHostIndex);
 	}
 
 	/*
@@ -6930,7 +6976,8 @@ mptsas_find_parent(mptsas_t *mpt, mptsas_topo_change_list_t *topo_node)
  * 7. Physical disks are removed because of RAID creation.
  */
 static void
-mptsas_handle_dr(void *args) {
+mptsas_handle_dr(void *args)
+{
 	mptsas_topo_change_list_t	*topo_node = NULL;
 	mptsas_topo_change_list_t	*save_node = NULL;
 	mptsas_t			*mpt;
@@ -7030,7 +7077,7 @@ handle_topo_change:
 			mptsas_handle_topo_change(topo_node, parent);
 		} else {
 			NDBG20(("%d: skipping topo change received during "
-				"reset", mpt->m_instance));
+			    "reset", mpt->m_instance));
 		}
 		mutex_exit(&mpt->m_mutex);
 		save_node = topo_node;
@@ -8371,8 +8418,10 @@ mptsas_handle_event_sync(void *args)
 					topo_node->event =
 					    MPTSAS_DR_EVENT_OFFLINE_TARGET;
 					topo_node->devhdl = diskhandle;
+					/* BEGIN CSTYLED */
 					topo_node->flags =
 				    MPTSAS_TOPO_FLAG_RAID_PHYSDRV_ASSOCIATED;
+					/* END CSTYLED */
 					topo_node->object = (void *)ptgt;
 					if (topo_head == NULL) {
 						topo_head = topo_tail =
@@ -10192,7 +10241,7 @@ mptsas_do_scsi_reset(mptsas_t *mpt, uint16_t devhdl, boolean_t wait)
 
 static int
 mptsas_scsi_reset_notify(struct scsi_address *ap, int flag,
-	void (*callback)(caddr_t), caddr_t arg)
+    void (*callback)(caddr_t), caddr_t arg)
 {
 	mptsas_t	*mpt = ADDR2MPT(ap);
 
@@ -10424,7 +10473,7 @@ mptsas_flush_target_hba(mptsas_t *mpt, ushort_t target, int lun,
 	if (fl_func != NULL) {
 		mptsas_scan_slots(mpt, fl_func, &ftargs);
 	}
-	
+
 	if (mpt->m_done.cl_len) {
 		if (!mpt->m_doneq_thread_n) {
 			mptsas_doneq_empty(mpt);
@@ -11205,7 +11254,7 @@ mptsas_watch(void *arg)
 		/*
 		 * Check if controller is in a FAULT state. If so, reset it.
 		 */
-		doorbell = ddi_get32(mpt->m_datap, &mpt->m_reg->Doorbell);
+		doorbell = mptsas_hirrd(mpt, &mpt->m_reg->Doorbell);
 		if ((doorbell & MPI2_IOC_STATE_MASK) == MPI2_IOC_STATE_FAULT) {
 			doorbell &= MPI2_DOORBELL_DATA_MASK;
 			mptsas_log(mpt, CE_WARN, "MPT Firmware Fault, "
@@ -11227,8 +11276,7 @@ mptsas_watch(void *arg)
 			mpt->m_softstate |= MPTSAS_SS_RESET_INWATCH;
 		}
 		if (mpt->m_softstate & MPTSAS_SS_RESET_INWATCH) {
-			doorbell = ddi_get32(mpt->m_datap,
-			    &mpt->m_reg->Doorbell);
+			doorbell = mptsas_hirrd(mpt, &mpt->m_reg->Doorbell);
 			mptsas_log(mpt, CE_WARN, "MPT Forced Reset, "
 			    "doorbell: %04x", doorbell);
 			mpt->m_softstate &= ~MPTSAS_SS_MSG_UNIT_RESET;
@@ -13904,7 +13952,7 @@ mptsas_reg_access(mptsas_t *mpt, mptsas_reg_access_t *data, int mode)
 				break;
 
 			case REG_MEM_READ:
-				driverdata.RegData = ddi_get32(mpt->m_datap,
+				driverdata.RegData = mptsas_hirrd(mpt,
 				    (uint32_t *)(void *)mpt->m_reg +
 				    driverdata.RegOffset);
 				if (ddi_copyout(&driverdata.RegData,
@@ -14540,20 +14588,29 @@ mptsas_init_chip(mptsas_t *mpt, int first_time)
 {
 	ddi_dma_cookie_t	cookie;
 	mptsas_reply_pqueue_t	*rpqp;
-	uint32_t		i, j;
-	int			rval;
+	int			i, j, rval;
+
+	/*
+	 * Setup configuration space
+	 */
+	if (mptsas_config_space_init(mpt) == FALSE) {
+		mptsas_log(mpt, CE_WARN, "mptsas_config_space_init "
+		    "failed!");
+		goto fail;
+	}
+
 
 	/*
 	 * Check to see if the firmware image is valid
 	 */
-	if (ddi_get32(mpt->m_datap, &mpt->m_reg->HostDiagnostic) &
+	if (mptsas_hirrd(mpt, &mpt->m_reg->HostDiagnostic) &
 	    MPI2_DIAG_FLASH_BAD_SIG) {
 		mptsas_log(mpt, CE_WARN, "mptsas bad flash signature!");
 		goto fail;
 	}
 
 	/*
-	 * Reset the chip
+	 * Transition IOC to ready
 	 */
 	rval = mptsas_ioc_reset(mpt, first_time);
 	NDBG19(("%d: init_chip: %sioc_reset() returned 0x%x",
@@ -14588,15 +14645,6 @@ mptsas_init_chip(mptsas_t *mpt, int first_time)
 		if (mptsas_register_intrs(mpt) == FALSE)
 			goto fail;
 		goto mur;
-	}
-
-	/*
-	 * Setup configuration space
-	 */
-	if (mptsas_config_space_init(mpt) == FALSE) {
-		mptsas_log(mpt, CE_WARN, "mptsas_config_space_init "
-		    "failed!");
-		goto fail;
 	}
 
 	/*
@@ -16134,7 +16182,7 @@ static void
 mptsas_clr_tgtcl(mptsas_t *mpt, mptsas_target_t *ptgt)
 {
 	uint8_t		cfl_hist = ptgt->m_cnfg_luns;
-	
+
 	ASSERT(ptgt->m_t_init != TINIT_UPDATE);
 
 	ptgt->m_ncfgluns--;
@@ -17324,8 +17372,8 @@ mptsas_create_lun(dev_info_t *pdip, dev_info_t **lun_dip, mptsas_target_t *ptgt,
 			ptgt->m_cnfg_luns |= TFGL_OFFLINE;
 		}
 		NDBG12(("%d: create_lun: FAILED, target,lun %d,%d%s",
-			ddi_get_instance(pdip), ptgt->m_devhdl, plun->l_num,
-			ptgt->m_cnfg_luns & TFGL_OFFLINE ? " try to offline": ""));
+		    ddi_get_instance(pdip), ptgt->m_devhdl, plun->l_num,
+		    ptgt->m_cnfg_luns & TFGL_OFFLINE ? " try to offline": ""));
 		mutex_exit(&ptgt->m_t_mutex);
 	}
 	return (rval);

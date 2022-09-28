@@ -21,7 +21,9 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Use is subject to license terms.
+ * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -176,6 +178,8 @@ mptsas_devid_type_string(mptsas_t *mpt)
 		return ("SAS3708");
 	case MPI26_MFGPAGE_DEVID_SAS3716:
 		return ("SAS3716");
+	case MPI26_MFGPAGE_DEVID_SAS3816:
+		return ("SAS3816");
 	case MPI26_MFGPAGE_DEVID_SAS4008:
 		return ("SAS4008");
 	default:
@@ -208,7 +212,7 @@ mptsas_ioc_get_facts(mptsas_t *mpt)
 
 static int
 mptsas_ioc_do_get_facts(mptsas_t *mpt, caddr_t memp, int var,
-		ddi_acc_handle_t accessp)
+    ddi_acc_handle_t accessp)
 {
 #ifndef __lock_lint
 	_NOTE(ARGUNUSED(var))
@@ -233,7 +237,7 @@ mptsas_ioc_do_get_facts(mptsas_t *mpt, caddr_t memp, int var,
 
 static int
 mptsas_ioc_do_get_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
-		ddi_acc_handle_t accessp)
+    ddi_acc_handle_t accessp)
 {
 #ifndef __lock_lint
 	_NOTE(ARGUNUSED(var))
@@ -481,7 +485,7 @@ mptsas_ioc_get_port_facts(mptsas_t *mpt, int port)
 
 static int
 mptsas_ioc_do_get_port_facts(mptsas_t *mpt, caddr_t memp, int var,
-			ddi_acc_handle_t accessp)
+    ddi_acc_handle_t accessp)
 {
 	pMpi2PortFactsRequest_t	facts;
 	int			numbytes;
@@ -504,7 +508,7 @@ mptsas_ioc_do_get_port_facts(mptsas_t *mpt, caddr_t memp, int var,
 
 static int
 mptsas_ioc_do_get_port_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
-				ddi_acc_handle_t accessp)
+    ddi_acc_handle_t accessp)
 {
 #ifndef __lock_lint
 	_NOTE(ARGUNUSED(var))
@@ -559,7 +563,7 @@ mptsas_ioc_enable_port(mptsas_t *mpt)
 
 static int
 mptsas_ioc_do_enable_port(mptsas_t *mpt, caddr_t memp, int var,
-	ddi_acc_handle_t accessp)
+    ddi_acc_handle_t accessp)
 {
 #ifndef __lock_lint
 	_NOTE(ARGUNUSED(var))
@@ -584,7 +588,7 @@ mptsas_ioc_do_enable_port(mptsas_t *mpt, caddr_t memp, int var,
 
 static int
 mptsas_ioc_do_enable_port_reply(mptsas_t *mpt, caddr_t memp, int var,
-	ddi_acc_handle_t accessp)
+    ddi_acc_handle_t accessp)
 {
 #ifndef __lock_lint
 	_NOTE(ARGUNUSED(var))
@@ -642,7 +646,7 @@ mptsas_ioc_enable_event_notification(mptsas_t *mpt)
 
 static int
 mptsas_ioc_do_enable_event_notification(mptsas_t *mpt, caddr_t memp, int var,
-	ddi_acc_handle_t accessp)
+    ddi_acc_handle_t accessp)
 {
 #ifndef __lock_lint
 	_NOTE(ARGUNUSED(var))
@@ -798,7 +802,7 @@ mptsas_do_ioc_init(mptsas_t *mpt, caddr_t memp, int var,
 
 static int
 mptsas_do_ioc_init_reply(mptsas_t *mpt, caddr_t memp, int var,
-		ddi_acc_handle_t accessp)
+    ddi_acc_handle_t accessp)
 {
 #ifndef __lock_lint
 	_NOTE(ARGUNUSED(var))
@@ -826,7 +830,7 @@ mptsas_do_ioc_init_reply(mptsas_t *mpt, caddr_t memp, int var,
 		return (DDI_FAILURE);
 	}
 
-	if ((ddi_get32(mpt->m_datap, &mpt->m_reg->Doorbell)) &
+	if ((mptsas_hirrd(mpt, &mpt->m_reg->Doorbell)) &
 	    MPI2_IOC_STATE_OPERATIONAL) {
 		mptsas_log(mpt, CE_NOTE,
 		    "?mptsas3%d: IOC Operational.\n", mpt->m_instance);

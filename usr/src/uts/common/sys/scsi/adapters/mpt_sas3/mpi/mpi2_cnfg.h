@@ -1,6 +1,7 @@
-/*-
+/*
  * Copyright (c) 2012-2015 LSI Corp.
  * Copyright (c) 2013-2016 Avago Technologies
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -254,8 +255,13 @@
  *  --------------------------------------------------------------------------
  */
 
-#ifndef MPI2_CNFG_H
-#define MPI2_CNFG_H
+/* BEGIN CSTYLED */
+#ifndef _MPI2_CNFG_H
+#define _MPI2_CNFG_H
+
+#ifdef	__cplusplus
+extern "C" {
+#endif
 
 /*****************************************************************************
 *   Configuration Page Header and defines
@@ -592,6 +598,8 @@ typedef struct _MPI2_CONFIG_REPLY
 #define MPI26_MFGPAGE_DEVID_SAS3716                 (0x00D0)
 #define MPI26_MFGPAGE_DEVID_SAS3616                 (0x00D1)
 #define MPI26_MFGPAGE_DEVID_SAS3708                 (0x00D2)
+
+#define MPI26_MFGPAGE_DEVID_SAS3816                 (0x00E6)
 
 #define MPI26_MFGPAGE_DEVID_SAS4008                 (0x00A1)
 
@@ -3820,6 +3828,10 @@ typedef struct _MPI26_CONFIG_PAGE_PCIELINK_3
 
 #define MPI26_PCIELINK3_PAGEVERSION            (0x00)
 
-
+#ifdef	__cplusplus
+}
 #endif
 
+/* END CSTYLED */
+
+#endif /* _MPI2_CNFG_H */
