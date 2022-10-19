@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2021 Tintri by DDN, Inc.  All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -22,8 +22,6 @@
 #include "sysevent_snmp.h"
 
 const char *const modname = "sysevent";
-
-char hostname[MAXHOSTNAMELEN + 1];
 
 static struct ssm_handler {
 	const char *class;
@@ -42,8 +40,6 @@ init_sysevent(void)
 {
 	struct ssm_handler *ssmhp = ssm_handlers;
 	const char *sc[1];
-
-	(void) gethostname(hostname, MAXHOSTNAMELEN + 1);
 
 	ssm_disk_init();
 

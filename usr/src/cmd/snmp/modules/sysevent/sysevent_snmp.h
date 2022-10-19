@@ -35,8 +35,6 @@ extern "C" {
 
 extern const char *const modname;
 
-extern char hostname[MAXHOSTNAMELEN + 1];
-
 /* nexenta-core-storage-ssm-mib OID */
 #define	SSM_OID	1, 3, 6, 1, 4, 1, 40045, 1, 1, 2, 1
 

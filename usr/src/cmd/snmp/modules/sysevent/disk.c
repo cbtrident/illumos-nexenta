@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #include "sysevent_snmp.h"
@@ -222,6 +222,7 @@ ssm_disk_handler(sysevent_t *ev)
 	oid var_name[MAX_OID_LEN] = { 0 };
 	netsnmp_variable_list *notification_vars = NULL;
 	nvlist_t *evnv;
+	char hostname[MAXHOSTNAMELEN + 1];
 	char *devname;
 	int32_t action;
 	char *c;
@@ -251,6 +252,7 @@ ssm_disk_handler(sysevent_t *ev)
 	}
 
 	/* Hostname */
+	(void) gethostname(hostname, sizeof (hostname));
 	(void) memcpy(var_name, ssm_disk_hostname_oid, oid_len);
 	(void) snmp_varlist_add_variable(&notification_vars, var_name,
 	    var_len, ASN_OCTET_STR, hostname, strlen(hostname));
