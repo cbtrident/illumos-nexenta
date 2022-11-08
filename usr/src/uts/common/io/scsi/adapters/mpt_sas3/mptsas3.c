@@ -549,7 +549,7 @@ uint32_t mptsas_max_pcfail = 3;
 uint32_t mptsas_global_cmd_timeout = MPTSAS_DEFAULT_GLOBAL_COMMAND_TIMEOUT;
 
 /* flags to configure BROADCAST SES primitive event */
-boolean_t mptsas_disable_broadcast_ses = B_FALSE;
+boolean_t mptsas_disable_broadcast_ses = B_TRUE;
 
 /* Extra property */
 #define	SCSI_ADDR_PROP_SES_SA	"ses-sas-address"
