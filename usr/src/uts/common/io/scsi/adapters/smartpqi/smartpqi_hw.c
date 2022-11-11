@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2022 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -293,8 +293,7 @@ pqi_fail_cmd(pqi_cmd_t cmd, uchar_t reason, uint_t stats)
 void
 pqi_fail_drive_cmds(pqi_device_t d, uchar_t reason)
 {
-	pqi_cmd_t	c,
-			next_c;
+	pqi_cmd_t	c, next_c;
 
 	mutex_enter(&d->pd_mutex);
 
@@ -427,14 +426,19 @@ lun_reset_worker(void *v)
 	s = r->rc_s;
 	d = r->rc_d;
 
+	mutex_enter(&d->pd_reset);
 	pqi_fail_drive_cmds(d, CMD_RESET);
 	sema_init(&sema, 0, NULL, SEMA_DRIVER, NULL);
 
 	bzero(&cmd, sizeof (cmd));
 	mutex_init(&cmd.pc_mutex, NULL, MUTEX_DRIVER, NULL);
 
-	if ((io = pqi_alloc_io(s)) == NULL)
+	if ((io = pqi_alloc_io(s)) == NULL) {
+		mutex_destroy(&cmd.pc_mutex);
+		mutex_exit(&d->pd_reset);
+		kmem_free(r, sizeof (*r));
 		return;
+	}
 	io->io_cb = lun_reset_complete;
 	io->io_context = &sema;
 	io->io_cmd = &cmd;
@@ -461,6 +465,7 @@ lun_reset_worker(void *v)
 
 	(void) pqi_cmd_action(&cmd, PQI_CMD_CMPLT);
 	mutex_destroy(&cmd.pc_mutex);
+	mutex_exit(&d->pd_reset);
 	kmem_free(r, sizeof (*r));
 }
 
@@ -893,8 +898,7 @@ take_ctlr_offline(pqi_state_t s)
 	int			num_passes = 5;
 	int			i;
 	pqi_device_t		d;
-	pqi_cmd_t		c,
-				nc;
+	pqi_cmd_t		c, nc;
 	pqi_io_request_t	*io;
 	uint32_t		active_count;
 

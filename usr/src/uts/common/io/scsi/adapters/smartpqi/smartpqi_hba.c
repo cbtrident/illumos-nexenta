@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2022 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -845,21 +845,33 @@ pqi_quiesced_notify(pqi_state_t s)
  * | Support routines used only by the trans_xxx routines		|
  * []------------------------------------------------------------------[]
  */
+#ifdef DEBUG
+int	pqi_force_timeout;
+#endif	/* DEBUG */
 
 static void
 cmd_timeout_drive(pqi_device_t d)
 {
 	uint32_t	timed_out_cnt = 0;
-	pqi_cmd_t	c,
-			next_c;
+	pqi_cmd_t	c, next_c;
 	hrtime_t	now = gethrtime();
 
+	/*
+	 * Drive reset should be pretty rare.  Prevent it from happening
+	 * until any potential cmd timeouts are processed.
+	 */
+	mutex_enter(&d->pd_reset);
 	mutex_enter(&d->pd_mutex);
 
 	c = list_head(&d->pd_cmd_list);
 	while (c != NULL) {
 		next_c = list_next(&d->pd_cmd_list, c);
+#ifdef DEBUG
+		if (c->pc_expiration < now || pqi_force_timeout != 0) {
+			pqi_force_timeout = 0;
+#else
 		if (c->pc_expiration < now) {
+#endif	/* DEBUG */
 			struct scsi_pkt	*pkt = CMD2PKT(c);
 
 			if (pkt != NULL) {
@@ -874,6 +886,7 @@ cmd_timeout_drive(pqi_device_t d)
 
 	d->pd_timedout += timed_out_cnt;
 	mutex_exit(&d->pd_mutex);
+	mutex_exit(&d->pd_reset);
 }
 
 static void

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2022 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -33,6 +33,10 @@ static void cmd_finish_task(void *v);
  * []------------------------------------------------------------------[]
  */
 
+#ifdef DEBUG
+int	pqi_shuffle_delay = 0;
+#endif	/* DEBUG */
+
 static void
 cmd_remove_group(pqi_cmd_t c)
 {
@@ -52,14 +56,24 @@ cmd_remove_group(pqi_cmd_t c)
 		/*
 		 * The lock ordering is such that the driver must drop
 		 * the device lock in order to grab the queue lock.
+		 * We must also drop the cmd mutex to prevent possible deadlock.
 		 */
+		mutex_exit(&c->pc_mutex);
 		mutex_exit(&d->pd_mutex);
 		mutex_enter(&qg->submit_lock[path]);
 		if (list_link_active(&io->io_list_node)) {
 			list_remove(&qg->request_list[path], io);
 		}
 		mutex_exit(&qg->submit_lock[path]);
+#ifdef DEBUG
+		if (pqi_shuffle_delay != 0) { /* try to force deadlock error */
+			pqi_state_t	s = c->pc_softc;
+			pqi_lun_reset(s, d);
+			delay(pqi_shuffle_delay * drv_usectohz(1000000));
+		}
+#endif	/* DEBUG */
 		mutex_enter(&d->pd_mutex);
+		mutex_enter(&c->pc_mutex);
 	}
 }
 
@@ -71,6 +85,13 @@ pqi_cmd_action_nolock(pqi_cmd_t c, pqi_cmd_action_t a)
 	struct scsi_pkt	*pkt;
 
 	mutex_enter(&c->pc_mutex);
+	/*
+	 * Don't change cmd if we are in middle of a timeout.
+	 */
+	if ((c->pc_flags & PQI_FLAG_TIMED_OUT) != 0) {
+		a = PQI_CMD_FAIL;
+		goto skipto;
+	}
 	c->pc_last_action = c->pc_cur_action;
 	c->pc_cur_action = a;
 	switch (a) {
@@ -102,7 +123,7 @@ pqi_cmd_action_nolock(pqi_cmd_t c, pqi_cmd_action_t a)
 				pqi_free_io(c->pc_io_rqst);
 				c->pc_io_rqst = NULL;
 				(void) ddi_taskq_dispatch(s->s_complete_taskq,
-					cmd_finish_task, c, 0);
+				    cmd_finish_task, c, 0);
 			}
 			a = PQI_CMD_FAIL;
 		} else {
@@ -143,23 +164,33 @@ pqi_cmd_action_nolock(pqi_cmd_t c, pqi_cmd_action_t a)
 			 * pqi_io_request_t or handle the issue in this manner.
 			 * Less locks == good.
 			 */
-			ASSERT3U(c->pc_last_action, ==, PQI_CMD_QUEUE);
+			/*
+			 * We could have come in here during a cmd timeout
+			 * lock shuffle so last action might be timeout here.
+			 */
+			ASSERT(c->pc_last_action == PQI_CMD_TIMEOUT ||
+			    c->pc_last_action == PQI_CMD_QUEUE);
 		}
 		break;
 
 	case PQI_CMD_TIMEOUT:
+		list_remove(&d->pd_cmd_list, c);
+		/*
+		 * Set a flag to prevent this command from changing while we
+		 * shuffle locks below.
+		 */
+		c->pc_flags |= PQI_FLAG_TIMED_OUT;
 		cmd_remove_group(c);
 
 		/*
 		 * When a timeout has occurred it means something has gone
-		 * wrong with the HBA or drive and the command will not have
-		 * be processed on another path. Therefore, it's impossible
-		 * for the state to change during the call to cmd_remove_group()
-		 * when the pd_mutex is exit/enter.
+		 * wrong with the HBA or drive. Reset should have been blocked
+		 * to prevent state change during the call to cmd_remove_group()
+		 * when the pd_mutex is exited/entered.
 		 */
 		ASSERT3U(c->pc_cur_action, ==, PQI_CMD_TIMEOUT);
-		list_remove(&d->pd_cmd_list, c);
 
+		c->pc_flags &= ~PQI_FLAG_TIMED_OUT;
 		/*
 		 * Internal commands to the driver will not have a SCSI packet
 		 * associated.
@@ -209,8 +240,10 @@ pqi_cmd_action_nolock(pqi_cmd_t c, pqi_cmd_action_t a)
 		break;
 
 	default:
-		cmn_err(CE_PANIC, "%s: Unknown action request: %d", __func__, a);
+		cmn_err(CE_PANIC,
+		    "%s: Unknown action request: %d", __func__, a);
 	}
+skipto:
 	mutex_exit(&c->pc_mutex);
 	return (a);
 }
@@ -756,10 +789,9 @@ cmd_start_time(pqi_cmd_t c)
 	c->pc_start_time = gethrtime();
 	if (CMD2PKT(c) != NULL) {
 		c->pc_expiration = c->pc_start_time +
-		((hrtime_t)c->pc_pkt->pkt_time * NANOSEC);
+		    ((hrtime_t)c->pc_pkt->pkt_time * NANOSEC);
 	} else {
-		c->pc_expiration = c->pc_start_time +
-		5 * NANOSEC;
+		c->pc_expiration = c->pc_start_time + 5 * NANOSEC;
 	}
 }
 

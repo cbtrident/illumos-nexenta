@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2022 Nexenta by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -135,12 +135,19 @@ pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 		ASSERT(rqst_id < s->s_max_io_slots);
 		io = &s->s_io_rqst_pool[rqst_id];
 
+		if (io->io_refcount != 1) {
+			/*
+			 * i/o must have been freed, presumably by timeout.
+			 */
+			goto skipto;
+		}
 		ASSERT(io->io_refcount == 1);
 
 		if (io->io_cmd != NULL) {
 			pqi_cmd_t	cmd = io->io_cmd;
 
-			cmd->pc_flags |= PQI_FLAG_FINISHING;
+			if ((cmd->pc_flags & PQI_FLAG_TIMED_OUT) != 0)
+				goto skipto;
 		}
 
 		io->io_iu_type = rsp->header.iu_type;
@@ -148,6 +155,7 @@ pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 		case PQI_RESPONSE_IU_RAID_PATH_IO_SUCCESS:
 		case PQI_RESPONSE_IU_AIO_PATH_IO_SUCCESS:
 		case PQI_RESPONSE_IU_GENERAL_MANAGEMENT:
+		case PQI_RESPONSE_IU_TASK_MANAGEMENT:
 			io->io_status = PQI_DATA_IN_OUT_GOOD;
 			break;
 		case PQI_RESPONSE_IU_RAID_PATH_IO_ERROR:
@@ -170,6 +178,7 @@ pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 			break;
 		}
 		io->io_cb(io, io->io_context);
+skipto:
 		response_cnt++;
 		oq_ci = (oq_ci + 1) % s->s_num_elements_per_oq;
 	}
