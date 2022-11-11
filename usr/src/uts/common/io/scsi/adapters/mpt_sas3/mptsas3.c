@@ -2657,13 +2657,13 @@ mptsas_ioc_check_rev(mptsas_t *mpt)
 	switch (mpt->m_devid) {
 	case MPI26_MFGPAGE_DEVID_SAS3816:
 		mpt->m_is_sea_ioc = 1;
-		mptsas_log(mpt, CE_NOTE, "mptsas3%d: SAS3816 IOC Detected",
+		mptsas_log(mpt, CE_NOTE, "!mptsas3%d: SAS3816 IOC Detected",
 		    mpt->m_instance);
 		/* fallthrough */
 	case MPI26_MFGPAGE_DEVID_SAS3616:
 	case MPI26_MFGPAGE_DEVID_SAS3708:
 	case MPI26_MFGPAGE_DEVID_SAS3716:
-		mptsas_log(mpt, CE_NOTE, "mptsas3%d: gen3.5 IOC Detected",
+		mptsas_log(mpt, CE_NOTE, "!mptsas3%d: gen3.5 IOC Detected",
 		    mpt->m_instance);
 		mpt->m_is_gen35_ioc = 1;
 		break;
