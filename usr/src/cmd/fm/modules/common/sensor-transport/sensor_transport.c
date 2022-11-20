@@ -86,7 +86,7 @@ st_check_component(topo_hdl_t *thp, tnode_t *node, void *arg)
 	sensor_transport_t *stp = arg;
 	fmd_hdl_t *hdl = stp->st_hdl;
 	const char *name = topo_node_name(node);
-	nvlist_t *nvl, *props, *rsrc, *fru;
+	nvlist_t *nvl = NULL, *props, *rsrc, *fru;
 	char *fmri;
 	int err, ret;
 	int32_t last_source, source = -1;
@@ -160,8 +160,7 @@ st_check_component(topo_hdl_t *thp, tnode_t *node, void *arg)
 					    TOPO_METH_SENSOR_FAILURE, name,
 					    topo_node_instance(node));
 				}
-				nvlist_free(rsrc);
-				return (0);
+				goto out;
 			}
 			nvl = NULL;
 		}
