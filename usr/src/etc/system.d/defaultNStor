@@ -12,3 +12,5 @@ set dump_metrics_on = 1
 set ddi_msix_alloc_limit = 15
 set idle_cpu_prefer_mwait = 0
 set idle_cpu_no_deep_c = 1
+exclude: drv/bpf
+exclude: drv/ipnet
