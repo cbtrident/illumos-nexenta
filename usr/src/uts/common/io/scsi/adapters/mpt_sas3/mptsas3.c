@@ -23,7 +23,7 @@
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, Joyent, Inc. All rights reserved.
  * Copyright 2014 OmniTI Computer Consulting, Inc. All rights reserved.
- * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2023, Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -78,6 +78,7 @@
 #include <sys/sata/sata_hba.h>
 #include <sys/scsi/generic/sas.h>
 #include <sys/scsi/impl/scsi_sas.h>
+#include <sys/scsi/targets/stdef.h>
 #include <sys/sdt.h>
 
 #pragma pack(1)
@@ -500,10 +501,10 @@ extern int ncpus, boot_ncpus;
 extern dev_info_t	*scsi_vhci_dip;
 
 /*
- * Tunable timeout value for Inquiry VPD page 0x83
- * By default the value is 30 seconds.
+ * Tunable retry count for Inquiry VPD page 0x83
+ * By default the effective timeout is 15 (mptsas_scsi_pkt_time*3) seconds.
  */
-int mptsas_inq83_retry_timeout = 30;
+int mptsas_inq83_retry_count = 3;
 
 /*
  * Tunable for default SCSI pkt timeout. Defaults to 5 seconds, which should
@@ -7244,6 +7245,7 @@ mptsas_offline_target(mptsas_t *mpt, mptsas_target_t *ptgt,
 	}
 }
 
+static volatile int mptsas_ms_delay_before_probe = 400;
 static int
 mptsas_reconfig_target(mptsas_topo_change_list_t *topo_node,
     dev_info_t *parent, mptsas_target_t *ptgt, mptsas_tinit_state_t ntinit)
@@ -7263,6 +7265,13 @@ mptsas_reconfig_target(mptsas_topo_change_list_t *topo_node,
 	mptsas_config_wait(mpt, ptgt, ntinit);
 	mutex_exit(&ptgt->m_t_mutex);
 	mutex_exit(&mpt->m_mutex);
+	if (mptsas_ms_delay_before_probe != 0) {
+		NDBG20(("%d: delay %d ms before probe target %d, "
+		    "reset_delay %d", mpt->m_instance,
+		    mptsas_ms_delay_before_probe,
+		    ptgt->m_devhdl, ptgt->m_reset_delay));
+		delay(drv_usectohz(mptsas_ms_delay_before_probe * 1000));
+	}
 	rval = mptsas_probe_target(parent, ptgt);
 	mutex_enter(&ptgt->m_t_mutex);
 	ASSERT(ptgt->m_t_init == TINIT_REPROBE ||
@@ -7478,6 +7487,11 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 			    new_tinit);
 		}
 
+		if (rval != DDI_SUCCESS) {
+			mptsas_log(mpt, CE_WARN,
+			    "Failed to online path for target %d (%"
+			    PRIx64")", devhdl, ptgt->m_addr.mta_wwn);
+		}
 		NDBG20(("%d handle_topo_change to online target %d, "
 		    "phymask:%x%s.", mpt->m_instance, devhdl, phymask,
 		    rval == DDI_SUCCESS ? "" : " Failed _config_target()."));
@@ -8708,8 +8722,14 @@ mptsas_handle_event(void *args)
 			 * our own target reset holdoff and prevent further
 			 * resets to this target from vhci/sd during that time.
 			 */
-			if ((ptgt = refhash_linear_search(mpt->m_targets,
-			    mptsas_target_eval_devhdl, &devhdl)) != NULL) {
+			ptgt = refhash_linear_search(mpt->m_targets,
+			    mptsas_target_eval_devhdl, &devhdl);
+			if (ptgt == NULL) {
+				ptgt = refhash_linear_search(mpt->m_targets,
+				    mptsas_target_eval_shdwhdl, &devhdl);
+			}
+
+			if (ptgt != NULL) {
 				mutex_enter(&ptgt->m_t_mutex);
 				mptsas_setup_target_reset_delay(mpt, ptgt, 0);
 				mutex_exit(&ptgt->m_t_mutex);
@@ -10785,8 +10805,12 @@ mptsas_watch_reset_delay_subr(mptsas_t *mpt)
 			ptgt->m_reset_delay -= MPTSAS_WATCH_RESET_DELAY_TICK;
 			if (ptgt->m_reset_delay <= 0) {
 				ptgt->m_reset_delay = 0;
-				mptsas_set_throttle(mpt, ptgt, MAX_THROTTLE);
-				mptsas_restart_twaitq(mpt, ptgt);
+				if (ptgt->m_dr_flag == MPTSAS_DR_INACTIVE &&
+				    ptgt->m_devhdl != MPTSAS_INVALID_DEVHDL) {
+					mptsas_set_throttle(mpt, ptgt,
+					    MAX_THROTTLE);
+					mptsas_restart_twaitq(mpt, ptgt);
+				}
 			} else {
 				done = -1;
 			}
@@ -10806,8 +10830,11 @@ mptsas_setup_target_reset_delay(mptsas_t *mpt, mptsas_target_t	*ptgt,
 	ASSERT(MUTEX_HELD(&mpt->m_mutex));
 	ASSERT(MUTEX_HELD(&ptgt->m_t_mutex));
 
-	NDBG22(("%d: setup_target_reset_delay(%dms, targ 0x%x)",
-	    mpt->m_instance, mpt->m_scsi_reset_delay, ptgt->m_devhdl));
+	NDBG22(("%d: setup_target_reset_delay(%dms, targ %d, %d cmds)",
+	    mpt->m_instance, mpt->m_scsi_reset_delay,
+	    ptgt->m_devhdl != MPTSAS_INVALID_DEVHDL ?
+	    ptgt->m_devhdl : ptgt->m_shdwhdl,
+	    ptgt->m_t_ncmds));
 	mptsas_set_throttle(mpt, ptgt, HOLD_THROTTLE);
 	start = ptgt->m_reset_delay == 0;
 	ptgt->m_reset_delay = mpt->m_scsi_reset_delay +
@@ -11655,9 +11682,11 @@ mptsas_cmd_timeout(mptsas_t *mpt, mptsas_target_t *ptgt)
 	    ptgt->m_enclosure);
 
 	mutex_enter(&ptgt->m_t_mutex);
-	if (ptgt->m_dr_flag == MPTSAS_DR_INTRANSITION) {
-		NDBG29(("%d: cmd_timeout while dr set, targ %d",
-		    mpt->m_instance, devhdl));
+	if (ptgt->m_dr_flag == MPTSAS_DR_INTRANSITION ||
+	    ptgt->m_cnfg_luns != 0) {
+		NDBG29(("%d: cmd_timeout while %s, targ %d", mpt->m_instance,
+		    ptgt->m_dr_flag == MPTSAS_DR_INTRANSITION ?
+		    "dr set" : "cfl set", devhdl));
 
 		/*
 		 * Target has been marked as going away and will be offlined
@@ -15561,6 +15590,25 @@ out:
 }
 
 static int
+mptsas_tur(mptsas_t *mpt, mptsas_target_t *ptgt, int lun)
+{
+	uchar_t			cdb[CDB_GROUP0];
+	struct scsi_address	ap;
+	int			ret = DDI_FAILURE;
+
+	ap.a_target = MPTSAS_INVALID_DEVHDL;
+	ap.a_lun = (uchar_t)(lun);
+	ap.a_hba_tran = mpt->m_tran;
+
+	bzero(cdb, CDB_GROUP0);
+	cdb[0] = SCMD_TEST_UNIT_READY;
+
+	ret = mptsas_send_scsi_cmd(mpt, &ap, ptgt, &cdb[0], CDB_GROUP0, NULL,
+	    NULL);
+	return (ret);
+}
+
+static int
 mptsas_inquiry(mptsas_t *mpt, mptsas_target_t *ptgt, int lun, uchar_t page,
     unsigned char *buf, int len, int *reallen, uchar_t evpd)
 {
@@ -15603,6 +15651,14 @@ mptsas_inquiry(mptsas_t *mpt, mptsas_target_t *ptgt, int lun, uchar_t page,
 	return (ret);
 }
 
+/*
+ * Adjustable variables for retry behaviour.
+ * NEX-23633 - Toshiba SAS HDD can take up to 45 seconds to return a good
+ * status for Test Unit Ready, so the default values here are to add a
+ * little leaway to that.
+ */
+static volatile int mptsas_notready_delay = 2000000;
+static volatile int mptsas_scsi_cmd_retries = 30;
 static int
 mptsas_send_scsi_cmd(mptsas_t *mpt, struct scsi_address *ap,
     mptsas_target_t *ptgt, uchar_t *cdb, int cdblen, struct buf *data_bp,
@@ -15611,7 +15667,8 @@ mptsas_send_scsi_cmd(mptsas_t *mpt, struct scsi_address *ap,
 	struct scsi_pkt		*pktp = NULL;
 	scsi_hba_tran_t		*tran_clone = NULL;
 	mptsas_tgt_private_t	*tgt_private = NULL;
-	int			ret = DDI_FAILURE;
+	int			ret = DDI_FAILURE, sp_rv;
+	int			retries = mptsas_scsi_cmd_retries;
 
 	/*
 	 * scsi_hba_tran_t->tran_tgt_private is used to pass the address
@@ -15634,7 +15691,7 @@ mptsas_send_scsi_cmd(mptsas_t *mpt, struct scsi_address *ap,
 	tgt_private->t_private = ptgt;
 	tran_clone->tran_tgt_private = tgt_private;
 	ap->a_hba_tran = tran_clone;
-
+do_retry:
 	pktp = scsi_init_pkt(ap, (struct scsi_pkt *)NULL,
 	    data_bp, cdblen, sizeof (struct scsi_arq_status),
 	    0, PKT_CONSISTENT, NULL, NULL);
@@ -15644,17 +15701,55 @@ mptsas_send_scsi_cmd(mptsas_t *mpt, struct scsi_address *ap,
 	bcopy(cdb, pktp->pkt_cdbp, cdblen);
 	pktp->pkt_flags = FLAG_NOPARITY | FLAG_HEAD;
 	pktp->pkt_time = mptsas_scsi_pkt_time;
-	if (scsi_poll(pktp) < 0) {
+	NDBG20(("%d: target:%d Send SCSI Cmd 0x%x", mpt->m_instance,
+	    ptgt->m_devhdl, cdb[0]));
+	sp_rv = scsi_poll(pktp);
+	if (sp_rv == 0 && (((struct scsi_status *)pktp->pkt_scbp)->sts_chk == 0)) {
+		/* Success */
+		if (resid != NULL) {
+			*resid = pktp->pkt_resid;
+		}
+
+		ret = DDI_SUCCESS;
 		goto out;
-	}
-	if (((struct scsi_status *)pktp->pkt_scbp)->sts_chk) {
-		goto out;
-	}
-	if (resid != NULL) {
-		*resid = pktp->pkt_resid;
 	}
 
-	ret = DDI_SUCCESS;
+	if (sp_rv < 0) {
+		NDBG20(("%d: target:%d Failed scsi_poll() Cmd 0x%x, "
+			"reason 0x%x, state 0x%x", mpt->m_instance,
+			ptgt->m_devhdl, cdb[0], pktp->pkt_reason,
+			pktp->pkt_state));
+		if (pktp->pkt_reason == CMD_RESET) {
+			if (--retries != 0) {
+				scsi_destroy_pkt(pktp);
+				goto do_retry;
+			}
+		}
+	}
+	if (((struct scsi_status *)pktp->pkt_scbp)->sts_chk) {
+		NDBG20(("%d: target:%d Failed SCSI Cmd 0x%x, reason 0x%x, "
+		    "status 0x%x, state 0x%x", mpt->m_instance,
+		    ptgt->m_devhdl, cdb[0], pktp->pkt_reason,
+		    SCBP_C(pktp), pktp->pkt_state));
+		if (pktp->pkt_state & STATE_ARQ_DONE) {
+			uint8_t	*sns, skey;
+			sns = (uint8_t *)
+			    &(((struct scsi_arq_status *)(uintptr_t)
+			    (pktp->pkt_scbp))->sts_sensedata);
+			skey = scsi_sense_key(sns);
+			NDBG20(("%d: Sense data: 0x%x, %s", mpt->m_instance,
+			    skey, scsi_sname(skey)));
+			if (--retries != 0 && (skey == KEY_UNIT_ATTENTION ||
+			    skey == KEY_NOT_READY)) {
+				scsi_destroy_pkt(pktp);
+				if (skey == KEY_NOT_READY) {
+					delay(drv_usectohz(
+					    mptsas_notready_delay));
+				}
+				goto do_retry;
+			}
+		}
+	}
 out:
 	if (pktp) {
 		scsi_destroy_pkt(pktp);
@@ -16024,18 +16119,12 @@ mptsas_inq83(mptsas_t *mpt, int lunidx, mptsas_target_t *ptgt)
 	lun = ptgt->m_t_luns[lunidx].l_num;
 	inq83 = ptgt->m_t_luns[lunidx].l_inqp83;
 
-	for (i = 0; i < mptsas_inq83_retry_timeout; i++) {
+	for (i = 0; i < mptsas_inq83_retry_count; i++) {
 		rval = mptsas_inquiry(mpt, ptgt, lun, 0x83,
 		    inq83, INQ83_LEN, &inq83_len, 1);
 		if (rval != DDI_SUCCESS) {
-			mptsas_log(mpt, CE_WARN,
-			    "!mptsas request inquiry page "
-			    "0x83 for target:%d, lun:%d "
-			    "failed!", ptgt->m_devhdl, lun);
-			if (mptsas_physical_bind_failed_page_83 != B_FALSE)
-				return (DDI_SUCCESS);
-			else
-				return (rval);
+			delay(1 * drv_usectohz(1000000));
+			continue;
 		}
 
 		/*
@@ -16089,9 +16178,11 @@ mptsas_inq83(mptsas_t *mpt, int lunidx, mptsas_target_t *ptgt)
 		}
 	}
 
-	if (i == mptsas_inq83_retry_timeout) {
+	if (i == mptsas_inq83_retry_count) {
 		mptsas_log(mpt, CE_WARN, "!Repeated page83 requests timeout "
 		    "for path target:%d, lun:%d", ptgt->m_devhdl, lun);
+		if (mptsas_physical_bind_failed_page_83 == B_FALSE)
+			return (rval);
 	}
 	ptgt->m_t_luns[lunidx].l_guid = guid;
 	return (DDI_SUCCESS);
@@ -16984,6 +17075,7 @@ mptsas_config_all(dev_info_t *pdip)
  * This effectively initiates a state machine based on the m_t_init
  * target variable (See mptsas3_var.h).
  */
+static volatile int mptsas_avoid_probe_luns = 0;
 static int
 mptsas_probe_target(dev_info_t *pdip, mptsas_target_t *ptgt)
 {
@@ -16992,26 +17084,45 @@ mptsas_probe_target(dev_info_t *pdip, mptsas_target_t *ptgt)
 	NDBG12(("%d: probe_target: target %d, dr %d",
 	    ddi_get_instance(pdip), ptgt->m_devhdl, ptgt->m_dr_flag));
 
+	mutex_enter(&ptgt->m_t_mutex);
+	/*
+	 * During a probe all any previous failure should prevent
+	 * further probing.
+	 */
+	if (ptgt->m_t_init == TINIT_PROBEALL && ptgt->m_pcfail != 0) {
+		mutex_exit(&ptgt->m_t_mutex);
+		return (DDI_FAILURE);
+	}
+
 	ASSERT(ptgt->m_devhdl != MPTSAS_INVALID_DEVHDL);
 
 	/*
 	 * If there is an offline event pending fail this probe.
 	 */
 	if (ptgt->m_cnfg_luns & TFGL_OFFLINE ||
-	    ptgt->m_pcfail > mptsas_max_pcfail)
+	    ptgt->m_pcfail > mptsas_max_pcfail) {
+		mutex_exit(&ptgt->m_t_mutex);
 		return (DDI_FAILURE);
+	}
 
-	if (ptgt->m_t_luns != NULL)
+	if (ptgt->m_t_luns != NULL) {
+		mutex_exit(&ptgt->m_t_mutex);
 		return (DDI_SUCCESS);
+	}
 
 #ifdef MPTSAS_TEST
 	if (mptsas_test_fail_probe & (1<<DIP2MPT(pdip)->m_instance) &&
 	    ptgt->m_devhdl == (uint16_t)(mptsas_test_fail_probe>>16)) {
-		mutex_enter(&ptgt->m_t_mutex);
 		goto failed_probe;
 	}
 #endif
-	rval = mptsas_probe_luns(pdip, ptgt);
+	mutex_exit(&ptgt->m_t_mutex);
+	if (mptsas_tur(DIP2MPT(pdip), ptgt, 0) != DDI_SUCCESS) {
+		mutex_enter(&ptgt->m_t_mutex);
+		goto failed_probe;
+	}
+	if (mptsas_avoid_probe_luns == 0)
+		rval = mptsas_probe_luns(pdip, ptgt);
 	if (rval != DDI_SUCCESS) {
 		/*
 		 * The return value means the SCMD_REPORT_LUNS did not execute
@@ -17028,21 +17139,22 @@ mptsas_probe_target(dev_info_t *pdip, mptsas_target_t *ptgt)
 		if (rval != DDI_SUCCESS) {
 			mutex_enter(&ptgt->m_t_mutex);
 			mptsas_free_target_luninfo(ptgt);
-#ifdef MPTSAS_TEST
-		failed_probe:
-#endif
-			ASSERT(ptgt->m_cnfg_luns & TFGL_ACTIVE);
-			ptgt->m_cnfg_luns |= TFGL_PFAIL;
-			if (++(ptgt->m_pcfail) > mptsas_max_pcfail) {
-				ptgt->m_cnfg_luns |= TFGL_OFFLINE;
-			}
-			NDBG12(("%d: probe_target: FAILED, target %d%s",
-			    ddi_get_instance(pdip), ptgt->m_devhdl,
-			    ptgt->m_cnfg_luns & TFGL_OFFLINE ?
-			    " try to offline" : ""));
-			mutex_exit(&ptgt->m_t_mutex);
+			goto failed_probe;
 		}
 	}
+	return (rval);
+
+failed_probe:
+	ASSERT(ptgt->m_cnfg_luns & TFGL_ACTIVE);
+	ptgt->m_cnfg_luns |= TFGL_PFAIL;
+	if (++(ptgt->m_pcfail) > mptsas_max_pcfail) {
+		ptgt->m_cnfg_luns |= TFGL_OFFLINE;
+	}
+	NDBG12(("%d: probe_target: FAILED, target %d%s",
+		ddi_get_instance(pdip), ptgt->m_devhdl,
+		ptgt->m_cnfg_luns & TFGL_OFFLINE ?
+		" try to offline" : ""));
+	mutex_exit(&ptgt->m_t_mutex);
 	return (rval);
 }
 

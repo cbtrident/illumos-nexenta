@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2001, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2023, Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -99,8 +99,10 @@ int		vhci_force_recover_all_paths = FALSE;
 /*
  * Flag to delay the retry of the reserve command
  */
-int		vhci_reserve_delay = 100000;
-static int	vhci_path_quiesce_timeout = 60;
+static volatile int	vhci_reserve_delay = 100000;
+static volatile int	vhci_notready_delay = 2000000;
+static volatile int	vhci_scsi_cmd_retries = 10;
+static volatile int	vhci_path_quiesce_timeout = 60;
 static uchar_t	zero_key[MHIOC_RESV_KEY_SIZE];
 
 /* uscsi delay for a TRAN_BUSY */
@@ -991,12 +993,12 @@ vhci_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 	if (vlun) {
 		VHCI_DEBUG(1, (CE_WARN, hba_dip, "tgt_init: "
 		    "vhci_scsi_tgt_init: guid %s : found vlun 0x%p "
-		    "from_ticks %lx to_ticks %lx",
+		    "from_ticks %llx to_ticks %llx",
 		    guid, (void *)vlun, from_ticks, vhci_to_ticks));
 	} else {
 		VHCI_DEBUG(1, (CE_WARN, hba_dip, "tgt_init: "
 		    "vhci_scsi_tgt_init: guid %s : vlun not found "
-		    "from_ticks %lx to_ticks %lx", guid, from_ticks,
+		    "from_ticks %llx to_ticks %llx", guid, from_ticks,
 		    vhci_to_ticks));
 	}
 #endif
@@ -7536,7 +7538,7 @@ retry:
 				return (0);
 			}
 		}
-		if (retry_cnt++ < 6) {
+		if (retry_cnt++ < vhci_scsi_cmd_retries) {
 			VHCI_DEBUG(1, (CE_WARN, NULL,
 			    "!v_s_do_s_c:retry packet 0x%p "
 			    "status 0x%x reason %s",
@@ -7553,6 +7555,10 @@ retry:
 				    "!v_s_do_s_c:retry "
 				    "packet 0x%p  sense data %s", (void *)pkt,
 				    scsi_sname(skey)));
+				if (skey == KEY_NOT_READY) {
+					delay(drv_usectohz(
+					    vhci_notready_delay));
+				}
 			}
 			goto retry;
 		}
