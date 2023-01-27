@@ -11,7 +11,7 @@
 #
 
 #
-# Copyright 2022 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2023 Tintri by DDN, Inc. All rights reserved.
 #
 
 #
