@@ -4649,6 +4649,7 @@ stn_restarter_state(restarter_instance_state_t rstate)
  * Not incremented atomically - indicative only
  */
 static uint64_t stev_ct_maint;
+static uint64_t stev_ct_dis;
 static uint64_t stev_ct_hwerr;
 static uint64_t stev_ct_service;
 static uint64_t stev_ct_global;
@@ -4662,7 +4663,7 @@ dgraph_state_transition_notify(graph_vertex_t *v,
     restarter_instance_state_t old_state, restarter_str_t reason)
 {
 	restarter_instance_state_t new_state = v->gv_state;
-	int stn_transition, maint;
+	int stn_transition, maint, dis;
 	int from, to;
 	nvlist_t *attr;
 	fmev_pri_t pri = FMEV_LOPRI;
@@ -4677,6 +4678,7 @@ dgraph_state_transition_notify(graph_vertex_t *v,
 	stn_transition = from << 16 | to;
 
 	maint = (to == SCF_STATE_MAINT || from == SCF_STATE_MAINT);
+	dis = (to == SCF_STATE_DISABLED && from != SCF_STATE_UNINIT);
 
 	if (maint) {
 		/*
@@ -4686,6 +4688,15 @@ dgraph_state_transition_notify(graph_vertex_t *v,
 		raise++;
 		pri = FMEV_HIPRI;
 		stev_ct_maint++;
+	} else if (dis) {
+		/*
+		 * All explicit transitions (i.e. not from uninitialized state,
+		 * otherwise all disabled services will be reported on boot)
+		 * to disabled state must raise an event.
+		 */
+		raise++;
+		pri = FMEV_HIPRI;
+		stev_ct_dis++;
 	} else if (reason == restarter_str_ct_ev_hwerr) {
 		/*
 		 * All transitions caused by hardware fault must raise
@@ -4705,8 +4716,7 @@ dgraph_state_transition_notify(graph_vertex_t *v,
 		 * Only raise these if specifically selected above.
 		 */
 		stev_ct_from_uninit++;
-	} else if (stn_transition & stn_global &&
-	    (IS_ENABLED(v) == 1 || to == SCF_STATE_DISABLED)) {
+	} else if ((stn_transition & stn_global) && IS_ENABLED(v) == 1) {
 		raise++;
 		stev_ct_global++;
 	} else {
