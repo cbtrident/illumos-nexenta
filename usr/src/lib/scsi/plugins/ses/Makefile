@@ -21,14 +21,13 @@
 
 #
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
-# Use is subject to license terms.
-#
-# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2023 Tintri by DDN, Inc. All rights reserved.
 #
 
-SUBDIRS = 			\
+SUBDIRS =			\
 	libses			\
 	ses2			\
+	DELL			\
 	DELL-MD3060e		\
 	Ericsson-SRU-0101	\
 	HP			\
