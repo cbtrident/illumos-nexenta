@@ -22,8 +22,7 @@
 
 #
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
-# Use is subject to license terms.
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2023 Tintri by DDN, Inc. All rights reserved.
 #
 
 #
@@ -330,19 +329,3 @@ msgid "ZFS-8000-LR.impact"
 msgstr "Pool redundancy may be compromised."
 msgid "ZFS-8000-LR.action"
 msgstr "Replace the failed device and clear the pool's device errors."
-#
-# code: ZFS-8000-M2
-# keys: fault.fs.zfs.vdev.dumb_spared
-#
-msgid "ZFS-8000-M2.type"
-msgstr "Fault"
-msgid "ZFS-8000-M2.severity"
-msgstr "Major"
-msgid "ZFS-8000-M2.description"
-msgstr "Spare matching based on sparegroup and FRU has failed."
-msgid "ZFS-8000-M2.response"
-msgstr "No automated response will be taken."
-msgid "ZFS-8000-M2.impact"
-msgstr "Pool redundancy may be compromised."
-msgid "ZFS-8000-M2.action"
-msgstr "Inspect activated spare to confirm pool redundancy is intact."

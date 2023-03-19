@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2023 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -466,14 +466,8 @@ again:
 		 * sparegroup and FRU matching was either not used or didn't
 		 * find any suitable spares, use the first available one.
 		 */
-		if (do_replace(zhp, fdevpath, sdevpath, spares[i])) {
-			/* If we tried intellegent sparing, generate fault */
-			if (done_sg || done_fru) {
-				generate_fault(hdl, vdev,
-				    "fault.fs.zfs.vdev.dumb_spared");
-			}
+		if (do_replace(zhp, fdevpath, sdevpath, spares[i]))
 			return;
-		}
 	}
 
 	if (use_sg) {
