@@ -10,8 +10,8 @@
  */
 
 /*
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
- * Copyright 2019 Racktop Systems
+ * Copyright 2023 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2021 Racktop Systems.
  */
 
 /*
@@ -98,7 +98,7 @@ func_list_t startup_funcs[] =
 	NULL, NULL
 };
 
-#define RESET_FUNCS \
+#define	RESET_FUNCS \
     item(pqi_reset_prep) \
     item(revert_to_sis) \
     item(pqi_check_firmware) \
@@ -168,6 +168,8 @@ static boolean_t scsi_common(pqi_state_t s, pqi_raid_path_request_t *rqst,
 static void update_time(void *v);
 
 static int reset_devices = 1;
+
+int pqi_max_io_slots = 0;
 
 static boolean_t
 pqi_reset_prep(pqi_state_t s)
@@ -251,8 +253,7 @@ pqi_calculate_io_resources(pqi_state_t s)
 	uint32_t	max_xfer_size;
 	uint32_t	max_sg_entries;
 
-	s->s_max_io_slots = min(PQI_MAX_OUTSTANDING_REQUESTS,
-	    s->s_max_outstanding_requests);
+	s->s_max_io_slots = s->s_max_outstanding_requests;
 
 	max_xfer_size = min(s->s_max_xfer_size, PQI_MAX_TRANSFER_SIZE);
 
@@ -272,10 +273,11 @@ pqi_calculate_io_resources(pqi_state_t s)
 static boolean_t
 pqi_check_alloc(pqi_state_t s)
 {
-	if (s->s_max_outstanding_requests > PQI_MAX_OUTSTANDING_REQUESTS)
-		s->s_max_outstanding_requests = PQI_MAX_OUTSTANDING_REQUESTS;
+	if (pqi_max_io_slots != 0 && pqi_max_io_slots < s->s_max_io_slots) {
+		s->s_max_io_slots = pqi_max_io_slots;
+	}
 
-	s->s_error_dma = pqi_alloc_single(s, (s->s_max_outstanding_requests *
+	s->s_error_dma = pqi_alloc_single(s, (s->s_max_io_slots *
 	    PQI_ERROR_BUFFER_ELEMENT_LENGTH) + SIS_BASE_STRUCT_ALIGNMENT);
 	if (s->s_error_dma == NULL)
 		return (B_FALSE);
@@ -338,7 +340,7 @@ pqi_process_config_table(pqi_state_t s)
 	pqi_config_table_section_header_t	*section;
 	uint32_t				section_offset;
 
-	c_table = PQI_ZALLOC(s->s_config_table_len, KM_SLEEP);
+	c_table = kmem_zalloc(s->s_config_table_len, KM_SLEEP);
 	bcopy_fromregs(s, (uint8_t *)s->s_reg + s->s_config_table_offset,
 	    (uint8_t *)c_table, s->s_config_table_len);
 
@@ -358,7 +360,7 @@ pqi_process_config_table(pqi_state_t s)
 		}
 		section_offset = section->next_section_offset;
 	}
-	PQI_FREE(c_table, s->s_config_table_len);
+	kmem_free(c_table, s->s_config_table_len);
 	return (B_TRUE);
 }
 
@@ -579,13 +581,13 @@ pqi_alloc_io_resource(pqi_state_t s)
 	size_t			sg_chain_len;
 	int			i;
 
-	s->s_io_rqst_pool = PQI_ZALLOC(s->s_max_io_slots * sizeof (*io),
+	s->s_io_rqst_pool = kmem_zalloc(s->s_max_io_slots * sizeof (*io),
 	    KM_SLEEP);
 
 	sg_chain_len = s->s_sg_chain_buf_length;
 	io = s->s_io_rqst_pool;
 	for (i = 0; i < s->s_max_io_slots; i++) {
-		io->io_iu = PQI_ZALLOC(s->s_max_inbound_iu_length, KM_SLEEP);
+		io->io_iu = kmem_zalloc(s->s_max_inbound_iu_length, KM_SLEEP);
 
 		/*
 		 * TODO: Don't allocate dma space here. Move this to
@@ -608,7 +610,7 @@ pqi_alloc_io_resource(pqi_state_t s)
 error_out:
 	for (i = 0; i < s->s_max_io_slots; i++) {
 		if (io->io_iu != NULL) {
-			PQI_FREE(io->io_iu, s->s_max_inbound_iu_length);
+			kmem_free(io->io_iu, s->s_max_inbound_iu_length);
 			io->io_iu = NULL;
 		}
 		if (io->io_sg_chain_dma != NULL) {
@@ -616,7 +618,7 @@ error_out:
 			io->io_sg_chain_dma = NULL;
 		}
 	}
-	PQI_FREE(s->s_io_rqst_pool, s->s_max_io_slots * sizeof (*io));
+	kmem_free(s->s_io_rqst_pool, s->s_max_io_slots * sizeof (*io));
 	s->s_io_rqst_pool = NULL;
 
 	return (B_FALSE);
@@ -918,7 +920,7 @@ pqi_get_hba_version(pqi_state_t s)
 	bmic_identify_controller_t	*ident;
 	boolean_t			rval = B_FALSE;
 
-	ident = PQI_ZALLOC(sizeof (*ident), KM_SLEEP);
+	ident = kmem_zalloc(sizeof (*ident), KM_SLEEP);
 	if (identify_controller(s, ident) == B_FALSE)
 		goto out;
 	(void) memcpy(s->s_firmware_version, ident->firmware_version,
@@ -929,7 +931,7 @@ pqi_get_hba_version(pqi_state_t s)
 	    "-%u", ident->firmware_build_number);
 	rval = B_TRUE;
 out:
-	PQI_FREE(ident, sizeof (*ident));
+	kmem_free(ident, sizeof (*ident));
 	return (rval);
 }
 
@@ -942,7 +944,7 @@ pqi_version_to_hba(pqi_state_t s)
 	bmic_host_wellness_driver_version_t	*b;
 	boolean_t				rval = B_FALSE;
 
-	b = PQI_ZALLOC(sizeof (*b), KM_SLEEP);
+	b = kmem_zalloc(sizeof (*b), KM_SLEEP);
 	b->start_tag[0] = '<';
 	b->start_tag[1] = 'H';
 	b->start_tag[2] = 'W';
@@ -956,7 +958,7 @@ pqi_version_to_hba(pqi_state_t s)
 	b->end_tag[1] = 'Z';
 
 	rval = write_host_wellness(s, b, sizeof (*b));
-	PQI_FREE(b, sizeof (*b));
+	kmem_free(b, sizeof (*b));
 
 	return (rval);
 }
@@ -1022,18 +1024,11 @@ pqi_scan_scsi_devices(pqi_state_t s)
 				    NULL);
 
 				mutex_enter(&s->s_mutex);
-				/*
-				 * Start at index 0. The first call to
-				 * atomic_inc_32_nv will return 1 so subtract
-				 * 1 from the return value.
-				 */
-				dev->pd_target =
-				    atomic_inc_32_nv(&s->s_next_target) - 1;
 				list_insert_tail(&s->s_devnodes, dev);
 				mutex_exit(&s->s_mutex);
 			} else {
 				ddi_devid_free_guid(dev->pd_guid);
-				PQI_FREE(dev, sizeof (*dev));
+				kmem_free(dev, sizeof (*dev));
 			}
 		}
 	}
@@ -1051,13 +1046,6 @@ pqi_scan_scsi_devices(pqi_state_t s)
 			dev->pd_online = 1;
 		else
 			dev->pd_online = 0;
-
-		/* ---- Software version of disk pull for debug ---- */
-		if (pqi_do_offline && dev->pd_target == pqi_offline_target) {
-			cmn_err(CE_WARN, "%s: offlining %d\n", __func__,
-			    pqi_offline_target);
-			dev->pd_online = 0;
-		}
 	}
 
 	mutex_exit(&s->s_mutex);
@@ -1067,10 +1055,10 @@ pqi_scan_scsi_devices(pqi_state_t s)
 error_out:
 
 	if (phys_list != NULL)
-		PQI_FREE(phys_list, ntohl(phys_list->header.list_length) +
+		kmem_free(phys_list, ntohl(phys_list->header.list_length) +
 		    sizeof (report_lun_header_t));
 	if (logical_list != NULL)
-		PQI_FREE(logical_list,
+		kmem_free(logical_list,
 		    ntohl(logical_list->header.list_length) +
 		    sizeof (report_lun_header_t));
 	return (rval);
@@ -1112,13 +1100,13 @@ pqi_free_io_resource(pqi_state_t s)
 	for (i = 0; i < s->s_max_io_slots; i++) {
 		if (io->io_iu == NULL)
 			break;
-		PQI_FREE(io->io_iu, s->s_max_inbound_iu_length);
+		kmem_free(io->io_iu, s->s_max_inbound_iu_length);
 		io->io_iu = NULL;
 		pqi_free_single(s, io->io_sg_chain_dma);
 		io->io_sg_chain_dma = NULL;
 	}
 
-	PQI_FREE(s->s_io_rqst_pool, s->s_max_io_slots * sizeof (*io));
+	kmem_free(s->s_io_rqst_pool, s->s_max_io_slots * sizeof (*io));
 	s->s_io_rqst_pool = NULL;
 }
 
@@ -1675,10 +1663,10 @@ report_luns_by_cmd(pqi_state_t s, int cmd, void **buf)
 	new_data_len = sizeof (report_lun_header_t);
 	do {
 		if (data != NULL) {
-			PQI_FREE(data, data_len);
+			kmem_free(data, data_len);
 		}
 		data_len = new_data_len;
-		data = PQI_ZALLOC(data_len, KM_SLEEP);
+		data = kmem_zalloc(data_len, KM_SLEEP);
 		list_len = new_list_len;
 		if (report_luns(s, cmd, data, data_len) == B_FALSE)
 			goto error_out;
@@ -1691,7 +1679,7 @@ report_luns_by_cmd(pqi_state_t s, int cmd, void **buf)
 
 error_out:
 	if (rval == B_FALSE) {
-		PQI_FREE(data, data_len);
+		kmem_free(data, data_len);
 		data = NULL;
 	}
 	*buf = data;
@@ -1739,14 +1727,14 @@ get_device_list(pqi_state_t s, report_phys_lun_extended_t **pl,
 	/*
 	 * Add the controller to the logical luns which is a empty device
 	 */
-	internal_log = PQI_ZALLOC(data_len +
+	internal_log = kmem_zalloc(data_len +
 	    sizeof (report_log_lun_extended_entry_t), KM_SLEEP);
 	(void) memcpy(internal_log, log_data, data_len);
 	internal_log->header.list_length = htonl(list_len +
 	    sizeof (report_log_lun_extended_entry_t));
 
 	if (*ll != NULL)
-		PQI_FREE(*ll, sizeof (report_lun_header_t) +
+		kmem_free(*ll, sizeof (report_lun_header_t) +
 		    ntohl((*ll)->header.list_length));
 	*ll = internal_log;
 	return (B_TRUE);
@@ -1765,7 +1753,7 @@ get_device_info(pqi_state_t s, pqi_device_t dev)
 	boolean_t		rval = B_FALSE;
 	struct scsi_inquiry	*inq;
 
-	inq = PQI_ZALLOC(sizeof (*inq), KM_SLEEP);
+	inq = kmem_zalloc(sizeof (*inq), KM_SLEEP);
 	if (pqi_scsi_inquiry(s, dev, 0, inq, sizeof (*inq)) == B_FALSE)
 		goto out;
 
@@ -1773,10 +1761,9 @@ get_device_info(pqi_state_t s, pqi_device_t dev)
 	(void) memcpy(dev->pd_vendor, inq->inq_vid, sizeof (dev->pd_vendor));
 	(void) memcpy(dev->pd_model, inq->inq_pid, sizeof (dev->pd_model));
 
-	/* TODO Handle logical devices */
 	rval = B_TRUE;
 out:
-	PQI_FREE(inq, sizeof (*inq));
+	kmem_free(inq, sizeof (*inq));
 	return (rval);
 }
 
@@ -1798,7 +1785,7 @@ is_supported_dev(pqi_state_t s, pqi_device_t dev)
 			rval = B_TRUE;
 		break;
 	default:
-		dev_err(s->s_dip, CE_WARN, "Not supported device: 0x%x\n",
+		dev_err(s->s_dip, CE_WARN, "Not supported device: 0x%x",
 		    dev->pd_devtype);
 		break;
 	}
@@ -1810,13 +1797,15 @@ static void
 get_phys_disk_info(pqi_state_t s, pqi_device_t dev,
     bmic_identify_physical_device_t *id)
 {
+	dev->pd_lun = id->scsi_lun;
+	(void) snprintf(dev->pd_unit_address, sizeof (dev->pd_unit_address),
+	    "w%016lx,%d", dev->pd_wwid, id->scsi_lun);
 }
 
-/*ARGSUSED*/
 static int
 is_external_raid_addr(char *addr)
 {
-	return (0);
+	return (addr[2] != 0);
 }
 
 static void
@@ -1861,11 +1850,10 @@ create_phys_dev(pqi_state_t s, report_phys_lun_extended_entry_t *e)
 	pqi_device_t			dev;
 	bmic_identify_physical_device_t	*id_phys	= NULL;
 
-	dev = PQI_ZALLOC(sizeof (*dev), KM_SLEEP);
+	dev = kmem_zalloc(sizeof (*dev), KM_SLEEP);
 	dev->pd_phys_dev = 1;
-	dev->pd_wwid = e->wwid;
+	dev->pd_wwid = htonll(e->wwid);
 	(void) memcpy(dev->pd_scsi3addr, e->lunid, sizeof (dev->pd_scsi3addr));
-	dev->pd_target = -1;
 
 	if (skip_device(dev->pd_scsi3addr) == B_TRUE)
 		goto out;
@@ -1879,13 +1867,15 @@ create_phys_dev(pqi_state_t s, report_phys_lun_extended_entry_t *e)
 	switch (dev->pd_devtype) {
 	case DTYPE_ESI:
 		build_guid(s, dev);
-		dev->pd_sas_address = ntohll(dev->pd_wwid);
+		/* hopefully only LUN 0... which seems to match */
+		(void) snprintf(dev->pd_unit_address, 20, "w%016lx,0",
+		    dev->pd_wwid);
 		break;
 
 	case DTYPE_DIRECT:
 	case TYPE_ZBC:
 		build_guid(s, dev);
-		id_phys = PQI_ZALLOC(sizeof (*id_phys), KM_SLEEP);
+		id_phys = kmem_zalloc(sizeof (*id_phys), KM_SLEEP);
 		if ((e->device_flags &
 		    REPORT_PHYS_LUN_DEV_FLAG_AIO_ENABLED) &&
 		    e->aio_handle) {
@@ -1900,15 +1890,14 @@ create_phys_dev(pqi_state_t s, report_phys_lun_extended_entry_t *e)
 			    id_phys) == B_FALSE)
 				goto out;
 		}
-		dev->pd_sas_address = ntohll(dev->pd_wwid);
 		get_phys_disk_info(s, dev, id_phys);
-		PQI_FREE(id_phys, sizeof (*id_phys));
+		kmem_free(id_phys, sizeof (*id_phys));
 		break;
 	}
 
 	return (dev);
 out:
-	PQI_FREE(dev, sizeof (*dev));
+	kmem_free(dev, sizeof (*dev));
 	return (NULL);
 }
 
@@ -1916,10 +1905,11 @@ static pqi_device_t
 create_logical_dev(pqi_state_t s, report_log_lun_extended_entry_t *e)
 {
 	pqi_device_t	dev;
+	uint16_t	target;
+	uint16_t	lun;
 
-	dev = PQI_ZALLOC(sizeof (*dev), KM_SLEEP);
+	dev = kmem_zalloc(sizeof (*dev), KM_SLEEP);
 	dev->pd_phys_dev = 0;
-	dev->pd_target = -1;
 	(void) memcpy(dev->pd_scsi3addr, e->lunid, sizeof (dev->pd_scsi3addr));
 	dev->pd_external_raid = is_external_raid_addr(dev->pd_scsi3addr);
 
@@ -1929,12 +1919,27 @@ create_logical_dev(pqi_state_t s, report_log_lun_extended_entry_t *e)
 	if (!is_supported_dev(s, dev))
 		goto out;
 
+	if (memcmp(dev->pd_scsi3addr, RAID_CTLR_LUNID, 8) == 0) {
+		target = 0;
+		lun = 0;
+	} else if (dev->pd_external_raid) {
+		target = (LE_IN16(&dev->pd_scsi3addr[2]) & 0x3FFF) + 2;
+		lun = dev->pd_scsi3addr[0];
+	} else {
+		target = 1;
+		lun = LE_IN16(dev->pd_scsi3addr);
+	}
+	dev->pd_target = target;
+	dev->pd_lun = lun;
+	(void) snprintf(dev->pd_unit_address, sizeof (dev->pd_unit_address),
+	    "%d,%d", target, lun);
+
 	(void) memcpy(dev->pd_volume_id, e->volume_id,
 	    sizeof (dev->pd_volume_id));
 	return (dev);
 
 out:
-	PQI_FREE(dev, sizeof (*dev));
+	kmem_free(dev, sizeof (*dev));
 	return (NULL);
 }
 
@@ -1952,9 +1957,20 @@ is_new_dev(pqi_state_t s, pqi_device_t new_dev)
 
 	for (dev = list_head(&s->s_devnodes); dev != NULL;
 	    dev = list_next(&s->s_devnodes, dev)) {
-		if (dev->pd_wwid == new_dev->pd_wwid) {
-			dev->pd_scanned = 1;
-			return (B_FALSE);
+		if (new_dev->pd_phys_dev != dev->pd_phys_dev) {
+			continue;
+		}
+		if (dev->pd_phys_dev) {
+			if (dev->pd_wwid == new_dev->pd_wwid) {
+				dev->pd_scanned = 1;
+				return (B_FALSE);
+			}
+		} else {
+			if (memcmp(dev->pd_volume_id, new_dev->pd_volume_id,
+			    16) == 0) {
+				dev->pd_scanned = 1;
+				return (B_FALSE);
+			}
 		}
 	}
 
@@ -2023,7 +2039,7 @@ update_time(void *v)
 	struct timeval			curtime;
 	todinfo_t			tod;
 
-	ht = PQI_ZALLOC(sizeof (*ht), KM_SLEEP);
+	ht = kmem_zalloc(sizeof (*ht), KM_SLEEP);
 	ht->start_tag[0] = '<';
 	ht->start_tag[1] = 'H';
 	ht->start_tag[2] = 'W';
@@ -2052,7 +2068,7 @@ update_time(void *v)
 	ht->end_tag[1] = 'Z';
 
 	(void) write_host_wellness(s, ht, sizeof (*ht));
-	PQI_FREE(ht, sizeof (*ht));
+	kmem_free(ht, sizeof (*ht));
 	s->s_time_of_day = timeout(update_time, s,
 	    DAY * drv_usectohz(MICROSEC));
 }

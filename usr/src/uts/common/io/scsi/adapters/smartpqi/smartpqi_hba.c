@@ -10,7 +10,8 @@
  */
 
 /*
- * Copyright 2022 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2023 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2021 RackTop Systems, Inc.
  */
 
 /*
@@ -53,7 +54,6 @@ static void abort_all(struct scsi_address *ap, pqi_state_t s);
 static int cmd_ext_alloc(pqi_cmd_t cmd, int kf);
 static void cmd_ext_free(pqi_cmd_t cmd);
 static boolean_t is_physical_dev(pqi_device_t d);
-static boolean_t decode_to_target(void *arg, long *target);
 static void cmd_timeout_scan(void *);
 
 int
@@ -121,10 +121,10 @@ smartpqi_register_hba(pqi_state_t s)
 		return (FALSE);
 	}
 
-	if (s->s_enable_mpxio) {
+	if (!s->s_disable_mpxio) {
 		if (mdi_phci_register(MDI_HCI_CLASS_SCSI, s->s_dip, 0) !=
 		    MDI_SUCCESS) {
-			s->s_enable_mpxio = 0;
+			s->s_disable_mpxio = 1;
 		}
 	}
 
@@ -137,7 +137,7 @@ smartpqi_register_hba(pqi_state_t s)
 void
 smartpqi_unregister_hba(pqi_state_t s)
 {
-	if (s->s_enable_mpxio)
+	if (!s->s_disable_mpxio)
 		(void) mdi_phci_unregister(s->s_dip, 0);
 
 	if (s->s_cmd_timeout != NULL) {
@@ -156,19 +156,19 @@ static int
 pqi_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
     scsi_hba_tran_t *hba_tran, struct scsi_device *sd)
 {
-	uint16_t	lun;
 	pqi_device_t	d;
 	pqi_state_t	s	= hba_tran->tran_hba_private;
 	mdi_pathinfo_t	*pip;
 	int		type;
+	char		*ua;
 
-	if ((lun = scsi_device_prop_get_int(sd, SCSI_DEVICE_PROP_PATH,
-	    LUN_PROP, 0xffff)) == 0xffff) {
-		return (DDI_NOT_WELL_FORMED);
+	if ((ua = scsi_device_unit_address(sd)) == NULL) {
+		return (DDI_FAILURE);
 	}
 
-	if ((d = pqi_find_target_dev(s, lun)) == NULL)
+	if ((d = pqi_find_target_ua(s, ua)) == NULL) {
 		return (DDI_FAILURE);
+	}
 
 	scsi_device_hba_private_set(sd, d);
 
@@ -180,7 +180,7 @@ pqi_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 			return (DDI_NOT_WELL_FORMED);
 
 		(void) snprintf(wwid_str, sizeof (wwid_str), "%" PRIx64,
-		    d->pd_sas_address);
+		    d->pd_wwid);
 		(void) mdi_prop_update_string(pip, SCSI_ADDR_PROP_TARGET_PORT,
 		    wwid_str);
 	}
@@ -739,8 +739,8 @@ pqi_bus_config(dev_info_t *pdip, uint_t flag,
 	int		circ	= 0;
 	int		circ1	= 0;
 	int		ret	= NDI_FAILURE;
-	long		target;
 	pqi_device_t	d;
+	char		*ua;
 
 	tran = ddi_get_driver_private(pdip);
 	s = tran->tran_hba_private;
@@ -751,8 +751,9 @@ pqi_bus_config(dev_info_t *pdip, uint_t flag,
 	ndi_devi_enter(pdip, &circ);
 	switch (op) {
 	case BUS_CONFIG_ONE:
-		if (decode_to_target(arg, &target) == B_TRUE) {
-			d = pqi_find_target_dev(s, target);
+		if ((ua = strrchr((char *)arg, '@')) != NULL) {
+			ua++;
+			d = pqi_find_target_ua(s, ua);
 			if (d != NULL)
 				ret = config_one(pdip, s, d, childp);
 		} else {
@@ -778,18 +779,14 @@ pqi_bus_config(dev_info_t *pdip, uint_t flag,
 }
 
 pqi_device_t
-pqi_find_target_dev(pqi_state_t s, int target)
+pqi_find_target_ua(pqi_state_t s, char *ua)
 {
 	pqi_device_t d;
 
-	/*
-	 * Should switch to indexed array of devices that can grow
-	 * as needed.
-	 */
 	mutex_enter(&s->s_mutex);
 	for (d = list_head(&s->s_devnodes); d != NULL;
 	    d = list_next(&s->s_devnodes, d)) {
-		if (d->pd_target == target && d->pd_online)
+		if (d->pd_online && strcmp(ua, d->pd_unit_address) == 0)
 			break;
 	}
 	mutex_exit(&s->s_mutex);
@@ -908,36 +905,13 @@ cmd_timeout_scan(void *v)
 	    CMD_TIMEOUT_SCAN_SECS * drv_usectohz(MICROSEC));
 }
 
-static boolean_t
-decode_to_target(void *arg, long *target)
-{
-	char	*ptr = arg;
-	char	*tgt_ptr;
-
-	if (strncmp(NAME_DISK, ptr, sizeof (NAME_DISK) - 1) == 0) {
-		if ((tgt_ptr = strrchr(ptr, '@')) != NULL &&
-		    ddi_strtol(tgt_ptr + 1, NULL, 16, target) == 0)
-			return (B_TRUE);
-		else
-			return (B_FALSE);
-	}
-	if (strncmp(NAME_ENCLOSURE, ptr, sizeof (NAME_ENCLOSURE) - 1) == 0) {
-		if ((tgt_ptr = strrchr(ptr, ',')) != NULL &&
-		    ddi_strtol(tgt_ptr + 1, NULL, 16, target) == 0)
-			return (B_TRUE);
-		else
-			return (B_FALSE);
-	}
-	return (B_FALSE);
-}
-
 /*ARGSUSED*/
 static void
 abort_all(struct scsi_address *ap, pqi_state_t s)
 {
 	pqi_device_t	devp;
 
-	if ((devp = pqi_find_target_dev(s, ap->a_target)) == NULL)
+	if ((devp = scsi_device_hba_private_get(ap->a.a_sd)) == NULL)
 		return;
 
 	pqi_fail_drive_cmds(devp, CMD_ABORTED);
@@ -949,25 +923,12 @@ create_phys_lun(pqi_state_t s, pqi_device_t d,
 {
 	char		**compatible	= NULL;
 	char		*nodename	= NULL;
-	char		*scsi_binding_set;
-	char		*guid_ptr;
 	int		ncompatible	= 0;
 	dev_info_t	*dip;
-	char		*wwn_str = NULL;
-	int		rval;
-
-	/* ---- get the 'scsi-binding-set' property ---- */
-	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, s->s_dip,
-	    DDI_PROP_NOTPROM | DDI_PROP_DONTPASS, "scsi-binding-set",
-	    &scsi_binding_set) != DDI_PROP_SUCCESS) {
-		scsi_binding_set = NULL;
-	}
 
 	/* ---- At this point we have a new device not in our list ---- */
-	scsi_hba_nodename_compatible_get(inq, scsi_binding_set,
+	scsi_hba_nodename_compatible_get(inq, NULL,
 	    inq->inq_dtype, NULL, &nodename, &compatible, &ncompatible);
-	if (scsi_binding_set != NULL)
-		ddi_prop_free(scsi_binding_set);
 	if (nodename == NULL)
 		return (B_FALSE);
 
@@ -980,18 +941,8 @@ create_phys_lun(pqi_state_t s, pqi_device_t d,
 	d->pd_dip = dip;
 	d->pd_pip = NULL;
 
-	if (ndi_prop_update_int(DDI_DEV_T_NONE, dip, TARGET_PROP,
-	    ddi_get_instance(s->s_dip)) != DDI_PROP_SUCCESS) {
-		goto free_devi;
-	}
-
-	if (ndi_prop_update_int(DDI_DEV_T_NONE, dip, LUN_PROP, d->pd_target) !=
-	    DDI_PROP_SUCCESS) {
-		goto free_devi;
-	}
-
 	if (ndi_prop_update_int64(DDI_DEV_T_NONE, dip, LUN64_PROP,
-	    (int64_t)d->pd_target) != DDI_PROP_SUCCESS) {
+	    d->pd_lun) != DDI_PROP_SUCCESS) {
 		goto free_devi;
 	}
 
@@ -1000,24 +951,25 @@ create_phys_lun(pqi_state_t s, pqi_device_t d,
 		goto free_devi;
 	}
 
-	wwn_str = kmem_zalloc(MAX_NAME_PROP_SIZE, KM_SLEEP);
-	(void) snprintf(wwn_str, MAX_NAME_PROP_SIZE, "w%016" PRIx64,
-	    d->pd_wwid);
-	rval = ndi_prop_update_string(DDI_DEV_T_NONE, dip,
-	    SCSI_ADDR_PROP_TARGET_PORT, wwn_str);
-	if (rval != DDI_PROP_SUCCESS)
-		goto free_devi;
+	if (d->pd_wwid != 0) {
+		char		wwn_str[20];
+		(void) snprintf(wwn_str, 20, "w%016" PRIx64, d->pd_wwid);
+		if (ndi_prop_update_string(DDI_DEV_T_NONE, dip,
+		    SCSI_ADDR_PROP_TARGET_PORT, wwn_str) != DDI_PROP_SUCCESS) {
+			goto free_devi;
+		}
+	} else {
+		if (ndi_prop_update_int(DDI_DEV_T_NONE, dip, TARGET_PROP,
+		    d->pd_target) != DDI_PROP_SUCCESS) {
+			goto free_devi;
+		}
+	}
 
 	if (d->pd_guid != NULL) {
-		guid_ptr = d->pd_guid;
-	} else {
-		(void) snprintf(wwn_str, MAX_NAME_PROP_SIZE, "%" PRIx64,
-		    d->pd_wwid);
-		guid_ptr = wwn_str;
-	}
-	if (ndi_prop_update_string(DDI_DEV_T_NONE, dip, NDI_GUID, guid_ptr) !=
-	    DDI_PROP_SUCCESS) {
-		goto free_devi;
+		if (ddi_prop_update_string(DDI_DEV_T_NONE, dip, NDI_GUID,
+		    d->pd_guid) != DDI_PROP_SUCCESS) {
+			goto free_devi;
+		}
 	}
 
 	if (ndi_prop_update_int(DDI_DEV_T_NONE, dip, "pm-capable", 1) !=
@@ -1032,13 +984,10 @@ create_phys_lun(pqi_state_t s, pqi_device_t d,
 		*childp = dip;
 
 	scsi_hba_nodename_compatible_free(nodename, compatible);
-	kmem_free(wwn_str, MAX_NAME_PROP_SIZE);
 
 	return (B_TRUE);
 
 free_devi:
-	if (wwn_str != NULL)
-		kmem_free(wwn_str, MAX_NAME_PROP_SIZE);
 	ndi_prop_remove_all(dip);
 	(void) ndi_devi_free(dip);
 	d->pd_dip = NULL;
@@ -1057,9 +1006,7 @@ create_virt_lun(pqi_state_t s, pqi_device_t d, struct scsi_inquiry *inq,
 	int		rval;
 	mdi_pathinfo_t	*pip		= NULL;
 	char		*guid_ptr;
-	char		wwid_str[DISPLAY_64BIT_LENGTH];
-	char		tgt_str[DISPLAY_64BIT_LENGTH];
-	int		instance = ddi_get_instance(s->s_dip);
+	char		wwid_str[17];
 	dev_info_t	*lun_dip;
 	char		*old_guid;
 
@@ -1097,12 +1044,12 @@ create_virt_lun(pqi_state_t s, pqi_device_t d, struct scsi_inquiry *inq,
 			}
 		} else {
 			dev_err(s->s_dip, CE_WARN, "Can't get client-guid "
-			    "property for lun %d", d->pd_target);
+			    "property for lun %lx", d->pd_wwid);
 			return (B_FALSE);
 		}
 	}
 
-	scsi_hba_nodename_compatible_get(inq, "vhci", inq->inq_dtype, NULL,
+	scsi_hba_nodename_compatible_get(inq, NULL, inq->inq_dtype, NULL,
 	    &nodename, &compatible, &ncompatible);
 	if (nodename == NULL)
 		return (B_FALSE);
@@ -1114,41 +1061,37 @@ create_virt_lun(pqi_state_t s, pqi_device_t d, struct scsi_inquiry *inq,
 		    d->pd_wwid);
 		guid_ptr = wwid_str;
 	}
-	(void) snprintf(tgt_str, sizeof (tgt_str), "%x", d->pd_target);
-	rval = mdi_pi_alloc_compatible(s->s_dip, nodename, guid_ptr, tgt_str,
-	    compatible, ncompatible, 0, &pip);
+	rval = mdi_pi_alloc_compatible(s->s_dip, nodename, guid_ptr,
+	    d->pd_unit_address, compatible, ncompatible, 0, &pip);
 	if (rval == MDI_SUCCESS) {
 		mdi_pi_set_phci_private(pip, (caddr_t)d);
 
 		if (mdi_prop_update_string(pip, MDI_GUID, guid_ptr) !=
 		    DDI_SUCCESS) {
 			dev_err(s->s_dip, CE_WARN,
-			    "unable to create property (MDI_GUID) for lun %d",
-			    d->pd_target);
+			    "unable to create property (MDI_GUID) for %s",
+			    guid_ptr);
 			goto cleanup;
 		}
 
-		if (mdi_prop_update_int(pip, TARGET_PROP, instance) !=
+		/*
+		 * For MPxIO, we actually don't really need to care
+		 * about the LUN or target property, because nothing
+		 * really uses them.
+		 */
+		if (mdi_prop_update_int64(pip, LUN64_PROP, d->pd_lun) !=
 		    DDI_SUCCESS) {
 			dev_err(s->s_dip, CE_WARN,
-			    "unable to create property (%s) for lun %d\n",
-			    TARGET_PROP, d->pd_target);
-			goto cleanup;
-		}
-
-		if (mdi_prop_update_int(pip, LUN_PROP, d->pd_target) !=
-		    DDI_SUCCESS) {
-			dev_err(s->s_dip, CE_WARN,
-			    "unable to create property (%s) for lun %d",
-			    LUN_PROP, d->pd_target);
+			    "unable to create property (%s) for %s",
+			    LUN64_PROP, guid_ptr);
 			goto cleanup;
 		}
 
 		if (mdi_prop_update_string_array(pip, COMPAT_PROP,
 		    compatible, ncompatible) != DDI_SUCCESS) {
 			dev_err(s->s_dip, CE_WARN,
-			    "unable to create property (%s) for lun %d",
-			    COMPAT_PROP, d->pd_target);
+			    "unable to create property (%s) for %s",
+			    COMPAT_PROP, guid_ptr);
 			goto cleanup;
 		}
 
@@ -1177,11 +1120,7 @@ config_one(dev_info_t *pdip, pqi_state_t s, pqi_device_t d,
     dev_info_t **childp)
 {
 	struct scsi_inquiry	inq;
-	boolean_t		rval;
-
-	/* ---- For now ignore logical devices ---- */
-	if (is_physical_dev(d) == B_FALSE)
-		return (NDI_FAILURE);
+	boolean_t		rval = B_FALSE;
 
 	/* ---- Inquiry target ---- */
 	if (!d->pd_online ||
@@ -1209,10 +1148,10 @@ config_one(dev_info_t *pdip, pqi_state_t s, pqi_device_t d,
 	}
 
 	d->pd_parent = pdip;
-	if (s->s_enable_mpxio)
+	if ((!s->s_disable_mpxio) && is_physical_dev(d))
 		rval = create_virt_lun(s, d, &inq, childp);
 
-	if (!s->s_enable_mpxio || (rval == B_FALSE))
+	if (rval == B_FALSE)
 		rval = create_phys_lun(s, d, &inq, childp);
 
 	return ((rval == B_TRUE) ? NDI_SUCCESS : NDI_FAILURE);

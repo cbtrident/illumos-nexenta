@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2023 Nexenta by DDN, Inc. All rights reserved.
  */
 
 #include <sys/kmem.h>
@@ -44,7 +44,7 @@ static void smartpqi_help(void);
 static const mdb_dcmd_t dcmds[] = {
 	{ "smartpqi", "-c <controller number> [-v]", "display smartpqi state",
 		smartpqi,
-	 	smartpqi_help},
+		smartpqi_help},
 	{ NULL }
 };
 
@@ -55,7 +55,8 @@ static const mdb_modinfo_t modinfo = {
 static void smartpqi_help(void)
 {
 	mdb_printf("%s",
-	    "-c <cntlr> display the state for <cntlr> and the number of devices attached.\n"
+	    "-c <cntlr> display the state for <cntlr> and the no."
+	    " of devices attached.\n"
 	    "-v provide detailed information about each device attached.\n");
 }
 
@@ -82,8 +83,10 @@ display_sense_data(struct scsi_extended_sense data)
 static void
 display_scsi_status(struct scsi_arq_status scsi_status)
 {
-	mdb_printf("    req pkt status\t\t\t0x%x\n", *(int8_t *)&scsi_status.sts_rqpkt_status);
-	mdb_printf("    req pkt resid\t\t\t0x%x\n", scsi_status.sts_rqpkt_resid);
+	mdb_printf("    req pkt status\t\t\t0x%x\n",
+	    *(int8_t *)&scsi_status.sts_rqpkt_status);
+	mdb_printf("    req pkt resid\t\t\t0x%x\n",
+	    scsi_status.sts_rqpkt_resid);
 	mdb_printf("    req pkt state\t\t\t%d\n", scsi_status.sts_rqpkt_state);
 	mdb_printf("    req pkt state\t\t\t%d\n",
 	    scsi_status.sts_rqpkt_statistics);
@@ -108,7 +111,8 @@ cmd_action_str(pqi_cmd_action_t action, char *tmpstr, int tmplen)
 	case PQI_CMD_FAIL:
 		return ("FAIL");
 	default:
-		(void) mdb_snprintf(tmpstr, tmplen, "BAD ACTION <0x%x>", action);
+		(void) mdb_snprintf(tmpstr, tmplen, "BAD ACTION <0x%x>",
+		    action);
 		return (tmpstr);
 	}
 }
@@ -132,15 +136,14 @@ mdb_cdb_to_str(uint8_t scsi_cmd, char *tmpstr, int tmplen)
 			return ((char *)pqi_cmds[i].message);
 		i++;
 	}
-	(void)mdb_snprintf(tmpstr, tmplen, "<undecoded cmd 0x%x>", scsi_cmd);
+	(void) mdb_snprintf(tmpstr, tmplen, "<undecoded cmd 0x%x>", scsi_cmd);
 	return (tmpstr);
 }
 
 static void
 display_cdb(uint8_t *cdb)
 {
-	int	i,
-		tmplen;
+	int	i, tmplen;
 	char	tmpstr[64];
 
 	tmplen = sizeof (tmpstr);
@@ -158,6 +161,7 @@ pqi_iu_type_to_str(int val)
 	case PQI_RESPONSE_IU_RAID_PATH_IO_SUCCESS: return ("Success");
 	case PQI_RESPONSE_IU_AIO_PATH_IO_SUCCESS: return ("AIO Success");
 	case PQI_RESPONSE_IU_GENERAL_MANAGEMENT: return ("General");
+	case PQI_RESPONSE_IU_TASK_MANAGEMENT: return ("Task");
 	case PQI_RESPONSE_IU_RAID_PATH_IO_ERROR: return ("IO Error");
 	case PQI_RESPONSE_IU_AIO_PATH_IO_ERROR: return ("AIO IO Error");
 	case PQI_RESPONSE_IU_AIO_PATH_DISABLED: return ("AIO Path Disabled");
@@ -176,7 +180,8 @@ display_raid_error_info(uintptr_t error_info)
 	if ((cnt = mdb_vread((void *)&info, sizeof (struct pqi_raid_error_info),
 	    (uintptr_t)error_info)) !=
 	    sizeof (struct pqi_raid_error_info)) {
-		mdb_warn(" Unable to read Raid error info(%d,%p)\n", cnt, error_info);
+		mdb_warn(" Unable to read Raid error info(%d,%p)\n",
+		    cnt, error_info);
 		return;
 	}
 
@@ -204,24 +209,24 @@ display_io_request(pqi_io_request_t *io)
 	mdb_printf("    io_status\t\t\t\t%d\n", io->io_status);
 	mdb_printf("    io_iu\t\t\t\t0x%p\n", io->io_iu);
 	mdb_printf("    io_pi\t\t\t\t%d\n", io->io_pi);
-	mdb_printf("    io_iu_type\t\t\t\t%s\n", pqi_iu_type_to_str(io->io_iu_type));
+	mdb_printf("    io_iu_type\t\t\t\t%s\n",
+	    pqi_iu_type_to_str(io->io_iu_type));
 	display_raid_error_info((uintptr_t)io->io_error_info);
 }
 
 static int
 display_cmd(pqi_cmd_t cmdp)
 {
-	int			read_cnt,
-				tmplen;
+	int			read_cnt, tmplen;
 	char			tmpstr[64];
 	pqi_io_request_t	pqi_io;
 
 	tmplen = sizeof (tmpstr);
 	display_cdb(cmdp->pc_cdb);
-	mdb_printf("    cur action\t\t\t%s\n", cmd_action_str(cmdp->pc_cur_action, tmpstr,
-	    tmplen));
-	mdb_printf("    last action\t\t\t%s\n", cmd_action_str(cmdp->pc_last_action, tmpstr,
-	    tmplen));
+	mdb_printf("    cur action\t\t\t%s\n",
+	    cmd_action_str(cmdp->pc_cur_action, tmpstr, tmplen));
+	mdb_printf("    last action\t\t\t%s\n",
+	    cmd_action_str(cmdp->pc_last_action, tmpstr, tmplen));
 	display_scsi_status(cmdp->pc_cmd_scb);
 	mdb_printf("    pc_dma_count\t\t\t%d\n", cmdp->pc_dma_count);
 	mdb_printf("    pc_flags\t\t\t\t0x%x\n", cmdp->pc_flags);
@@ -231,7 +236,8 @@ display_cmd(pqi_cmd_t cmdp)
 	if (cmdp->pc_io_rqst == (pqi_io_request_t *)0)
 		return (DCMD_OK);
 
-	read_cnt = mdb_vread(&pqi_io, sizeof (pqi_io_request_t), (uintptr_t)cmdp->pc_io_rqst);
+	read_cnt = mdb_vread(&pqi_io, sizeof (pqi_io_request_t),
+	    (uintptr_t)cmdp->pc_io_rqst);
 	if (read_cnt == -1) {
 		mdb_warn(" Error reading IO structure address 0x%p - "
 		    "skipping diplay of IO commands\n",
@@ -347,7 +353,6 @@ display_device_info(pqi_device_t dev)
 	mdb_printf("-- Device pd_target %d --\n", dev->pd_target);
 
 	mdb_printf("pd_devtype\t\t\t\t%d\n", dev->pd_devtype);
-	mdb_printf("pd_sas_address\t\t\t\t0x%p\n", dev->pd_sas_address);
 	mdb_printf("device pd_flags\t\t\t\t0x%x\n", dev->pd_flags);
 	mdb_printf("pd_active_cmds\t\t\t\t%d\n", dev->pd_active_cmds);
 
@@ -358,8 +363,10 @@ display_device_info(pqi_device_t dev)
 	mdb_printf("pd_online\t\t\t\t%s\n", bool_to_str(dev->pd_online));
 	mdb_printf("pd_scanned\t\t\t\t%s\n", bool_to_str(dev->pd_scanned));
 	mdb_printf("pd_phys_dev\t\t\t\t%s\n", bool_to_str(dev->pd_phys_dev));
-	mdb_printf("pd_external_raid\t\t\t%s\n", bool_to_str(dev->pd_external_raid));
-	mdb_printf("pd_pd_aio_enabled\t\t\t%s\n", bool_to_str(dev->pd_aio_enabled));
+	mdb_printf("pd_external_raid\t\t\t%s\n",
+	    bool_to_str(dev->pd_external_raid));
+	mdb_printf("pd_pd_aio_enabled\t\t\t%s\n",
+	    bool_to_str(dev->pd_aio_enabled));
 
 	mdb_printf("GUID\t\t\t\t\t%s\n", pqi_get_guid(dev->pd_guid));
 
@@ -412,30 +419,34 @@ pqi_display_devices(list_t s_devnodes, pqi_state_t drvp, uint_t dev_verbose)
 			display_device_info((pqi_device_t)&d);
 
 			/* now display command information */
-			rval = pqi_cmd_list_head(d.pd_cmd_list, (uint8_t *)d_drvrp,
-			    &list_head, cmdp);
+			rval = pqi_cmd_list_head(d.pd_cmd_list,
+			    (uint8_t *)d_drvrp, &list_head, cmdp);
 			if (rval == -1) {
 				mdb_warn("unable to read the command list head"
 				    " for device %d\n", d.pd_target);
 				list_head = NULL;
 			}
 			if (list_head != NULL) {
-				mdb_printf("    ---- Commands for device %d (0x%p) ----\n",
+				mdb_printf("    ---- Commands for device %d"
+				    " (0x%p) ----\n",
 				    next_dp->pd_target, list_head);
 
-				cmd_current = (list_node_t *)((uint8_t *)(cmdp) +
+				cmd_current =
+				    (list_node_t *)((uint8_t *)(cmdp) +
 				    offsetof(struct pqi_cmd, pc_list));
 
 				while (cmd_current != NULL) {
 					rval = display_cmd(cmdp);
 					if (rval != DCMD_OK) {
-						mdb_warn("Display of commands aborted (%d)\n",
+						mdb_warn("Display of commands"
+						    " aborted (%d)\n",
 						    rval);
 						break;
 					}
 
 					cmd_current = pqi_list_next(list_head,
-					    sizeof (struct pqi_cmd), (void *)cmdp, cmd_current);
+					    sizeof (struct pqi_cmd),
+					    (void *)cmdp, cmd_current);
 				}
 			}
 		}
@@ -460,14 +471,17 @@ pqi_display_instance(pqi_state_t pqi_statep)
 	mdb_printf("s_firmware_version\t\t\t%s\n",
 	    pqi_statep->s_firmware_version);
 
-	mdb_printf("s_offline\t\t\t\t%s\ns_enable_mpxio\t\t\t\t%s\n",
-	    bool_to_str(pqi_statep->s_offline), bool_to_str(pqi_statep->s_enable_mpxio));
+	mdb_printf("s_offline\t\t\t\t%s\ns_disable_mpxio\t\t\t\t%s\n",
+	    bool_to_str(pqi_statep->s_offline),
+	    bool_to_str(pqi_statep->s_disable_mpxio));
 	mdb_printf("s_debug level\t\t\t\t%d\n", pqi_statep->s_debug_level);
 
 	mdb_printf("---- State for watchdog----\n");
 	mdb_printf("s_intr_count\t\t\t\t%d\n", pqi_statep->s_intr_count);
-	mdb_printf("s_last_intr_count\t\t\t%d\n", pqi_statep->s_last_intr_count);
-	mdb_printf("s_last_heartbeat_count\t\t\t%d\n", pqi_statep->s_last_heartbeat_count);
+	mdb_printf("s_last_intr_count\t\t\t%d\n",
+	    pqi_statep->s_last_intr_count);
+	mdb_printf("s_last_heartbeat_count\t\t\t%d\n",
+	    pqi_statep->s_last_heartbeat_count);
 
 	mdb_printf("---- PQI cpabilities from controller ----\n");
 	mdb_printf("s_max_inbound_queues\t\t\t%d\n",

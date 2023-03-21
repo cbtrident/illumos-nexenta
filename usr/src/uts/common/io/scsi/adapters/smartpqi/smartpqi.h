@@ -10,8 +10,8 @@
  */
 
 /*
- * Copyright 2022 Nexenta by DDN, Inc. All rights reserved.
- * Copyright 2019 RackTop Systems
+ * Copyright 2023 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2021 RackTop Systems, Inc.
  */
 
 #ifndef _SMARTPQI_H
@@ -23,6 +23,7 @@ extern "C" {
 
 /* ---- Standard header files. ---- */
 #include <sys/note.h>
+#include <sys/byteorder.h>
 #include <sys/scsi/scsi.h>
 #include <sys/pci.h>
 #include <sys/file.h>
@@ -46,7 +47,7 @@ extern "C" {
 /* ---- Hint for ddi_soft_state_init() on amount of structs to alloc ---- */
 #define	SMARTPQI_INITIAL_SOFT_SPACE	1
 
-#define	SMARTPQI_MOD_STRING	"smartpqi 20180525"
+#define	SMARTPQI_MOD_STRING	"smartpqi RT-20210716"
 
 /* ---- Handy constants ---- */
 #define	UNDEFINED				-1
@@ -65,11 +66,6 @@ extern "C" {
 #define	SYNC_CMDS_TIMEOUT_SECS			5
 #define	IO_SPACE				1
 #define	PQI_MAXTGTS				256
-/*
- * Space needed in characters to display a 64bit value as hexidecimal plus
- * a NULL character
- */
-#define	DISPLAY_64BIT_LENGTH			17
 
 #define	PQI_MIN_MSIX_VECTORS			1
 #define	PQI_MAX_MSIX_VECTORS			16
@@ -77,7 +73,7 @@ extern "C" {
 #define	PQI_MAX_QUEUE_GROUPS			PQI_MAX_MSIX_VECTORS
 #define	PQI_MIN_OPERATIONAL_QUEUE_ID		1
 /* ---- Size of structure scsi_arq_status without sense data. ---- */
-#define	PQI_ARQ_STATUS_NOSENSE_LEN    (sizeof (struct scsi_arq_status) - \
+#define	PQI_ARQ_STATUS_NOSENSE_LEN	(sizeof (struct scsi_arq_status) - \
     sizeof (struct scsi_extended_sense))
 
 /* ---- macros to return various addresses ---- */
@@ -270,6 +266,7 @@ typedef struct pqi_device {
 
 	int			pd_active_cmds;
 	int			pd_target;
+	int			pd_lun;
 
 	/* ---- Only one will be valid, MPxIO uses s_pip ---- */
 	dev_info_t		*pd_dip;
@@ -285,19 +282,18 @@ typedef struct pqi_device {
 	int			pd_aio_enabled : 1;
 	uint32_t		pd_aio_handle;
 	char			pd_scsi3addr[8];
-	uint64_t		pd_wwid;	/* big endian */
+	uint64_t		pd_wwid;
 	char			*pd_guid;
-	uint64_t		pd_sas_address;
 	uint8_t			pd_volume_id[16];
 	char			pd_vendor[8];	/* From INQUIRY */
 	char			pd_model[16];	/* From INQUIRY */
+	char			pd_unit_address[32];
 
 	/* ---- Debug stats ---- */
 	uint32_t		pd_killed;
 	uint32_t		pd_posted;
 	uint32_t		pd_timedout;
 	uint32_t		pd_sense_errors;
-	uint32_t		pd_busy;
 } *pqi_device_t;
 
 typedef struct pqi_state {
@@ -314,19 +310,15 @@ typedef struct pqi_state {
 
 	int			s_intr_ready : 1,
 				s_offline : 1,
-				s_enable_mpxio : 1;
+				s_disable_mpxio : 1;
 	kmem_cache_t		*s_cmd_cache;
 	ddi_taskq_t		*s_events_taskq;
 	ddi_taskq_t		*s_complete_taskq;
 	timeout_id_t		s_time_of_day;
-	timeout_id_t		s_rescan;
 	timeout_id_t		s_cmd_timeout;
 
 	/* ---- Debug related state ---- */
 	int			s_debug_level;
-	list_t			s_mem_check;
-	kmutex_t		s_mem_mutex;
-	timeout_id_t		s_mem_timeo;
 
 	/* ---- State for watchdog ---- */
 	timeout_id_t		s_watchdog;
@@ -405,29 +397,6 @@ typedef struct pqi_state {
 	pqi_event_queue_t	s_event_queue;
 	struct pqi_event	s_events[PQI_NUM_SUPPORTED_EVENTS];
 } *pqi_state_t;
-
-#define	RUN_MEM_CHECK	0
-#if RUN_MEM_CHECK == 1
-#define	MEM_CHECK_ON_DMA	1
-#define	MEM_CHECK_SIG		0xdeadcafe
-#define	PQI_ALLOC(len, flag) pqi_kmem_alloc(len, flag, __FILE__, __LINE__, s)
-#define	PQI_ZALLOC(len, flag) pqi_kmem_zalloc(len, flag, __FILE__, __LINE__, s)
-#define	PQI_FREE(v, len) pqi_kmem_free(v, len, s)
-#else
-#define	MEM_CHECK_ON_DMA	0
-#define	MEM_CHECK_SIG		0xdeadcafe
-#define	PQI_ALLOC(len, flag) kmem_alloc(len, flag)
-#define	PQI_ZALLOC(len, flag) kmem_zalloc(len, flag)
-#define	PQI_FREE(v, len) kmem_free(v, len)
-#endif
-
-typedef struct mem_check {
-	list_node_t		m_node;
-	uint32_t		m_sig;
-	int			m_line;
-	size_t			m_len;
-	char			m_file[80];
-} *mem_check_t;
 
 /* ---- Flags used in pqi_cmd_t ---- */
 #define	PQI_FLAG_ABORTED	0x0001
@@ -556,8 +525,6 @@ typedef struct mem_len_pair {
 void *pqi_state;
 extern int pqi_do_scan;
 extern int pqi_do_ctrl;
-extern int pqi_do_offline;
-extern int pqi_offline_target;
 
 /* ---- smartpqi_intr.c ---- */
 int smartpqi_register_intrs(pqi_state_t);
@@ -586,7 +553,7 @@ boolean_t pqi_hba_reset(pqi_state_t s);
 /* ---- smartpqi_hba.c ---- */
 int smartpqi_register_hba(pqi_state_t);
 void smartpqi_unregister_hba(pqi_state_t);
-pqi_device_t pqi_find_target_dev(pqi_state_t s, int target);
+pqi_device_t pqi_find_target_ua(pqi_state_t s, char *);
 int pqi_cache_constructor(void *buf, void *un, int flags);
 void pqi_cache_destructor(void *buf, void *un);
 int pqi_config_all(dev_info_t *pdip, pqi_state_t s);
@@ -624,12 +591,6 @@ mem_len_pair_t build_cdb_str(uint8_t *cdb);
 mem_len_pair_t mem_to_arraystr(uint8_t *ptr, size_t len);
 int pqi_is_offline(pqi_state_t s);
 void pqi_show_dev_state(pqi_state_t s);
-void *pqi_kmem_zalloc(size_t size, int kmflag, char *file, int line,
-    pqi_state_t s);
-void *pqi_kmem_alloc(size_t size, int kmflag, char *file, int line,
-    pqi_state_t s);
-void pqi_kmem_free(void *v, size_t, pqi_state_t s);
-void pqi_mem_check(void *v);
 char *cdb_to_str(uint8_t scsi_cmd);
 char *io_status_to_str(int val);
 char *scsi_status_to_str(uint8_t val);

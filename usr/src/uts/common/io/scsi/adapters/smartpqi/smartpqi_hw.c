@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2023 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -57,7 +57,6 @@ void
 pqi_watchdog(void *v)
 {
 	pqi_state_t	s = v;
-	pqi_device_t	d;
 	uint32_t	hb;
 
 	if (pqi_is_offline(s))
@@ -78,22 +77,6 @@ pqi_watchdog(void *v)
 			s->s_last_heartbeat_count = hb;
 			s->s_watchdog = timeout(pqi_watchdog, s,
 			    drv_usectohz(WATCHDOG));
-		}
-	}
-	if (pqi_do_scan && s->s_instance == pqi_do_ctrl) {
-		pqi_do_scan = 0;
-		s->s_rescan = timeout(pqi_do_rescan, (void *)s,
-		    drv_usectohz(MICROSEC));
-	}
-	if (pqi_do_reset_lun != -1 && s->s_instance == pqi_do_ctrl) {
-		d = list_head(&s->s_devnodes);
-		while (d != NULL) {
-			if (d->pd_target == pqi_do_reset_lun) {
-				pqi_do_reset_lun = -1;
-				pqi_lun_reset(s, d);
-				break;
-			}
-			d = list_next(&s->s_devnodes, d);
 		}
 	}
 }
@@ -221,10 +204,8 @@ pqi_transport_command(pqi_state_t s, pqi_cmd_t cmd)
 		io = setup_raid_request(s, cmd);
 	}
 
-	if (io == NULL) {
-		atomic_inc_32(&cmd->pc_device->pd_busy);
+	if (io == NULL)
 		return (TRAN_BUSY);
-	}
 
 	cmd->pc_io_rqst = io;
 	(void) pqi_cmd_action(cmd, PQI_CMD_QUEUE);

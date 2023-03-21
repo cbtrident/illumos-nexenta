@@ -10,7 +10,8 @@
  */
 
 /*
- * Copyright 2022 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2019 RackTop Systems, Inc.
+ * Copyright 2023 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -523,99 +524,6 @@ pqi_show_dev_state(pqi_state_t s)
 		break;
 	}
 }
-
-void *
-pqi_kmem_zalloc(size_t size, int kmflag, char *file, int line, pqi_state_t s)
-{
-	void *v;
-
-	if ((v = pqi_kmem_alloc(size, kmflag, file, line, s)) != NULL)
-		(void) memset(v, 0, size);
-
-	return (v);
-}
-
-void *
-pqi_kmem_alloc(size_t size, int kmflag, char *file, int line, pqi_state_t s)
-{
-	size_t		ht_size;
-	void		*v;
-	mem_check_t	header;
-	mem_check_t	tailer;
-	size_t		size_adj;
-
-	ht_size = PQIALIGN_TYPED(sizeof (struct mem_check), 64, size_t);
-	size_adj = PQIALIGN_TYPED(size, 64, size_t);
-	v = kmem_alloc(ht_size * 2 + size_adj, kmflag);
-	if (v == NULL)
-		return (NULL);
-
-	header = v;
-	list_link_init(&header->m_node);
-	(void) strncpy(header->m_file, file, sizeof (header->m_file));
-	header->m_line = line;
-	header->m_len = ht_size * 2 + size_adj;
-	header->m_sig = MEM_CHECK_SIG;
-
-	tailer = (mem_check_t)((uintptr_t)v + ht_size + size_adj);
-	list_link_init(&tailer->m_node);
-	(void) strncpy(tailer->m_file, file, sizeof (tailer->m_file));
-	tailer->m_line = line;
-	tailer->m_len = ht_size * 2 + size_adj;
-	tailer->m_sig = MEM_CHECK_SIG;
-
-	mutex_enter(&s->s_mem_mutex);
-	list_insert_tail(&s->s_mem_check, header);
-	list_insert_tail(&s->s_mem_check, tailer);
-	mutex_exit(&s->s_mem_mutex);
-	ASSERT(s->s_dip != NULL);
-
-	return ((void *)((uintptr_t)v + ht_size));
-}
-
-/*ARGSUSED*/
-void
-pqi_kmem_free(void *v, size_t size, pqi_state_t s)
-{
-	mem_check_t	header;
-	mem_check_t	tailer;
-	size_t		ht_size;
-
-	ht_size = PQIALIGN_TYPED(sizeof (struct mem_check), 64, size_t);
-	header = (mem_check_t)((uintptr_t)v - ht_size);
-	ASSERT(header->m_sig == MEM_CHECK_SIG);
-
-	mutex_enter(&s->s_mem_mutex);
-	tailer = list_next(&s->s_mem_check, header);
-	list_remove(&s->s_mem_check, header);
-	list_remove(&s->s_mem_check, tailer);
-	mutex_exit(&s->s_mem_mutex);
-	ASSERT(s->s_dip != NULL);
-
-	kmem_free(header, header->m_len);
-}
-
-void
-pqi_mem_check(void *v)
-{
-	pqi_state_t	s = v;
-	mem_check_t	mc;
-
-	mutex_enter(&s->s_mem_mutex);
-	for (mc = list_head(&s->s_mem_check); mc != NULL;
-	    mc = list_next(&s->s_mem_check, mc)) {
-		if (mc->m_sig != MEM_CHECK_SIG) {
-			cmn_err(CE_NOTE, "%s: Bad sig from %s:%d\n",
-			    __func__, mc->m_file, mc->m_line);
-			ASSERT(0);
-		}
-	}
-	ASSERT(s->s_dip != NULL);
-	s->s_mem_timeo = timeout(pqi_mem_check, s,
-	    drv_usectohz(5 * 1000 * 1000));
-	mutex_exit(&s->s_mem_mutex);
-}
-
 
 char *
 cdb_to_str(uint8_t scsi_cmd)
