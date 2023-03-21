@@ -930,6 +930,8 @@ pqi_get_hba_version(pqi_state_t s)
 	    sizeof (s->s_firmware_version) - strlen(s->s_firmware_version),
 	    "-%u", ident->firmware_build_number);
 	rval = B_TRUE;
+	cmn_err(CE_NOTE, "!smartpqi%d - firmware version: %s",
+	    s->s_instance, s->s_firmware_version);
 out:
 	kmem_free(ident, sizeof (*ident));
 	return (rval);
