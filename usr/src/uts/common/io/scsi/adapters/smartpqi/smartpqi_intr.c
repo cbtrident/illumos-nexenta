@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2023 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -108,7 +108,8 @@ pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 	pqi_index_t		oq_ci;
 	pqi_io_request_t	*io;
 	pqi_io_response_t	*rsp;
-	uint16_t		rqst_id;
+	uint16_t		rqst_ix;
+	uint8_t			rqst_gen;
 	int			response_cnt = 0;
 	int			qnotify;
 
@@ -131,13 +132,15 @@ pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 		(void) ddi_dma_sync(s->s_queue_dma->handle,
 		    (uintptr_t)rsp - (uintptr_t)s->s_queue_dma->alloc_memory,
 		    sizeof (*rsp), DDI_DMA_SYNC_FORCPU);
-		rqst_id = rsp->request_id;
-		ASSERT(rqst_id < s->s_max_io_slots);
-		io = &s->s_io_rqst_pool[rqst_id];
+		rqst_ix = PQI_REQID_INDEX(rsp->request_id);
+		ASSERT(rqst_ix < s->s_max_io_slots);
+		rqst_gen = PQI_REQID_GEN(rsp->request_id);
+		io = &s->s_io_rqst_pool[rqst_ix];
 
-		if (io->io_refcount != 1) {
+		if (!pqi_service_io(io, rqst_gen)) {
 			/*
-			 * i/o must have been freed, presumably by timeout.
+			 * Generation does not match, this response must be
+			 * a stale response for a previous (timed out) i/o req.
 			 */
 			goto skipto;
 		}

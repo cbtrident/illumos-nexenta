@@ -169,7 +169,7 @@ static void update_time(void *v);
 
 static int reset_devices = 1;
 
-int pqi_max_io_slots = 0;
+int pqi_max_io_slots = PQI_MAX_IO_SLOTS;
 
 static boolean_t
 pqi_reset_prep(pqi_state_t s)
@@ -273,6 +273,12 @@ pqi_calculate_io_resources(pqi_state_t s)
 static boolean_t
 pqi_check_alloc(pqi_state_t s)
 {
+	/*
+	 * Note that we need to pass a generation cnt as part of a i/o
+	 * request id.  The id is limited to 16 bits and we reserve 4 bits
+	 * for a generation no.  This means we must limit s_max_io_slots
+	 * to max 12 bits worth of slot indexes.
+	 */
 	if (pqi_max_io_slots != 0 && pqi_max_io_slots < s->s_max_io_slots) {
 		s->s_max_io_slots = pqi_max_io_slots;
 	}
@@ -599,8 +605,11 @@ pqi_alloc_io_resource(pqi_state_t s)
 		if (io->io_sg_chain_dma == NULL)
 			goto error_out;
 
+		mutex_init(&io->io_lock, NULL, MUTEX_DRIVER, NULL);
+		io->io_gen = 1;
 		list_link_init(&io->io_list_node);
 		io->io_index = (uint16_t)i;
+		
 		io->io_softc = s;
 		io++;
 	}
@@ -1431,7 +1440,8 @@ submit_raid_rqst_sync(pqi_state_t s, pqi_iu_header_t *rqst,
 	io->io_cmd = c;
 	(void) pqi_cmd_action(c, PQI_CMD_QUEUE);
 
-	((pqi_raid_path_request_t *)rqst)->rp_id = io->io_index;
+	((pqi_raid_path_request_t *)rqst)->rp_id = PQI_MAKE_REQID(io->io_index,
+	    io->io_gen);
 	if (rqst->iu_type == PQI_REQUEST_IU_RAID_PATH_IO)
 		((pqi_raid_path_request_t *)rqst)->rp_error_index =
 		    io->io_index;

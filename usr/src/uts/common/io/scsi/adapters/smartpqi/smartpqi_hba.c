@@ -857,7 +857,6 @@ cmd_timeout_drive(pqi_device_t d)
 	 * Drive reset should be pretty rare.  Prevent it from happening
 	 * until any potential cmd timeouts are processed.
 	 */
-	mutex_enter(&d->pd_reset);
 	mutex_enter(&d->pd_mutex);
 
 	c = list_head(&d->pd_cmd_list);
@@ -875,15 +874,22 @@ cmd_timeout_drive(pqi_device_t d)
 				pkt->pkt_reason = CMD_TIMEOUT;
 				pkt->pkt_statistics = STAT_TIMEOUT;
 			}
-			(void) pqi_cmd_action_nolock(c, PQI_CMD_TIMEOUT);
-			timed_out_cnt++;
+			ASSERT(c->pc_io_rqst != NULL);
+			/*
+			 * If the i/o has not been serviced yet,
+			 * mark the i/o as timed out and clear it out
+			 */
+			if (pqi_timeout_io(c->pc_io_rqst)) {
+				(void) pqi_cmd_action_nolock(c,
+				    PQI_CMD_TIMEOUT);
+				timed_out_cnt++;
+			}
 		}
 		c = next_c;
 	}
 
 	d->pd_timedout += timed_out_cnt;
 	mutex_exit(&d->pd_mutex);
-	mutex_exit(&d->pd_reset);
 }
 
 static void

@@ -205,6 +205,8 @@ display_io_request(pqi_io_request_t *io)
 	mdb_printf("    ---- Command IO request ----\n");
 	mdb_printf("    io_refcount\t\t\t\t%d\n", io->io_refcount);
 	mdb_printf("    io_index\t\t\t\t%d\n", io->io_index);
+	mdb_printf("    io_gen\t\t\t\t%d\n", io->io_gen);
+	mdb_printf("    io_serviced\t\t\t\t%s\n", bool_to_str(io->io_serviced));
 	mdb_printf("    io_raid_bypass\t\t\t%d\n", io->io_raid_bypass);
 	mdb_printf("    io_status\t\t\t\t%d\n", io->io_status);
 	mdb_printf("    io_iu\t\t\t\t0x%p\n", io->io_iu);
