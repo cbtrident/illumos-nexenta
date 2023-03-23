@@ -335,48 +335,6 @@ pqi_free_io(pqi_io_request_t *io)
 }
 
 
-/*
- * Time out an in progress i/o.
- * If the i/o has been serviced then return false (can't timeout),
- * otherwise increment the generation counter and return true.
- */
-boolean_t
-pqi_timeout_io(pqi_io_request_t *io)
-{
-	mutex_enter(&io->io_lock);
-	if (io->io_serviced) {
-		/*
-		 * Can't timeout this io, it's already been serviced.
-		 */
-		mutex_exit(&io->io_lock);
-		return (B_FALSE);
-	}
-	io->io_gen = (io->io_gen + 1) % PQI_NGENS;
-	mutex_exit(&io->io_lock);
-	return (B_TRUE);
-}
-
-/*
- * Check if an i/o is serviceable (generation counter matches).
- * If so, mark it as serviced and return true.
- * Otherwise, return false.
- */
-boolean_t
-pqi_service_io(pqi_io_request_t *io, uint8_t generation)
-{
-	mutex_enter(&io->io_lock);
-	if (io->io_gen != generation) {
-		/*
-		 * Can't service this io, it's already been timed out.
-		 */
-		mutex_exit(&io->io_lock);
-		return (B_FALSE);
-	}
-	io->io_serviced = B_TRUE;
-	mutex_exit(&io->io_lock);
-	return (B_TRUE);
-}
-
 void
 pqi_dump_io(pqi_io_request_t *io)
 {
@@ -789,7 +747,6 @@ reinit_io(pqi_io_request_t *io)
 {
 	io->io_cb = pqi_catch_release;
 	io->io_status = 0;
-	io->io_serviced = B_FALSE;
 	io->io_error_info = NULL;
 	io->io_raid_bypass = B_FALSE;
 	io->io_context = NULL;

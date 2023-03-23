@@ -72,19 +72,6 @@ extern "C" {
 #define	PQI_DEFAULT_QUEUE_GROUP			0
 #define	PQI_MAX_QUEUE_GROUPS			PQI_MAX_MSIX_VECTORS
 #define	PQI_MIN_OPERATIONAL_QUEUE_ID		1
-#define	PQI_NGENS				16
-#define	PQI_MAX_IO_SLOTS			(1 << 12)
-#define	PQI_SLOT_INDEX_MASK			0xfff
-#define	PQI_GENSHIFT				12
-/*
- * Generate and extract fields from a 16 bit io request id.
- * We generate a request id by combining a 12 bit slot index with a
- * 4 bit generation count.
- */
-#define	PQI_MAKE_REQID(index, gen) (((gen) << PQI_GENSHIFT) | (index))
-#define	PQI_REQID_GEN(id)	((id) >> PQI_GENSHIFT)
-#define	PQI_REQID_INDEX(id)	((id) & PQI_SLOT_INDEX_MASK)
-
 /* ---- Size of structure scsi_arq_status without sense data. ---- */
 #define	PQI_ARQ_STATUS_NOSENSE_LEN	(sizeof (struct scsi_arq_status) - \
     sizeof (struct scsi_extended_sense))
@@ -227,14 +214,11 @@ typedef struct pqi_queue_group {
 } pqi_queue_group_t;
 
 typedef struct pqi_io_request {
-	kmutex_t		io_lock; /* protect generation/serviced flag */
 	uint32_t		io_refcount;
 	uint16_t		io_index;
 	void			(*io_cb)(struct pqi_io_request *, void *);
 	void			*io_context;
 	uint8_t			io_raid_bypass : 1;
-	uint8_t			io_gen;
-	boolean_t		io_serviced;
 	int			io_status;
 	pqi_queue_group_t	*io_queue_group;
 	int			io_queue_path;
@@ -593,8 +577,6 @@ pqi_dma_overhead_t *pqi_alloc_single(pqi_state_t s, size_t len);
 void pqi_free_single(pqi_state_t s, pqi_dma_overhead_t *d);
 pqi_io_request_t *pqi_alloc_io(pqi_state_t s);
 void pqi_free_io(pqi_io_request_t *io);
-boolean_t pqi_timeout_io(pqi_io_request_t *io);
-boolean_t pqi_service_io(pqi_io_request_t *io, uint8_t generation);
 void pqi_dump_io(pqi_io_request_t *io);
 pqi_cmd_action_t pqi_cmd_action(pqi_cmd_t cmd, pqi_cmd_action_t a);
 pqi_cmd_action_t pqi_cmd_action_nolock(pqi_cmd_t cmd, pqi_cmd_action_t a);

@@ -434,7 +434,7 @@ lun_reset_worker(void *v)
 
 	rqst->header.iu_type = PQI_REQUEST_IU_TASK_MANAGEMENT;
 	rqst->header.iu_length = sizeof (*rqst) - PQI_REQUEST_HEADER_LENGTH;
-	rqst->request_id = PQI_MAKE_REQID(io->io_index, io->io_gen);
+	rqst->request_id = io->io_index;
 	(void) memcpy(rqst->lun_number, d->pd_scsi3addr,
 	    sizeof (rqst->lun_number));
 	rqst->task_management_function = SOP_TASK_MANAGEMENT_LUN_RESET;
@@ -546,8 +546,8 @@ setup_aio_request(pqi_state_t s, pqi_cmd_t cmd)
 	rqst->nexus_id = devp->pd_aio_handle;
 	rqst->buffer_length = cmd->pc_dma_count;
 	rqst->task_attribute = SOP_TASK_ATTRIBUTE_SIMPLE;
-	rqst->request_id = PQI_MAKE_REQID(io->io_index, io->io_gen);
-	rqst->error_index = io->io_index;
+	rqst->request_id = io->io_index;
+	rqst->error_index = rqst->request_id;
 	rqst->cdb_length = cmd->pc_cmdlen;
 	(void) memcpy(rqst->cdb, cmd->pc_cdb, cmd->pc_cmdlen);
 	(void) memcpy(rqst->lun_number, devp->pd_scsi3addr,
@@ -586,8 +586,8 @@ setup_raid_request(pqi_state_t s, pqi_cmd_t cmd)
 	rqst->header.iu_type = PQI_REQUEST_IU_RAID_PATH_IO;
 	rqst->rp_data_len = cmd->pc_dma_count;
 	rqst->rp_task_attr = SOP_TASK_ATTRIBUTE_SIMPLE;
-	rqst->rp_id = PQI_MAKE_REQID(io->io_index, io->io_gen);
-	rqst->rp_error_index = io->io_index;
+	rqst->rp_id = io->io_index;
+	rqst->rp_error_index = rqst->rp_id;
 	(void) memcpy(rqst->rp_lun, devp->pd_scsi3addr, sizeof (rqst->rp_lun));
 	(void) memcpy(rqst->rp_cdb, cmd->pc_cdb, cmd->pc_cmdlen);
 
