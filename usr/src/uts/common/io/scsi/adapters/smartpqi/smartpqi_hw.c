@@ -407,7 +407,6 @@ lun_reset_worker(void *v)
 	s = r->rc_s;
 	d = r->rc_d;
 
-	mutex_enter(&d->pd_reset);
 	pqi_fail_drive_cmds(d, CMD_RESET);
 	sema_init(&sema, 0, NULL, SEMA_DRIVER, NULL);
 
@@ -416,7 +415,6 @@ lun_reset_worker(void *v)
 
 	if ((io = pqi_alloc_io(s)) == NULL) {
 		mutex_destroy(&cmd.pc_mutex);
-		mutex_exit(&d->pd_reset);
 		kmem_free(r, sizeof (*r));
 		return;
 	}
@@ -446,7 +444,6 @@ lun_reset_worker(void *v)
 
 	(void) pqi_cmd_action(&cmd, PQI_CMD_CMPLT);
 	mutex_destroy(&cmd.pc_mutex);
-	mutex_exit(&d->pd_reset);
 	kmem_free(r, sizeof (*r));
 }
 

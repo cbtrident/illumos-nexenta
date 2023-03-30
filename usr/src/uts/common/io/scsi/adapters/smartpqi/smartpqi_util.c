@@ -185,9 +185,10 @@ pqi_cmd_action_nolock(pqi_cmd_t c, pqi_cmd_action_t a)
 
 		/*
 		 * When a timeout has occurred it means something has gone
-		 * wrong with the HBA or drive. Reset should have been blocked
-		 * to prevent state change during the call to cmd_remove_group()
-		 * when the pd_mutex is exited/entered.
+		 * wrong with the HBA or drive.  Timed out io requests are
+		 * marked and the cmd was marked and removed from the chain
+		 * above so it should not have changed state when we dropped
+		 * and re-grabbed the locks.
 		 */
 		ASSERT3U(c->pc_cur_action, ==, PQI_CMD_TIMEOUT);
 

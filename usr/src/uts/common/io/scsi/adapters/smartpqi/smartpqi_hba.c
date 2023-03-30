@@ -853,12 +853,9 @@ cmd_timeout_drive(pqi_device_t d)
 	pqi_cmd_t	c, next_c;
 	hrtime_t	now = gethrtime();
 
-	/*
-	 * Drive reset should be pretty rare.  Prevent it from happening
-	 * until any potential cmd timeouts are processed.
-	 */
 	mutex_enter(&d->pd_mutex);
 
+rescan:
 	c = list_head(&d->pd_cmd_list);
 	while (c != NULL) {
 		next_c = list_next(&d->pd_cmd_list, c);
@@ -883,6 +880,14 @@ cmd_timeout_drive(pqi_device_t d)
 				(void) pqi_cmd_action_nolock(c,
 				    PQI_CMD_TIMEOUT);
 				timed_out_cnt++;
+				/*
+				 * We dropped pd_mutex so the cmd
+				 * list could have changed, restart the
+				 * scan of the cmds.  This will terminate
+				 * since timed out cmds are removed from
+				 * the list.
+				 */
+				goto rescan;
 			}
 		}
 		c = next_c;

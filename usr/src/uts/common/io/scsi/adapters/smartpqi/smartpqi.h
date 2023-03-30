@@ -273,7 +273,6 @@ typedef struct pqi_event {
 
 typedef struct pqi_device {
 	list_node_t		pd_list;
-	kmutex_t		pd_reset; /* must hold to reset device */
 	kmutex_t		pd_mutex;
 
 	/* ---- Protected by pd_mutex ---- */

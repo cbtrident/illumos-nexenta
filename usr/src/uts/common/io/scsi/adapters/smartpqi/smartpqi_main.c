@@ -191,7 +191,6 @@ smartpqi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	mutex_init(&s->s_io_mutex, NULL, MUTEX_DRIVER, NULL);
 	mutex_init(&s->s_intr_mutex, NULL, MUTEX_DRIVER, NULL);
 	mutex_init(&s->s_special_device.pd_mutex, NULL, MUTEX_DRIVER, NULL);
-	mutex_init(&s->s_special_device.pd_reset, NULL, MUTEX_DRIVER, NULL);
 	cv_init(&s->s_quiescedvar, NULL, CV_DRIVER, NULL);
 	cv_init(&s->s_io_condvar, NULL, CV_DRIVER, NULL);
 
@@ -307,7 +306,6 @@ smartpqi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 				(void) mdi_pi_free(devp->pd_pip_offlined, 0);
 			list_destroy(&devp->pd_cmd_list);
 			mutex_destroy(&devp->pd_mutex);
-			mutex_destroy(&devp->pd_reset);
 			list_remove(&s->s_devnodes, devp);
 			kmem_free(devp, sizeof (*devp));
 		}
