@@ -21,7 +21,7 @@
 
 /*
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2023 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -434,11 +434,16 @@ ipmi_ioctl(dev_t dv, int cmd, intptr_t data, int flags, cred_t *cr, int *rvalp)
 			recv.msg.netfn =
 			    IPMI_REPLY_ADDR(kreq->ir_ipmb_addr) >> 2;
 			recv.msg.cmd = kreq->ir_ipmb_command;
-			/* Get the compcode of response */
-			kreq->ir_compcode = kreq->ir_reply[6];
-			/* Move the reply head past response header */
-			kreq->ir_reply += 7;
-			len = kreq->ir_replylen - 7;
+			if (kreq->ir_compcode == 0x80) {
+				/* No message data */
+				len = 1;
+			} else {
+				/* Get the compcode of response */
+				kreq->ir_compcode = kreq->ir_reply[6];
+				/* Move the reply head past response header */
+				kreq->ir_reply += 7;
+				len = kreq->ir_replylen - 7;
+			}
 		} else {
 			addr.channel = IPMI_BMC_CHANNEL;
 			recv.msg.netfn = IPMI_REPLY_ADDR(kreq->ir_addr) >> 2;
