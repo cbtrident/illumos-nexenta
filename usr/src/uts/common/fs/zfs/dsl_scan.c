@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2023 Tintri by DDN, Inc. All rights reserved.
  * Copyright 2016 Gary Mills
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright 2017 Joyent, Inc.
@@ -126,7 +126,10 @@ uint64_t zfs_scan_dequeue_run_target_ms =	2000;
 uint64_t zfs_dequeue_run_bonus_ms =		1000;
 #define	DEQUEUE_BONUS_MS_MAX			100000
 
-boolean_t zfs_scan_direct = B_FALSE;	/* don't queue & sort zios, go direct */
+/*
+ * Disabling fast resilvering until it is fixed
+ */
+boolean_t zfs_scan_direct = B_TRUE;	/* old style resilvering */
 uint64_t zfs_scan_max_ext_gap = 2 << 20;	/* bytes */
 /* See scan_io_queue_mem_lim for details on the memory limit tunables */
 uint64_t zfs_scan_mem_lim_fact = 20;		/* fraction of physmem */
